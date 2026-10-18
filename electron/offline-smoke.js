@@ -142,7 +142,7 @@ export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) 
         const u = req.url || '';
         if (u.startsWith('/set')) {
           res.setHeader('Content-Type', 'text/html');
-          res.end(`<script>localStorage.setItem('pm_k','pm_v');document.cookie='pm_c=pm_cookie; path=/';fetch('/wrote').catch(()=>{})<\/script>`);
+          res.end(`<script>localStorage.setItem('pm_k','pm_v');document.cookie='pm_c=pm_cookie; path=/; max-age=86400';fetch('/wrote').catch(()=>{})<\/script>`);
           return;
         }
         if (u.startsWith('/wrote')) { wrote = true; res.end('ok'); return; }

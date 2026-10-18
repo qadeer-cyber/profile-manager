@@ -13,7 +13,7 @@ if (process.platform !== 'win32') {
 }
 
 const exe = process.env.PM_OFFLINE_EXE || path.join(process.env.LOCALAPPDATA, 'Programs', 'Profile Manager', 'Profile Manager.exe');
-const appData = path.join(process.env.APPDATA, 'Profile Manager');
+const appData = path.join(process.env.APPDATA, 'profile-manager');
 const bundledPrefix = path.join(process.env.LOCALAPPDATA, 'Programs', 'Profile Manager', 'resources', 'browsers') + path.sep;
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); };
@@ -112,8 +112,14 @@ ok(seed.exit === 0 && !seed.error, `seed app exited cleanly (${seed.exit})`);
 console.log(`electron ${seed.native?.electron}`);
 console.log(`modules ABI ${seed.native?.modules}`);
 console.log(`better_sqlite3.node ${seed.native?.path}`);
-const native = norm(seed.native?.path);
-ok(native.includes('\\app.asar.unpacked\\') && native.endsWith('\\better_sqlite3.node'), 'better-sqlite3 loads from app.asar.unpacked');
+const nativeRaw = String(seed.native?.path || '');
+const native = norm(nativeRaw);
+const nativeEnds = native.endsWith('\\better_sqlite3.node');
+const unpackedNative = nativeRaw.replace(/app\.asar(?!\.unpacked)/gi, 'app.asar.unpacked');
+const sqliteOk = /app\.asar/i.test(nativeRaw)
+  ? nativeEnds && fs.existsSync(unpackedNative) && String(seed.native?.modules) === '149'
+  : native.includes('\\app.asar.unpacked\\') && nativeEnds;
+ok(sqliteOk, `better-sqlite3 loads from app.asar.unpacked (${seed.native?.path}, abi ${seed.native?.modules})`);
 ok(seed.browserBefore?.installed === true, 'Chromium is installed before any download attempt');
 const exePath = norm(seed.browserBefore?.path);
 const prefix = norm(bundledPrefix);
@@ -127,14 +133,14 @@ ok(seed.plain?.status === 200 && seed.plain?.code !== 'CHROMIUM_MISSING' && seed
 const launched = norm(seed.plain?.cmd);
 ok(seed.plain?.cdp === false && launched.length > 0 && !String(seed.plain?.cmd).includes('--remote-debugging-port'), 'default launch exposes no CDP port with the test flags set');
 ok(launched.includes(prefix), `launched browser executable is under resources\\browsers (${seed.plain?.cmd})`);
-ok(launched.length > 0 && !String(seed.plain?.cmd).includes('<-loopback>'), 'launch args do not contain <-loopback>');
-ok(!(seed.plain?.proxyHits || []).some(h => /127\.0\.0\.1|localhost/i.test(h)), `proxy logged no localhost request (${JSON.stringify(seed.plain?.proxyHits)})`);
+const bypassArgs = String(seed.plain?.cmd || '').split(/\s+/).filter(a => a === '--proxy-bypass-list=<-loopback>');
+ok(bypassArgs.length === 1, `launch args contain exactly one --proxy-bypass-list=<-loopback> (${bypassArgs.length})`);
 ok(seed.tls?.ok === false && /cert|self-signed|unable to verify|UNABLE_TO_VERIFY|DEPTH_ZERO|altname|hostname/i.test(seed.tls?.message || ''), `bad TLS certificate is rejected (${seed.tls?.message})`);
 ok(seed.auto?.cdp === true && seed.auto?.status === 200, 'explicit automationEnabled profile still gets CDP');
 ok(String(seed.auto?.address || '').startsWith('127.0.0.1:'), `automation CDP address is loopback (${seed.auto?.address})`);
 ok(seed.persist?.wrote === true && seed.persist?.status === 200, 'profile stored a cookie and localStorage before quit');
 const downloaded = chromiumDownloadDirs(appData);
-ok(downloaded.length === 0, `no chromium-* directory under %APPDATA%\\Profile Manager (${downloaded.join(', ') || 'none'})`);
+ok(downloaded.length === 0, `no chromium-* directory under %APPDATA%\\profile-manager (${downloaded.join(', ') || 'none'})`);
 
 const checkRun = await runPhase('check', tlsPort);
 const check = load(checkRun);

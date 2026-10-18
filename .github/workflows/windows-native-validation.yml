@@ -233,7 +233,7 @@ jobs:
           $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager'
           $un = Join-Path $installDir 'Uninstall Profile Manager.exe'
           $app = Join-Path $installDir 'Profile Manager.exe'
-          $db = Join-Path $env:APPDATA 'Profile Manager\data\profiles.db'
+          $db = Join-Path $env:APPDATA 'profile-manager\data\profiles.db'
           if (-not (Test-Path -LiteralPath $un)) { Write-Error "uninstaller missing: $un"; exit 1 }
           if (-not (Test-Path -LiteralPath $db)) { Write-Error "profile database missing before uninstall: $db"; exit 1 }
           # _?= keeps NSIS from respawning, so -Wait covers the real uninstall. It must be last and unquoted.
