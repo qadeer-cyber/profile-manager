@@ -4,11 +4,15 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { createRequire } from 'module';
 import { migrations } from '../server/migrations.js';
 
+const require = createRequire(import.meta.url);
 // PM_APP_EXE=path runs a packaged build instead of the dev app (e.g. release/linux-unpacked/profile-manager)
+// The electron package (v44) has no postinstall, so npm ci does not extract dist/electron.exe.
+// require('electron') downloads that binary and returns its real path.
 const packaged = process.env.PM_APP_EXE;
-const electron = packaged ? path.resolve(packaged) : path.resolve('node_modules/electron/dist/electron' + (process.platform === 'win32' ? '.exe' : ''));
+const electron = packaged ? path.resolve(packaged) : require('electron');
 const userData = process.env.PM_SMOKE_USERDATA || fs.mkdtempSync(path.join(os.tmpdir(), 'pm-electron-'));
 const result = path.join(userData, 'smoke-result.json');
 const shot = path.resolve(packaged ? path.join(userData, 'shot.png') : 'screenshot-electron.png');
@@ -22,6 +26,7 @@ const alive = pid => { try { process.kill(pid, 0); return true; } catch { return
 const t0 = Date.now();
 const child = spawn(cmd, finalArgs, { env: { ...process.env, PM_SMOKE: '1', PM_USER_DATA: userData, PM_SMOKE_RESULT: result, PM_SMOKE_SCREENSHOT: shot, ...(packaged && { PM_BROWSERS_PATH: path.join(userData, 'browsers') }), ELECTRON_DISABLE_SECURITY_WARNINGS: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
 let out = ''; child.stdout.on('data', d => out += d); child.stderr.on('data', d => out += d);
+child.on('error', err => { out += '\n' + (err.stack || err.message); });
 const code = await new Promise(r => { const t = setTimeout(() => { child.kill('SIGKILL'); r('timeout'); }, packaged ? 600000 : 90000); child.on('exit', c => { clearTimeout(t); r(c); }); });
 console.log(out.split('\n').filter(l => /\[main\]|Error|WARN/i.test(l)).map(l => '  | ' + l).join('\n'));
 ok(code === 0, `app exited cleanly after quit (code ${code}, ${Date.now() - t0} ms)`);
