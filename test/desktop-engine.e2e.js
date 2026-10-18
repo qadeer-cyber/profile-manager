@@ -3,12 +3,14 @@
 // CHROMIUM_MISSING structured error. Linux run only; Windows equivalents are in docs/WINDOWS_BUILD.md.
 import fs from 'fs'; import os from 'os'; import path from 'path'; import net from 'net';
 import { spawn } from 'child_process';
+import { armWatchdog, trackProcess, killTracked } from './_ports.mjs';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-deske2e-'));
 process.env.PM_DATA_DIR = path.join(tmp, 'data'); delete process.env.PM_AUTOMATION_DEFAULT;
 const { db, userDataDir } = await import('../server/db.js');
 const eng = await import('../server/browsers.js');
 const { processCommandLine, isAlive } = await import('../server/proc.js');
 const { chromium } = await import('playwright');
+armWatchdog(12 * 60 * 1000, { beforeExit: () => eng.shutdown() });
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'ok  ' : 'FAIL'} - ${m}`); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -31,9 +33,9 @@ try {
   await eng.stop(B.id);
   // 3) recovery without CDP: orphan killed (cmdline matches), decoy with reused-looking pid spared
   const C = mk('C'), cDir = userDataDir(C.id); fs.mkdirSync(cDir, { recursive: true });
-  const orphan = spawn(chromium.executablePath(), ['--headless=new', `--user-data-dir=${cDir}`, '--no-first-run', 'about:blank'], { detached: true, stdio: 'ignore' });
+  const orphan = trackProcess(spawn(chromium.executablePath(), ['--headless=new', `--user-data-dir=${cDir}`, '--no-first-run', 'about:blank'], { detached: true, stdio: 'ignore' }));
   const D = mk('D'), dDir = userDataDir(D.id); fs.mkdirSync(dDir, { recursive: true });
-  const decoy = spawn('sleep', ['60'], { detached: true, stdio: 'ignore' }); await sleep(1500);
+  const decoy = trackProcess(spawn('sleep', ['60'], { detached: true, stdio: 'ignore' })); await sleep(1500);
   const ins = db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)');
   ins.run(C.id, orphan.pid, null, null, null, 'x'); ins.run(D.id, decoy.pid, null, null, null, 'x');
   for (const [d, pid] of [[cDir, orphan.pid], [dDir, decoy.pid]]) fs.writeFileSync(path.join(d, '.pm-lock'), JSON.stringify({ ownerPid: 2 ** 22 + 991, browserPid: pid, cdpPort: null, startedAt: 'x', host: os.hostname() }));
@@ -49,6 +51,9 @@ try {
   ok(!fs.existsSync(path.join(userDataDir(E.id), '.pm-lock')) && !eng.isRunning(E.id), 'failed launch released the lock');
   if (saved === undefined) delete process.env.PLAYWRIGHT_BROWSERS_PATH; else process.env.PLAYWRIGHT_BROWSERS_PATH = saved;
 } catch (e) { fail++; console.log('FAIL - exception', e); }
-await eng.shutdown();
-console.log(`\ndesktop-engine e2e: ${pass} passed, ${fail} failed`);
-process.exit(fail ? 1 : 0);
+finally {
+  await eng.shutdown();
+  killTracked();
+  console.log(`\ndesktop-engine e2e: ${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+}

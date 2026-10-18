@@ -10,7 +10,8 @@ import os from 'os';
 import path from 'path';
 import { chromium } from 'playwright';
 import Database from 'better-sqlite3';
-import { listenFree, spawnServer } from './_ports.mjs';
+import { listenFree, spawnServer, stopServer, killServer, armWatchdog, killTracked } from './_ports.mjs';
+armWatchdog(15 * 60 * 1000);
 
 // Ports: OS-assigned (port 0) unless overridden via PM_TEST_PORT / PM_TEST_TARGET_PORT / PM_TEST_HTTP_PROXY_PORT / PM_TEST_SOCKS_PORT.
 const TOKEN = 'test-token-123';
@@ -55,8 +56,8 @@ const j = (m, u, b) => req(m, u, b);
 const v1 = (m, u, b) => req(m, '/api/v1' + u, b, { Authorization: `Bearer ${TOKEN}` });
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
-await startServer();
 try {
+  await startServer();
   // --- CRUD + encryption ---
   let r = await j('POST', '/api/profiles', { name: 'Work', tags: ['work', 'shop'], folder: 'Clients', notes: 'main', proxy: { type: 'socks5', host: '127.0.0.1', port: SOCKS, username: 'alice', password: 's3cret' } });
   ok(r.s === 201 && r.d.proxy.password === '••••', 'create profile (password masked in API)');
@@ -129,7 +130,7 @@ try {
   // --- restart recovery ---
   r = await v1('POST', `/profiles/${b.id}/launch`, {}); const pid = r.d.cdp.pid;
   ok(pid && alive(pid), `browser pid recorded (${pid})`);
-  srv.kill('SIGKILL'); await new Promise(r => setTimeout(r, 500));
+  await killServer(srv);
   await startServer();
   await new Promise(r => setTimeout(r, 500));
   r = await j('GET', '/api/meta'); ok(r.d.running.length === 0, 'after crash+restart: running state cleared');
@@ -146,8 +147,11 @@ try {
   r = await j('DELETE', `/api/profiles/${b.id}`); ok(r.s === 204 && !fs.existsSync(path.join(dataDir, 'profiles', b.id)), 'delete running profile (stops + removes data)');
   r = await j('GET', `/api/profiles/${b.id}`); ok(r.s === 404, 'deleted profile 404');
 } catch (e) { fail++; console.error(e); }
-console.log(`\n${pass} passed, ${fail} failed`);
-srv.kill('SIGTERM'); await new Promise(r => setTimeout(r, 1000));
-[target, httpProxy, socks].forEach(s => s.close());
-fs.rmSync(dataDir, { recursive: true, force: true });
-process.exit(fail ? 1 : 0);
+finally {
+  if (srv) await stopServer(srv);
+  killTracked();
+  [target, httpProxy, socks].forEach(s => s.close());
+  try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error('cleanup', e); }
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+}

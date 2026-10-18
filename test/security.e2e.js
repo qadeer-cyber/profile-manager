@@ -1,5 +1,6 @@
 // Security & isolation tests: API auth, secret handling at rest, profile isolation, relay binding.
-import { listenFree, spawnServer } from './_ports.mjs';
+import { listenFree, spawnServer, stopServer, armWatchdog, killTracked } from './_ports.mjs';
+armWatchdog(15 * 60 * 1000);
 import fs from 'fs'; import os from 'os'; import path from 'path'; import net from 'net';
 import Database from 'better-sqlite3';
 import { chromium } from 'playwright';
@@ -15,9 +16,9 @@ const storedPw = id => { const d = new Database(path.join(dataDir, 'profiles.db'
 let pass = 0, fail = 0; const failures = [];
 const ok = (c, m) => { if (c) { pass++; console.log('PASS', m); } else { fail++; failures.push(m); console.log('FAIL', m); } };
 const ui = (m, p, b) => fetch(B + '/api' + p, { method: m, headers: { 'x-ui-token': UI, 'content-type': 'application/json' }, body: b && JSON.stringify(b) });
-const srv = await spawnServer(env, { timeoutMs: 30000 }); B = srv.url; // 30s startup wait (QA 134cce5)
-const stop = () => srv.kill();
+let srv;
 try {
+  srv = await spawnServer(env, { timeoutMs: 30000 }); B = srv.url; // 30s startup wait (QA 134cce5)
 
   // 1. Auth on every route
   const uiRoutes = [['GET','/profiles'],['GET','/meta'],['POST','/profiles'],['GET','/settings'],['PUT','/settings'],['GET','/diagnostics'],['GET','/browser'],['POST','/browser/install'],['GET','/api-token'],['POST','/proxy/test'],['GET','/events']];
@@ -85,6 +86,9 @@ try {
   ok(relay && !relay.includes('u:p@'), 'relay URL stored without upstream credentials');
   await ui('POST', `/profiles/${pr.id}/stop`); up.close(); site.close();
 } catch (e) { ok(false, 'unexpected error: ' + e.stack); }
-finally { stop(); }
-console.log(`\n${pass} passed, ${fail} failed`); if (fail) console.log('Failures:\n - ' + failures.join('\n - '));
-process.exit(fail ? 1 : 0);
+finally {
+  if (srv) await stopServer(srv);
+  killTracked();
+  console.log(`\n${pass} passed, ${fail} failed`); if (fail) console.log('Failures:\n - ' + failures.join('\n - '));
+  process.exit(fail ? 1 : 0);
+}

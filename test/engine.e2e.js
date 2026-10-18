@@ -9,7 +9,8 @@ import path from 'path';
 import { chromium } from 'playwright';
 import Database from 'better-sqlite3';
 import { migrations } from '../server/migrations.js';
-import { listenFree, freePort, spawnServer } from './_ports.mjs';
+import { listenFree, freePort, spawnServer, stopServer, killServer, armWatchdog, trackProcess, killTracked } from './_ports.mjs';
+armWatchdog(18 * 60 * 1000);
 const LATEST = migrations.at(-1).version;
 
 // Ports: OS-assigned unless PM_TEST_PORT / PM_TEST_PORT2 / PM_TEST_TARGET_PORT / PM_TEST_CDP_PORT are set.
@@ -30,7 +31,6 @@ async function startServer(envName = 'PM_TEST_PORT') {
   if (envName === 'PM_TEST_PORT') B = p.url;
   return p;
 }
-const stopServer = p => new Promise(r => { if (p.exitCode !== null) return r(); p.once('exit', r); p.kill('SIGTERM'); });
 const api = async (m, u, b, base = B) => { const r = await fetch(base + u, { method: m, headers: { 'Content-Type': 'application/json' }, body: b && JSON.stringify(b) }); return { s: r.status, d: r.status === 204 ? null : await r.json() }; };
 
 // Attach over CDP, run fn(page) on ORIGIN in a new page, then disconnect without closing the profile.
@@ -162,7 +162,7 @@ try {
 
   // ---- 8. Startup recovery: stale lock and orphan running record after a hard crash ----
   const bRun = (await api('POST', `/api/profiles/${Bp.id}/launch`)).d;
-  srv.kill('SIGKILL'); await new Promise(r => srv.once('exit', r));
+  await killServer(srv);
   fs.writeFileSync(path.join(dataDir, 'profiles', C.id, '.pm-lock'), JSON.stringify({ ownerPid: 2 ** 22 + 999, browserPid: null, startedAt: 'x', host: os.hostname() }));
   srv = await startServer(); await sleep(300);
   ok(/Recovery: cleared 1 running record\(s\), \d+ stale lock\(s\)/.test(srv.out), 'startup recovery reported cleanup');
@@ -178,9 +178,10 @@ try {
   //         but never a pid whose CDP port no longer answers (pid-reuse safety) ----
   const E = Bp.id, eDir = path.join(dataDir, 'profiles', E);
   const cdpPort = await freePort('PM_TEST_CDP_PORT');
-  const orphan = spawn(chromium.executablePath(), ['--headless=new', `--user-data-dir=${eDir}`, `--remote-debugging-port=${cdpPort}`, '--no-first-run', 'about:blank'], { detached: true, stdio: 'ignore' });
+  const orphan = trackProcess(spawn(chromium.executablePath(), ['--headless=new', `--user-data-dir=${eDir}`, `--remote-debugging-port=${cdpPort}`, '--no-first-run', 'about:blank'], { detached: true, stdio: 'ignore' }));
   for (let i = 0; i < 50; i++) { try { if ((await fetch(`http://127.0.0.1:${cdpPort}/json/version`)).ok) break; } catch {} await sleep(100); }
-  const decoy = spawn('sleep', ['30'], { detached: true, stdio: 'ignore' });
+  // node, not POSIX `sleep`: Windows images do not ship sleep.exe unless Git's usr/bin is on PATH.
+  const decoy = trackProcess(spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { detached: true, stdio: 'ignore' }));
   const wdb = new Database(path.join(dataDir, 'profiles.db'));
   wdb.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(E, orphan.pid, cdpPort, 'ws://x', null, 'x');
   wdb.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(C.id, decoy.pid, 1, 'ws://x', null, 'x'); wdb.close();
@@ -194,7 +195,11 @@ try {
   r = await api('POST', `/api/profiles/${E}/launch`); ok(r.d.running, 'profile launches after orphan cleanup');
   await stopServer(srv);
 } catch (e) { fail++; console.error(e); }
-if (srv && srv.exitCode === null) await stopServer(srv);
-console.log(`\n${pass} passed, ${fail} failed`);
-target.close(); fs.rmSync(dataDir, { recursive: true, force: true });
-process.exit(fail ? 1 : 0);
+finally {
+  if (srv) await stopServer(srv);
+  killTracked();
+  target.close();
+  try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error(e); }
+  console.log(`\n${pass} passed, ${fail} failed`);
+  process.exit(fail ? 1 : 0);
+}

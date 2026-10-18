@@ -1,6 +1,7 @@
 // Proxy library integration tests: spawns the server against a temp data dir plus local helper servers
 // (IP-echo target, HTTP CONNECT proxy with/without auth, SOCKS5 with auth, a black hole for timeouts).
-import { listenFree, spawnServer } from './_ports.mjs';
+import { listenFree, spawnServer, stopServer, armWatchdog, killTracked } from './_ports.mjs';
+armWatchdog(15 * 60 * 1000);
 import http from 'http';
 import net from 'net';
 import fs from 'fs';
@@ -55,8 +56,9 @@ const SECRETS = ['s3cret', 'pw1', 'wrong-pw', 'imp-pass', 'p@ss:w/rd'];
 const leaks = raw => SECRETS.some(x => raw.includes(x));
 let leaked = false; const watch = r => { if (leaks(r.raw)) { leaked = true; console.log('LEAK in', r.raw.slice(0, 200)); } return r; };
 
-const srv = await spawnServer(env); B = srv.url;
+let srv;
 try {
+  srv = await spawnServer(env); B = srv.url;
   // ---- CRUD ----
   let r = watch(await ui('POST', '/proxies', { name: 'Socks A', type: 'socks5', host: '127.0.0.1', port: SOCKS, username: 'alice', password: 's3cret', tags: ['eu', 'res'] }));
   ok(r.s === 201 && r.d.hasPassword === true && !('password' in r.d) && r.d.lastTest.status === null && r.d.assignedProfiles === 0, 'create proxy: 201, hasPassword, no password field, untested');
@@ -175,8 +177,11 @@ try {
   const dbRaw = fs.readFileSync(path.join(dataDir, 'profiles.db'));
   ok(!SECRETS.some(x => dbRaw.includes(x)), 'no plaintext proxy password in the database file');
 } catch (e) { fail++; console.error(e); }
-console.log(`\n${pass} passed, ${fail} failed${typeof skipped === 'number' && skipped ? `, ${skipped} skipped` : ''}`);
-srv.kill('SIGTERM'); await new Promise(r => srv.once('exit', r));
-[echo, open, authed, socks, hole].forEach(s => s.close());
-fs.rmSync(dataDir, { recursive: true, force: true });
-process.exit(fail ? 1 : 0);
+finally {
+  if (srv) await stopServer(srv);
+  killTracked();
+  [echo, open, authed, socks, hole].forEach(s => s.close());
+  try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error('cleanup', e); }
+  console.log(`\n${pass} passed, ${fail} failed${typeof skipped === 'number' && skipped ? `, ${skipped} skipped` : ''}`);
+  process.exit(fail ? 1 : 0);
+}
