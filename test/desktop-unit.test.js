@@ -98,5 +98,6 @@ test('extractZip: zip-slip entries are refused', async () => {
 test('chromiumMissingError: structured CHROMIUM_MISSING for an empty browsers dir, null when present', () => {
   const e = cr.chromiumMissingError(true, false, { root: path.join(tmp, 'empty'), key: 'linux64' });
   assert.equal(e.code, 'CHROMIUM_MISSING'); assert.equal(e.status, 503); assert.equal(e.browser, 'chromium-headless-shell');
-  assert.equal(cr.chromiumMissingError(false, false, { root: cr.browsersRoot(), key: 'linux64', platform: 'linux' }), null);
+  const presentRoot = path.join(tmp, 'present'); fs.mkdirSync(path.join(presentRoot, 'chromium-1248', 'chrome-linux64'), { recursive: true }); fs.writeFileSync(path.join(presentRoot, 'chromium-1248', 'chrome-linux64', 'chrome'), 'ok');
+  assert.equal(cr.chromiumMissingError(false, false, { root: presentRoot, key: 'linux64', platform: 'linux' }), null);
 });
