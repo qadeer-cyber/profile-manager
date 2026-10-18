@@ -174,12 +174,12 @@ jobs:
         run: |
           node -e "const m=require('./server/chromium-manifest.json'); console.log('revision', m.revision); console.log('browserVersion', m.browserVersion);"
           node scripts/fetch-bundled-chromium.mjs win64
-          npx electron-builder --config electron-builder.offline.cjs --win nsis --x64
+          npx electron-builder --config electron-builder.offline.cjs --win nsis --x64 --publish never
       - name: Record SHA-256 of the single offline setup EXE
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         shell: pwsh
         run: |
-          $exes = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-offline*Setup*.exe' })
+          $exes = @(Get-ChildItem release -File | Where-Object { $_.Extension -eq '.exe' -and $_.Name -like '*-offline*Setup*.exe' })
           if ($exes.Count -ne 1) {
             Write-Error "expected exactly one *-offline*Setup*.exe, found $($exes.Count): $($exes.Name -join ', ')"
             exit 1
@@ -205,7 +205,7 @@ jobs:
         timeout-minutes: 15
         shell: pwsh
         run: |
-          $setup = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-offline*Setup*.exe' })
+          $setup = @(Get-ChildItem release -File | Where-Object { $_.Extension -eq '.exe' -and $_.Name -like '*-offline*Setup*.exe' })
           if ($setup.Count -ne 1) { Write-Error "expected exactly one setup exe"; exit 1 }
           $p = Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
           if ($p.ExitCode -ne 0) { Write-Error "installer exited $($p.ExitCode)"; exit 1 }
