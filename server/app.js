@@ -14,7 +14,8 @@ import { db, userDataDir, DATA_DIR, migration, getSetting, setSetting, scrubData
 import { encrypt, decrypt, needsReencrypt, loadApiToken, encryptionStatus, setStrictPrefixes } from './secrets.js';
 import * as engine from './browsers.js';
 import { currentVersion } from './migrations.js';
-import { installVerifiedChromium, chromiumStatus } from './chromium.js';
+import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
+import { proxyTestInsecureTls } from './testflags.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
 const browserInstall = { state: 'idle', log: '', error: null, code: null };
@@ -23,8 +24,20 @@ export function browserStatus() {
   let verified = null; try { verified = chromiumStatus(); } catch (e) { verified = { error: e.message }; }
   return { path: p, installed: !!p && fs.existsSync(p), custom: !!getSetting('executablePath', ''), browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default', install: browserInstall, chromium: verified };
 }
-export function installBrowser({ install = installVerifiedChromium } = {}) {
+export function installBrowser({ install } = {}) {
   if (browserInstall.state === 'running') return null;
+  // Already-present Chromium (bundled offline build or a previous download) is not fetched again.
+  if (install == null && browserStatus().installed) {
+    Object.assign(browserInstall, { state: 'done', log: '', error: null, code: 'ALREADY_INSTALLED' });
+    return Promise.resolve();
+  }
+  if (install == null && isResourcesBrowsers(browsersRoot())) {
+    const error = 'Refusing to install Chromium into resources/browsers';
+    Object.assign(browserInstall, { state: 'failed', log: '', error, code: 'BAD_INSTALL_ROOT' });
+    engine.events.emit('event', { type: 'browser:install', state: 'failed', error, code: 'BAD_INSTALL_ROOT' });
+    return Promise.resolve();
+  }
+  install = install || installVerifiedChromium;
   Object.assign(browserInstall, { state: 'running', log: '', error: null, code: null });
   engine.events.emit('event', { type: 'browser:install', state: 'running' });
   const log = line => { browserInstall.log = (browserInstall.log + line + '\n').slice(-4000); };
@@ -297,7 +310,7 @@ async function runProxyTest(px) {
   const auth = px.username ? `${encodeURIComponent(px.username)}:${encodeURIComponent(px.password)}@` : '';
   const host = px.host;
   const url = `${px.type}://${auth}${host}:${px.port}`; // https = TLS to the proxy itself
-  const agent = px.type === 'socks5' ? new SocksProxyAgent(url, { timeout: timeoutMs }) : new HttpsProxyAgent(url, { timeout: timeoutMs, rejectUnauthorized: process.env.PM_PROXY_TEST_INSECURE_TLS !== '1' });
+  const agent = px.type === 'socks5' ? new SocksProxyAgent(url, { timeout: timeoutMs }) : new HttpsProxyAgent(url, { timeout: timeoutMs, rejectUnauthorized: !proxyTestInsecureTls() });
   const target = process.env.PROXY_TEST_URL || 'https://api.ipify.org?format=json';
   const t0 = Date.now();
   // Resolve the proxy host first so DNS problems are reported as `dns` rather than a generic timeout.

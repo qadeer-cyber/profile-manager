@@ -28,9 +28,6 @@ jobs:
       - name: Install source dependencies (Windows x64)
         timeout-minutes: 15
         run: npm ci
-      - name: Build Electron native modules for Windows Electron ABI
-        timeout-minutes: 15
-        run: npx electron-builder install-app-deps
       - name: Get Chromium for functional test suites
         timeout-minutes: 15
         run: npx playwright install chromium
@@ -152,33 +149,102 @@ jobs:
           path: test-logs/**
           if-no-files-found: warn
           retention-days: 14
+      # Node suites above loaded the Node prebuild. Confirm that, then delete the
+      # prebuilds so install-app-deps actually compiles the Electron ABI binary.
+      - name: Confirm Node suites loaded the Node prebuild
+        timeout-minutes: 5
+        run: node scripts/confirm-node-native.mjs
+      - name: Build Electron native modules for the Electron ABI
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf node_modules/better-sqlite3/prebuilds
+          npx electron-builder install-app-deps
+          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          ls -l node_modules/better-sqlite3/build/Release/better_sqlite3.node
       - name: Electron desktop smoke on Windows
         timeout-minutes: 15
         run: npm run test:electron
-      # Installer builds stay in the workflow but do not run on push. Opt in with a
-      # workflow_dispatch input when validation is ready for packaging.
-      - name: Build standard Windows setup and portable EXEs
+      # One deliverable, and only when explicitly dispatched: the offline NSIS setup.
+      # test/electron-smoke.js stays the standard-build smoke and is not used here.
+      - name: Build offline Windows setup EXE
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
-        run: npm run dist:win
-      - name: Generate standard build SHA-256 manifests
+        timeout-minutes: 45
+        run: |
+          node -e "const m=require('./server/chromium-manifest.json'); console.log('revision', m.revision); console.log('browserVersion', m.browserVersion);"
+          node scripts/fetch-bundled-chromium.mjs win64
+          npx electron-builder --config electron-builder.offline.cjs --win nsis --x64
+      - name: Record SHA-256 of the single offline setup EXE
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         shell: pwsh
         run: |
-          Get-ChildItem release -Filter '*.exe' | ForEach-Object { "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() )  $($_.Name)" } | Set-Content release/SHA256-standard.txt
-      - name: Packaged standard installer runtime smoke on Windows Server 2022
+          $exes = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-offline*Setup*.exe' })
+          if ($exes.Count -ne 1) {
+            Write-Error "expected exactly one *-offline*Setup*.exe, found $($exes.Count): $($exes.Name -join ', ')"
+            exit 1
+          }
+          $hash = (Get-FileHash $exes[0].FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exes[0].Name)" | Set-Content -Encoding ascii release/SHA256-offline-setup.txt
+          Get-Content release/SHA256-offline-setup.txt
+      - name: Block Playwright download hosts
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         shell: pwsh
         run: |
-          $env:PM_APP_EXE = (Resolve-Path 'release/win-unpacked/Profile Manager.exe').Path
-          node test/electron-smoke.js
-      - name: Build offline Windows setup and portable EXEs
+          $hostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = @('cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'playwright.azureedge.net')
+          $current = @(Get-Content $hostsFile)
+          foreach ($name in $names) {
+            if (-not ($current | Where-Object { $_ -match [regex]::Escape($name) })) {
+              Add-Content -Path $hostsFile -Value "127.0.0.1 $name"
+            }
+          }
+          Select-String -Path $hostsFile -Pattern 'playwright'
+      - name: Silent per-user install of the offline setup
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
-        run: npm run dist:win:offline
-      - name: Generate complete SHA-256 manifest
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 15
         shell: pwsh
         run: |
-          Get-ChildItem release -Filter '*.exe' | Sort-Object Name | ForEach-Object { "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() )  $($_.Name)" } | Set-Content release/SHA256SUMS-WindowsNative.txt
+          $setup = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-offline*Setup*.exe' })
+          if ($setup.Count -ne 1) { Write-Error "expected exactly one setup exe"; exit 1 }
+          $p = Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "installer exited $($p.ExitCode)"; exit 1 }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager\Profile Manager.exe'
+          $desktop = Join-Path $env:USERPROFILE 'Desktop\Profile Manager.lnk'
+          $start = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Profile Manager.lnk'
+          foreach ($path in @($app, $desktop, $start)) {
+            if (-not (Test-Path -LiteralPath $path)) { Write-Error "missing $path"; exit 1 }
+            Write-Output "present $path"
+          }
+      - name: Offline smoke of the installed app
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 20
+        env:
+          PM_AUTOMATION_DEFAULT: "1"
+          PM_PROXY_LOOPBACK: "1"
+          PM_PROXY_TEST_INSECURE_TLS: "1"
+          PLAYWRIGHT_DOWNLOAD_HOST: "http://127.0.0.1:9"
+        run: node test/electron-smoke-offline.js
+      - name: Silent uninstall keeps profile data
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager'
+          $un = Join-Path $installDir 'Uninstall Profile Manager.exe'
+          $app = Join-Path $installDir 'Profile Manager.exe'
+          $db = Join-Path $env:APPDATA 'Profile Manager\data\profiles.db'
+          if (-not (Test-Path -LiteralPath $un)) { Write-Error "uninstaller missing: $un"; exit 1 }
+          if (-not (Test-Path -LiteralPath $db)) { Write-Error "profile database missing before uninstall: $db"; exit 1 }
+          # _?= keeps NSIS from respawning, so -Wait covers the real uninstall. It must be last and unquoted.
+          $p = Start-Process -FilePath $un -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "uninstaller exited $($p.ExitCode)"; exit 1 }
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Test-Path -LiteralPath $app) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (Test-Path -LiteralPath $app) { Write-Error "installed exe still present: $app"; exit 1 }
+          if (-not (Test-Path -LiteralPath $db)) { Write-Error "profile data was removed: $db"; exit 1 }
+          Write-Output "removed $app"
+          Write-Output "kept $db"
       - name: Upload binaries and verification reports
         if: always()
         uses: actions/upload-artifact@v4

@@ -13,16 +13,32 @@ if (s.reencrypted) console.log(`Re-encrypted ${s.reencrypted} proxy secret(s)`);
 
 // Graceful shutdown. On Windows, process.kill(pid, 'SIGTERM') is TerminateProcess and these
 // signal handlers never run, so parents must also send an IPC shutdown message (fork).
-// Protocol: {type:'shutdown'} or the string 'shutdown' -> stopAll (s.close) -> {type:'shutdown-done'} -> exit 0.
+// Protocol: {type:'shutdown'} or the string 'shutdown' -> stopAll (s.close) ->
+// wal_checkpoint and db.close both succeed -> {type:'shutdown-done'} -> exit 0.
+// If the checkpoint or db.close throws: log, exit 1, and send no ack.
 let closing = false;
 const SHUTDOWN_MS = Number(process.env.PM_SHUTDOWN_TIMEOUT_MS || 20000);
+const SHUTDOWN_ACK_SEND_MS = 5000;
 function notifyShutdownDone() {
   return new Promise(resolve => {
     if (typeof process.send !== 'function') return resolve();
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    // process.send returns false under backpressure, but the callback still runs
+    // once the write finishes. Resolving on false exits before the parent can
+    // read the ack. If the callback never comes, give up so the harness records
+    // a missing ack instead of hanging.
+    const timer = setTimeout(finish, SHUTDOWN_ACK_SEND_MS);
     try {
-      const queued = process.send({ type: 'shutdown-done' }, () => resolve());
-      if (!queued) resolve();
-    } catch { resolve(); }
+      process.send({ type: 'shutdown-done' }, () => finish());
+    } catch {
+      finish();
+    }
   });
 }
 async function shutdown() {
@@ -35,13 +51,29 @@ async function shutdown() {
   force.unref();
   try {
     await s.close(); // engine.shutdown() closes every browser context, then the HTTP server
-    try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
-    try { db.close(); } catch {}
+    let checkpointOk = false;
+    try {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+      checkpointOk = true;
+    } catch (err) {
+      console.error(err);
+    }
+    let closedOk = false;
+    try {
+      db.close();
+      closedOk = true;
+    } catch (err) {
+      console.error(err);
+    }
+    if (!checkpointOk || !closedOk) {
+      process.exit(1);
+      return;
+    }
     await notifyShutdownDone();
     process.exit(0);
   } catch (err) {
     console.error(err);
-    try { db.close(); } catch {}
+    try { db.close(); } catch (closeErr) { console.error(closeErr); }
     process.exit(1);
   }
 }

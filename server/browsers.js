@@ -12,6 +12,7 @@ import { db, userDataDir, getSetting } from './db.js';
 import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
+import { automationDefault, proxyLoopback } from './testflags.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -46,9 +47,9 @@ async function pipeBrowserPid(ctx) {
     return r.processInfo?.find(p => p.type === 'browser')?.id ?? null;
   } catch { return null; }
 }
-// Automation is opt-in (missing => off). PM_AUTOMATION_DEFAULT=1 is a TEST-ONLY switch that forces it on
-// for every launch (used by the legacy CDP e2e suites via scripts/run-with-automation.mjs). Never set it in production.
-export const automationEnabled = opts => !!opts.automation || process.env.PM_AUTOMATION_DEFAULT === '1';
+// Automation is opt-in (missing => off). A dev-only default can force it on for every launch
+// (legacy CDP e2e). Packaged apps ignore that switch; an explicit opts.automation still enables CDP.
+export const automationEnabled = opts => !!opts.automation || automationDefault();
 // Ask the browser for its own pid over CDP (works on every OS).
 export function cdpBrowserPid(ws) {
   return new Promise(resolve => {
@@ -148,7 +149,7 @@ async function doLaunch(p, opts = {}) {
         relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
         launchOpts.proxy = { server: relayUrl };
       } else launchOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
-      if (process.env.PM_PROXY_LOOPBACK === '1') args.push('--proxy-bypass-list=<-loopback>'); // tests only
+      if (proxyLoopback()) args.push('--proxy-bypass-list=<-loopback>'); // dev/test only; packaged builds ignore it
     }
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {

@@ -5,9 +5,12 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { applyPackagedFlag } from '../server/testflags.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
+// Overwrite any inherited value before the backend is loaded (dynamic import in startBackend).
+applyPackagedFlag(process.env, app.isPackaged);
 
 if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
@@ -125,6 +128,11 @@ app.whenReady().then(async () => {
 
 // ---- smoke-test mode (used by test/electron-smoke.js under xvfb) ----
 async function runSmoke() {
+  if (process.env.PM_SMOKE_OFFLINE === '1') {
+    const { runOfflineSmoke } = await import('./offline-smoke.js');
+    await runOfflineSmoke({ backend, win, uiToken, userData, log });
+    return;
+  }
   const H = { 'Content-Type': 'application/json', 'X-UI-Token': uiToken };
   const call = (m, u, b) => fetch(backend.url + u, { method: m, headers: H, body: b && JSON.stringify(b) }).then(r => r.json().catch(() => null).then(d => ({ s: r.status, d })));
   const r = {};

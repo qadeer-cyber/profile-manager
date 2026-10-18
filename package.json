@@ -9,7 +9,7 @@
     "app": "npm run build && electron .",
     "dev:api": "node server/index.js",
     "dev:web": "vite web",
-    "test:unit": "node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js",
+    "test:unit": "node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js test/shutdown-ack.test.js test/testflags.test.js",
     "test:api": "node scripts/run-with-automation.mjs test/api.e2e.js",
     "test:engine": "node scripts/run-with-automation.mjs test/engine.e2e.js",
     "test:electron": "npm run build && node test/electron-smoke.js",
@@ -18,7 +18,7 @@
     "dist:linux": "npm run build && electron-builder --linux dir",
     "test:proxies": "node scripts/run-with-automation.mjs test/proxy-library.e2e.js",
     "test:desktop": "node --test test/desktop-unit.test.js && node test/desktop-engine.e2e.js",
-    "dist:win:offline": "npm run build && node scripts/fetch-bundled-chromium.mjs win64 && electron-builder --config electron-builder.offline.cjs --win nsis portable --x64",
+    "dist:win:offline": "npm run build && node scripts/fetch-bundled-chromium.mjs win64 && electron-builder --config electron-builder.offline.cjs --win nsis --x64",
     "chromium:manifest": "node scripts/update-chromium-manifest.mjs",
     "test:security": "node test/security.e2e.js && node test/security-migration.e2e.js",
     "test:ui": "node test/ui-smoke.run.js"
@@ -61,7 +61,8 @@
       "package.json",
       "!**/*.map",
       "!node_modules/better-sqlite3/{deps,src,binding.gyp}/**",
-      "!node_modules/better-sqlite3/binding.gyp"
+      "!node_modules/better-sqlite3/binding.gyp",
+      "!node_modules/better-sqlite3/prebuilds/**"
     ],
     "asar": true,
     "asarUnpack": [

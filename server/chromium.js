@@ -19,6 +19,12 @@ export function platformKey(platform = process.platform, arch = process.arch) {
   if (platform === 'linux' && arch === 'x64') return 'linux64';
   return null;
 }
+// The bundled offline tree is read-only. Downloads must not write into it.
+export function isResourcesBrowsers(root) {
+  const parts = path.resolve(String(root || '')).split(/[\\/]+/).filter(Boolean);
+  if (parts.length < 2) return false;
+  return parts.at(-1).toLowerCase() === 'browsers' && parts.at(-2).toLowerCase() === 'resources';
+}
 export function browsersRoot(env = process.env, platform = process.platform) {
   if (env.PLAYWRIGHT_BROWSERS_PATH && env.PLAYWRIGHT_BROWSERS_PATH !== '0') return path.resolve(env.PLAYWRIGHT_BROWSERS_PATH);
   if (platform === 'win32') return path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'ms-playwright');
@@ -120,6 +126,7 @@ export function extractZip(file, destDir) {
 
 // Download + verify + extract one browser. `download(url, dest)` is injectable for tests.
 export async function installOne(name, { root = browsersRoot(), manifest = MANIFEST, key = platformKey(), download = httpsDownload, onProgress, log = () => {} } = {}) {
+  if (isResourcesBrowsers(root)) throw err('BAD_INSTALL_ROOT', 'Refusing to install Chromium into resources/browsers');
   const entry = manifest.builds[name]?.[key];
   if (!entry) throw err('UNSUPPORTED_PLATFORM', `No pinned ${name} build for ${process.platform}-${process.arch}`);
   const url = assertOfficialUrl(new URL(entry.path, manifest.baseUrl).href).href;
