@@ -61,16 +61,44 @@ export function cdpBrowserPid(ws) {
   });
 }
 
+// True only when pid is alive AND its command line still names this profile (PID-reuse guard).
+async function browserOwnedByProfile(pid, dir) {
+  return !!(pid && isAlive(pid) && await pidMatches(pid, dir));
+}
+// Another process still holds the lock. isAlive can be a reused pid; the browser command-line
+// check below is what decides whether a recorded browser pid may be killed or the row dropped.
+function otherLiveOwner(lock) {
+  return !!(lock && !lock.corrupt && lock.ownerPid !== process.pid && !isStale(lock));
+}
+// A running row is stale when its pid is dead or fails the command-line check. A live matching
+// browser is never overwritten. An active lock held by another live owner is left untouched
+// (acquireLock reports 409). Returns true when the caller may insert a new row.
+async function dropStaleRunningRow(id, dir) {
+  const row = db.prepare('SELECT * FROM running WHERE id=?').get(id);
+  if (!row) return true;
+  if (otherLiveOwner(readLock(dir))) return false;
+  if (await browserOwnedByProfile(row.pid, dir)) {
+    throw httpErr(409, `Profile is already running (pid ${row.pid}).`, 'ALREADY_RUNNING');
+  }
+  db.prepare('DELETE FROM running WHERE id=?').run(id);
+  return true;
+}
+
 // Startup recovery: clean up browsers/locks left by a previous (crashed or killed) app session.
+// Rows and locks are removed only when the recorded pid is dead or fails the command-line check,
+// or after that browser was actually killed. A still-matching browser and any lock held by a live
+// owner are preserved.
 export async function recoverAfterRestart() {
   const report = { killed: 0, cleared: 0, staleLocks: 0, skipped: 0 };
   for (const r of db.prepare('SELECT * FROM running').all()) {
     let dir; try { dir = userDataDir(r.id); } catch { db.prepare('DELETE FROM running WHERE id=?').run(r.id); continue; }
     const lock = readLock(dir);
-    if (lock && !lock.corrupt && lock.ownerPid !== process.pid && !isStale(lock)) { report.skipped++; continue; } // owned by another live instance
+    if (otherLiveOwner(lock)) { report.skipped++; continue; }
     const pid = r.pid || lock?.browserPid;
-    // PID-reuse guard: kill only if that pid's command line still names this profile's user-data-dir.
-    if (pid && isAlive(pid) && await pidMatches(pid, dir)) { if (await killTree(pid, { expect: dir })) report.killed++; }
+    if (await browserOwnedByProfile(pid, dir)) {
+      if (await killTree(pid, { expect: dir })) report.killed++;
+      else if (await browserOwnedByProfile(pid, dir)) { report.skipped++; continue; }
+    }
     clearChromeLocks(dir); releaseLock(dir, lock?.ownerPid);
     db.prepare('DELETE FROM running WHERE id=?').run(r.id);
     report.cleared++;
@@ -79,10 +107,13 @@ export async function recoverAfterRestart() {
   const root = path.dirname(userDataDir('00000000-0000-0000-0000-000000000000'));
   for (const id of fs.existsSync(root) ? fs.readdirSync(root) : []) {
     const dir = path.join(root, id), lock = readLock(dir);
-    if (lock && isStale(lock)) {
-      if (lock.browserPid && isAlive(lock.browserPid) && await pidMatches(lock.browserPid, dir)) { if (await killTree(lock.browserPid, { expect: dir })) report.killed++; }
-      fs.rmSync(path.join(dir, LOCK_NAME), { force: true }); clearChromeLocks(dir); report.staleLocks++;
+    if (!lock || !isStale(lock)) continue;
+    const pid = lock.browserPid;
+    if (await browserOwnedByProfile(pid, dir)) {
+      if (await killTree(pid, { expect: dir })) report.killed++;
+      else if (await browserOwnedByProfile(pid, dir)) continue;
     }
+    fs.rmSync(path.join(dir, LOCK_NAME), { force: true }); clearChromeLocks(dir); report.staleLocks++;
   }
   return report;
 }
@@ -100,6 +131,7 @@ async function doLaunch(p, opts = {}) {
   const dir = userDataDir(p.id);
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
+  await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null;
   try {
@@ -129,7 +161,12 @@ async function doLaunch(p, opts = {}) {
     updateLock(dir, { browserPid, cdpPort });
     const entry = { ctx, relayUrl, browserPid, stopping: false };
     live.set(p.id, entry);
-    db.prepare('INSERT OR REPLACE INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
+    try {
+      db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
+    } catch (e) {
+      live.delete(p.id);
+      throw e;
+    }
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
@@ -184,5 +221,6 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
 }
 export async function shutdown() {
   stopHealthMonitor();
-  await Promise.all(runningIds().map(id => stop(id)));
+  // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
+  await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
 }
