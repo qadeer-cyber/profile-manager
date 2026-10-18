@@ -73,7 +73,7 @@ test('installOne: good archive is verified, extracted and marked complete', asyn
   const r = await cr.installOne('chromium', { root, manifest, key: 'linux64', download: async (u, d) => { fetched = u; fs.copyFileSync(good, d); } });
   assert.equal(fetched, 'https://cdn.playwright.dev/builds/cft/1.0/linux64/chrome-linux64.zip');
   assert.ok(fs.existsSync(path.join(r.dir, 'chrome-linux64/chrome')));
-  assert.ok(fs.statSync(path.join(r.dir, 'chrome-linux64/chrome')).mode & 0o100, 'exec bit kept');
+  if (process.platform !== 'win32') assert.ok(fs.statSync(path.join(r.dir, 'chrome-linux64/chrome')).mode & 0o100, 'exec bit kept');
   assert.ok(fs.existsSync(path.join(r.dir, 'INSTALLATION_COMPLETE')));
   assert.equal(cr.chromiumStatus({ root, manifest, key: 'linux64' }).chromium.verified, true);
 });
@@ -98,5 +98,5 @@ test('extractZip: zip-slip entries are refused', async () => {
 test('chromiumMissingError: structured CHROMIUM_MISSING for an empty browsers dir, null when present', () => {
   const e = cr.chromiumMissingError(true, false, { root: path.join(tmp, 'empty'), key: 'linux64' });
   assert.equal(e.code, 'CHROMIUM_MISSING'); assert.equal(e.status, 503); assert.equal(e.browser, 'chromium-headless-shell');
-  assert.equal(cr.chromiumMissingError(false, false, { root: cr.browsersRoot(), key: 'linux64' }), null);
+  assert.equal(cr.chromiumMissingError(false, false, { root: cr.browsersRoot(), key: 'linux64', platform: 'linux' }), null);
 });
