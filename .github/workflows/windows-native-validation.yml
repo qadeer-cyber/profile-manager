@@ -3,6 +3,8 @@ on:
   workflow_dispatch:
   push:
     branches: [windows-validation]
+  pull_request:
+    branches: [main]
 
 jobs:
   windows-build:
