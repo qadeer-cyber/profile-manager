@@ -94,7 +94,7 @@ test('killTree (POSIX): escalates to SIGKILL when SIGTERM is ignored', async () 
 });
 test('killTree (Windows path): calls taskkill /PID <pid> /T /F', async () => {
   let call;
-  const ok = await killTree(1234, { platform: 'win32', exec: (cmd, args, opts, cb) => { call = [cmd, args]; cb(null); } });
+  const ok = await killTree(1234, { platform: 'win32', alive: () => false, exec: (cmd, args, opts, cb) => { call = [cmd, args]; cb(null); } });
   assert.ok(ok); assert.deepEqual(call, ['taskkill', ['/PID', '1234', '/T', '/F']]);
 });
 test('isAlive: false for a dead pid', () => assert.equal(isAlive(2 ** 22 + 12345), false));
