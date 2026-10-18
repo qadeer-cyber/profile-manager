@@ -1,0 +1,257 @@
+name: Windows native build and validation
+on:
+  workflow_dispatch:
+    inputs:
+      build_installers:
+        description: Build Windows installers
+        type: boolean
+        default: false
+  push:
+    branches: [windows-validation]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install source dependencies (Windows x64)
+        timeout-minutes: 15
+        run: npm ci
+      - name: Get Chromium for functional test suites
+        timeout-minutes: 15
+        run: npx playwright install chromium
+      - name: Build web UI
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run build 2>&1 | tee test-logs/build.log
+      - name: Unit tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:unit 2>&1 | tee test-logs/unit.log
+      - name: Desktop unit tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          node --test test/desktop-unit.test.js 2>&1 | tee test-logs/desktop-unit.log
+      - name: Desktop engine tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          node test/desktop-engine.e2e.js 2>&1 | tee test-logs/desktop-engine.log
+      - name: API integration tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:api 2>&1 | tee test-logs/api.log
+      - name: Engine integration tests
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:engine 2>&1 | tee test-logs/engine.log
+      - name: Proxy library tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:proxies 2>&1 | tee test-logs/proxies.log
+      - name: Security tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:security 2>&1 | tee test-logs/security.log
+      - name: UI smoke
+        timeout-minutes: 15
+        shell: bash
+        env:
+          # ui-smoke.mjs: 5 min watchdog, screenshots in the OS temp dir unless OUT_DIR is set.
+          PM_UI_TIMEOUT_MS: "300000"
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:ui 2>&1 | tee test-logs/ui.log
+      - name: Windows diagnostics
+        if: always()
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set +e
+          echo "=== tasklist chrome / node ==="
+          MSYS_NO_PATHCONV=1 tasklist /FI "IMAGENAME eq chrome.exe"
+          MSYS_NO_PATHCONV=1 tasklist /FI "IMAGENAME eq node.exe"
+          MSYS_NO_PATHCONV=1 tasklist /FI "IMAGENAME eq chromium.exe"
+          echo "=== running rows and .pm-lock files ==="
+          node --input-type=module <<'EOF'
+          import fs from 'fs';
+          import os from 'os';
+          import path from 'path';
+          import Database from 'better-sqlite3';
+          function walk(dir, depth, out) {
+            if (depth < 0) return;
+            let ents;
+            try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+            for (const e of ents) {
+              if (e.name === 'node_modules' || e.name === '.git') continue;
+              const p = path.join(dir, e.name);
+              if (e.isDirectory()) walk(p, depth - 1, out);
+              else if (e.name === '.pm-lock' || e.name === 'profiles.db') out.push(p);
+            }
+          }
+          const hits = [];
+          walk(os.tmpdir(), 4, hits);
+          walk(process.cwd(), 3, hits);
+          console.log('matches', hits.length);
+          for (const p of hits.slice(0, 80)) {
+            console.log('FILE', p);
+            if (p.endsWith('.pm-lock')) {
+              try { console.log(fs.readFileSync(p, 'utf8')); } catch (e) { console.log(String(e)); }
+            } else {
+              try {
+                const db = new Database(p, { readonly: true, fileMustExist: true });
+                console.log('running', JSON.stringify(db.prepare('SELECT id, pid, cdp_port FROM running').all()));
+                db.close();
+              } catch (e) { console.log('db', e.message); }
+            }
+          }
+          EOF
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-logs
+          path: test-logs/**
+          if-no-files-found: warn
+          retention-days: 14
+      # Node suites above loaded the Node prebuild. Confirm that, then delete the
+      # prebuilds so install-app-deps actually compiles the Electron ABI binary.
+      - name: Confirm Node suites loaded the Node prebuild
+        timeout-minutes: 5
+        run: node scripts/confirm-node-native.mjs
+      - name: Build Electron native modules for the Electron ABI
+        timeout-minutes: 30
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf node_modules/better-sqlite3/prebuilds
+          npx electron-builder install-app-deps
+          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
+          ls -l node_modules/better-sqlite3/build/Release/better_sqlite3.node
+      - name: Electron desktop smoke on Windows
+        timeout-minutes: 15
+        run: npm run test:electron
+      # One deliverable, and only when explicitly dispatched: the offline NSIS setup.
+      # test/electron-smoke.js stays the standard-build smoke and is not used here.
+      - name: Build offline Windows setup EXE
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 45
+        run: |
+          node -e "const m=require('./server/chromium-manifest.json'); console.log('revision', m.revision); console.log('browserVersion', m.browserVersion);"
+          node scripts/fetch-bundled-chromium.mjs win64
+          npx electron-builder --config electron-builder.offline.cjs --win nsis --x64
+      - name: Record SHA-256 of the single offline setup EXE
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        shell: pwsh
+        run: |
+          $exes = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-offline*Setup*.exe' })
+          if ($exes.Count -ne 1) {
+            Write-Error "expected exactly one *-offline*Setup*.exe, found $($exes.Count): $($exes.Name -join ', ')"
+            exit 1
+          }
+          $hash = (Get-FileHash $exes[0].FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exes[0].Name)" | Set-Content -Encoding ascii release/SHA256-offline-setup.txt
+          Get-Content release/SHA256-offline-setup.txt
+      - name: Block Playwright download hosts
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        shell: pwsh
+        run: |
+          $hostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = @('cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'playwright.azureedge.net')
+          $current = @(Get-Content $hostsFile)
+          foreach ($name in $names) {
+            if (-not ($current | Where-Object { $_ -match [regex]::Escape($name) })) {
+              Add-Content -Path $hostsFile -Value "127.0.0.1 $name"
+            }
+          }
+          Select-String -Path $hostsFile -Pattern 'playwright'
+      - name: Silent per-user install of the offline setup
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $setup = @(Get-ChildItem release -File | Where-Object { $_.Name -like '*-offline*Setup*.exe' })
+          if ($setup.Count -ne 1) { Write-Error "expected exactly one setup exe"; exit 1 }
+          $p = Start-Process -FilePath $setup[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "installer exited $($p.ExitCode)"; exit 1 }
+          $app = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager\Profile Manager.exe'
+          $desktop = Join-Path $env:USERPROFILE 'Desktop\Profile Manager.lnk'
+          $start = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Profile Manager.lnk'
+          foreach ($path in @($app, $desktop, $start)) {
+            if (-not (Test-Path -LiteralPath $path)) { Write-Error "missing $path"; exit 1 }
+            Write-Output "present $path"
+          }
+      - name: Offline smoke of the installed app
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 20
+        env:
+          PM_AUTOMATION_DEFAULT: "1"
+          PM_PROXY_LOOPBACK: "1"
+          PM_PROXY_TEST_INSECURE_TLS: "1"
+          PLAYWRIGHT_DOWNLOAD_HOST: "http://127.0.0.1:9"
+        run: node test/electron-smoke-offline.js
+      - name: Silent uninstall keeps profile data
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager'
+          $un = Join-Path $installDir 'Uninstall Profile Manager.exe'
+          $app = Join-Path $installDir 'Profile Manager.exe'
+          $db = Join-Path $env:APPDATA 'Profile Manager\data\profiles.db'
+          if (-not (Test-Path -LiteralPath $un)) { Write-Error "uninstaller missing: $un"; exit 1 }
+          if (-not (Test-Path -LiteralPath $db)) { Write-Error "profile database missing before uninstall: $db"; exit 1 }
+          # _?= keeps NSIS from respawning, so -Wait covers the real uninstall. It must be last and unquoted.
+          $p = Start-Process -FilePath $un -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Write-Error "uninstaller exited $($p.ExitCode)"; exit 1 }
+          $deadline = (Get-Date).AddSeconds(30)
+          while ((Test-Path -LiteralPath $app) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (Test-Path -LiteralPath $app) { Write-Error "installed exe still present: $app"; exit 1 }
+          if (-not (Test-Path -LiteralPath $db)) { Write-Error "profile data was removed: $db"; exit 1 }
+          Write-Output "removed $app"
+          Write-Output "kept $db"
+      - name: Upload binaries and verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-manager-windows-native-artifacts
+          path: |
+            release/*.exe
+            release/*SHA256*.txt
+          if-no-files-found: warn
+          retention-days: 14
