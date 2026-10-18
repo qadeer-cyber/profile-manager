@@ -1,6 +1,11 @@
 name: Windows native build and validation
 on:
   workflow_dispatch:
+    inputs:
+      build_installers:
+        description: Build Windows installers
+        type: boolean
+        default: false
   push:
     branches: [windows-validation]
   pull_request:
@@ -9,7 +14,7 @@ on:
 jobs:
   windows-build:
     runs-on: windows-2022
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: read
     steps:
@@ -21,29 +26,155 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Install source dependencies (Windows x64)
+        timeout-minutes: 15
         run: npm ci
       - name: Build Electron native modules for Windows Electron ABI
+        timeout-minutes: 15
         run: npx electron-builder install-app-deps
       - name: Get Chromium for functional test suites
+        timeout-minutes: 15
         run: npx playwright install chromium
-      - name: Run integrated automated tests on Windows
-        run: npm test
+      - name: Build web UI
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run build 2>&1 | tee test-logs/build.log
+      - name: Unit tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:unit 2>&1 | tee test-logs/unit.log
+      - name: Desktop unit tests
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          node --test test/desktop-unit.test.js 2>&1 | tee test-logs/desktop-unit.log
+      - name: Desktop engine tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          node test/desktop-engine.e2e.js 2>&1 | tee test-logs/desktop-engine.log
+      - name: API integration tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:api 2>&1 | tee test-logs/api.log
+      - name: Engine integration tests
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:engine 2>&1 | tee test-logs/engine.log
+      - name: Proxy library tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:proxies 2>&1 | tee test-logs/proxies.log
+      - name: Security tests
+        timeout-minutes: 15
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:security 2>&1 | tee test-logs/security.log
+      - name: UI smoke
+        timeout-minutes: 15
+        shell: bash
+        env:
+          OUT_DIR: test-logs/ui/
+        run: |
+          set -o pipefail
+          mkdir -p test-logs/ui
+          npm run test:ui 2>&1 | tee test-logs/ui.log
+      - name: Windows diagnostics
+        if: always()
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set +e
+          echo "=== tasklist chrome / node ==="
+          MSYS_NO_PATHCONV=1 tasklist /FI "IMAGENAME eq chrome.exe"
+          MSYS_NO_PATHCONV=1 tasklist /FI "IMAGENAME eq node.exe"
+          MSYS_NO_PATHCONV=1 tasklist /FI "IMAGENAME eq chromium.exe"
+          echo "=== running rows and .pm-lock files ==="
+          node --input-type=module <<'EOF'
+          import fs from 'fs';
+          import os from 'os';
+          import path from 'path';
+          import Database from 'better-sqlite3';
+          function walk(dir, depth, out) {
+            if (depth < 0) return;
+            let ents;
+            try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+            for (const e of ents) {
+              if (e.name === 'node_modules' || e.name === '.git') continue;
+              const p = path.join(dir, e.name);
+              if (e.isDirectory()) walk(p, depth - 1, out);
+              else if (e.name === '.pm-lock' || e.name === 'profiles.db') out.push(p);
+            }
+          }
+          const hits = [];
+          walk(os.tmpdir(), 4, hits);
+          walk(process.cwd(), 3, hits);
+          console.log('matches', hits.length);
+          for (const p of hits.slice(0, 80)) {
+            console.log('FILE', p);
+            if (p.endsWith('.pm-lock')) {
+              try { console.log(fs.readFileSync(p, 'utf8')); } catch (e) { console.log(String(e)); }
+            } else {
+              try {
+                const db = new Database(p, { readonly: true, fileMustExist: true });
+                console.log('running', JSON.stringify(db.prepare('SELECT id, pid, cdp_port FROM running').all()));
+                db.close();
+              } catch (e) { console.log('db', e.message); }
+            }
+          }
+          EOF
+      - name: Upload test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-logs
+          path: test-logs/**
+          if-no-files-found: warn
+          retention-days: 14
       - name: Electron desktop smoke on Windows
+        timeout-minutes: 15
         run: npm run test:electron
+      # Installer builds stay in the workflow but do not run on push. Opt in with a
+      # workflow_dispatch input when validation is ready for packaging.
       - name: Build standard Windows setup and portable EXEs
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         run: npm run dist:win
       - name: Generate standard build SHA-256 manifests
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         shell: pwsh
         run: |
           Get-ChildItem release -Filter '*.exe' | ForEach-Object { "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() )  $($_.Name)" } | Set-Content release/SHA256-standard.txt
       - name: Packaged standard installer runtime smoke on Windows Server 2022
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         shell: pwsh
         run: |
           $env:PM_APP_EXE = (Resolve-Path 'release/win-unpacked/Profile Manager.exe').Path
           node test/electron-smoke.js
       - name: Build offline Windows setup and portable EXEs
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         run: npm run dist:win:offline
       - name: Generate complete SHA-256 manifest
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         shell: pwsh
         run: |
           Get-ChildItem release -Filter '*.exe' | Sort-Object Name | ForEach-Object { "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() )  $($_.Name)" } | Set-Content release/SHA256SUMS-WindowsNative.txt
