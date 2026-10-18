@@ -1,7 +1,13 @@
 import { chromium } from 'playwright-core';
-const B = process.env.PM_URL || 'http://127.0.0.1:3917', OUT = process.env.OUT_DIR || './';
+import os from 'node:os'; import path from 'node:path';
+const B = process.env.PM_URL || 'http://127.0.0.1:3917', OUT = (process.env.OUT_DIR || os.tmpdir()) + path.sep;
+// Hard watchdog so a hung step can never stall CI (default 5 min, PM_UI_TIMEOUT_MS overrides).
+const WD = setTimeout(() => { console.log('FAIL watchdog: ui-smoke exceeded time limit'); process.exit(1); }, Number(process.env.PM_UI_TIMEOUT_MS || 300000)); WD.unref();
 const errs = []; let pass = 0, fail = 0;
-const b = await chromium.launch(); const pg = await b.newPage({ viewport: { width: 1360, height: 820 } });
+const b = await chromium.launch();
+const closeAll = async () => { try { await b.close(); } catch {} };
+process.on('uncaughtException', async e => { console.log('FAIL uncaught:', e.message); await closeAll(); process.exit(1); });
+process.on('unhandledRejection', async e => { console.log('FAIL unhandled:', e?.message || e); await closeAll(); process.exit(1); }); const pg = await b.newPage({ viewport: { width: 1360, height: 820 } });
 pg.setDefaultTimeout(8000);
 pg.on('pageerror', e => errs.push('pageerror: ' + e.message)); pg.on('console', m => m.type() === 'error' && errs.push('console: ' + m.text()));
 const step = async (n, fn) => { try { await fn(); pass++; console.log('PASS', n); } catch (e) { fail++; console.log('FAIL', n, '-', e.message.split('\n')[0]); } };
@@ -77,5 +83,5 @@ else await step('CHROMIUM_MISSING 503 on launch shows the Download Chromium bann
   await pg.click('.notice.warn button:has-text("Download Chromium")'); await pg.waitForSelector('h1:has-text("Diagnostics")');
 });
 console.log(`\n${pass} passed, ${fail} failed`); console.log(errs.length ? 'PAGE ERRORS:\n' + errs.join('\n') : 'no page or console errors');
-await b.close();
+await closeAll(); clearTimeout(WD);
 process.exitCode = fail ? 1 : 0;
