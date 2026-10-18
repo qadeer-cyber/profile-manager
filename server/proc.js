@@ -53,10 +53,13 @@ export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = 
   if (expect && !(await pidMatches(pid, expect, { platform, exec, alive }))) return false;
   const waitGone = async ms => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (!alive(pid)) return true; await sleep(100); } return !alive(pid); };
   if (platform === 'win32') {
-    // Exit code 128 = "process not found" (already gone): still verified by polling below.
-    await new Promise(res => exec('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => res()));
+    // A successful taskkill has already obtained and terminated the target; do not
+    // require process.kill(pid, 0), whose Windows semantics can report a stale
+    // PID while the OS reaps the process.
+    const runTaskkill = args => new Promise(resolve => exec('taskkill', args, { windowsHide: true }, err => resolve(!err)));
+    if (await runTaskkill(['/PID', String(pid), '/T', '/F'])) return true;
     if (await waitGone(waitMs)) return true;
-    await new Promise(res => exec('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true }, () => res())); // retry root only
+    if (await runTaskkill(['/PID', String(pid), '/F'])) return true;
     return waitGone(1000);
   }
   if (!alive(pid)) return true;
