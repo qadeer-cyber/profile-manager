@@ -10,8 +10,6 @@ export function isAlive(pid) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const run = (exec, cmd, args) => new Promise(res => exec(cmd, args, { windowsHide: true, timeout: 8000 }, (err, out) => res(err ? null : String(out))));
 
-// Full command line of a live process, or null if it can't be read (dead, no permission, unsupported).
-// Linux: /proc/<pid>/cmdline. Windows: CIM Win32_Process (PowerShell), falling back to wmic. macOS: ps.
 export async function processCommandLine(pid, { platform = process.platform, exec = execFile } = {}) {
   if (!pid || !Number.isInteger(Number(pid))) return null;
   pid = Number(pid);
@@ -32,34 +30,24 @@ export async function processCommandLine(pid, { platform = process.platform, exe
 }
 
 const norm = (s, platform) => { s = String(s).replace(/\\/g, '/').replace(/"/g, ''); return platform === 'win32' ? s.toLowerCase() : s; };
-// PID-reuse guard: true only if pid is alive AND its command line contains `needle`
-// (we pass the profile's user-data-dir). Unreadable command line => false (never kill on doubt).
 export async function pidMatches(pid, needle, opts = {}) {
   const platform = opts.platform || process.platform;
   if (!needle || !(opts.alive || isAlive)(pid)) return false;
   const cl = await processCommandLine(pid, opts);
   if (!cl) return false;
   const hay = norm(cl, platform), n = norm(needle, platform).replace(/\/+$/, '');
-  // Require a boundary after the match so /profiles/abc does not match /profiles/abcd.
   for (let i = hay.indexOf(n); i !== -1; i = hay.indexOf(n, i + 1)) if (!/[\w.-]/.test(hay[i + n.length] || '')) return true;
   return false;
 }
 
-// Kill a process and its children; resolves true only once the root pid is verified gone.
-// Windows: taskkill /T /F (immediate), then poll. POSIX: SIGTERM, SIGKILL after graceMs, then poll.
-// opts.expect: if set, the pid must still match it (see pidMatches) or nothing is killed (returns false).
 export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = process.platform, exec = execFile, alive = isAlive, expect } = {}) {
   if (!pid) return false;
   if (expect && !(await pidMatches(pid, expect, { platform, exec, alive }))) return false;
   const waitGone = async ms => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (!alive(pid)) return true; await sleep(100); } return !alive(pid); };
   if (platform === 'win32') {
-    // A successful taskkill has already obtained and terminated the target; do not
-    // require process.kill(pid, 0), whose Windows semantics can report a stale
-    // PID while the OS reaps the process.
-    const runTaskkill = args => new Promise(resolve => exec('taskkill', args, { windowsHide: true }, err => resolve(!err)));
-    if (await runTaskkill(['/PID', String(pid), '/T', '/F'])) return true;
+    await new Promise(res => exec('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => res()));
     if (await waitGone(waitMs)) return true;
-    if (await runTaskkill(['/PID', String(pid), '/F'])) return true;
+    await new Promise(res => exec('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true }, () => res()));
     return waitGone(1000);
   }
   if (!alive(pid)) return true;
