@@ -12,10 +12,20 @@ if (cleared || staleLocks) console.log(`Recovery: cleared ${cleared} running rec
 if (s.reencrypted) console.log(`Re-encrypted ${s.reencrypted} proxy secret(s)`);
 
 // Graceful shutdown. On Windows, process.kill(pid, 'SIGTERM') is TerminateProcess and these
-// signal handlers never run, so parents must also send an IPC 'shutdown' message (fork).
+// signal handlers never run, so parents must also send an IPC shutdown message (fork).
+// Protocol: {type:'shutdown'} or the string 'shutdown' -> stopAll (s.close) -> {type:'shutdown-done'} -> exit 0.
 let closing = false;
 const SHUTDOWN_MS = Number(process.env.PM_SHUTDOWN_TIMEOUT_MS || 20000);
-function shutdown() {
+function notifyShutdownDone() {
+  return new Promise(resolve => {
+    if (typeof process.send !== 'function') return resolve();
+    try {
+      const queued = process.send({ type: 'shutdown-done' }, () => resolve());
+      if (!queued) resolve();
+    } catch { resolve(); }
+  });
+}
+async function shutdown() {
   if (closing) return;
   closing = true;
   const force = setTimeout(() => {
@@ -23,15 +33,17 @@ function shutdown() {
     process.exit(1);
   }, SHUTDOWN_MS);
   force.unref();
-  s.close().then(() => {
+  try {
+    await s.close(); // engine.shutdown() closes every browser context, then the HTTP server
     try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
     try { db.close(); } catch {}
+    await notifyShutdownDone();
     process.exit(0);
-  }, err => {
+  } catch (err) {
     console.error(err);
     try { db.close(); } catch {}
     process.exit(1);
-  });
+  }
 }
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

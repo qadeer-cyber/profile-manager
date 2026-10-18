@@ -1,7 +1,7 @@
 // Legacy plaintext proxy secrets get re-encrypted at startup; CDP is off unless automation is enabled.
 import { spawn } from 'child_process'; import fs from 'fs'; import os from 'os'; import path from 'path';
 import Database from 'better-sqlite3';
-import { spawnServer, stopServer, armWatchdog, killTracked } from './_ports.mjs';
+import { spawnServer, stopServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(15 * 60 * 1000);
 // Server port: OS-assigned unless PM_TEST_PORT is set (B is re-read after every restart).
 let B; const UI = 'mig-ui';
@@ -42,6 +42,7 @@ try {
 finally {
   if (s) await stopServer(s);
   killTracked();
+  fail += missedGracefulShutdowns();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

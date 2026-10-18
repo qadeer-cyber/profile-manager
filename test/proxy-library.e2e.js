@@ -1,6 +1,6 @@
 // Proxy library integration tests: spawns the server against a temp data dir plus local helper servers
 // (IP-echo target, HTTP CONNECT proxy with/without auth, SOCKS5 with auth, a black hole for timeouts).
-import { listenFree, spawnServer, stopServer, armWatchdog, killTracked } from './_ports.mjs';
+import { listenFree, spawnServer, stopServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(15 * 60 * 1000);
 import http from 'http';
 import net from 'net';
@@ -182,6 +182,7 @@ finally {
   killTracked();
   [echo, open, authed, socks, hole].forEach(s => s.close());
   try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error('cleanup', e); }
+  fail += missedGracefulShutdowns();
   console.log(`\n${pass} passed, ${fail} failed${typeof skipped === 'number' && skipped ? `, ${skipped} skipped` : ''}`);
   process.exit(fail ? 1 : 0);
 }

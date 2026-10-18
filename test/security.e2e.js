@@ -1,5 +1,5 @@
 // Security & isolation tests: API auth, secret handling at rest, profile isolation, relay binding.
-import { listenFree, spawnServer, stopServer, armWatchdog, killTracked } from './_ports.mjs';
+import { listenFree, spawnServer, stopServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(15 * 60 * 1000);
 import fs from 'fs'; import os from 'os'; import path from 'path'; import net from 'net';
 import Database from 'better-sqlite3';
@@ -89,6 +89,7 @@ try {
 finally {
   if (srv) await stopServer(srv);
   killTracked();
+  fail += missedGracefulShutdowns();
   console.log(`\n${pass} passed, ${fail} failed`); if (fail) console.log('Failures:\n - ' + failures.join('\n - '));
   process.exit(fail ? 1 : 0);
 }

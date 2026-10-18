@@ -94,10 +94,11 @@ jobs:
         timeout-minutes: 15
         shell: bash
         env:
-          OUT_DIR: test-logs/ui/
+          # ui-smoke.mjs: 5 min watchdog, screenshots in the OS temp dir unless OUT_DIR is set.
+          PM_UI_TIMEOUT_MS: "300000"
         run: |
           set -o pipefail
-          mkdir -p test-logs/ui
+          mkdir -p test-logs
           npm run test:ui 2>&1 | tee test-logs/ui.log
       - name: Windows diagnostics
         if: always()

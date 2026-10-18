@@ -9,7 +9,7 @@ import path from 'path';
 import { chromium } from 'playwright';
 import Database from 'better-sqlite3';
 import { migrations } from '../server/migrations.js';
-import { listenFree, freePort, spawnServer, stopServer, killServer, armWatchdog, trackProcess, killTracked } from './_ports.mjs';
+import { listenFree, freePort, spawnServer, stopServer, killServer, armWatchdog, trackProcess, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(18 * 60 * 1000);
 const LATEST = migrations.at(-1).version;
 
@@ -200,6 +200,7 @@ finally {
   killTracked();
   target.close();
   try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error(e); }
+  fail += missedGracefulShutdowns();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

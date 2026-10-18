@@ -10,7 +10,7 @@ import os from 'os';
 import path from 'path';
 import { chromium } from 'playwright';
 import Database from 'better-sqlite3';
-import { listenFree, spawnServer, stopServer, killServer, armWatchdog, killTracked } from './_ports.mjs';
+import { listenFree, spawnServer, stopServer, killServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(15 * 60 * 1000);
 
 // Ports: OS-assigned (port 0) unless overridden via PM_TEST_PORT / PM_TEST_TARGET_PORT / PM_TEST_HTTP_PROXY_PORT / PM_TEST_SOCKS_PORT.
@@ -152,6 +152,7 @@ finally {
   killTracked();
   [target, httpProxy, socks].forEach(s => s.close());
   try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error('cleanup', e); }
+  fail += missedGracefulShutdowns();
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

@@ -7,6 +7,10 @@ import { fileURLToPath } from 'url';
 
 const serverScript = path.resolve(fileURLToPath(new URL('../server/index.js', import.meta.url)));
 const tracked = new Set();
+const SHUTDOWN_ACK_MS = 15000;
+let missedShutdownAcks = 0;
+// Suites add this to their failure count. A missing shutdown-done must fail CI even if later asserts pass.
+export function missedGracefulShutdowns() { return missedShutdownAcks; }
 
 function exited(proc) { return !proc || proc.exitCode !== null || proc.signalCode != null; }
 
@@ -85,25 +89,55 @@ export function spawnServer(env, { envName = 'PM_TEST_PORT', port, echo = false,
   });
 }
 
-// Ask the server to shut down (close browsers so storage flushes, clear running rows, drop locks).
-// If it is still alive after timeoutMs, kill the tree.
-export function stopServer(proc, { timeoutMs = 20000 } = {}) {
-  if (exited(proc)) return Promise.resolve();
+function isShutdownDone(m) { return !!(m && typeof m === 'object' && m.type === 'shutdown-done'); }
+
+// Parent sends {type:'shutdown'}. Success is {type:'shutdown-done'} and exit 0 within timeoutMs
+// (15s). Anything else is a test failure, then the tree is killed so cleanup cannot hang.
+export function stopServer(proc, { timeoutMs = SHUTDOWN_ACK_MS } = {}) {
+  if (!proc || exited(proc)) return Promise.resolve(true);
   return new Promise(resolve => {
-    let settled = false, grace, afterKill;
-    const finish = () => { if (settled) return; settled = true; clearTimeout(grace); clearTimeout(afterKill); resolve(); };
-    proc.once('exit', finish);
-    if (exited(proc)) return finish();
+    let settled = false, gotDone = false, grace, afterKill;
+    const finish = (graceful) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(grace);
+      clearTimeout(afterKill);
+      proc.off('message', onMsg);
+      if (!graceful) {
+        missedShutdownAcks++;
+        console.error(gotDone
+          ? `FAIL graceful shutdown: pid ${proc.pid} acknowledged shutdown but did not exit 0 within ${timeoutMs}ms`
+          : `FAIL graceful shutdown: shutdown-done not received from pid ${proc.pid} within ${timeoutMs}ms`);
+        hardKill(proc.pid);
+      }
+      resolve(graceful);
+    };
+    const onMsg = m => {
+      if (isShutdownDone(m)) gotDone = true;
+      if (gotDone && exited(proc) && proc.exitCode === 0) finish(true);
+    };
+    proc.on('message', onMsg);
+    proc.once('exit', code => {
+      const decide = () => { if (!settled) finish(gotDone && code === 0); };
+      // The ack is written just before exit; give IPC a moment to land first.
+      if (gotDone) decide();
+      else setTimeout(decide, 500);
+    });
+    if (exited(proc)) return finish(gotDone && proc.exitCode === 0);
     let sent = false;
     try {
-      if (typeof proc.send === 'function' && proc.connected) { proc.send('shutdown'); sent = true; }
+      if (typeof proc.send === 'function' && proc.connected) { proc.send({ type: 'shutdown' }); sent = true; }
     } catch { sent = false; }
-    if (!sent) hardKill(proc.pid);
-    grace = setTimeout(() => {
+    const killThenFail = () => {
       if (settled) return;
       hardKill(proc.pid);
-      afterKill = setTimeout(finish, 5000);
-    }, sent ? timeoutMs : 5000);
+      afterKill = setTimeout(() => finish(false), 5000);
+    };
+    if (!sent) { killThenFail(); return; }
+    grace = setTimeout(() => {
+      if (settled) return;
+      if (!(gotDone && exited(proc) && proc.exitCode === 0)) killThenFail();
+    }, timeoutMs);
   });
 }
 
