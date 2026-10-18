@@ -1,7 +1,9 @@
 // Offline NSIS install smoke. Separate from test/electron-smoke.js (that file is the standard build).
 // Launch the per-user installed exe. Do not set PM_BROWSERS_PATH or PLAYWRIGHT_BROWSERS_PATH.
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
+import crypto from 'crypto';
 import fs from 'fs';
+import https from 'https';
 import os from 'os';
 import path from 'path';
 
@@ -16,7 +18,7 @@ const bundledPrefix = path.join(process.env.LOCALAPPDATA, 'Programs', 'Profile M
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); };
 
-function childEnv(phase) {
+function childEnv(phase, tlsPort) {
   const env = { ...process.env };
   delete env.PM_BROWSERS_PATH;
   delete env.PLAYWRIGHT_BROWSERS_PATH;
@@ -28,13 +30,14 @@ function childEnv(phase) {
   env.PM_PROXY_LOOPBACK = '1';
   env.PM_PROXY_TEST_INSECURE_TLS = '1';
   env.PLAYWRIGHT_DOWNLOAD_HOST = 'http://127.0.0.1:9';
+  env.PM_SMOKE_TLS_PORT = String(tlsPort);
   env.PM_SMOKE_RESULT = path.join(os.tmpdir(), `pm-offline-${phase}.json`);
   env.ELECTRON_DISABLE_SECURITY_WARNINGS = '0';
   return env;
 }
 
-function runPhase(phase) {
-  const env = childEnv(phase);
+function runPhase(phase, tlsPort) {
+  const env = childEnv(phase, tlsPort);
   console.log(`phase ${phase}: PM_BROWSERS_PATH=${env.PM_BROWSERS_PATH || '(unset)'} PLAYWRIGHT_BROWSERS_PATH=${env.PLAYWRIGHT_BROWSERS_PATH || '(unset)'} PM_AUTOMATION_DEFAULT=${env.PM_AUTOMATION_DEFAULT} PM_PROXY_LOOPBACK=${env.PM_PROXY_LOOPBACK} PM_PROXY_TEST_INSECURE_TLS=${env.PM_PROXY_TEST_INSECURE_TLS}`);
   fs.rmSync(env.PM_SMOKE_RESULT, { force: true });
   return new Promise(resolve => {
@@ -69,11 +72,41 @@ function chromiumDownloadDirs(dir) {
   return hits;
 }
 
+function materializeCert(dir) {
+  const key = path.join(dir, 'key.pem');
+  const cert = path.join(dir, 'cert.pem');
+  const pfx = path.join(dir, 'cert.pfx');
+  try {
+    execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', key, '-out', cert, '-days', '1', '-nodes', '-subj', '/CN=127.0.0.1'], { stdio: 'pipe' });
+    return { key: fs.readFileSync(key), cert: fs.readFileSync(cert) };
+  } catch {
+    console.log('openssl unavailable; generating a certificate with New-SelfSignedCertificate');
+  }
+  const pass = crypto.randomBytes(16).toString('hex');
+  execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', [
+    "$ErrorActionPreference = 'Stop'",
+    "$cert = New-SelfSignedCertificate -DnsName '127.0.0.1' -CertStoreLocation 'Cert:\\CurrentUser\\My' -KeyExportPolicy Exportable -NotAfter (Get-Date).AddDays(1)",
+    '$pwd = ConvertTo-SecureString -String $env:PM_PFX_PASS -AsPlainText -Force',
+    'Export-PfxCertificate -Cert $cert -FilePath $env:PM_PFX_PATH -Password $pwd | Out-Null',
+    "Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $cert.Thumbprint)",
+  ].join('\n')], { env: { ...process.env, PM_PFX_PASS: pass, PM_PFX_PATH: pfx }, stdio: 'inherit' });
+  return { pfx: fs.readFileSync(pfx), passphrase: pass };
+}
+
 const norm = p => String(p || '').replaceAll('/', '\\').toLowerCase();
-const launchEnv = childEnv('seed');
+const certDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-tls-'));
+const tlsServer = https.createServer(materializeCert(certDir), (_req, res) => res.end('no'));
+const tlsPort = await new Promise((resolve, reject) => {
+  tlsServer.once('error', reject);
+  tlsServer.listen(0, '127.0.0.1', () => resolve(tlsServer.address().port));
+});
+console.log(`bad-cert https server on 127.0.0.1:${tlsPort}`);
+try {
+const launchEnv = childEnv('seed', tlsPort);
 ok(launchEnv.PM_AUTOMATION_DEFAULT === '1' && launchEnv.PM_PROXY_LOOPBACK === '1' && launchEnv.PM_PROXY_TEST_INSECURE_TLS === '1', 'installed exe is launched with PM_AUTOMATION_DEFAULT, PM_PROXY_LOOPBACK and PM_PROXY_TEST_INSECURE_TLS set to 1');
 ok(!('PM_BROWSERS_PATH' in launchEnv) && !('PLAYWRIGHT_BROWSERS_PATH' in launchEnv), 'PM_BROWSERS_PATH and PLAYWRIGHT_BROWSERS_PATH are unset');
-const seedRun = await runPhase('seed');
+ok(launchEnv.PM_SMOKE_TLS_PORT === String(tlsPort), 'the app is told only the bad-cert port');
+const seedRun = await runPhase('seed', tlsPort);
 const seed = load(seedRun);
 ok(seed.exit === 0 && !seed.error, `seed app exited cleanly (${seed.exit})`);
 console.log(`electron ${seed.native?.electron}`);
@@ -87,7 +120,9 @@ const prefix = norm(bundledPrefix);
 ok(exePath.startsWith(prefix) && exePath.includes(`\\chromium-${seed.revision}\\`), `browser executable is under resources\\browsers\\chromium-${seed.revision} (${seed.browserBefore?.path})`);
 ok(seed.headlessShellExists === true, `chromium_headless_shell-${seed.revision} exists (${seed.headlessShell})`);
 ok(seed.install?.code === 'ALREADY_INSTALLED' && seed.install?.installed === true && seed.userBrowsersUnchanged === true, 'install endpoint reports already-installed and writes nothing');
-ok(seed.downloadBanner === false, 'Download Chromium banner is not shown');
+ok(seed.bannerBefore === false, 'rendered window has no Download Chromium text before the Launch click');
+ok(seed.launchClicked === true, 'Plain profile Launch button was clicked in the window');
+ok(seed.bannerAfter === false, 'rendered window has no Download Chromium text after the Launch click');
 ok(seed.plain?.status === 200 && seed.plain?.code !== 'CHROMIUM_MISSING' && seed.plain?.error !== 'CHROMIUM_MISSING', `profile launch is not CHROMIUM_MISSING (${seed.plain?.status} ${seed.plain?.error || ''})`);
 const launched = norm(seed.plain?.cmd);
 ok(seed.plain?.cdp === false && launched.length > 0 && !String(seed.plain?.cmd).includes('--remote-debugging-port'), 'default launch exposes no CDP port with the test flags set');
@@ -96,15 +131,20 @@ ok(launched.length > 0 && !String(seed.plain?.cmd).includes('<-loopback>'), 'lau
 ok(!(seed.plain?.proxyHits || []).some(h => /127\.0\.0\.1|localhost/i.test(h)), `proxy logged no localhost request (${JSON.stringify(seed.plain?.proxyHits)})`);
 ok(seed.tls?.ok === false && /cert|self-signed|unable to verify|UNABLE_TO_VERIFY|DEPTH_ZERO|altname|hostname/i.test(seed.tls?.message || ''), `bad TLS certificate is rejected (${seed.tls?.message})`);
 ok(seed.auto?.cdp === true && seed.auto?.status === 200, 'explicit automationEnabled profile still gets CDP');
+ok(String(seed.auto?.address || '').startsWith('127.0.0.1:'), `automation CDP address is loopback (${seed.auto?.address})`);
 ok(seed.persist?.wrote === true && seed.persist?.status === 200, 'profile stored a cookie and localStorage before quit');
 const downloaded = chromiumDownloadDirs(appData);
 ok(downloaded.length === 0, `no chromium-* directory under %APPDATA%\\Profile Manager (${downloaded.join(', ') || 'none'})`);
 
-const checkRun = await runPhase('check');
+const checkRun = await runPhase('check', tlsPort);
 const check = load(checkRun);
 ok(check.exit === 0 && !check.error, `relaunch exited cleanly (${check.exit})`);
 ok(check.saved?.profile === true && check.saved?.proxy === true, 'profile and proxy rows survived the graceful quit');
 ok(check.saved?.read?.ls === 'pm_v' && String(check.saved?.read?.c || '').includes('pm_c=pm_cookie'), `cookie and localStorage survived relaunch (${JSON.stringify(check.saved?.read)})`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
+} finally {
+  tlsServer.close();
+  fs.rmSync(certDir, { recursive: true, force: true });
+}
 process.exit(fail ? 1 : 0);

@@ -1,61 +1,13 @@
-// Packaged offline-install smoke (PM_SMOKE_OFFLINE=1). Not used by test/electron-smoke.js.
-// The self-signed certificate exists only so a proxy TLS check is rejected.
+// Packaged offline-install smoke. Loaded only when PM_SMOKE=1 and PM_SMOKE_OFFLINE=1.
+// The bad-certificate HTTPS server is started by the Windows harness; this file only
+// receives its port. No key or certificate material lives here.
 import http from 'http';
-import https from 'https';
 import fs from 'fs';
 import path from 'path';
 import { app } from 'electron';
 import { createRequire } from 'module';
 import { MANIFEST } from '../server/chromium.js';
 import { processCommandLine } from '../server/proc.js';
-
-const KEY = `-----BEGIN PRIVATE KEY-----
-MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCsYrgaDYMvRPMA
-7lonS+Lj9AihwGI8oxMskAOxGRvkfv554eufPrgnvvEeo94gY4Bat37B+TfXDX6u
-bI6kmm91Kl5kV1Qw4JVONdLNEA7P4eDthCbQSjImrwG5CvhLKUroUpzjv60dvOWW
-j68qjr/rjbenTQOBL5VNdorkCjYuhZH5OW+RNB1Dow24clLp8NibL2F4nJo+/6yE
-qGexfIopJy6I/V4ZNPD1XQNyAvY4h8CXbxuYAFoiiMxEXTODr7maK/BWAUQDjK6x
-4i3Z4CvIgrW8DzvTkRA0NfxKWx1qnRtrafKRVD7fbwaXgWy12QZzvh2nBZmCw5U3
-/KYDCYHFAgMBAAECggEADFLpaPlm08II4lvn54/KCnRnipLLoxygcgrgrLBIGXOH
-w1RmqSWNek/xAnkCGAwtAK9GGV11A8OT9ynNH9Dnn3d2NJO2seDYY7U+2winGm8C
-StCsCq+HOtM/mwhA/HSZBZdkXnbVTD81Jaijg/YdG9yvkL8VfU6WzKkpIEjnmzc0
-uykpz5+d2+GCC9FqfG+58Jr9MkzOWs5f+l7gMsKSJb3GhkitaVqMWbFSVcR8VY+S
-q3nuIDaAZms5WCJd/8gz4BfTRAGWyNTikSoL5nwvZayx5Am6fHFf6LyiotTg5aQT
-9PYx9398yop20Ait6mto9HcIKPssmNbvFhZwAyH6MQKBgQDil5vfU9nsQU9gxM+b
-WC71ARRv+DdT+yHVYYy0dgvQGAd6/QPoddYlwj5DUwxlukzRsVYvfluygofRdpd5
-l30HYIEoyqhJpNO7OxOVxtvK5F9oO/iH8RaAO2zSrthxwZOhlmPY6ap/L24A6s0p
-EhyQumk08i+Asior89G3/5gtsQKBgQDCwiDdJJBFm7wVBbIw1hYRbSsIKUJPc7tf
-5nPe9rdk/Vy4Hp2yA1/LHkQG3FOKr2IxWft+R86ApN+mG0fbU5slD7vjreNBPepy
-RCLivM4LvjoHew4p9w7jummM3K5UJ2twdZLpB2Fj5Dm3/a4wNbccrpUCDvWsoLS8
-Kr7OZo82VQKBgQCq2PE4FDst/ZhiOELouDa/mM7WFetxsNqzzteOgasqfdO2EevO
-bHrJAYp8rLOeSDf/q5x2Nung0LajYq2XindFBqicHyGAVX0noMWFmujCNCsTppQf
-u9HhYe0NdbPRIcm0fnZOaPCa8SIaIvAJ1ZQgM817lFfoy20ssqwf9eHCIQKBgHuC
-1YipWX1riFnkpN7nxlMC4ploYQ82HAxzf+RUnnXDX/u8HtH35dZQuV+Idsqq8yDN
-Kfsp2sImzVbwUh+749YbJlL7wfVsKLSSlXUpu5oi53Y7Cf5/Gcg+PhYBFeV0omRN
-i/+QmKja4efXT5JvXlMoPINzrUXvHO+AREVtMUGJAoGAT09NkbzOcyYZskWhlL+z
-Wz8gF2EFLXGn9vQKzLnZW2ncZbqGpp8b4EeIXb9rffVTlaQbEG8YLwS8PziCytrK
-PzdbmVMBYnCmcyX2Z0tSeDQFtBRwzs7eGy7G3Px3J4vjzBvWnrqQiC0X0M75kFMr
-1sMynVsuRV7dOhtr5AgoFHg=
------END PRIVATE KEY-----`;
-const CERT = `-----BEGIN CERTIFICATE-----
-MIIDCTCCAfGgAwIBAgIUKW00LhQNJremcjn05Ms0ovClEdkwDQYJKoZIhvcNAQEL
-BQAwFDESMBAGA1UEAwwJMTI3LjAuMC4xMB4XDTI2MTAxODE5MzQzNVoXDTM2MTAx
-NTE5MzQzNVowFDESMBAGA1UEAwwJMTI3LjAuMC4xMIIBIjANBgkqhkiG9w0BAQEF
-AAOCAQ8AMIIBCgKCAQEArGK4Gg2DL0TzAO5aJ0vi4/QIocBiPKMTLJADsRkb5H7+
-eeHrnz64J77xHqPeIGOAWrd+wfk31w1+rmyOpJpvdSpeZFdUMOCVTjXSzRAOz+Hg
-7YQm0EoyJq8BuQr4SylK6FKc47+tHbzllo+vKo6/6423p00DgS+VTXaK5Ao2LoWR
-+TlvkTQdQ6MNuHJS6fDYmy9heJyaPv+shKhnsXyKKScuiP1eGTTw9V0DcgL2OIfA
-l28bmABaIojMRF0zg6+5mivwVgFEA4yuseIt2eAryIK1vA8705EQNDX8Slsdap0b
-a2nykVQ+328Gl4FstdkGc74dpwWZgsOVN/ymAwmBxQIDAQABo1MwUTAdBgNVHQ4E
-FgQUfRCxDEW7smtih09A/fSM/fJkCxcwHwYDVR0jBBgwFoAUfRCxDEW7smtih09A
-/fSM/fJkCxcwDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQsFAAOCAQEAeqLw
-/cRAra96n2xGqfB0Iao34+Q/gz8/+RzVwAo0uV63+vbsf33k+nN0BnmHRJkEkLQt
-LRkHpz/H6KSJDrYlkF7mIvCKZNUs8XWCNkh9neDM9R70G1NwlYuw2T/tmnSR93m7
-x5nN03cdbLxi6OwHXLlEJ0iQNhMAjhVqy4fgt7bopLcoqOUjw6sTByAsU+09PfEX
-ZGczzaM8fGlIjKzNfIcKxQJ9Wst0UWvKdFwylPMGrQcs16+VgBjK3EX3NoFsk7Ps
-HbvSXPg4ckoyV+sGJF1bFyGRfDWd3X/DFMUhUCWxFYI6UyAEOY8QkrmBs+Zm2N0z
-g2Zpz+Mc3lbb2e3Rfg==
------END CERTIFICATE-----`;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const listen = (server, port = 0) => new Promise((resolve, reject) => {
@@ -71,7 +23,36 @@ function nativeModulePath() {
   return Object.keys(require.cache).find(p => p.includes('better-sqlite3') && p.endsWith('.node')) || '';
 }
 
+async function pageText(win) {
+  return win.webContents.executeJavaScript('document.body ? document.body.innerText : ""');
+}
+
+async function waitForPlainLaunch(win) {
+  for (let i = 0; i < 40; i++) {
+    const ready = await win.webContents.executeJavaScript(`(() => {
+      const row = [...document.querySelectorAll('tbody tr')].find(tr => (tr.querySelector('.name') || {}).textContent === 'Plain');
+      return !!row && [...row.querySelectorAll('button')].some(b => b.textContent.includes('Launch'));
+    })()`);
+    if (ready) return true;
+    await sleep(250);
+  }
+  return false;
+}
+
+function clickPlainLaunch(win) {
+  return win.webContents.executeJavaScript(`(() => {
+    const row = [...document.querySelectorAll('tbody tr')].find(tr => (tr.querySelector('.name') || {}).textContent === 'Plain');
+    const btn = row && [...row.querySelectorAll('button')].find(b => b.textContent.includes('Launch'));
+    if (!btn) return false;
+    btn.click();
+    return true;
+  })()`);
+}
+
 export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) {
+  if (process.env.PM_SMOKE !== '1' || process.env.PM_SMOKE_OFFLINE !== '1') {
+    throw new Error('offline smoke requires PM_SMOKE=1 and PM_SMOKE_OFFLINE=1');
+  }
   const phase = process.env.PM_SMOKE_PHASE === 'check' ? 'check' : 'seed';
   const H = { 'Content-Type': 'application/json', 'X-UI-Token': uiToken };
   const call = async (m, u, b) => {
@@ -87,8 +68,6 @@ export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) 
     log(`process.versions.modules=${r.native.modules}`);
     log(`better_sqlite3.node=${nativePath}`);
 
-    const bundledRoot = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Profile Manager', 'resources', 'browsers');
-    r.bundledRoot = bundledRoot;
     const browser = (await call('GET', '/api/browser')).d || {};
     r.browserBefore = { installed: !!browser.installed, path: browser.path || '' };
     r.revision = MANIFEST.revision;
@@ -104,15 +83,10 @@ export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) 
       r.install = { status: inst.s, state: inst.d?.install?.state || null, code: inst.d?.install?.code || null, installed: !!inst.d?.installed };
       r.userBrowsersUnchanged = JSON.stringify(before) === JSON.stringify(after);
 
-      if (win.webContents.isLoading()) await new Promise(res => win.webContents.once('did-finish-load', res));
-      await sleep(800);
-      r.downloadBanner = await win.webContents.executeJavaScript(`document.body && document.body.innerText.includes('Download Chromium')`);
-
-      const tlsServer = https.createServer({ key: KEY, cert: CERT }, (_req, res) => res.end('no'));
-      const tlsPort = await listen(tlsServer);
+      const tlsPort = Number(process.env.PM_SMOKE_TLS_PORT);
+      if (!tlsPort) throw new Error('PM_SMOKE_TLS_PORT is required');
       const tested = await call('POST', '/api/proxy/test', { proxy: { type: 'https', host: '127.0.0.1', port: tlsPort } });
       r.tls = { status: tested.s, ok: tested.d?.ok === true, error: tested.d?.error || null, message: tested.d?.message || tested.d?.error || '' };
-      tlsServer.close();
 
       const hits = [];
       const proxy = http.createServer((req, res) => { hits.push(String(req.url || '')); res.end('x'); });
@@ -121,26 +95,45 @@ export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) 
       let echoed = false;
       const echo = http.createServer((_req, res) => { echoed = true; res.end('ok'); });
       const echoPort = await listen(echo);
+      await call('PUT', '/api/settings', { startUrl: `http://127.0.0.1:${echoPort}/local` });
       const plain = await call('POST', '/api/profiles', { name: 'Plain', proxy: { type: 'http', host: '127.0.0.1', port: proxyPort } });
-      const launched = await call('POST', `/api/profiles/${plain.d?.id}/launch`, { headless: true, url: `http://127.0.0.1:${echoPort}/local` });
-      let cmd = '';
-      for (let i = 0; i < 15 && launched.d?.pid && !cmd; i++) { cmd = await processCommandLine(launched.d.pid) || ''; if (!cmd) await sleep(200); }
+
+      const loaded = new Promise(res => win.webContents.once('did-finish-load', res));
+      win.loadURL(backend.url);
+      await loaded;
+      r.launchButtonReady = await waitForPlainLaunch(win);
+      r.bannerBefore = (await pageText(win)).includes('Download Chromium');
+      r.launchClicked = r.launchButtonReady ? await clickPlainLaunch(win) : false;
       await sleep(1000);
+      r.bannerAfter = (await pageText(win)).includes('Download Chromium');
+
+      let row = null;
+      for (let i = 0; i < 40; i++) {
+        const list = (await call('GET', '/api/profiles')).d || [];
+        row = list.find(p => p.name === 'Plain');
+        if (row?.running) break;
+        await sleep(250);
+      }
+      let cmd = '';
+      for (let i = 0; i < 15 && row?.pid && !cmd; i++) { cmd = await processCommandLine(row.pid) || ''; if (!cmd) await sleep(200); }
+      await sleep(500);
       r.plain = {
-        status: launched.s,
-        error: launched.d?.error || null,
-        code: launched.d?.code || null,
-        cdp: !!launched.d?.cdp,
+        status: row?.running ? 200 : 0,
+        error: row?.last_error || null,
+        code: null,
+        cdp: !!row?.cdp,
         cmd,
         proxyHits: hits.slice(),
         echoed,
+        id: plain.d?.id || null,
       };
+      await call('PUT', '/api/settings', { startUrl: '' });
       if (plain.d?.id) await call('POST', `/api/profiles/${plain.d.id}/stop`);
       proxy.close(); echo.close();
 
       const auto = await call('POST', '/api/profiles', { name: 'Auto', automationEnabled: true });
       const al = await call('POST', `/api/profiles/${auto.d?.id}/launch`, { headless: true });
-      r.auto = { status: al.s, cdp: !!al.d?.cdp, address: al.d?.cdp?.debuggerAddress || null, error: al.d?.error || null };
+      r.auto = { status: al.s, cdp: !!al.d?.cdp, address: al.d?.cdp?.debuggerAddress || '', error: al.d?.error || null };
       if (auto.d?.id) await call('POST', `/api/profiles/${auto.d.id}/stop`);
 
       await call('POST', '/api/proxies', { name: 'PersistProxy', type: 'http', host: '203.0.113.10', port: 8080 });
@@ -160,7 +153,6 @@ export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) 
       const pl = await call('POST', `/api/profiles/${persist.d?.id}/launch`, { headless: true, url: `http://127.0.0.1:${originPort}/set` });
       for (let i = 0; i < 40 && !wrote; i++) await sleep(250);
       r.persist = { id: persist.d?.id || null, status: pl.s, wrote, cdp: !!pl.d?.cdp, error: pl.d?.error || null };
-      if (persist.d?.id) await call('POST', `/api/profiles/${persist.d.id}/stop`);
       pages.close();
       fs.writeFileSync(marker, JSON.stringify({ port: originPort, id: persist.d?.id || null }));
     } else {

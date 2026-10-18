@@ -2,6 +2,7 @@
 import path from 'path';
 import { startServer } from './app.js';
 import { DATA_DIR, db } from './db.js';
+import { durableShutdown } from './shutdown.js';
 
 const s = await startServer();
 console.log(`Profile manager on ${s.url}`);
@@ -44,36 +45,17 @@ function notifyShutdownDone() {
 async function shutdown() {
   if (closing) return;
   closing = true;
-  const force = setTimeout(() => {
-    console.error(`Shutdown timed out after ${SHUTDOWN_MS}ms; forcing exit`);
-    process.exit(1);
-  }, SHUTDOWN_MS);
-  force.unref();
   try {
-    await s.close(); // engine.shutdown() closes every browser context, then the HTTP server
-    let checkpointOk = false;
-    try {
-      db.pragma('wal_checkpoint(TRUNCATE)');
-      checkpointOk = true;
-    } catch (err) {
-      console.error(err);
-    }
-    let closedOk = false;
-    try {
-      db.close();
-      closedOk = true;
-    } catch (err) {
-      console.error(err);
-    }
-    if (!checkpointOk || !closedOk) {
-      process.exit(1);
-      return;
-    }
+    // Browser close, then the shared checkpoint + db.close. No ack unless that resolves.
+    await durableShutdown({
+      closeBrowsers: () => s.close(),
+      db,
+      timeoutMs: SHUTDOWN_MS,
+      log: err => console.error(err),
+    });
     await notifyShutdownDone();
     process.exit(0);
-  } catch (err) {
-    console.error(err);
-    try { db.close(); } catch (closeErr) { console.error(closeErr); }
+  } catch {
     process.exit(1);
   }
 }

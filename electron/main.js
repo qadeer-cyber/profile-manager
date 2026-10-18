@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { applyPackagedFlag } from '../server/testflags.js';
+import { durableShutdown } from '../server/shutdown.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
@@ -32,7 +33,7 @@ process.env.PM_BROWSERS_BUNDLED = hasBundled ? '1' : '0';
 process.env.PM_APP_VERSION = app.getVersion();
 
 const uiToken = crypto.randomBytes(24).toString('hex');
-let backend, win, quitting = false;
+let backend, win, quitStarted = false;
 // Crash/diagnostic log: <userData>/logs/main.log (rotated at 1 MB).
 const logDir = path.join(userData, 'logs'); fs.mkdirSync(logDir, { recursive: true });
 const logFile = path.join(logDir, 'main.log');
@@ -66,13 +67,13 @@ async function startBackend() {
   log(`backend on ${backend.url}; data in ${process.env.PM_DATA_DIR}; re-encrypted ${backend.reencrypted} secret(s)`);
   backend.events.on('event', e => { if (win && !win.isDestroyed()) win.webContents.send('pm:event', e); });
   // If the in-process HTTP server dies unexpectedly, restart it and point the window at the new URL.
-  const srv = backend.server, mine = () => !quitting && backend?.server === srv;
+  const srv = backend.server, mine = () => !quitStarted && backend?.server === srv;
   srv.on('close', () => { if (mine()) restartBackend('server closed unexpectedly'); });
   srv.on('error', e => { logErr('backend server error', e); if (mine()) restartBackend(e.message); });
 }
 let restarts = 0;
 async function restartBackend(reason) {
-  if (quitting || ++restarts > 3) { logErr(`backend down (${reason}); not restarting (attempt ${restarts})`); return; }
+  if (quitStarted || ++restarts > 3) { logErr(`backend down (${reason}); not restarting (attempt ${restarts})`); return; }
   logErr(`backend down (${reason}); restarting (attempt ${restarts})`);
   const old = backend; backend = null;
   try { await old?.close(); } catch {}
@@ -92,7 +93,7 @@ function createWindow() {
   let crashes = [];
   win.webContents.on('render-process-gone', (e, d) => {
     logErr('render-process-gone', d);
-    if (quitting || d.reason === 'clean-exit') return;
+    if (quitStarted || d.reason === 'clean-exit') return;
     crashes = crashes.filter(t => Date.now() - t < 60000).concat(Date.now());
     if (crashes.length <= 3 && backend) win.loadURL(backend.url);
     else dialog.showErrorBox('Profile Manager', `The window crashed repeatedly (${d.reason}). Details: ${logFile}`);
@@ -108,12 +109,27 @@ ipcMain.handle('pm:app-info', () => ({ version: app.getVersion(), userData, pack
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-// Safe shutdown: close every browser context, kill anything left, then exit.
-app.on('before-quit', async e => {
-  if (quitting || !backend) return;
-  e.preventDefault(); quitting = true;
-  try { await backend.close(); } catch (err) { logErr('shutdown', err); }
-  app.exit(0);
+// First before-quit is one-shot: guard, cancel the default quit, then browser close,
+// WAL checkpoint, and db.close. app.exit(0) only if every step succeeds.
+app.on('before-quit', e => {
+  if (quitStarted) return;
+  quitStarted = true;
+  e.preventDefault();
+  (async () => {
+    try {
+      const { db } = await import('../server/db.js');
+      await durableShutdown({
+        closeBrowsers: async () => { if (backend) await backend.close(); },
+        db,
+        timeoutMs: 10000,
+        log: logErr,
+      });
+      app.exit(0);
+    } catch (err) {
+      logErr(err);
+      app.exit(1);
+    }
+  })();
 });
 app.on('window-all-closed', () => app.quit());
 
@@ -128,7 +144,8 @@ app.whenReady().then(async () => {
 
 // ---- smoke-test mode (used by test/electron-smoke.js under xvfb) ----
 async function runSmoke() {
-  if (process.env.PM_SMOKE_OFFLINE === '1') {
+  // Literal in-app import. Both flags are required; a path is never taken from the environment.
+  if (process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1') {
     const { runOfflineSmoke } = await import('./offline-smoke.js');
     await runOfflineSmoke({ backend, win, uiToken, userData, log });
     return;
