@@ -36,7 +36,16 @@ const { db } = await import('../server/db.js');
 const { startServer } = await import('../server/app.js');
 let srv, B;
 before(async () => { srv = await startServer({ port: 0, uiToken: 'ui-tok', staticDir: null }); B = srv.url; });
-after(async () => { await srv.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
+after(async () => {
+  try {
+    await srv?.close();
+  } finally {
+    // On Windows, unlinking an open SQLite DB raises EBUSY. Release the
+    // singleton DB handle before removing the temporary test directory.
+    if (db.open) db.close();
+    fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
 const req = (m, u, b, h = {}) => fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...h }, body: b && JSON.stringify(b) }).then(async r => ({ s: r.status, d: r.status === 204 ? null : await r.json() }));
 const ui = (m, u, b) => req(m, u, b, { 'X-UI-Token': 'ui-tok' });
 const v1 = (m, u, b) => req(m, '/api/v1' + u, b, { Authorization: 'Bearer api-tok' });
