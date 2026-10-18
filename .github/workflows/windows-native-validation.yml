@@ -1,0 +1,57 @@
+name: Windows native build and validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-validation]
+
+jobs:
+  windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install source dependencies (Windows x64)
+        run: npm ci
+      - name: Build Electron native modules for Windows Electron ABI
+        run: npx electron-builder install-app-deps
+      - name: Get Chromium for functional test suites
+        run: npx playwright install chromium
+      - name: Run integrated automated tests on Windows
+        run: npm test
+      - name: Electron desktop smoke on Windows
+        run: npm run test:electron
+      - name: Build standard Windows setup and portable EXEs
+        run: npm run dist:win
+      - name: Generate standard build SHA-256 manifests
+        shell: pwsh
+        run: |
+          Get-ChildItem release -Filter '*.exe' | ForEach-Object { "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() )  $($_.Name)" } | Set-Content release/SHA256-standard.txt
+      - name: Packaged standard installer runtime smoke on Windows Server 2022
+        shell: pwsh
+        run: |
+          $env:PM_APP_EXE = (Resolve-Path 'release/win-unpacked/Profile Manager.exe').Path
+          node test/electron-smoke.js
+      - name: Build offline Windows setup and portable EXEs
+        run: npm run dist:win:offline
+      - name: Generate complete SHA-256 manifest
+        shell: pwsh
+        run: |
+          Get-ChildItem release -Filter '*.exe' | Sort-Object Name | ForEach-Object { "$( (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower() )  $($_.Name)" } | Set-Content release/SHA256SUMS-WindowsNative.txt
+      - name: Upload binaries and verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: profile-manager-windows-native-artifacts
+          path: |
+            release/*.exe
+            release/*SHA256*.txt
+          if-no-files-found: warn
+          retention-days: 14

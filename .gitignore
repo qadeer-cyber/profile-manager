@@ -1,0 +1,6 @@
+data/
+dist/
+node_modules/
+release/
+web/dist/
+build/bundled-browsers/

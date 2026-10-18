@@ -1,0 +1,188 @@
+// Browser engine: launch/stop with per-profile locks, persisted running state, startup recovery,
+// crash detection (health monitor), safe shutdown, a local proxy relay and (opt-in) CDP endpoints.
+// The remote-debugging port is OFF unless the launch option `automation` is truthy: an open CDP port
+// gives any local process full control of the session.
+import fs from 'fs';
+import net from 'net';
+import path from 'path';
+import { EventEmitter } from 'events';
+import { chromium } from 'playwright';
+import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
+import { db, userDataDir, getSetting } from './db.js';
+import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
+import { isAlive, killTree, pidMatches } from './proc.js';
+import { chromiumMissingError } from './chromium.js';
+
+export const events = new EventEmitter();
+const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
+const launching = new Map(); // id -> Promise
+export const isRunning = id => live.has(id);
+export const runningIds = () => [...live.keys()];
+export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
+const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
+const emit = (type, id, extra = {}) => events.emit('event', { type, id, at: new Date().toISOString(), ...extra });
+const setStatus = (id, fields) => {
+  const sets = Object.keys(fields).map(k => `${k}=@${k}`).join(',');
+  db.prepare(`UPDATE profiles SET ${sets} WHERE id=@id`).run({ ...fields, id });
+};
+
+const freePort = () => new Promise((res, rej) => { const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }).on('error', rej); });
+const CHROME_LOCKS = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort'];
+export const DATA_COPY_SKIP = new Set([...CHROME_LOCKS, LOCK_NAME]);
+function clearChromeLocks(dir) { for (const f of CHROME_LOCKS) fs.rmSync(path.join(dir, f), { force: true }); }
+
+async function cdpVersion(port) {
+  try { const r = await fetch(`http://127.0.0.1:${port}/json/version`, { signal: AbortSignal.timeout(1500) }); return r.ok ? await r.json() : null; } catch { return null; }
+}
+async function waitWs(port) {
+  for (let i = 0; i < 100; i++) { const v = await cdpVersion(port); if (v) return v.webSocketDebuggerUrl; await new Promise(r => setTimeout(r, 100)); }
+  throw new Error('CDP endpoint did not come up');
+}
+// Browser pid without a debugging port: Playwright's own pipe-based CDP session.
+async function pipeBrowserPid(ctx) {
+  try {
+    const s = await ctx.browser()?.newBrowserCDPSession(); if (!s) return null;
+    const r = await s.send('SystemInfo.getProcessInfo'); await s.detach().catch(() => {});
+    return r.processInfo?.find(p => p.type === 'browser')?.id ?? null;
+  } catch { return null; }
+}
+// Automation is opt-in (missing => off). PM_AUTOMATION_DEFAULT=1 is a TEST-ONLY switch that forces it on
+// for every launch (used by the legacy CDP e2e suites via scripts/run-with-automation.mjs). Never set it in production.
+export const automationEnabled = opts => !!opts.automation || process.env.PM_AUTOMATION_DEFAULT === '1';
+// Ask the browser for its own pid over CDP (works on every OS).
+export function cdpBrowserPid(ws) {
+  return new Promise(resolve => {
+    let sock; const done = v => { try { sock?.close(); } catch {} resolve(v); };
+    const t = setTimeout(() => done(null), 3000);
+    try { sock = new WebSocket(ws); } catch { clearTimeout(t); return resolve(null); }
+    sock.onopen = () => sock.send(JSON.stringify({ id: 1, method: 'SystemInfo.getProcessInfo' }));
+    sock.onmessage = m => { try { const r = JSON.parse(m.data); if (r.id === 1) { clearTimeout(t); done(r.result?.processInfo?.find(p => p.type === 'browser')?.id ?? null); } } catch {} };
+    sock.onerror = () => { clearTimeout(t); done(null); };
+  });
+}
+
+// Startup recovery: clean up browsers/locks left by a previous (crashed or killed) app session.
+export async function recoverAfterRestart() {
+  const report = { killed: 0, cleared: 0, staleLocks: 0, skipped: 0 };
+  for (const r of db.prepare('SELECT * FROM running').all()) {
+    let dir; try { dir = userDataDir(r.id); } catch { db.prepare('DELETE FROM running WHERE id=?').run(r.id); continue; }
+    const lock = readLock(dir);
+    if (lock && !lock.corrupt && lock.ownerPid !== process.pid && !isStale(lock)) { report.skipped++; continue; } // owned by another live instance
+    const pid = r.pid || lock?.browserPid;
+    // PID-reuse guard: kill only if that pid's command line still names this profile's user-data-dir.
+    if (pid && isAlive(pid) && await pidMatches(pid, dir)) { if (await killTree(pid, { expect: dir })) report.killed++; }
+    clearChromeLocks(dir); releaseLock(dir, lock?.ownerPid);
+    db.prepare('DELETE FROM running WHERE id=?').run(r.id);
+    report.cleared++;
+  }
+  // Locks without a running row (e.g. crash mid-launch)
+  const root = path.dirname(userDataDir('00000000-0000-0000-0000-000000000000'));
+  for (const id of fs.existsSync(root) ? fs.readdirSync(root) : []) {
+    const dir = path.join(root, id), lock = readLock(dir);
+    if (lock && isStale(lock)) {
+      if (lock.browserPid && isAlive(lock.browserPid) && await pidMatches(lock.browserPid, dir)) { if (await killTree(lock.browserPid, { expect: dir })) report.killed++; }
+      fs.rmSync(path.join(dir, LOCK_NAME), { force: true }); clearChromeLocks(dir); report.staleLocks++;
+    }
+  }
+  return report;
+}
+
+export function launch(p, opts = {}) {
+  if (live.has(p.id)) return Promise.resolve(runInfo(p.id));
+  if (launching.has(p.id)) return launching.get(p.id);
+  const pr = doLaunch(p, opts).finally(() => launching.delete(p.id));
+  launching.set(p.id, pr);
+  return pr;
+}
+
+async function doLaunch(p, opts = {}) {
+  const { headless, url } = opts, automation = automationEnabled(opts);
+  const dir = userDataDir(p.id);
+  if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
+    throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
+  acquireLock(dir); // throws 409 if another live process holds it
+  let relayUrl = null, ctx = null;
+  try {
+    const cdpPort = automation ? await freePort() : null;
+    const args = automation ? [`--remote-debugging-port=${cdpPort}`, '--remote-debugging-address=127.0.0.1'] : [];
+    const executablePath = getSetting('executablePath', '') || undefined;
+    if (!executablePath) { const miss = chromiumMissingError(!!headless); if (miss) throw miss; }
+    // We own shutdown: Playwright's own signal handlers would kill browsers before cookies/storage are flushed.
+    const launchOpts = { headless, viewport: null, args, executablePath, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false };
+    if (p.proxy) {
+      if (p.proxy.username) {
+        // Chromium can't authenticate to SOCKS proxies (and prompts for HTTP); use a local no-auth relay.
+        const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
+        relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
+        launchOpts.proxy = { server: relayUrl };
+      } else launchOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
+      if (process.env.PM_PROXY_LOOPBACK === '1') args.push('--proxy-bypass-list=<-loopback>'); // tests only
+    }
+    try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
+    catch (e) {
+      if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !executablePath) throw chromiumMissingError(!!headless, true);
+      const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
+      throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
+    }
+    const ws = automation ? await waitWs(cdpPort) : null;
+    const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
+    updateLock(dir, { browserPid, cdpPort });
+    const entry = { ctx, relayUrl, browserPid, stopping: false };
+    live.set(p.id, entry);
+    db.prepare('INSERT OR REPLACE INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
+    setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
+    ctx.on('close', () => onClosed(p.id, ctx));
+    emit('profile:started', p.id);
+    if (url) await (ctx.pages()[0] || await ctx.newPage()).goto(url).catch(() => {});
+    return runInfo(p.id);
+  } catch (e) {
+    if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
+    if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
+    releaseLock(dir);
+    try { setStatus(p.id, { last_error: e.message }); } catch {}
+    emit('profile:launch-failed', p.id, { error: e.message });
+    throw e.status ? e : httpErr(500, `Failed to launch browser: ${e.message}`, 'LAUNCH_FAILED');
+  }
+}
+
+async function onClosed(id, ctx, reason) {
+  const e = live.get(id);
+  if (!e || (ctx && e.ctx !== ctx)) return;
+  live.delete(id);
+  const crashed = !e.stopping;
+  db.prepare('DELETE FROM running WHERE id=?').run(id);
+  if (e.relayUrl) await closeAnonymizedProxy(e.relayUrl, true).catch(() => {});
+  if (crashed && e.browserPid && isAlive(e.browserPid)) { try { await killTree(e.browserPid, { expect: userDataDir(id) }); } catch {} }
+  try { const dir = userDataDir(id); releaseLock(dir); if (crashed) clearChromeLocks(dir); } catch {}
+  if (crashed) {
+    try { setStatus(id, { last_error: reason || 'Browser exited unexpectedly' }); } catch {}
+    emit('profile:crashed', id, { error: reason || 'Browser exited unexpectedly' });
+  }
+  emit('profile:stopped', id);
+}
+
+// Health monitor: detects browsers that died without Playwright noticing (e.g. killed externally).
+let healthTimer = null;
+export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
+  stopHealthMonitor();
+  healthTimer = setInterval(() => {
+    for (const [id, e] of live) if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
+  }, intervalMs);
+  healthTimer.unref?.();
+}
+export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTimer); healthTimer = null; };
+
+export async function stop(id, { timeoutMs = 5000 } = {}) {
+  if (launching.has(id)) await launching.get(id).catch(() => {});
+  const e = live.get(id);
+  if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
+  e.stopping = true;
+  // 1) graceful: close the context  2) force: kill the process tree
+  await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
+  if (e.browserPid && isAlive(e.browserPid)) await killTree(e.browserPid, { expect: userDataDir(id) });
+  await onClosed(id, e.ctx);
+}
+export async function shutdown() {
+  stopHealthMonitor();
+  await Promise.all(runningIds().map(id => stop(id)));
+}
