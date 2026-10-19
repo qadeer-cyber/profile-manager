@@ -7,7 +7,7 @@ Branch URL: https://github.com/qadeer-cyber/profile-manager/tree/test/m2-diagnos
 AGENT ROLE: Independent Security/QA (M2 Read-only Diagnostics)
 REPOSITORY: qadeer-cyber/profile-manager
 ASSIGNED BRANCH: test/m2-diagnostics-acceptance (created from d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9)
-LAST PUSHED REMOTE SHA: <pending: the QA commit is pushed by a cloud agent; record the SHA here in a follow-up wip(m2) commit>
+LAST PUSHED REMOTE SHA: 3c2a3e510f3050632e2882366a8ba6a05bdbbd30
 LAST COMMIT: "wip(m2): QA DiagnosticsV1 acceptance tests and matrix, level 1 only (WIP / UNVERIFIED)"
 FILES CHANGED (all new; nothing else touched; package.json/lock unchanged):
   docs/handoff/m2/qa.md
@@ -28,8 +28,7 @@ DONE VS WIP: DONE = level-1 validator (§2/§3 schema; §1/§3/§6/§8/§9 seman
 BLOCKERS: The M2 backend (feature/m2-diagnostics-backend, server/diagnostics.js) is not available to QA.
   The box has no GitHub credentials; pushes go via a cloud agent.
 NEXT EXACT IMPLEMENTATION STEP: see "Next action".
-CAN CODEX SAFELY TAKE OVER? YES only after the QA commit is verified on the remote branch (compare d7a000e...branch shows
-  exactly these 6 files) and this file records that SHA. The Grok QA agent then stops editing this branch. Until then: NO.
+CAN CODEX SAFELY TAKE OVER? YES (QA tests only; level 1; backend absent)
 ```
 
 ## Baselines and contract
