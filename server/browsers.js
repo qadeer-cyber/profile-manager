@@ -160,7 +160,7 @@ async function doLaunch(p, opts = {}) {
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     updateLock(dir, { browserPid, cdpPort });
-    const entry = { ctx, relayUrl, browserPid, stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null };
+    const entry = { ctx, relayUrl, browserPid, stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null, exitType: null, closeReason: null };
     live.set(p.id, entry);
     try {
       db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
@@ -197,6 +197,10 @@ function browserProcess(ctx) {
 }
 // The Node child exit is the difference between the user closing the last window (code 0)
 // and a kill or crash (signal, or a non-zero code). App Stop sets stopping first.
+// Headed Chromium also writes profile.exit_type in Default/Preferences: "Crashed" from
+// startup, replaced with "Normal" shortly after a clean quit. A kill leaves "Crashed".
+// The headless shell used in tests never writes that file, so a missing value is not
+// an error when the process itself exited 0.
 function trackExit(entry) {
   const proc = browserProcess(entry.ctx);
   entry.proc = proc;
@@ -214,38 +218,75 @@ function readExit(entry) {
   if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
   if (proc.signalCode) entry.exitSignal = proc.signalCode;
 }
-function waitExit(entry, ms = 3000) {
-  readExit(entry);
-  if (entry.exitSignal || entry.exitCode !== null) return Promise.resolve();
+function readProfileExit(dir) {
+  if (!dir) return null;
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(dir, 'Default', 'Preferences'), 'utf8'))?.profile?.exit_type;
+    return typeof value === 'string' && value ? value : null;
+  } catch { return null; }
+}
+// Enough for a clean quit to replace the startup "Crashed" sentinel, and for the
+// SOCKS relay to release the child-handle 'exit' event after the window is gone.
+const CLOSE_EVIDENCE_MS = 3000;
+function evidenceReady(entry) {
+  if (entry.exitSignal) return true;
+  if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) return true;
+  if (entry.exitCode === 0) return true;
+  return entry.exitType === 'Normal';
+}
+function waitForCloseEvidence(entry, dir, ms = CLOSE_EVIDENCE_MS) {
+  const sample = () => {
+    readExit(entry);
+    const exitType = readProfileExit(dir);
+    if (exitType) entry.exitType = exitType;
+    return evidenceReady(entry);
+  };
+  if (sample()) return Promise.resolve();
   const proc = entry.proc;
-  if (!proc) return Promise.resolve();
-  // The local SOCKS relay can keep the child-handle 'exit' event behind the
-  // window closing. Poll the handle so a late code 0 is still a clean stop.
   return new Promise(resolve => {
-    const done = () => { clearInterval(iv); clearTimeout(t); resolve(); };
-    const iv = setInterval(() => {
-      readExit(entry);
-      if (entry.exitSignal || entry.exitCode !== null) done();
-    }, 50);
-    const t = setTimeout(done, ms);
-    proc.once('exit', (code, signal) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearInterval(iv);
+      clearTimeout(t);
+      proc?.removeListener('exit', onExit);
+      sample();
+      resolve();
+    };
+    const onExit = (code, signal) => {
       entry.exitCode = code;
       entry.exitSignal = signal;
-      done();
-    });
+      if (sample()) finish();
+    };
+    const iv = setInterval(() => { if (sample()) finish(); }, 50);
+    const t = setTimeout(finish, ms);
+    if (proc) proc.on('exit', onExit);
   });
 }
+// stopping: the app called stop(). Normal, or exit code 0, is a clean window close
+// (code 0 covers the headless shell, which does not write Preferences). A signal or
+// any other non-zero code is a kill or crash even if the file still says Normal.
+// Any other exit_type (Crashed, SessionEnded) is an error only when the process
+// status does not already say the exit was clean.
+export function closeOutcome(entry) {
+  if (entry.stopping) return 'stopped';
+  if (entry.exitSignal) return 'error';
+  if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) return 'error';
+  if (entry.exitType === 'Normal') return 'stopped';
+  if (entry.exitCode === 0) return 'stopped';
+  return 'error';
+}
 function cleanExit(entry) {
-  if (entry.stopping) return true;
   readExit(entry);
-  if (entry.exitSignal) return false;
-  return entry.exitCode === 0;
+  return closeOutcome(entry) === 'stopped';
 }
 function crashMessage(entry, reason) {
   readExit(entry);
   const bits = [];
   if (entry.exitSignal) bits.push(`signal ${entry.exitSignal}`);
   else if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) bits.push(`exit code ${entry.exitCode}`);
+  if (entry.exitType && entry.exitType !== 'Normal') bits.push(`exit_type ${entry.exitType}`);
   const detail = bits.join(', ');
   if (reason && detail) return `${reason} (${detail})`;
   if (reason) return reason;
@@ -253,15 +294,24 @@ function crashMessage(entry, reason) {
   return 'Browser exited unexpectedly';
 }
 
-async function onClosed(id, ctx, reason) {
+function onClosed(id, ctx, reason) {
   const e = live.get(id);
-  if (!e || (ctx && e.ctx !== ctx) || e.closed) return;
+  if (!e || (ctx && e.ctx !== ctx) || e.closed) return Promise.resolve();
+  if (reason && !e.closeReason) e.closeReason = reason;
+  // One settlement for the close event and the health monitor. The monitor must
+  // not decide on the tick that first sees the pid gone: Preferences can still
+  // say Crashed for a moment after the process starts to exit.
+  if (!e.closePromise) e.closePromise = finishClose(id, e);
+  return e.closePromise;
+}
+async function finishClose(id, e) {
+  if (!e.stopping) {
+    let dir = null;
+    try { dir = userDataDir(id); } catch {}
+    await waitForCloseEvidence(e, dir);
+  }
+  if (e.closed || live.get(id) !== e) return;
   e.closed = true;
-  // A user closing the last window drops the process before Playwright's close event
-  // carries an exit status. Wait briefly so code 0 is not mistaken for a crash.
-  // The SOCKS relay is closed below for both outcomes; it does not decide the outcome.
-  if (!e.stopping) await waitExit(e);
-  if (live.get(id) !== e) return;
   const crashed = !cleanExit(e);
   // Kill a leftover process before anyone else can launch this profile.
   if (crashed && e.browserPid && isAlive(e.browserPid)) { try { await killTree(e.browserPid, { expect: userDataDir(id) }); } catch {} }
@@ -272,7 +322,7 @@ async function onClosed(id, ctx, reason) {
   // so a clean window close is already Stopped, including for an authenticated SOCKS proxy.
   if (e.relayUrl) await closeAnonymizedProxy(e.relayUrl, true).catch(() => {});
   if (crashed) {
-    const message = crashMessage(e, reason);
+    const message = crashMessage(e, e.closeReason);
     try { setStatus(id, { last_error: message }); } catch {}
     emit('profile:crashed', id, { error: message });
   } else {
@@ -286,7 +336,7 @@ let healthTimer = null;
 export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
   stopHealthMonitor();
   healthTimer = setInterval(() => {
-    for (const [id, e] of live) if (!e.stopping && !e.closed && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
+    for (const [id, e] of live) if (!e.stopping && !e.closed && !e.closePromise && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
   }, intervalMs);
   healthTimer.unref?.();
 }

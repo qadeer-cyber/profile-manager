@@ -14,6 +14,7 @@ const { migrate, migrations, currentVersion } = await import('../server/migratio
 const lock = await import('../server/lock.js');
 const { killTree, isAlive } = await import('../server/proc.js');
 const secrets = await import('../server/secrets.js');
+const { closeOutcome } = await import('../server/browsers.js');
 
 // ---------- migrations ----------
 test('migrations: fresh database reaches latest version', () => {
@@ -98,6 +99,20 @@ test('killTree (Windows path): calls taskkill /PID <pid> /T /F', async () => {
   assert.ok(ok); assert.deepEqual(call, ['taskkill', ['/PID', '1234', '/T', '/F']]);
 });
 test('isAlive: false for a dead pid', () => assert.equal(isAlive(2 ** 22 + 12345), false));
+
+test('closeOutcome: Normal or exit code 0 is Stopped; a signal, non-zero code, or other exit_type is Error', () => {
+  const base = { stopping: false, exitCode: null, exitSignal: null, exitType: null };
+  assert.equal(closeOutcome({ ...base, stopping: true, exitSignal: 'SIGKILL', exitType: 'Crashed' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitCode: 0 }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitType: 'Crashed' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitType: 'Normal' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitType: 'Normal' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitSignal: 'SIGKILL', exitType: 'Normal' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitCode: 1, exitType: 'Normal' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitType: 'Crashed' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitType: 'SessionEnded' }), 'error');
+  assert.equal(closeOutcome(base), 'error');
+});
 
 // ---------- secrets ----------
 test('secrets: AES-GCM round trip, key file created, ciphertext differs per call', () => {

@@ -5,6 +5,7 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import { execFile } from 'child_process';
 import { chromium } from 'playwright';
 import { listenFree, spawnServer, stopServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(10 * 60 * 1000);
@@ -83,6 +84,17 @@ async function closeLastWindow(profile) {
   } catch { /* the pipe drops as the browser exits */ }
   finally { await br.close().catch(() => {}); }
 }
+// Windows: taskkill /F is TerminateProcess. Elsewhere SIGKILL is the same kind of kill.
+// A forced kill must stay Error, including when Chromium never rewrites exit_type.
+function forceKill(pid) {
+  if (process.platform !== 'win32') {
+    process.kill(pid, 'SIGKILL');
+    return Promise.resolve('SIGKILL');
+  }
+  return new Promise((resolve, reject) => {
+    execFile('taskkill', ['/F', '/PID', String(pid)], err => err ? reject(err) : resolve('taskkill /F'));
+  });
+}
 const readState = (pg, ctx) => Promise.all([
   pg.evaluate(() => localStorage.getItem('who')),
   ctx.cookies(ORIGIN).then(c => c.find(x => x.name === 'who')?.value ?? null),
@@ -140,7 +152,7 @@ try {
   await brAgain.close().catch(() => {});
   await api('POST', `/api/profiles/${keep.id}/stop`);
 
-  // Kill is Error. Relaunch clears last_error and the profile runs again.
+  // A real kill is Error. On Windows that kill is `taskkill /F`. Relaunch clears last_error.
   const crash = await launch('Crash');
   const evs = [];
   const ac = new AbortController();
@@ -153,13 +165,13 @@ try {
     }
   }).catch(() => {});
   await sleep(200);
-  process.kill(crash.cdp.pid, 'SIGKILL');
+  const killedWith = await forceKill(crash.cdp.pid);
   row = null;
   for (let i = 0; i < 40 && !(row && !row.running && row.last_error); i++) {
     row = (await api('GET', `/api/profiles/${crash.id}`)).d;
     await sleep(100);
   }
-  ok(!!row && !row.running && /unexpectedly|died/.test(row.last_error || ''), `kill marks Error (${row && row.last_error})`);
+  ok(!!row && !row.running && /unexpectedly|died/.test(row.last_error || ''), `${killedWith} marks Error (${row && row.last_error})`);
   ok(evs.some(e => e.type === 'profile:crashed' && e.id === crash.id), 'kill emits profile:crashed');
   ok(!alive(crash.cdp.pid) && !fs.existsSync(lockPath(crash.id)), 'kill releases the process and the lockfile');
   const revived = (await api('POST', `/api/profiles/${crash.id}/launch`)).d;
