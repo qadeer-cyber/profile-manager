@@ -181,6 +181,28 @@ try {
   await api('POST', `/api/profiles/${crash.id}/stop`);
   ac.abort();
 
+  // SessionEnded is an OS logoff. CI cannot log off, so the test writes the pref
+  // Chromium would have written, once the pid is already dead.
+  const ended = await launch('Logoff');
+  const prefsFile = path.join(dataDir, 'profiles', ended.id, 'Default', 'Preferences');
+  const wrote = (async () => {
+    for (let i = 0; i < 200 && alive(ended.cdp.pid); i++) await sleep(25);
+    fs.mkdirSync(path.dirname(prefsFile), { recursive: true });
+    let body = {};
+    try { body = JSON.parse(fs.readFileSync(prefsFile, 'utf8')); } catch {}
+    if (!body || typeof body !== 'object') body = {};
+    body.profile = { ...(body.profile && typeof body.profile === 'object' ? body.profile : {}), exit_type: 'SessionEnded' };
+    for (let i = 0; i < 40; i++) {
+      try { fs.writeFileSync(prefsFile, JSON.stringify(body)); return; }
+      catch { await sleep(25); }
+    }
+    throw new Error('could not write SessionEnded');
+  })();
+  await forceKill(ended.cdp.pid);
+  await wrote;
+  row = await settled(ended.id);
+  stoppedClean(row, ended.cdp.pid, 'SessionEnded');
+
   // IPC shutdown still persists storage and leaves no running row.
   const persist = await launch('Persist');
   const brP = await connect(persist);

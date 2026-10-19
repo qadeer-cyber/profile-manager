@@ -29,6 +29,7 @@ Acceptance tests, in `test/lifecycle.e2e.js` unless noted:
 - A graceful browser quit (the window Close button, reproduced with `Browser.close`) leaves Stopped, with `last_error` null, the process gone, and `.pm-lock` gone. The same holds for an authenticated SOCKS5 profile. The suite launches the full browser because the headless shell does not write `profile.exit_type`, and a missing value is an error.
 - App Stop does the same and keeps a cookie and localStorage for the next launch.
 - A forced kill sets `last_error`, emits `profile:crashed`, and releases the lock. The lifecycle test uses `taskkill /F` on Windows and `SIGKILL` elsewhere. The existing engine suite still asserts `/unexpectedly|died/`.
+- `profile.exit_type` of `SessionEnded` is Stopped. The test writes that value after the pid is dead, because CI cannot log the machine off.
 - A successful relaunch clears `last_error`.
 - IPC `stopServer` still persists the cookie and localStorage. The existing engine suite's safe-shutdown section must stay green.
 

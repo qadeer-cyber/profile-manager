@@ -16,9 +16,10 @@ import { automationDefault, proxyLoopback } from './testflags.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
+const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
-export const isRunning = id => live.has(id);
-export const runningIds = () => [...live.keys()];
+export const isRunning = id => live.has(id) || settling.has(id);
+export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()])];
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
 const emit = (type, id, extra = {}) => events.emit('event', { type, id, at: new Date().toISOString(), ...extra });
@@ -120,7 +121,7 @@ export async function recoverAfterRestart() {
 }
 
 export function launch(p, opts = {}) {
-  if (live.has(p.id)) return Promise.resolve(runInfo(p.id));
+  if (live.has(p.id) || settling.has(p.id)) return Promise.resolve(runInfo(p.id));
   if (launching.has(p.id)) return launching.get(p.id);
   const pr = doLaunch(p, opts).finally(() => launching.delete(p.id));
   launching.set(p.id, pr);
@@ -237,31 +238,24 @@ function applyProfileExit(entry, dir) {
   entry.exitType = reading.state === 'ok' ? reading.value : null;
 }
 const CLEAN_EXIT_TYPES = new Set(['Normal', 'SessionEnded']);
-// A clean quit replaces Crashed with Normal in well under a second (measured on
-// Chromium 156). A kill never does. The longer bound also covers the SOCKS relay
-// holding the child-handle exit event after the window is gone.
-const CLOSE_EVIDENCE_MS = 3000;
-// After a signal or a non-zero code, wait briefly so an OS logoff can still flush
-// SessionEnded. A taskkill does not write it.
-const EXIT_FLUSH_MS = 400;
-function processFailed(entry) {
-  return !!entry.exitSignal || (typeof entry.exitCode === 'number' && entry.exitCode !== 0);
+// How long to wait for the pid to die. The SOCKS relay can hold the child-handle
+// exit event after the window is already gone.
+const PID_WAIT_MS = 3000;
+// Chromium writes Preferences during shutdown. Until the pid is dead the file can
+// still say Crashed, which is the value written when the profile opened. After the
+// pid is dead, poll briefly so Normal or SessionEnded can replace that.
+const PREFS_AFTER_EXIT_MS = 1000;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function browserDead(entry) {
+  readExit(entry);
+  if (entry.exitSignal) return true;
+  if (entry.exitCode !== null && entry.exitCode !== undefined) return true;
+  return !!(entry.browserPid && !isAlive(entry.browserPid));
 }
-function waitForCloseEvidence(entry, dir, ms = CLOSE_EVIDENCE_MS) {
-  let failedAt = null;
-  const sample = () => {
-    readExit(entry);
-    applyProfileExit(entry, dir);
-    if (CLEAN_EXIT_TYPES.has(entry.exitType)) return true;
-    if (processFailed(entry)) {
-      if (failedAt == null) failedAt = Date.now();
-      if (Date.now() - failedAt >= EXIT_FLUSH_MS) return true;
-    }
-    return false;
-  };
-  if (sample()) return Promise.resolve();
+async function waitUntilDead(entry, ms) {
   const proc = entry.proc;
-  return new Promise(resolve => {
+  if (browserDead(entry)) return;
+  await new Promise(resolve => {
     let settled = false;
     const finish = () => {
       if (settled) return;
@@ -269,18 +263,28 @@ function waitForCloseEvidence(entry, dir, ms = CLOSE_EVIDENCE_MS) {
       clearInterval(iv);
       clearTimeout(t);
       proc?.removeListener('exit', onExit);
-      sample();
       resolve();
     };
     const onExit = (code, signal) => {
       entry.exitCode = code;
       entry.exitSignal = signal;
-      if (sample()) finish();
+      if (browserDead(entry)) finish();
     };
-    const iv = setInterval(() => { if (sample()) finish(); }, 50);
+    const iv = setInterval(() => { if (browserDead(entry)) finish(); }, 50);
     const t = setTimeout(finish, ms);
     if (proc) proc.on('exit', onExit);
   });
+}
+async function waitForCloseEvidence(entry, dir) {
+  await waitUntilDead(entry, PID_WAIT_MS);
+  if (!browserDead(entry)) return;
+  const started = Date.now();
+  while (Date.now() - started < PREFS_AFTER_EXIT_MS) {
+    applyProfileExit(entry, dir);
+    if (CLEAN_EXIT_TYPES.has(entry.exitType)) return;
+    await sleep(50);
+  }
+  applyProfileExit(entry, dir);
 }
 // App Stop (stopping) is our own shutdown, so it is Stopped even if the tree kill
 // leaves Crashed. Otherwise SessionEnded is an OS logoff and is Stopped even when
@@ -317,26 +321,28 @@ function crashMessage(entry, reason) {
 
 function onClosed(id, ctx, reason) {
   const e = live.get(id);
-  if (!e || (ctx && e.ctx !== ctx) || e.closed) return Promise.resolve();
+  if (!e || (ctx && e.ctx !== ctx)) return Promise.resolve();
+  // One-shot per launch. The close event and the health monitor both call this.
+  // The second caller finds the entry gone and does not classify again.
+  live.delete(id);
+  settling.set(id, e);
   if (reason && !e.closeReason) e.closeReason = reason;
-  // The close event and the health monitor share this promise. A second call
-  // observes the same settlement instead of classifying again.
-  if (!e.closePromise) e.closePromise = finishClose(id, e);
-  return e.closePromise;
+  e.done = finishClose(id, e).finally(() => { if (settling.get(id) === e) settling.delete(id); });
+  return e.done;
 }
 async function finishClose(id, e) {
-  if (e.closed || live.get(id) !== e) return;
   if (!e.stopping) {
     let dir = null;
     try { dir = userDataDir(id); } catch {}
     await waitForCloseEvidence(e, dir);
   }
-  if (e.closed || live.get(id) !== e) return;
+  // A launch that started after this entry was removed owns the profile now.
+  if (live.has(id) || launching.has(id)) return;
   e.closed = true;
   const crashed = !cleanExit(e);
-  // Kill a leftover process before anyone else can launch this profile.
   if (crashed && e.browserPid && isAlive(e.browserPid)) { try { await killTree(e.browserPid, { expect: userDataDir(id) }); } catch {} }
-  live.delete(id);
+  const row = db.prepare('SELECT pid FROM running WHERE id=?').get(id);
+  if (row && e.browserPid && row.pid && row.pid !== e.browserPid) return;
   db.prepare('DELETE FROM running WHERE id=?').run(id);
   try { const dir = userDataDir(id); releaseLock(dir); if (crashed) clearChromeLocks(dir); } catch {}
   // The relay is local bookkeeping. Close it after the row and the lock are gone
@@ -357,7 +363,7 @@ let healthTimer = null;
 export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
   stopHealthMonitor();
   healthTimer = setInterval(() => {
-    for (const [id, e] of live) if (!e.stopping && !e.closed && !e.closePromise && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
+    for (const [id, e] of live) if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
   }, intervalMs);
   healthTimer.unref?.();
 }
@@ -365,13 +371,15 @@ export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTi
 
 export async function stop(id, { timeoutMs = 5000 } = {}) {
   if (launching.has(id)) await launching.get(id).catch(() => {});
-  const e = live.get(id);
+  const e = live.get(id) || settling.get(id);
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
   e.stopping = true;
+  if (!live.has(id)) { if (e.done) await e.done; return; }
   // 1) graceful: close the context  2) force: kill the process tree
   await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
   if (e.browserPid && isAlive(e.browserPid)) await killTree(e.browserPid, { expect: userDataDir(id) });
-  await onClosed(id, e.ctx);
+  if (e.done) await e.done;
+  else await onClosed(id, e.ctx);
 }
 export async function shutdown() {
   stopHealthMonitor();
