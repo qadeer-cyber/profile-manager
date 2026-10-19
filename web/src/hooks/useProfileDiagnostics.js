@@ -16,6 +16,14 @@ export const CONSISTENCY = ['match', 'mismatch', 'unknown'];
 export const ERROR_CODES = ['INVALID_REQUEST', 'UNAUTHORIZED', 'PROFILE_NOT_FOUND', 'LAUNCH_CHANGED', 'DIAGNOSTICS_BUSY', 'INTERNAL_ERROR'];
 const STATUS_CODE = { 400: 'INVALID_REQUEST', 401: 'UNAUTHORIZED', 404: 'PROFILE_NOT_FOUND', 409: 'LAUNCH_CHANGED', 429: 'DIAGNOSTICS_BUSY', 500: 'INTERNAL_ERROR' };
 const LIFECYCLE = new Set(['profile:started', 'profile:stopped', 'profile:crashed']);
+// Same check api.js uses for its X-UI-Token header. Without it (web mode) the diagnostics routes require the
+// automation token, which must not be exposed to the renderer (contract section 5), so no request is sent.
+export const DESKTOP_SESSION = typeof window !== 'undefined' && !!window.pm?.uiToken;
+// Transient failures keep the previous result on screen next to the error notice.
+const TRANSIENT = new Set(['DIAGNOSTICS_BUSY', 'INTERNAL_ERROR']);
+export const isTransient = err => err?.kind === 'network' || TRANSIENT.has(err?.code);
+// A result is shown when it succeeded, or when it was kept through a transient error.
+const shown = slot => slot.status === 'ok' || slot.status === 'error' ? slot.data : null;
 
 // ---------- strict DiagnosticsV1 validation (section 2 + 3) ----------
 class Bad extends Error {}
@@ -149,7 +157,7 @@ export function useProfileDiagnostics(profileId, { onProfileEvent } = {}) {
 
   const run = useCallback(async (slot, url, opts) => {
     const id = current.current;
-    if (!id || busy.current[slot]) return false;
+    if (!DESKTOP_SESSION || !id || busy.current[slot]) return false;
     busy.current[slot] = true;
     const mine = ++seq.current[slot], startEpoch = epoch.current;
     const live = () => mine === seq.current[slot] && id === current.current;
@@ -165,7 +173,7 @@ export function useProfileDiagnostics(profileId, { onProfileEvent } = {}) {
     } catch (e) {
       if (!live()) return false;
       const error = toError(e);
-      dispatch({ type: 'fail', slot, error });
+      dispatch({ type: 'fail', slot, error, keepData: isTransient(error) });
       if (error.code === 'LAUNCH_CHANGED' && slot === 'env') dispatch({ type: 'lifecycle', event: 'launch_changed', at: error.at });
       return false;
     } finally { if (mine === seq.current[slot]) busy.current[slot] = false; }
@@ -176,10 +184,11 @@ export function useProfileDiagnostics(profileId, { onProfileEvent } = {}) {
     return run('runtime', `/api/profiles/${encodeURIComponent(id)}/diagnostics`, { cache: 'no-store' });
   }, [run]);
 
-  const runtimeObs = state.runtime.status === 'ok' ? state.runtime.data.observation : null;
+  const runtimeData = shown(state.runtime);
+  const runtimeObs = runtimeData ? runtimeData.observation : null;
   const expectedLaunchId = runtimeObs?.launchId ?? null;
-  const canObserveEnvironment = !!expectedLaunchId && !state.runtime.superseded && runtimeObs.state !== 'invalidated'
-    && state.runtime.status === 'ok' && state.env.status !== 'loading';
+  const canObserveEnvironment = DESKTOP_SESSION && !!expectedLaunchId && !state.runtime.superseded && runtimeObs.state !== 'invalidated'
+    && state.env.status !== 'loading';
 
   // `consent` must be the literal returned by the disclosure dialog's confirm action, for this request only.
   const observeEnvironment = useCallback(consent => {
@@ -189,11 +198,12 @@ export function useProfileDiagnostics(profileId, { onProfileEvent } = {}) {
       { method: 'POST', cache: 'no-store', body: { expectedLaunchId, consent: CONSENT } });
   }, [run, canObserveEnvironment, expectedLaunchId]);
 
-  const envData = state.env.status === 'ok' ? state.env.data : null;
+  const envData = shown(state.env);
   const envMatchesLaunch = !!envData && !!expectedLaunchId && envData.observation.launchId === expectedLaunchId;
 
   return {
-    runtime: state.runtime, env: state.env, profileId: state.profileId,
+    runtime: state.runtime, env: state.env, profileId: state.profileId, available: DESKTOP_SESSION,
+    runtimeData, envData,
     refresh, observeEnvironment, canObserveEnvironment, expectedLaunchId, envMatchesLaunch,
     loading: state.runtime.status === 'loading', envLoading: state.env.status === 'loading',
   };

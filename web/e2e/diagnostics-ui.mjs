@@ -61,6 +61,7 @@ const reply = async (res, h, req) => {
   const r = typeof h === 'function' ? h(req) : h;
   if (!r) return json(res, 404, errBody('PROFILE_NOT_FOUND'));
   if (r.delay) await new Promise(x => setTimeout(x, r.delay));
+  if (r.destroy) return res.socket.destroy(); // network failure
   json(res, r.status || 200, r.body);
 };
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png' };
@@ -107,10 +108,21 @@ const shot = async (pg, name, { expand = true } = {}) => {
 };
 
 let ctx, pg;
-async function open({ width = 1360, height = 900, theme = 'light', dsf = 1 } = {}) {
+const MOCK_UI_TOKEN = 'mock-ui-token-' + crypto.randomUUID();
+// Desktop session emulation (electron/preload.cjs shape): uiToken + onEvent, one shared event stream.
+// web: true leaves window.pm undefined, i.e. web mode.
+async function open({ width = 1360, height = 900, theme = 'light', dsf = 1, web = false } = {}) {
   if (ctx) await ctx.close();
   ctx = await b.newContext({ viewport: { width, height }, deviceScaleFactor: dsf });
   await ctx.addInitScript(t => localStorage.setItem('pm.theme', t), theme);
+  if (!web) await ctx.addInitScript(tok => {
+    const subs = new Set(); let es = null;
+    window.pm = { desktop: true, uiToken: tok, platform: 'linux', onEvent: cb => {
+      subs.add(cb);
+      if (!es) { es = new EventSource('/api/events'); es.onmessage = m => { const e = JSON.parse(m.data); subs.forEach(f => f(e)); }; }
+      return () => subs.delete(cb);
+    } };
+  }, MOCK_UI_TOKEN);
   pg = await ctx.newPage(); pg.setDefaultTimeout(6000);
   pg.on('pageerror', e => errs.push('pageerror: ' + e.message));
   pg.on('console', m => m.type() === 'error' && !/Failed to load resource/.test(m.text()) && errs.push('console: ' + m.text()));
@@ -312,6 +324,38 @@ await step('confirm sends exactly {expectedLaunchId, consent}; values shown; con
   await observeBtn().click(); await pg.getByRole('dialog').waitFor(); await pg.keyboard.press('Escape');
   ok(posts().length === p0 + 1, 'second POST without consent');
 });
+await step('Refresh is disabled while the environment POST is in flight; the POST result is shown', async () => {
+  S.env['p-alpha'] = { delay: 900, body: envResult('p-alpha', 'launch-A1') };
+  const refreshBtn = pg.locator(`${PD} button:has-text("Refresh observation"), ${PD} .pd-actions button.primary`).first();
+  await observeBtn().click(); await pg.click('[role=dialog] button:has-text("Open diagnostic tab")'); consents++;
+  await pg.waitForTimeout(150);
+  ok(await refreshBtn.isDisabled(), 'Refresh enabled during POST');
+  const g = gets().length; await refreshBtn.click({ force: true }).catch(() => {}); await pg.waitForTimeout(100);
+  ok(gets().length === g, 'GET sent during POST');
+  await pg.waitForFunction(() => document.querySelector('[data-fact="environment.timezone"] dd')?.textContent.includes('Europe/Berlin'));
+  ok(await refreshBtn.isEnabled(), 'Refresh still disabled after POST');
+});
+for (const [label, h, code] of [['429', { status: 429, body: errBody('DIAGNOSTICS_BUSY') }, 'DIAGNOSTICS_BUSY'], ['500', { status: 500, body: errBody('INTERNAL_ERROR') }, 'INTERNAL_ERROR'], ['network failure', { destroy: true }, 'network']])
+  await step(`Refresh ${label} keeps the previous observation and POST result, notice shown alongside`, async () => {
+    const before = await pg.locator(`${PD} [data-observation]`).getAttribute('data-observation');
+    S.diag['p-alpha'] = h; await refresh();
+    await pg.locator(`${PD} [data-error-code=${code}]`).waitFor();
+    ok(await pg.locator(`${PD} [data-observation]`).count() === 1, 'observation cleared');
+    ok(await pg.locator(`${PD} [data-observation]`).getAttribute('data-observation') === before, 'observation changed');
+    ok((await factText('runtime.chromiumVersion')).includes('131.0.6778.85'), 'runtime facts cleared');
+    ok((await factText('environment.timezone')).includes('Europe/Berlin'), 'POST result cleared');
+    ok(await observeBtn().isEnabled(), 'observe disabled after transient error');
+    ok(await pg.locator(`${PD} [data-live]`).innerText().then(x => x.includes('failed')), 'not announced');
+    if (code === 'DIAGNOSTICS_BUSY') await shot(pg, 'after-429-keeps-data.png');
+    okEnv();
+  });
+await step('401 on Refresh still clears the observation', async () => {
+  S.diag['p-alpha'] = { status: 401, body: errBody('UNAUTHORIZED') }; await refresh();
+  await pg.locator(`${PD} [data-error-code=UNAUTHORIZED]`).waitFor();
+  ok(await pg.locator(`${PD} [data-observation]`).count() === 0, 'observation kept after 401');
+  okEnv(); await refresh(); await pg.waitForSelector(`${PD} [data-observation=complete]`);
+  S.env['p-alpha'] = { body: envResult('p-alpha', 'launch-A1') };
+});
 await step('environment result from a different launch is not shown', async () => {
   S.env['p-alpha'] = { body: envResult('p-alpha', 'launch-OTHER') };
   await observeBtn().click(); await pg.click('[role=dialog] button:has-text("Open diagnostic tab")'); consents++;
@@ -391,6 +435,25 @@ const responsive = async (label, file) => {
   const o = await noOverflow(); ok(o.doc <= 0 && o.content <= 0, label + ' overflow ' + JSON.stringify(o));
   await shot(pg, file);
 };
+await step('web mode (no desktop UI token): desktop-only message, both actions disabled, zero diagnostics requests', async () => {
+  await open({ web: true }); const n = diagReqs().length;
+  await select('p-alpha'); await pg.waitForTimeout(200);
+  const note = pg.locator(`${PD} [data-desktop-only]`);
+  ok(await note.innerText() === 'Profile diagnostics are available in the Profile Manager desktop app.', 'message');
+  ok(await pg.locator(`${PD} .pd-actions button.primary`).isDisabled(), 'Refresh enabled');
+  ok(await observeBtn().isDisabled(), 'Observe enabled');
+  await pg.locator(`${PD} .pd-actions button.primary`).click({ force: true }).catch(() => {});
+  await observeBtn().click({ force: true }).catch(() => {});
+  await pg.waitForTimeout(400);
+  ok(diagReqs().length === n, 'diagnostics requests sent: ' + (diagReqs().length - n));
+  ok(await pg.getByRole('dialog').count() === 0, 'disclosure opened');
+  ok((await pg.locator(`${PD} [data-live]`).innerText()).includes('desktop app'), 'announced');
+  ok(await pg.locator(`${PD} [data-empty]`).count() === 0, 'refresh prompt shown in web mode');
+  await shot(pg, 'after-web-mode.png');
+});
+await step('every diagnostics request carried the desktop X-UI-Token header', async () => {
+  ok(diagReqs().length > 0 && diagReqs().every(x => x.headers['x-ui-token'] === MOCK_UI_TOKEN), 'missing X-UI-Token');
+});
 await step('narrow 700px window: single column, no horizontal overflow', async () => { await open({ width: 700, height: 900 }); await responsive('700px', 'after-narrow-700.png'); });
 await step('200% zoom (1360x820 window => 680x410 CSS px at DPR 2): single column, no overflow', async () => { await open({ width: 680, height: 410, dsf: 2 }); await responsive('200%', 'after-zoom-200.png'); });
 await step('wide window: two-column panel grid', async () => { await open(); okEnv(); await select('p-alpha'); await refresh(); await pg.waitForSelector(`${PD} [data-observation=complete]`); ok(await columns() === 2, 'columns ' + await columns()); });

@@ -43,6 +43,7 @@ const ERROR_TEXT = {
 };
 const LIFECYCLE_TEXT = { 'profile:started': 'launched', 'profile:stopped': 'stopped', 'profile:crashed': 'closed unexpectedly', launch_changed: 'relaunched' };
 export const DISCLOSURE = 'Opens a visible diagnostic tab in the selected browser profile to read its timezone and language settings. Your existing pages will not be inspected. The tab will remain open until you close it.';
+export const DESKTOP_ONLY = 'Profile diagnostics are available in the Profile Manager desktop app.';
 const FRESH_CEILING_MS = 30000;
 
 const fmtTime = iso => { const d = new Date(iso); return Number.isNaN(+d) ? '—' : d.toLocaleTimeString(); };
@@ -159,7 +160,8 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
   const profile = profiles.find(p => p.id === selected) || null;
   const mine = D.profileId === selected; // ignore hook state for a previous selection during the reset render
   const rt = mine ? D.runtime : { status: 'idle' }, env = mine ? D.env : { status: 'idle' };
-  const data = rt.status === 'ok' ? rt.data : null;
+  const data = mine ? D.runtimeData : null; // ok, or kept through a transient error (429, 500, network)
+  const envData = mine ? D.envData : null;
   const obs = data?.observation;
 
   // Freshness: fresh until min(validUntil, completedAt + 30 s). Timer only re-renders; it never fetches.
@@ -172,7 +174,7 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
   }, [freshUntil]);
 
   // Status announcements for the aria-live region.
-  const announce = !selected ? 'No profile selected.'
+  const announce = !D.available ? DESKTOP_ONLY : !selected ? 'No profile selected.'
     : rt.status === 'loading' ? 'Requesting observation…'
     : env.status === 'loading' ? 'Opening the diagnostic tab and reading timezone and language…'
     : rt.status === 'error' ? 'Observation failed. ' + errorText(rt.error)
@@ -190,11 +192,11 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
   const cancelEnv = useCallback(() => { setAsking(false); requestAnimationFrame(() => observeBtn.current?.focus()); }, []);
 
   // Environment values: from the POST result only when it belongs to the same launch as the runtime observation.
-  const envOther = env.status === 'ok' && !D.envMatchesLaunch;
-  const envSrc = env.status === 'ok' && D.envMatchesLaunch ? env.data : data;
+  const envOther = !!envData && !D.envMatchesLaunch;
+  const envSrc = envData && D.envMatchesLaunch ? envData : data;
   const envFromProbe = envSrc && envSrc !== data;
 
-  const why = !selected ? 'Choose a profile first.' : !data ? 'Refresh the observation first.'
+  const why = !D.available ? DESKTOP_ONLY : !selected ? 'Choose a profile first.' : !data ? 'Refresh the observation first.'
     : rt.superseded ? 'The browser changed since this observation. Refresh it first.'
     : !obs.launchId ? 'Needs a running profile. Launch it, then refresh the observation.'
     : obs.state === 'invalidated' ? 'This observation was invalidated. Refresh it first.' : null;
@@ -205,6 +207,7 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
       <div><h2 id="pd-title">Profile diagnostics</h2>
         <p className="muted pd-lede">Read-only, on request. Nothing here runs until you choose an action, and nothing is monitored continuously.</p></div>
     </div>
+    {!D.available && <p className="notice pd-desktop-only" role="note" data-desktop-only>{DESKTOP_ONLY}</p>}
     <div className="pd-top">
       <ProfilePicker profiles={profiles} selected={selected} onSelect={setSelected} loadError={loadError} />
       <div className="pd-identity" role="group" aria-label="Selected profile">
@@ -216,7 +219,7 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
             {st === 'error' && <div className="pd-fact"><dt>Last error</dt><dd className="err-text" title={profile.last_error}>{crashSummary(profile.last_error)}</dd></div>}
           </dl>
           <div className="pd-actions">
-            <button className="primary" onClick={() => D.refresh()} disabled={D.loading} aria-describedby="pd-refresh-hint">{D.loading ? 'Observing…' : 'Refresh observation'}</button>
+            <button className="primary" onClick={() => D.refresh()} disabled={!D.available || D.loading || D.envLoading} aria-describedby="pd-refresh-hint">{D.loading ? 'Observing…' : 'Refresh observation'}</button>
             <button ref={observeBtn} onClick={() => { if (!D.envLoading) setAsking(true); }} disabled={!D.canObserveEnvironment && !D.envLoading} aria-disabled={D.envLoading || undefined} aria-describedby="pd-env-hint">{D.envLoading ? 'Observing…' : 'Observe timezone and language'}</button>
           </div>
           <p id="pd-refresh-hint" className="muted small">Refresh observation reads browser-level information only. It never opens or inspects a tab.</p>
@@ -231,7 +234,7 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
       <ErrorNote err={rt.status === 'error' ? rt.error : null} label="Observation" />
       <ErrorNote err={env.status === 'error' ? env.error : null} label="Timezone and language" />
       {rt.status === 'loading' && !data && <div className="pd-loading" data-loading>Requesting observation…</div>}
-      {rt.status === 'idle' && <p className="muted pd-empty" data-empty>No observation yet. Use <strong>Refresh observation</strong> to read this profile’s browser-level information.</p>}
+      {rt.status === 'idle' && D.available && <p className="muted pd-empty" data-empty>No observation yet. Use <strong>Refresh observation</strong> to read this profile’s browser-level information.</p>}
       {data && <>
         <Observation obs={obs} fresh={fresh} superseded={rt.superseded} freshUntil={freshUntil} />
         <div className="pd-grid">
@@ -246,7 +249,7 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
           </Card>
           <Card title="Environment" id="pd-environment">
             {envOther && <p className="notice warn small" data-env-other>The timezone and language result came from a different browser launch, so it isn’t shown. Observe again for the current launch.</p>}
-            {env.status === 'ok' && D.envMatchesLaunch && env.superseded && <p className="notice warn small">The browser changed after this result was read.</p>}
+            {envData && D.envMatchesLaunch && env.superseded && <p className="notice warn small">The browser changed after this result was read.</p>}
             <dl className="pd-facts">
               <Fact id="environment.timezone" label="Timezone" fact={envSrc.environment.timezone} mono />
               <Fact id="environment.locale" label="Locale" fact={envSrc.environment.locale} mono />
