@@ -7,6 +7,7 @@ import { SettingsPage } from './pages/SettingsPage.jsx';
 import { DiagnosticsPage } from './pages/DiagnosticsPage.jsx';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
+import { crashSummary, refreshesNow } from './lib.js';
 
 const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
 export function App() {
@@ -19,28 +20,19 @@ export function App() {
   const [eventsLog, setEventsLog] = useState([]);
   const [browserMissing, setBrowserMissing] = useState(false);
   const names = useRef({});
-  const seenToast = useRef(new Set());
-  const [liveEvent, setLiveEvent] = useState(null);
   const reloadMeta = useCallback(() => api('/api/meta').then(setMeta).catch(() => {}), []);
   useEffect(() => {
     reloadMeta(); api('/api/browser').then(b => setBrowserMissing(!b.installed)).catch(() => {});
     const t = setInterval(reloadMeta, 5000);
-    const off = subscribe(e => {
-      if (e.type === 'profile:started' || e.type === 'profile:stopped' || e.type === 'profile:crashed') {
-        setLiveEvent({ ...e, seq: Date.now() + Math.random() });
-      }
-      setEventsLog(l => [...l.slice(-50), { ...e, name: names.current[e.id] }]);
-      if (e.type === 'profile:crashed') {
-        const key = `${e.type}:${e.id}:${e.at}`;
-        if (!seenToast.current.has(key)) {
-          seenToast.current.add(key);
-          toast(`${names.current[e.id] || 'A profile'} closed unexpectedly: ${e.error || 'the browser exited'}`, 'error');
-        }
-      }
-      if (e.id && !names.current[e.id]) api(`/api/profiles/${e.id}`).then(p => { names.current[e.id] = p.name; }).catch(() => {});
+    const off = subscribe(async e => {
+      if (refreshesNow(e)) reloadMeta(); // refresh rows now; don't wait on the name lookup
+      if (e.id && !names.current[e.id]) { try { names.current[e.id] = (await api(`/api/profiles/${e.id}`)).name; } catch {} }
+      e.name = names.current[e.id];
+      setEventsLog(l => [...l.slice(-50), e]);
+      if (e.type === 'profile:crashed') toast(`${e.name || 'A profile'}: ${crashSummary(e.error)}`, 'error', `${e.type}|${e.id}|${e.at}`);
       if (e.type === 'browser:install' && e.state === 'done') { toast('Chromium installed', 'success'); setBrowserMissing(false); }
       if (e.type === 'browser:install' && e.state === 'failed') toast('Chromium download failed: ' + e.error, 'error');
-      reloadMeta();
+      if (!refreshesNow(e)) reloadMeta();
     });
     const missing = () => setBrowserMissing(true); addEventListener('pm:chromium-missing', missing);
     return () => { clearInterval(t); off(); removeEventListener('pm:chromium-missing', missing); };
@@ -65,7 +57,7 @@ export function App() {
     </nav>
     <main className="content">
       {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
-      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} liveEvent={liveEvent} />}
+      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
       {page === 'proxies' && <ProxiesPage />}
       {page === 'settings' && <SettingsPage />}
       {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}

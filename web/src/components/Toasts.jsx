@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
+import { makeDedupe, toastKey } from '../lib.js';
 
 const ToastCtx = createContext(() => {});
 export const useToast = () => useContext(ToastCtx);
 export function Toasts({ children }) {
   const [items, setItems] = useState([]);
-  const push = useCallback((msg, kind = 'info') => {
+  const fresh = useRef(makeDedupe(2000)); // identical toast within 2s (e.g. a re-delivered event) shows once
+  const push = useCallback((msg, kind = 'info', key) => {
+    if (!fresh.current(toastKey(kind, msg, key))) return;
     const id = Math.random();
     setItems(i => [...i, { id, msg, kind }]);
     setTimeout(() => setItems(i => i.filter(t => t.id !== id)), kind === 'error' ? 7000 : 3500);

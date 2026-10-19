@@ -386,7 +386,7 @@ function crashMessage(entry, reason) {
   return 'Browser exited unexpectedly';
 }
 
-function onClosed(id, ctx, reason) {
+export function onClosed(id, ctx, reason) {
   const e = live.get(id);
   if (!e || (ctx && e.ctx !== ctx)) return Promise.resolve();
   // One-shot per launch. The close event, the health monitor, Stop, and a relaunch

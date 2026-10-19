@@ -25,6 +25,10 @@ try {
   ok(ri.cdp_port === null && ri.ws_endpoint === null, 'running row has cdp_port/ws_endpoint = null when automation is off');
   const lk = JSON.parse(fs.readFileSync(path.join(userDataDir(A.id), '.pm-lock'), 'utf8'));
   ok(lk.browserPid === ri.pid && lk.cdpPort === null, 'lock records browserPid, cdpPort null');
+  await eng.onClosed(A.id, { stale: true }, 'stale context');
+  const still = eng.runInfo(A.id);
+  const lkStale = JSON.parse(fs.readFileSync(path.join(userDataDir(A.id), '.pm-lock'), 'utf8'));
+  ok(eng.isRunning(A.id) && still?.pid === ri.pid && isAlive(ri.pid) && lkStale.browserPid === ri.pid, 'a close for a different context leaves the live launch, its lock, and its running row');
   await eng.stop(A.id); ok(!isAlive(ri.pid) && !eng.isRunning(A.id), 'stop works without CDP');
   // 2) opt-in automation
   const B = mk('B'); ri = await eng.launch(B, { headless: true, automation: true });

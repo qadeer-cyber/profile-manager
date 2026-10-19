@@ -55,6 +55,16 @@ function runningRows(id) {
   try { return db.prepare('SELECT COUNT(*) n FROM running WHERE id=?').get(id).n; }
   finally { db.close(); }
 }
+function runningPid(id) {
+  const file = path.join(dataDir, 'profiles.db');
+  const db = new Database(file, { readonly: true, fileMustExist: true });
+  try { return db.prepare('SELECT pid FROM running WHERE id=?').get(id)?.pid ?? null; }
+  finally { db.close(); }
+}
+function lockBrowserPid(id) {
+  try { return JSON.parse(fs.readFileSync(lockPath(id), 'utf8')).browserPid ?? null; }
+  catch { return null; }
+}
 const evs = [];
 let eventsAbort = null;
 function startEvents() {
@@ -282,48 +292,54 @@ try {
   await writeState(pgRace, 'race');
   await pgRace.close();
   const session = await brRace.newBrowserCDPSession();
+  const oldPid = race.cdp.pid;
   let overlap = false;
   // Stop and Browser.close are in flight together. Either one may win; the loser throws.
-  // launch() returns the live entry while that close is settling, so a second pid
-  // can appear only after the original cleanup has already emitted. Count that
-  // close before stopping the replacement the probe itself started.
+  // launch() refuses a second browser while that close is still settling. A launch that
+  // returns after settling has cleared is a new browser, and the old pid is already dead.
   const closing = session.send('Browser.close').catch(() => {});
   const stopping = api('POST', `/api/profiles/${race.id}/stop`);
   const probing = (async () => {
     for (let i = 0; i < 40; i++) {
-      if (!alive(race.cdp.pid)) return;
+      if (!alive(oldPid)) return;
       const cur = (await api('GET', `/api/profiles/${race.id}`)).d;
-      if (!cur?.running || !alive(race.cdp.pid)) return;
+      if (!cur?.running || !alive(oldPid)) return;
       const again = await api('POST', `/api/profiles/${race.id}/launch`);
       const pid = again.d?.cdp?.pid;
-      if (again.d?.running && pid && pid !== race.cdp.pid && alive(race.cdp.pid)) overlap = true;
-      if (!alive(race.cdp.pid)) return;
+      if (again.d?.running && pid && pid !== oldPid && alive(oldPid)) overlap = true;
+      if (!alive(oldPid)) return;
       await sleep(50);
     }
   })();
   await Promise.all([closing, stopping, probing]);
   await brRace.close().catch(() => {});
+  ok(!overlap, 'relaunch during close does not start a second browser');
+  ok(!alive(oldPid), 'old browser is gone when the race settles');
   row = (await api('GET', `/api/profiles/${race.id}`)).d;
-  const replacement = row?.running && row.cdp?.pid && row.cdp.pid !== race.cdp.pid;
-  let during = null;
-  if (replacement) {
+  const probePid = row?.running && row.cdp?.pid && row.cdp.pid !== oldPid ? row.cdp.pid : null;
+  if (probePid) {
     const start = Date.now();
+    let during;
     do {
       during = eventCounts(race.id);
       if (during.stopped >= 1) break;
       await sleep(50);
     } while (Date.now() - start < 2000);
+    ok(during.stopped === 1, `old close emitted profile:stopped once before the new launch was judged (${during.stopped})`);
+    ok(during.crashed === 0, `old close emitted no profile:crashed (${during.crashed})`);
+    ok(row.running && !row.last_error, 'probe launch is running with no last_error');
+    ok(lockBrowserPid(race.id) === probePid && probePid !== oldPid, `lock browser pid is the probe (${lockBrowserPid(race.id)}), not ${oldPid}`);
+    ok(runningPid(race.id) === probePid, `running row pid is the probe (${runningPid(race.id)}), not ${oldPid}`);
     await api('POST', `/api/profiles/${race.id}/stop`);
     row = await settled(race.id);
+    stoppedClean(row, probePid, 'probe stopped after the race');
+    ok(!alive(oldPid), 'old pid is still gone after the probe stops');
   } else {
     row = await settled(race.id);
     await sleep(900);
-    during = eventCounts(race.id);
+    stoppedClean(row, oldPid, 'close and Stop together');
+    onceEach(race.id, 'close and Stop together', { stopped: 1, crashed: 0 });
   }
-  stoppedClean(row, race.cdp.pid, 'close and Stop together');
-  ok(!overlap, 'relaunch during close does not start a second browser');
-  ok(during.stopped === 1, `close and Stop together: profile:stopped ${during.stopped} time(s), want 1`);
-  ok(during.crashed === 0, `close and Stop together: profile:crashed ${during.crashed} time(s), want 0`);
   const raceAgain = (await api('POST', `/api/profiles/${race.id}/launch`)).d;
   ok(raceAgain.running && raceAgain.cdp.pid !== race.cdp.pid, 'launch after cleanup starts one new browser');
   const brRaceAgain = await connect(raceAgain);

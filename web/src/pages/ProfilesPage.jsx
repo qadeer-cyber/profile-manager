@@ -5,12 +5,12 @@ import { Confirm, Dialog } from '../components/Dialog.jsx';
 import { ProfileDialog, emptyForm } from '../components/ProfileDialog.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useSelection } from '../hooks/useSelection.js';
-import { runAll, statusOf, plural } from '../lib.js';
+import { runAll, statusOf, rowStatus, crashSummary, plural } from '../lib.js';
 
 const COLS = [['status', 'Status'], ['name', 'Name'], ['folder', 'Folder'], ['tags', 'Tags'], ['proxy', 'Proxy'], ['updated_at', 'Updated']];
 const sortVal = (p, k) => k === 'status' ? ['running', 'error', 'stopped'].indexOf(statusOf(p)) : k === 'tags' ? p.tags.join(',') : k === 'proxy' ? (p.proxy ? p.proxy.host : '\uffff') : String(p[k] ?? '').toLowerCase();
 
-export function ProfilesPage({ meta, reloadMeta, folder, setFolder, liveEvent }) {
+export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
   const toast = useToast();
   const [list, setList] = useState([]), [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState(''), [tag, setTag] = useState(''), [status, setStatus] = useState('');
@@ -26,19 +26,6 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, liveEvent })
     if (mine === loadGen.current) setLoaded(true);
   }, [q, tag, folder, toast]);
   useEffect(() => { const t = setTimeout(load, q ? 180 : 0); return () => clearTimeout(t); }, [load, meta]);
-  // Lifecycle events update the row before the refetch returns. A refetch that started
-  // earlier is dropped so it cannot put a stale Running or Error back on screen.
-  useEffect(() => {
-    if (!liveEvent?.id) return;
-    loadGen.current++;
-    setList(prev => prev.map(p => {
-      if (p.id !== liveEvent.id) return p;
-      if (liveEvent.type === 'profile:started') return { ...p, running: true, last_error: null };
-      if (liveEvent.type === 'profile:crashed') return { ...p, running: false, last_error: liveEvent.error || p.last_error };
-      if (liveEvent.type === 'profile:stopped') return { ...p, running: false, last_error: Object.hasOwn(liveEvent, 'error') ? liveEvent.error : p.last_error };
-      return p;
-    }));
-  }, [liveEvent]);
 
   const rows = useMemo(() => list.filter(p => !status || statusOf(p) === status)
     .sort((a, b) => { const x = sortVal(a, sort.k), y = sortVal(b, sort.k); return (x < y ? -1 : x > y ? 1 : 0) * sort.dir; }), [list, status, sort]);
@@ -98,11 +85,11 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, liveEvent })
       <th className="cb"><input type="checkbox" aria-label="Select all" checked={S.all} ref={el => el && (el.indeterminate = S.some)} onChange={S.toggleAll} /></th>
       {COLS.map(([k, l]) => <th key={k} className={'sortable col-' + k} onClick={() => sortBy(k)} aria-sort={sort.k === k ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>{l}{sort.k === k && <Icon name={sort.dir > 0 ? 'up' : 'down'} size={12} />}</th>)}
       <th className="col-actions"></th></tr></thead><tbody>
-      {rows.map(p => { const st = statusOf(p); return <tr key={p.id} className={S.sel.has(p.id) ? 'selected' : ''}>
+      {rows.map(p => { const st = rowStatus(p, busy[p.id]); return <tr key={p.id} className={S.sel.has(p.id) ? 'selected' : ''}>
         <td className="cb"><input type="checkbox" aria-label={'Select ' + p.name} checked={S.sel.has(p.id)} onChange={() => S.toggle(p.id)} /></td>
-        <td className="col-status"><span className={'status ' + st}><i />{busy[p.id] && !p.running ? 'Starting' : st[0].toUpperCase() + st.slice(1)}</span></td>
+        <td className="col-status"><span className={'status ' + st.key}><i />{st.label}</span></td>
         <td className="col-name"><div className="name">{p.name}</div>{p.notes && <div className="muted clamp">{p.notes}</div>}
-          {p.last_error && !p.running && <div className="err-text small clamp" title={p.last_error}>{p.last_error}</div>}
+          {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
           {p.cdp && <div className="mono" title="Automation (CDP) endpoint">{p.cdp.wsEndpoint}</div>}</td>
         <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>
