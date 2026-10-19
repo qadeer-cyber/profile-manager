@@ -182,7 +182,9 @@ async function doLaunch(p, opts = {}) {
     }
     entry = { ctx, relayUrl, launchId: randomUUID(), browserPid: null,
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
-      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null };
+      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
+      // Sanitized launch-time proxy only. The classifier never reads this field.
+      launchSnapshot: proxyLaunchSnapshot(p.proxy) };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
@@ -501,5 +503,183 @@ export async function shutdown() {
   stopHealthMonitor();
   // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
   await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
+}
+
+// --- Read-only diagnostics observation. Not used by the lifecycle classifier. ---
+const WEBRTC_FLAGS = ['--force-webrtc-ip-handling-policy', '--webrtc-ip-handling-policy'];
+const WEBRTC_POLICIES = new Set([
+  'default',
+  'default_public_and_private_interfaces',
+  'default_public_interface_only',
+  'disable_non_proxied_udp',
+]);
+const PROXY_TYPES = new Set(['http', 'https', 'socks5']);
+
+function isRelayHost(host) {
+  const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '::1' || h === '::' || h === '0.0.0.0' || /^127(?:\.\d{1,3}){3}$/.test(h);
+}
+
+// Launch-time proxy with credentials and local relay endpoints removed.
+// `{ configured: false }` means no proxy. `{ unsafe: true }` means a proxy existed
+// but must not be published. The returned object never keeps username, password, or a URL.
+export function proxyLaunchSnapshot(proxy) {
+  try {
+    if (!proxy || typeof proxy !== 'object') return { configured: false };
+    const host = proxy.host;
+    if (host == null || host === '') return { configured: false };
+    if (typeof host !== 'string' || typeof proxy.type !== 'string') return { unsafe: true };
+    if (!PROXY_TYPES.has(proxy.type)) return { unsafe: true };
+    if (host.length === 0 || host.length > 253 || /[\s@/\\?#]/.test(host)) return { unsafe: true };
+    const hostOk = /^[A-Za-z0-9.-]+$/.test(host) || /^\[[0-9A-Fa-f:.]+\]$/.test(host);
+    if (!hostOk) return { unsafe: true };
+    const port = typeof proxy.port === 'number' ? proxy.port : Number(proxy.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return { unsafe: true };
+    const bare = host.startsWith('[') ? host.slice(1, -1) : host;
+    if (isRelayHost(bare)) return { unsafe: true };
+    return { configured: true, type: proxy.type, host, port };
+  } catch {
+    return { unsafe: true };
+  }
+}
+
+function relayMatches(snapshot, relayUrl) {
+  if (!snapshot || snapshot.configured !== true || typeof relayUrl !== 'string' || !relayUrl) return false;
+  try {
+    const url = new URL(relayUrl);
+    const port = Number(url.port);
+    const host = url.hostname;
+    if (!host || !Number.isInteger(port)) return false;
+    const snapHost = snapshot.host.startsWith('[') ? snapshot.host.slice(1, -1) : snapshot.host;
+    return snapHost.toLowerCase() === host.toLowerCase() && snapshot.port === port;
+  } catch {
+    return false;
+  }
+}
+
+function publishProxy(snapshot, relayUrl) {
+  if (!snapshot || snapshot.unsafe || relayMatches(snapshot, relayUrl)) return { state: 'suppressed' };
+  if (snapshot.configured === false) return { state: 'off' };
+  if (snapshot.configured === true && PROXY_TYPES.has(snapshot.type)) {
+    return { state: 'on', value: { configured: true, type: snapshot.type, host: snapshot.host, port: snapshot.port } };
+  }
+  return { state: 'suppressed' };
+}
+
+// Parses allowlisted WebRTC policies. The argument list is not retained or returned.
+export function summarizeWebRtcArguments(argv) {
+  if (!Array.isArray(argv) || argv.length > 5000) return { kind: 'unreadable' };
+  const found = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (typeof arg !== 'string') return { kind: 'unreadable' };
+    let raw = null;
+    for (const flag of WEBRTC_FLAGS) {
+      if (arg === flag) {
+        const next = argv[i + 1];
+        if (typeof next !== 'string' || next.startsWith('-') || next.length > 128) return { kind: 'unverified' };
+        raw = next;
+        i++;
+        break;
+      }
+      if (arg.startsWith(flag + '=')) {
+        if (arg.length > flag.length + 1 + 128) return { kind: 'unverified' };
+        raw = arg.slice(flag.length + 1);
+        break;
+      }
+    }
+    if (raw === null) continue;
+    if (!WEBRTC_POLICIES.has(raw)) return { kind: 'unverified' };
+    found.push(raw);
+  }
+  if (found.length === 0) return { kind: 'absent' };
+  if (found.length > 1) return { kind: 'conflicting' };
+  return { kind: 'present', value: found[0] };
+}
+
+function chromiumVersionFromProduct(product) {
+  if (typeof product !== 'string' || product.length > 256) return null;
+  const match = /^(?:HeadlessChrome|Chrome)\/(\d{1,8}(?:\.\d{1,8}){1,3})$/.exec(product);
+  if (!match || match[1].length > 128) return null;
+  return match[1];
+}
+
+function userAgentFromProtocol(userAgent) {
+  if (typeof userAgent !== 'string' || userAgent.length < 1 || userAgent.length > 1024) return null;
+  if (!/^[\x20-\x7E]+$/.test(userAgent)) return null;
+  return userAgent;
+}
+
+// Browser.getVersion and Browser.getBrowserCommandLine on the Playwright pipe.
+// The raw command-line array and the raw protocol object do not leave this function.
+export async function readPipeBrowserFacts(browser, hooks = {}) {
+  const empty = { chromiumVersion: null, userAgent: null, webrtc: { kind: 'unreadable' } };
+  if (!browser || typeof browser.newBrowserCDPSession !== 'function') return empty;
+  let session;
+  try { session = await browser.newBrowserCDPSession(); } catch { return empty; }
+  try { hooks.trackSession?.(session); } catch { /* ignore */ }
+  try {
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    let versionRaw = null;
+    try { versionRaw = await session.send('Browser.getVersion'); } catch { versionRaw = null; }
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    let command = null;
+    try { command = await session.send('Browser.getBrowserCommandLine'); } catch { command = null; }
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    const args = command && Array.isArray(command.arguments) ? command.arguments : null;
+    return {
+      chromiumVersion: chromiumVersionFromProduct(versionRaw && versionRaw.product),
+      userAgent: userAgentFromProtocol(versionRaw && versionRaw.userAgent),
+      webrtc: args ? summarizeWebRtcArguments(args) : { kind: 'unreadable' },
+    };
+  } finally {
+    try { await session.detach(); } catch { /* ignore */ }
+  }
+}
+
+function publishedLaunchId(launchId) {
+  if (typeof launchId !== 'string' || launchId.length < 1 || launchId.length > 128) return null;
+  if (!/^[\x21-\x7E]+$/.test(launchId)) return null;
+  return launchId;
+}
+
+function connectedBrowser(entry) {
+  try {
+    const browser = entry.ctx?.browser?.();
+    if (!browser) return null;
+    if (typeof browser.isConnected === 'function' && browser.isConnected() === false) return null;
+    return browser;
+  } catch {
+    return null;
+  }
+}
+
+// Plain view of one live entry. Browser objects and command lines are not copied onto it.
+export function inspectDiagnosticEntry(entry) {
+  const launchId = publishedLaunchId(entry?.launchId);
+  const suppressed = { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  if (!entry || !entry.ctx) return suppressed;
+  if (entry.stopping) return { phase: 'stopping', launchId, proxy: { state: 'suppressed' } };
+  const browser = connectedBrowser(entry);
+  if (!browser) return { phase: 'disconnected', launchId, proxy: { state: 'suppressed' } };
+  const proxy = publishProxy(entry.launchSnapshot, entry.relayUrl);
+  return {
+    phase: 'connected',
+    launchId,
+    proxy,
+    readPipeFacts: hooks => readPipeBrowserFacts(browser, hooks),
+    openDiagnosticPage: () => entry.ctx.newPage(),
+  };
+}
+
+export function diagnosticObservation(id) {
+  try {
+    if (live.has(id)) return inspectDiagnosticEntry(live.get(id));
+    if (launching.has(id)) return { phase: 'launching', launchId: null, proxy: { state: 'suppressed' } };
+    if (settling.has(id)) return { phase: 'stopping', launchId: null, proxy: { state: 'suppressed' } };
+    return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  } catch {
+    return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  }
 }
 

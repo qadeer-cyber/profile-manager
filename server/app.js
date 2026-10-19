@@ -13,6 +13,7 @@ import { chromium } from 'playwright';
 import { db, userDataDir, DATA_DIR, migration, getSetting, setSetting, scrubDatabaseFile } from './db.js';
 import { encrypt, decrypt, needsReencrypt, loadApiToken, encryptionStatus, setStrictPrefixes } from './secrets.js';
 import * as engine from './browsers.js';
+import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpError } from './diagnostics.js';
 import { currentVersion } from './migrations.js';
 import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
 import { proxyTestInsecureTls } from './testflags.js';
@@ -479,12 +480,24 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     res.json({ stopped: ids });
   }));
 
+  mountProfileDiagnostics(app, {
+    uiToken, apiToken: API_TOKEN, tokenOk,
+    // Existence only. Do not decrypt proxy secrets for a diagnostic read.
+    loadProfile: id => db.prepare('SELECT id FROM profiles WHERE id=?').get(id) || null,
+  });
   app.use('/api/v1', v1);
   app.use('/api', ui);
   app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
   if (staticDir && fs.existsSync(staticDir)) { app.use(express.static(staticDir)); app.get(/^\/(?!api).*/, (req, res) => res.sendFile(path.join(staticDir, 'index.html'))); }
   // JSON errors for malformed bodies etc.
-  app.use((e, req, res, next) => res.status(e.status || 500).json({ error: e.type === 'entity.parse.failed' ? 'invalid JSON body' : e.message }));
+  app.use((e, req, res, next) => {
+    if (isProfileDiagnosticsRequest(req)) {
+      const { status, body } = diagnosticsHttpError(e.type === 'entity.parse.failed' || e.status === 400 ? 'INVALID_REQUEST' : 'INTERNAL_ERROR');
+      res.set('Cache-Control', 'no-store');
+      return res.status(status).json(body);
+    }
+    res.status(e.status || 500).json({ error: e.type === 'entity.parse.failed' ? 'invalid JSON body' : e.message });
+  });
   return app;
 }
 
