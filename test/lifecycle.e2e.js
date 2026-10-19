@@ -212,6 +212,24 @@ try {
   await pg.close();
   await brAgain.close().catch(() => {});
   await api('POST', `/api/profiles/${keep.id}/stop`);
+  row = await settled(keep.id);
+  stoppedClean(row, again.cdp.pid, 'second Stop');
+  for (let n = 1; n <= 2; n++) {
+    const cycle = (await api('POST', `/api/profiles/${keep.id}/launch`)).d;
+    ok(cycle.running && !cycle.last_error, `repeat launch ${n} is running with no last_error`);
+    ok((await api('POST', `/api/profiles/${keep.id}/stop`)).s === 200, `repeat stop ${n} returns 200`);
+    const done = await settled(keep.id);
+    ok(!!done && !done.running && !done.last_error && !alive(cycle.cdp.pid) && !fs.existsSync(lockPath(keep.id)) && runningRows(keep.id) === 0, `repeat ${n} released the process, the lock, and the running row`);
+  }
+  const brKept = await connect((await api('POST', `/api/profiles/${keep.id}/launch`)).d);
+  const pgKept = await brKept.contexts()[0].newPage();
+  await pgKept.goto(ORIGIN);
+  const keptState = await readState(pgKept, brKept.contexts()[0]);
+  ok(keptState[0] === 'kept' && keptState[1] === 'kept', 'cookie and localStorage survived repeated launch and stop');
+  await pgKept.close();
+  await brKept.close().catch(() => {});
+  await api('POST', `/api/profiles/${keep.id}/stop`);
+  await settled(keep.id);
 
   // A real kill is Error. On Windows that kill is `taskkill /F`. Relaunch clears last_error.
   const crash = await launch('Crash');

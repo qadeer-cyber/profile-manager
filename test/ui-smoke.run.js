@@ -7,7 +7,7 @@ armWatchdog(15 * 60 * 1000);
 const smoke = 'web/e2e/ui-smoke.mjs';
 if (!fs.existsSync(smoke)) { console.log('FAIL ui-smoke: ' + smoke + ' not present'); process.exit(1); }
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-ui-')), noDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-ui-nochrome-'));
-const base = { ...process.env, HEADLESS: '1', PM_API_TOKEN: 'ui-api', PM_PROXY_LOOPBACK: '1' };
+const base = { ...process.env, HEADLESS: '1', PM_API_TOKEN: 'ui-api', PM_PROXY_LOOPBACK: '1', PM_HEALTH_INTERVAL: '400' };
 delete base.PM_UI_TOKEN;
 let srv, nochrome, code = 1;
 try {

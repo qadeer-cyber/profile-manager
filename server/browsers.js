@@ -408,16 +408,19 @@ async function finishClose(id, e) {
   e.cleaned = true;
   let dir = null;
   try { dir = userDataDir(id); } catch {}
-  if (!e.stopping) await waitForCloseEvidence(e, dir);
+  // App Stop used to release the row while the pid was still alive. Wait for the
+  // process to exit first, and only then read Preferences.
+  if (e.stopping) await waitUntilDead(e, PID_WAIT_MS);
+  else await waitForCloseEvidence(e, dir);
+  if (!browserDead(e) && e.browserPid && isAlive(e.browserPid)) {
+    try { await killTree(e.browserPid, { expect: dir || userDataDir(id) }); } catch {}
+    await waitUntilDead(e, 2000);
+  }
   readExit(e);
-  e.stillAlive = !e.stopping && !browserDead(e);
-  // Preferences is meaningful only after the process has fully exited.
-  if (!e.stillAlive && browserDead(e) && !e.exitTypeState) applyProfileExit(e, dir);
+  e.stillAlive = !browserDead(e);
+  if (browserDead(e) && !e.exitTypeState) applyProfileExit(e, dir);
   const crashed = !cleanExit(e);
   logClassifierEvidence(id, e, crashed ? 'error' : 'stopped');
-  if (crashed && e.browserPid && isAlive(e.browserPid)) {
-    try { await killTree(e.browserPid, { expect: dir || userDataDir(id) }); } catch {}
-  }
   // A newer launch owns the row and the lock. releaseLock keys off ownerPid, which
   // is this server for both launches, so the browser pid has to match too.
   const superseded = live.has(id) || launching.has(id);
@@ -436,10 +439,11 @@ async function finishClose(id, e) {
       const message = crashMessage(e, e.closeReason);
       try { setStatus(id, { last_error: message }); } catch {}
       emit('profile:crashed', id, { error: message });
+      emit('profile:stopped', id, { error: message });
     } else {
       try { setStatus(id, { last_error: null }); } catch {}
+      emit('profile:stopped', id, { error: null });
     }
-    emit('profile:stopped', id);
   }
   // The relay belongs to this launch. Close it after the row and the lock are gone
   // so a clean window close is already Stopped, including for an authenticated SOCKS proxy.

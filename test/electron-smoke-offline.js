@@ -27,6 +27,7 @@ function childEnv(phase, tlsPort) {
   env.PM_SMOKE_OFFLINE = '1';
   env.PM_SMOKE_PHASE = phase;
   env.PM_AUTOMATION_DEFAULT = '1';
+  env.PM_HEALTH_INTERVAL = '400';
   env.PM_PROXY_LOOPBACK = '1';
   env.PM_PROXY_TEST_INSECURE_TLS = '1';
   env.PLAYWRIGHT_DOWNLOAD_HOST = 'http://127.0.0.1:9';
@@ -102,6 +103,29 @@ const tlsPort = await new Promise((resolve, reject) => {
 });
 console.log(`bad-cert https server on 127.0.0.1:${tlsPort}`);
 try {
+const appDataName = path.basename(appData);
+ok(appDataName === 'profile-manager', `profile data folder is profile-manager (${appData})`);
+ok(!fs.existsSync(path.join(process.env.APPDATA, 'Profile Manager')), 'no %APPDATA%\\Profile Manager directory');
+ok(!fs.existsSync(appData), 'clean install has not created %APPDATA%\\profile-manager yet');
+const cleanRun = await runPhase('clean', tlsPort);
+const clean = load(cleanRun);
+ok(clean.exit === 0 && !clean.error, `clean launch exited (${clean.exit})`);
+ok(clean.clean?.version === '0.5.0-alpha.1', `installed version is 0.5.0-alpha.1 (${clean.clean?.version})`);
+ok(path.basename(clean.clean?.userData || '') === 'profile-manager', `userData is profile-manager (${clean.clean?.userData})`);
+ok(clean.clean?.from === 0 && clean.clean?.backup && fs.existsSync(clean.clean.backup), `fresh database was backed up before migration (${clean.clean?.backup})`);
+fs.rmSync(appData, { recursive: true, force: true });
+execFileSync(exe, [path.resolve('scripts', 'seed-v040-db.mjs')], {
+  stdio: 'inherit',
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', PM_DATA_DIR: path.join(appData, 'data') },
+});
+const upgradeRun = await runPhase('upgrade', tlsPort);
+const upgrade = load(upgradeRun);
+ok(upgrade.exit === 0 && !upgrade.error, `upgrade launch exited (${upgrade.exit})`);
+ok(upgrade.upgrade?.from === 6 && upgrade.upgrade?.schemaVersion > 6, `v0.4.0 schema migrated (${upgrade.upgrade?.from} -> ${upgrade.upgrade?.schemaVersion})`);
+ok(upgrade.upgrade?.backupExists === true, `migration backup exists (${upgrade.upgrade?.backup})`);
+ok(upgrade.upgrade?.name === 'Legacy' && upgrade.upgrade?.proxy === true, 'legacy profile and proxy survived');
+ok(upgrade.upgrade?.secretError == null && upgrade.upgrade?.hasPassword === true && upgrade.upgrade?.decrypted === true, 'legacy proxy password still decrypts');
+ok(upgrade.upgrade?.read?.ls === 'legacy' && String(upgrade.upgrade?.read?.c || '').includes('who=legacy'), `legacy cookie and localStorage survived (${JSON.stringify(upgrade.upgrade?.read)})`);
 const launchEnv = childEnv('seed', tlsPort);
 ok(launchEnv.PM_AUTOMATION_DEFAULT === '1' && launchEnv.PM_PROXY_LOOPBACK === '1' && launchEnv.PM_PROXY_TEST_INSECURE_TLS === '1', 'installed exe is launched with PM_AUTOMATION_DEFAULT, PM_PROXY_LOOPBACK and PM_PROXY_TEST_INSECURE_TLS set to 1');
 ok(!('PM_BROWSERS_PATH' in launchEnv) && !('PLAYWRIGHT_BROWSERS_PATH' in launchEnv), 'PM_BROWSERS_PATH and PLAYWRIGHT_BROWSERS_PATH are unset');
@@ -147,6 +171,13 @@ const check = load(checkRun);
 ok(check.exit === 0 && !check.error, `relaunch exited cleanly (${check.exit})`);
 ok(check.saved?.profile === true && check.saved?.proxy === true, 'profile and proxy rows survived the graceful quit');
 ok(check.saved?.read?.ls === 'pm_v' && String(check.saved?.read?.c || '').includes('pm_c=pm_cookie'), `cookie and localStorage survived relaunch (${JSON.stringify(check.saved?.read)})`);
+
+const lifeRun = await runPhase('lifecycle', tlsPort);
+const life = load(lifeRun);
+ok(life.exit === 0 && !life.error, `lifecycle launch exited (${life.exit})`);
+ok(life.lifecycle?.close?.running === false && !life.lifecycle?.close?.error, `window close is Stopped (${life.lifecycle?.close?.error})`);
+ok(life.lifecycle?.kill?.running === false && /unexpectedly|died|exit code|signal|Crashed/i.test(life.lifecycle?.kill?.error || ''), `taskkill is Error (${life.lifecycle?.kill?.error})`);
+ok(life.lifecycle?.restart?.running === true && !life.lifecycle?.restart?.error, `relaunch after kill is running with no error (${life.lifecycle?.restart?.error})`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 } finally {

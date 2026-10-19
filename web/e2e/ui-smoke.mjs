@@ -64,6 +64,45 @@ await pg.click('[data-nav=profiles]'); await rows(3);
 await step('bulk delete 2 profiles', async () => { await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input'); await pg.click('.bulkbar >> text=Delete'); await pg.click('.card >> text=Delete all'); await rows(1); });
 await pg.setViewportSize({ width: 820, height: 700 }); await pg.screenshot({ path: OUT + 'narrow.png' });
 await step('settings and diagnostics render', async () => { await pg.click('[data-nav=settings]'); await pg.waitForSelector('h1:has-text("Settings")'); await pg.click('[data-nav=diagnostics]'); await pg.waitForSelector('h1:has-text("Diagnostics")'); });
+await step('lifecycle events update status once', async () => {
+  const row = name => `tr:has(td.col-name:has-text("${name}"))`;
+  await pg.setViewportSize({ width: 1360, height: 820 });
+  await pg.click('[data-nav=profiles]');
+  const created = await fetch(B + '/api/profiles', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Signal' }) });
+  if (!created.ok) throw new Error('create ' + created.status);
+  const profile = await created.json();
+  await pg.reload();
+  await pg.waitForSelector('td.col-name >> text=Signal');
+  const launch = async () => {
+    const r = await fetch(B + `/api/profiles/${profile.id}/launch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ headless: true }) });
+    const body = await r.json().catch(() => null);
+    if (!r.ok || !body?.pid) throw new Error('launch ' + r.status + ' ' + JSON.stringify(body));
+    return body;
+  };
+  const stop = () => fetch(B + `/api/profiles/${profile.id}/stop`, { method: 'POST' });
+  await launch();
+  await pg.waitForSelector(row('Signal') + ' .status.running', { timeout: 20000 });
+  await stop();
+  await pg.waitForSelector(row('Signal') + ' .status.stopped', { timeout: 20000 });
+  if (await pg.locator(row('Signal') + ' .err-text').count()) throw new Error('clean stop still shows an error');
+  const started = await launch();
+  await pg.waitForSelector(row('Signal') + ' .status.running', { timeout: 20000 });
+  try { process.kill(started.pid, 'SIGKILL'); }
+  catch (e) { throw new Error('kill ' + e.message); }
+  await pg.waitForSelector(row('Signal') + ' .status.error', { timeout: 20000 });
+  const diag = await pg.locator(row('Signal') + ' .err-text').innerText();
+  if (!/unexpectedly|died|signal|exit code|Crashed/i.test(diag)) throw new Error('diagnostic: ' + diag);
+  await pg.waitForSelector('.toast.error', { timeout: 5000 });
+  await pg.waitForTimeout(700);
+  const texts = await pg.locator('.toast.error').allInnerTexts();
+  const crashes = texts.filter(t => /unexpectedly/i.test(t));
+  if (crashes.length !== 1) throw new Error('error toasts: ' + JSON.stringify(texts));
+  const revived = await launch();
+  if (revived.last_error) throw new Error('api kept ' + revived.last_error);
+  await pg.waitForSelector(row('Signal') + ' .status.running', { timeout: 20000 });
+  if (await pg.locator(row('Signal') + ' .err-text').count()) throw new Error('stale error after relaunch');
+  await stop();
+});
 // CHROMIUM_MISSING: against a second server with no browser installed, a launch must get 503 and show the banner.
 const NOCHROME = process.env.PM_URL_NOCHROME;
 if (!NOCHROME) console.log('SKIP CHROMIUM_MISSING banner (PM_URL_NOCHROME not set)');

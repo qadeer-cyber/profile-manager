@@ -4,6 +4,7 @@
 import http from 'http';
 import fs from 'fs';
 import path from 'path';
+import { execFile } from 'child_process';
 import { app } from 'electron';
 import { createRequire } from 'module';
 import { MANIFEST } from '../server/chromium.js';
@@ -75,7 +76,106 @@ export async function runOfflineSmoke({ backend, win, uiToken, userData, log }) 
     r.headlessShell = shellDir;
     r.headlessShellExists = fs.existsSync(shellDir);
 
-    if (phase === 'seed') {
+    const taskkill = pid => new Promise((resolve, reject) => {
+      execFile('taskkill', ['/F', '/PID', String(pid)], err => err ? reject(err) : resolve());
+    });
+    const browserClose = wsUrl => new Promise(resolve => {
+      let ws;
+      const done = () => { clearTimeout(t); try { ws?.close(); } catch {} resolve(); };
+      const t = setTimeout(done, 8000);
+      try { ws = new WebSocket(wsUrl); } catch { done(); return; }
+      ws.onopen = () => { try { ws.send(JSON.stringify({ id: 1, method: 'Browser.close' })); } catch { done(); } };
+      ws.onerror = done;
+      ws.onclose = done;
+    });
+    const waitProfile = async (id, pred) => {
+      let row = null;
+      for (let i = 0; i < 80; i++) {
+        const list = (await call('GET', '/api/profiles')).d || [];
+        row = list.find(p => p.id === id) || null;
+        if (row && pred(row)) return row;
+        await sleep(250);
+      }
+      return row;
+    };
+
+    if (phase === 'clean') {
+      const diag = (await call('GET', '/api/diagnostics')).d || {};
+      r.clean = {
+        version: diag.app?.version || null,
+        schemaVersion: diag.schemaVersion ?? null,
+        from: diag.migration?.from ?? null,
+        backup: diag.migration?.backup || null,
+        userData,
+        dataDir: diag.dataDir || null,
+      };
+    } else if (phase === 'upgrade') {
+      const expect = JSON.parse(fs.readFileSync(path.join(process.env.PM_DATA_DIR, 'upgrade-expect.json'), 'utf8'));
+      const diag = (await call('GET', '/api/diagnostics')).d || {};
+      const profiles = (await call('GET', '/api/profiles')).d || [];
+      const proxies = (await call('GET', '/api/proxies')).d || [];
+      const row = profiles.find(p => p.id === expect.id) || null;
+      const { decrypt } = await import('../server/secrets.js');
+      const { db } = await import('../server/db.js');
+      const stored = db.prepare('SELECT password FROM proxies WHERE name=?').get(expect.proxyName);
+      let decrypted = false;
+      try { decrypted = !!stored && decrypt(stored.password) === expect.password; } catch { decrypted = false; }
+      let read = null;
+      const pages = http.createServer((req, res) => {
+        const u = req.url || '';
+        if (u.startsWith('/get')) {
+          res.setHeader('Content-Type', 'text/html');
+          res.end(`<script>fetch('/read?ls='+encodeURIComponent(localStorage.getItem('who')||'')+'&c='+encodeURIComponent(document.cookie||'')).catch(()=>{})<\/script>`);
+          return;
+        }
+        if (u.startsWith('/read')) {
+          const q = new URL(u, 'http://127.0.0.1').searchParams;
+          read = { ls: q.get('ls'), c: q.get('c') };
+          res.end('ok');
+          return;
+        }
+        res.end('ok');
+      });
+      await listen(pages, expect.port);
+      const launched = row && await call('POST', `/api/profiles/${row.id}/launch`, { headless: true, url: `http://127.0.0.1:${expect.port}/get` });
+      for (let i = 0; i < 40 && !read; i++) await sleep(250);
+      if (row) await call('POST', `/api/profiles/${row.id}/stop`);
+      pages.close();
+      const backup = diag.migration?.backup || null;
+      r.upgrade = {
+        version: diag.app?.version || null,
+        schemaVersion: diag.schemaVersion ?? null,
+        from: diag.migration?.from ?? null,
+        backup,
+        backupExists: !!(backup && fs.existsSync(backup)),
+        name: row?.name || null,
+        secretError: row?.secretError || null,
+        hasPassword: !!row?.proxy?.hasPassword,
+        proxy: proxies.some(p => p.name === expect.proxyName),
+        decrypted,
+        read,
+        launch: launched?.s || null,
+      };
+    } else if (phase === 'lifecycle') {
+      const created = await call('POST', '/api/profiles', { name: 'Window' });
+      const id = created.d?.id;
+      const opened = id && await call('POST', `/api/profiles/${id}/launch`, { headless: false });
+      if (opened?.d?.cdp?.wsEndpoint) await browserClose(opened.d.cdp.wsEndpoint);
+      const closed = id && await waitProfile(id, p => !p.running && !p.last_error);
+      const killedLaunch = id && await call('POST', `/api/profiles/${id}/launch`, { headless: false });
+      let killed = null;
+      if (killedLaunch?.d?.pid) {
+        try { await taskkill(killedLaunch.d.pid); } catch (e) { killed = String(e.message || e); }
+      }
+      const errored = id && await waitProfile(id, p => !p.running && !!p.last_error);
+      const restarted = id && await call('POST', `/api/profiles/${id}/launch`, { headless: false });
+      if (id) await call('POST', `/api/profiles/${id}/stop`);
+      r.lifecycle = {
+        close: { running: closed?.running ?? null, error: closed?.last_error || null },
+        kill: { running: errored?.running ?? null, error: errored?.last_error || null, taskkill: killed },
+        restart: { status: restarted?.s || null, running: !!restarted?.d?.running, error: restarted?.d?.last_error || null },
+      };
+    } else if (phase === 'seed') {
       const userBrowsers = path.join(userData, 'browsers');
       const before = fs.existsSync(userBrowsers) ? fs.readdirSync(userBrowsers) : [];
       const inst = await call('POST', '/api/browser/install');

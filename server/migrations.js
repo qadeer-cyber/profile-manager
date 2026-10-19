@@ -1,5 +1,9 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 // Versioned schema migrations. Each migration runs once, in order, inside a transaction.
+// Versions 1-6 are the v0.4.0 schema (be575c770a8b76596e6bbcb9f8dda1b12cc79be0).
+// Later versions are additive: they add objects and do not rewrite or delete profile rows.
 // Migrations 1-2 use IF NOT EXISTS so databases created before versioning existed
 // (which already have these tables) are adopted without data loss.
 export const migrations = [
@@ -49,7 +53,24 @@ export const migrations = [
         link.run(pid, r.id);
       }
     } },
+  { version: 7, name: 'profiles updated_at index', up: db => {
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at)');
+    } },
 ];
+
+// Copy the database file before any pending migration changes it. The copy is the
+// pre-migration bytes, so a failed upgrade can be put back by replacing profiles.db.
+function backupBeforeMigrate(db, list) {
+  const file = db.name;
+  if (!file || file === ':memory:') return null;
+  const from = currentVersion(db);
+  if (!list.some(m => m.version > from)) return null;
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const dest = path.join(path.dirname(file), `${path.basename(file)}.${stamp}.bak`);
+  fs.copyFileSync(file, dest);
+  return dest;
+}
 
 export function currentVersion(db) {
   db.exec('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, name TEXT, applied_at TEXT NOT NULL)');
@@ -57,6 +78,7 @@ export function currentVersion(db) {
 }
 
 export function migrate(db, list = migrations) {
+  const backup = backupBeforeMigrate(db, list);
   const from = currentVersion(db);
   const applied = [];
   for (const m of list.filter(m => m.version > from).sort((a, b) => a.version - b.version)) {
@@ -66,5 +88,5 @@ export function migrate(db, list = migrations) {
     })();
     applied.push(m.version);
   }
-  return { from, to: currentVersion(db), applied };
+  return { from, to: currentVersion(db), applied, backup };
 }

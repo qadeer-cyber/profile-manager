@@ -15,7 +15,8 @@ applyPackagedFlag(process.env, app.isPackaged);
 
 if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
-// User data lives in the OS app-data folder (e.g. %APPDATA%\Profile Manager on Windows).
+// User data follows the package name: %APPDATA%\profile-manager on Windows.
+// Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
 if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
 const userData = app.getPath('userData');
 process.env.PM_DATA_DIR = path.join(userData, 'data');

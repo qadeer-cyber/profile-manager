@@ -19,15 +19,25 @@ export function App() {
   const [eventsLog, setEventsLog] = useState([]);
   const [browserMissing, setBrowserMissing] = useState(false);
   const names = useRef({});
+  const seenToast = useRef(new Set());
+  const [liveEvent, setLiveEvent] = useState(null);
   const reloadMeta = useCallback(() => api('/api/meta').then(setMeta).catch(() => {}), []);
   useEffect(() => {
     reloadMeta(); api('/api/browser').then(b => setBrowserMissing(!b.installed)).catch(() => {});
     const t = setInterval(reloadMeta, 5000);
-    const off = subscribe(async e => {
-      if (e.id && !names.current[e.id]) { try { names.current[e.id] = (await api(`/api/profiles/${e.id}`)).name; } catch {} }
-      e.name = names.current[e.id];
-      setEventsLog(l => [...l.slice(-50), e]);
-      if (e.type === 'profile:crashed') toast(`${e.name || 'A profile'} closed unexpectedly: ${e.error}`, 'error');
+    const off = subscribe(e => {
+      if (e.type === 'profile:started' || e.type === 'profile:stopped' || e.type === 'profile:crashed') {
+        setLiveEvent({ ...e, seq: Date.now() + Math.random() });
+      }
+      setEventsLog(l => [...l.slice(-50), { ...e, name: names.current[e.id] }]);
+      if (e.type === 'profile:crashed') {
+        const key = `${e.type}:${e.id}:${e.at}`;
+        if (!seenToast.current.has(key)) {
+          seenToast.current.add(key);
+          toast(`${names.current[e.id] || 'A profile'} closed unexpectedly: ${e.error || 'the browser exited'}`, 'error');
+        }
+      }
+      if (e.id && !names.current[e.id]) api(`/api/profiles/${e.id}`).then(p => { names.current[e.id] = p.name; }).catch(() => {});
       if (e.type === 'browser:install' && e.state === 'done') { toast('Chromium installed', 'success'); setBrowserMissing(false); }
       if (e.type === 'browser:install' && e.state === 'failed') toast('Chromium download failed: ' + e.error, 'error');
       reloadMeta();
@@ -55,7 +65,7 @@ export function App() {
     </nav>
     <main className="content">
       {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
-      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
+      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} liveEvent={liveEvent} />}
       {page === 'proxies' && <ProxiesPage />}
       {page === 'settings' && <SettingsPage />}
       {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}

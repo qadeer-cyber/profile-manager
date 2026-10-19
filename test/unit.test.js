@@ -139,6 +139,49 @@ test('missing playwright process handle is logged and is not a crash', () => {
     assert.equal(closeOutcome(entry), 'stopped');
   } finally { console.warn = orig; }
 });
+test('migrate copies a file database before changing it and keeps the rows', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'mig-'));
+  const file = path.join(dir, 'profiles.db');
+  const db = new Database(file);
+  const v040 = migrations.filter(m => m.version <= 6);
+  const first = migrate(db, v040);
+  assert.deepEqual(first.applied, [1, 2, 3, 4, 5, 6]);
+  assert.ok(first.backup && fs.existsSync(first.backup));
+  const id = '11111111-1111-1111-1111-111111111111';
+  db.prepare('INSERT INTO profiles (id, name, tags, folder, notes, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
+    .run(id, 'Kept', '[]', '', '', 't', 't');
+  const second = migrate(db);
+  assert.equal(second.from, 6);
+  assert.ok(second.applied.includes(7));
+  assert.equal(db.prepare('SELECT name FROM profiles WHERE id=?').get(id).name, 'Kept');
+  assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='idx_profiles_updated_at'").get().name, 'idx_profiles_updated_at');
+  assert.ok(second.backup && second.backup !== first.backup && fs.existsSync(second.backup));
+  const third = migrate(db);
+  assert.deepEqual(third.applied, []);
+  assert.equal(third.backup, null);
+  assert.equal(fs.readdirSync(dir).filter(n => n.endsWith('.bak')).length, 2);
+  db.close();
+});
+test('0.5.0-alpha.1 keeps the v0.4.0 install identity and uninstall keeps data', () => {
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.version, '0.5.0-alpha.1');
+  assert.equal(pkg.name, 'profile-manager');
+  assert.equal(pkg.build.appId, 'local.profilemanager.app');
+  assert.equal(pkg.build.productName, 'Profile Manager');
+  assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
+  const offline = fs.readFileSync(new URL('../electron-builder.offline.cjs', import.meta.url), 'utf8');
+  assert.match(offline, /deleteAppDataOnUninstall:\s*false/);
+  const main = fs.readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
+  assert.match(main, /if \(process\.env\.PM_USER_DATA\) app\.setPath\('userData', process\.env\.PM_USER_DATA\)/);
+});
+test('v0.4.0 migrations stay the be575c7 list', async () => {
+  const { migrationsV040 } = await import('./fixtures/schema-v0.4.0.mjs');
+  assert.deepEqual(migrationsV040.map(m => m.version), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(
+    migrationsV040.map(m => [m.version, m.name]),
+    migrations.filter(m => m.version <= 6).map(m => [m.version, m.name]),
+  );
+});
 test('installed playwright-core 1.64.1 exposes the launched browser child', async () => {
   const file = path.resolve('node_modules/playwright-core/lib/coreBundle.js');
   const lines = fs.readFileSync(file, 'utf8').split(/\n/);
@@ -212,7 +255,7 @@ test('migrations: v6 moves inline proxies into the library (dedupe identical, ke
   ins.run('a', 'A', px('enc:v1:SAME')); ins.run('b', 'B', px('enc:v1:SAME')); ins.run('c', 'C', px('enc:v1:OTHER'));
   ins.run('d', 'D', null); ins.run('e', 'E', JSON.stringify({ type: 'ftp', host: 'h', port: 1 }));
   const r = migrate(db);
-  assert.deepEqual(r.applied, [6]);
+  assert.deepEqual(r.applied, [6, 7]);
   const rows = db.prepare('SELECT * FROM proxies ORDER BY password').all();
   assert.equal(rows.length, 2, 'identical endpoint+ciphertext deduped; different password kept separate');
   assert.equal(rows[1].password, 'enc:v1:SAME'); assert.equal(rows[1].name, 'socks5://h:1080');

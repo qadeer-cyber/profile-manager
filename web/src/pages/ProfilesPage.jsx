@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { Confirm, Dialog } from '../components/Dialog.jsx';
@@ -10,17 +10,35 @@ import { runAll, statusOf, plural } from '../lib.js';
 const COLS = [['status', 'Status'], ['name', 'Name'], ['folder', 'Folder'], ['tags', 'Tags'], ['proxy', 'Proxy'], ['updated_at', 'Updated']];
 const sortVal = (p, k) => k === 'status' ? ['running', 'error', 'stopped'].indexOf(statusOf(p)) : k === 'tags' ? p.tags.join(',') : k === 'proxy' ? (p.proxy ? p.proxy.host : '\uffff') : String(p[k] ?? '').toLowerCase();
 
-export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
+export function ProfilesPage({ meta, reloadMeta, folder, setFolder, liveEvent }) {
   const toast = useToast();
   const [list, setList] = useState([]), [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState(''), [tag, setTag] = useState(''), [status, setStatus] = useState('');
   const [sort, setSort] = useState({ k: 'updated_at', dir: -1 });
   const [dialog, setDialog] = useState(null), [busy, setBusy] = useState({}), [bulkBusy, setBulkBusy] = useState(false);
+  const loadGen = useRef(0);
   const load = useCallback(async () => {
-    try { setList(await api('/api/profiles?' + new URLSearchParams({ q, tag, folder }))); } catch (e) { toast(e.message, 'error'); }
-    setLoaded(true);
+    const mine = ++loadGen.current;
+    try {
+      const rows = await api('/api/profiles?' + new URLSearchParams({ q, tag, folder }));
+      if (mine === loadGen.current) setList(rows);
+    } catch (e) { if (mine === loadGen.current) toast(e.message, 'error'); }
+    if (mine === loadGen.current) setLoaded(true);
   }, [q, tag, folder, toast]);
   useEffect(() => { const t = setTimeout(load, q ? 180 : 0); return () => clearTimeout(t); }, [load, meta]);
+  // Lifecycle events update the row before the refetch returns. A refetch that started
+  // earlier is dropped so it cannot put a stale Running or Error back on screen.
+  useEffect(() => {
+    if (!liveEvent?.id) return;
+    loadGen.current++;
+    setList(prev => prev.map(p => {
+      if (p.id !== liveEvent.id) return p;
+      if (liveEvent.type === 'profile:started') return { ...p, running: true, last_error: null };
+      if (liveEvent.type === 'profile:crashed') return { ...p, running: false, last_error: liveEvent.error || p.last_error };
+      if (liveEvent.type === 'profile:stopped') return { ...p, running: false, last_error: Object.hasOwn(liveEvent, 'error') ? liveEvent.error : p.last_error };
+      return p;
+    }));
+  }, [liveEvent]);
 
   const rows = useMemo(() => list.filter(p => !status || statusOf(p) === status)
     .sort((a, b) => { const x = sortVal(a, sort.k), y = sortVal(b, sort.k); return (x < y ? -1 : x > y ? 1 : 0) * sort.dir; }), [list, status, sort]);
