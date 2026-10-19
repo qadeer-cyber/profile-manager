@@ -100,17 +100,17 @@ test('killTree (Windows path): calls taskkill /PID <pid> /T /F', async () => {
 });
 test('isAlive: false for a dead pid', () => assert.equal(isAlive(2 ** 22 + 12345), false));
 
-test('closeOutcome: Normal or exit code 0 is Stopped; a signal, non-zero code, or other exit_type is Error', () => {
-  const base = { stopping: false, exitCode: null, exitSignal: null, exitType: null };
-  assert.equal(closeOutcome({ ...base, stopping: true, exitSignal: 'SIGKILL', exitType: 'Crashed' }), 'stopped');
-  assert.equal(closeOutcome({ ...base, exitCode: 0 }), 'stopped');
-  assert.equal(closeOutcome({ ...base, exitCode: 0, exitType: 'Crashed' }), 'stopped');
-  assert.equal(closeOutcome({ ...base, exitType: 'Normal' }), 'stopped');
-  assert.equal(closeOutcome({ ...base, exitCode: 0, exitType: 'Normal' }), 'stopped');
-  assert.equal(closeOutcome({ ...base, exitSignal: 'SIGKILL', exitType: 'Normal' }), 'error');
-  assert.equal(closeOutcome({ ...base, exitCode: 1, exitType: 'Normal' }), 'error');
-  assert.equal(closeOutcome({ ...base, exitType: 'Crashed' }), 'error');
-  assert.equal(closeOutcome({ ...base, exitType: 'SessionEnded' }), 'error');
+test('closeOutcome: Normal and SessionEnded are Stopped; Crashed, missing, and unreadable are Error', () => {
+  const base = { stopping: false, exitCode: null, exitSignal: null, exitType: null, exitTypeState: 'missing' };
+  assert.equal(closeOutcome({ ...base, stopping: true, exitSignal: 'SIGKILL', exitType: 'Crashed', exitTypeState: 'ok' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok', exitCode: 0 }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitType: 'SessionEnded', exitTypeState: 'ok', exitCode: 1, exitSignal: 'SIGTERM' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitType: 'Crashed', exitTypeState: 'ok', exitCode: 0 }), 'error');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitTypeState: 'missing' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitTypeState: 'unreadable' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok', exitSignal: 'SIGKILL' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok', exitCode: 1 }), 'error');
   assert.equal(closeOutcome(base), 'error');
 });
 

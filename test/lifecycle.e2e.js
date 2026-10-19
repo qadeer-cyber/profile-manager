@@ -52,7 +52,9 @@ const lockPath = id => path.join(dataDir, 'profiles', id, '.pm-lock');
 async function launch(name, extra) {
   const created = await api('POST', '/api/profiles', { name, ...extra });
   if (created.s !== 201) throw new Error('create failed ' + created.s + ' ' + JSON.stringify(created.d));
-  const started = await api('POST', `/api/profiles/${created.d.id}/launch`);
+  // The headless shell never writes profile.exit_type. A missing value is an error,
+  // so this suite launches the full browser, which records Normal on a clean quit.
+  const started = await api('POST', `/api/profiles/${created.d.id}/launch`, { headless: false });
   if (!started.d?.running) throw new Error('launch failed ' + JSON.stringify(started.d));
   return started.d;
 }

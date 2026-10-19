@@ -160,7 +160,7 @@ async function doLaunch(p, opts = {}) {
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     updateLock(dir, { browserPid, cdpPort });
-    const entry = { ctx, relayUrl, browserPid, stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null, exitType: null, closeReason: null };
+    const entry = { ctx, relayUrl, browserPid, stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null, exitType: null, exitTypeState: null, closeReason: null };
     live.set(p.id, entry);
     try {
       db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
@@ -195,12 +195,14 @@ function browserProcess(ctx) {
     return impl?.options?.browserProcess?.process || null;
   } catch { return null; }
 }
-// The Node child exit is the difference between the user closing the last window (code 0)
-// and a kill or crash (signal, or a non-zero code). App Stop sets stopping first.
-// Headed Chromium also writes profile.exit_type in Default/Preferences: "Crashed" from
-// startup, replaced with "Normal" shortly after a clean quit. A kill leaves "Crashed".
-// The headless shell used in tests never writes that file, so a missing value is not
-// an error when the process itself exited 0.
+// profile.exit_type in Default/Preferences, confirmed against current Chromium main:
+// exit_type_service.cc writes "Normal", "Crashed", and "SessionEnded"
+// (https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/sessions/exit_type_service.cc).
+// ExitType in exit_type_service.h maps those to a clean shutdown, a crash, and an OS-forced
+// shutdown (WM_ENDSESSION / logoff). BrowserProcessImpl::EndSession stores the OS case as
+// SessionEnded. profile_impl.cc asks ExitTypeService and treats only kCrashed as a crash
+// (https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/profiles/profile_impl.cc).
+// The service writes Crashed as the profile opens, and Normal only when it shuts down cleanly.
 function trackExit(entry) {
   const proc = browserProcess(entry.ctx);
   entry.proc = proc;
@@ -218,28 +220,44 @@ function readExit(entry) {
   if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
   if (proc.signalCode) entry.exitSignal = proc.signalCode;
 }
+// missing: no file or no string. unreadable: the file is there but is not JSON yet.
 function readProfileExit(dir) {
-  if (!dir) return null;
+  if (!dir) return { state: 'missing' };
+  const file = path.join(dir, 'Default', 'Preferences');
+  if (!fs.existsSync(file)) return { state: 'missing' };
   try {
-    const value = JSON.parse(fs.readFileSync(path.join(dir, 'Default', 'Preferences'), 'utf8'))?.profile?.exit_type;
-    return typeof value === 'string' && value ? value : null;
-  } catch { return null; }
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'))?.profile?.exit_type;
+    if (typeof value !== 'string' || !value) return { state: 'missing' };
+    return { state: 'ok', value };
+  } catch { return { state: 'unreadable' }; }
 }
-// Enough for a clean quit to replace the startup "Crashed" sentinel, and for the
-// SOCKS relay to release the child-handle 'exit' event after the window is gone.
+function applyProfileExit(entry, dir) {
+  const reading = readProfileExit(dir);
+  entry.exitTypeState = reading.state;
+  entry.exitType = reading.state === 'ok' ? reading.value : null;
+}
+const CLEAN_EXIT_TYPES = new Set(['Normal', 'SessionEnded']);
+// A clean quit replaces Crashed with Normal in well under a second (measured on
+// Chromium 156). A kill never does. The longer bound also covers the SOCKS relay
+// holding the child-handle exit event after the window is gone.
 const CLOSE_EVIDENCE_MS = 3000;
-function evidenceReady(entry) {
-  if (entry.exitSignal) return true;
-  if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) return true;
-  if (entry.exitCode === 0) return true;
-  return entry.exitType === 'Normal';
+// After a signal or a non-zero code, wait briefly so an OS logoff can still flush
+// SessionEnded. A taskkill does not write it.
+const EXIT_FLUSH_MS = 400;
+function processFailed(entry) {
+  return !!entry.exitSignal || (typeof entry.exitCode === 'number' && entry.exitCode !== 0);
 }
 function waitForCloseEvidence(entry, dir, ms = CLOSE_EVIDENCE_MS) {
+  let failedAt = null;
   const sample = () => {
     readExit(entry);
-    const exitType = readProfileExit(dir);
-    if (exitType) entry.exitType = exitType;
-    return evidenceReady(entry);
+    applyProfileExit(entry, dir);
+    if (CLEAN_EXIT_TYPES.has(entry.exitType)) return true;
+    if (processFailed(entry)) {
+      if (failedAt == null) failedAt = Date.now();
+      if (Date.now() - failedAt >= EXIT_FLUSH_MS) return true;
+    }
+    return false;
   };
   if (sample()) return Promise.resolve();
   const proc = entry.proc;
@@ -264,17 +282,17 @@ function waitForCloseEvidence(entry, dir, ms = CLOSE_EVIDENCE_MS) {
     if (proc) proc.on('exit', onExit);
   });
 }
-// stopping: the app called stop(). Normal, or exit code 0, is a clean window close
-// (code 0 covers the headless shell, which does not write Preferences). A signal or
-// any other non-zero code is a kill or crash even if the file still says Normal.
-// Any other exit_type (Crashed, SessionEnded) is an error only when the process
-// status does not already say the exit was clean.
+// App Stop (stopping) is our own shutdown, so it is Stopped even if the tree kill
+// leaves Crashed. Otherwise SessionEnded is an OS logoff and is Stopped even when
+// the process is then torn down. A signal or a non-zero code is Error, including
+// when the file still says Normal. Normal with a clean process status is Stopped.
+// Crashed, a missing file, or an unreadable file is Error.
 export function closeOutcome(entry) {
   if (entry.stopping) return 'stopped';
+  if (entry.exitType === 'SessionEnded') return 'stopped';
   if (entry.exitSignal) return 'error';
   if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) return 'error';
   if (entry.exitType === 'Normal') return 'stopped';
-  if (entry.exitCode === 0) return 'stopped';
   return 'error';
 }
 function cleanExit(entry) {
@@ -286,7 +304,10 @@ function crashMessage(entry, reason) {
   const bits = [];
   if (entry.exitSignal) bits.push(`signal ${entry.exitSignal}`);
   else if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) bits.push(`exit code ${entry.exitCode}`);
-  if (entry.exitType && entry.exitType !== 'Normal') bits.push(`exit_type ${entry.exitType}`);
+  if (entry.exitType === 'Crashed') bits.push('exit_type Crashed');
+  else if (entry.exitTypeState === 'unreadable') bits.push('exit_type unreadable');
+  else if (entry.exitTypeState === 'missing') bits.push('exit_type missing');
+  else if (entry.exitType && !CLEAN_EXIT_TYPES.has(entry.exitType)) bits.push(`exit_type ${entry.exitType}`);
   const detail = bits.join(', ');
   if (reason && detail) return `${reason} (${detail})`;
   if (reason) return reason;
@@ -298,13 +319,13 @@ function onClosed(id, ctx, reason) {
   const e = live.get(id);
   if (!e || (ctx && e.ctx !== ctx) || e.closed) return Promise.resolve();
   if (reason && !e.closeReason) e.closeReason = reason;
-  // One settlement for the close event and the health monitor. The monitor must
-  // not decide on the tick that first sees the pid gone: Preferences can still
-  // say Crashed for a moment after the process starts to exit.
+  // The close event and the health monitor share this promise. A second call
+  // observes the same settlement instead of classifying again.
   if (!e.closePromise) e.closePromise = finishClose(id, e);
   return e.closePromise;
 }
 async function finishClose(id, e) {
+  if (e.closed || live.get(id) !== e) return;
   if (!e.stopping) {
     let dir = null;
     try { dir = userDataDir(id); } catch {}
