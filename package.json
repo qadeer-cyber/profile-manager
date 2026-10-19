@@ -9,7 +9,7 @@
     "app": "npm run build && electron .",
     "dev:api": "node server/index.js",
     "dev:web": "vite web",
-    "test:unit": "node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js test/shutdown-ack.test.js test/shutdown-durable.test.js test/testflags.test.js test/ui-status.test.js",
+    "test:unit": "node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js test/shutdown-ack.test.js test/shutdown-durable.test.js test/testflags.test.js test/ui-status.test.js test/offline-smoke-phase.test.js",
     "test:api": "node scripts/run-with-automation.mjs test/api.e2e.js",
     "test:engine": "node scripts/run-with-automation.mjs test/engine.e2e.js && node scripts/run-with-automation.mjs test/lifecycle.e2e.js",
     "test:electron": "npm run build && node test/electron-smoke.js",

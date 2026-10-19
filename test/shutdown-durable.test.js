@@ -63,9 +63,13 @@ test('electron before-quit is a one-shot literal-import shutdown', () => {
   assert.equal(/import\([^)'"]*process\.env/.test(src), false);
   assert.match(src, /PM_SMOKE === '1' && process\.env\.PM_SMOKE_OFFLINE === '1'/);
   const offline = fs.readFileSync(new URL('../electron/offline-smoke.js', import.meta.url), 'utf8');
+  const phases = fs.readFileSync(new URL('../electron/smoke-phases.js', import.meta.url), 'utf8');
   const flag = offline.indexOf("process.env.PM_SMOKE !== '1' || process.env.PM_SMOKE_OFFLINE !== '1'");
-  const create = offline.indexOf("'/api/profiles'");
-  assert.ok(flag >= 0 && create > flag, 'profiles are created only after both smoke flags are checked');
+  const go = offline.indexOf('await dispatchSmokePhase');
+  assert.ok(flag >= 0 && go > flag, 'phase dispatch runs only after both smoke flags are checked');
+  assert.ok(phases.includes("'/api/profiles'"), 'profile creation stays in the phase handlers');
   assert.equal(offline.includes('PRIVATE KEY'), false);
+  assert.equal(phases.includes('PRIVATE KEY'), false);
   assert.equal(/import\([^)'"]*process\.env/.test(offline), false);
+  assert.equal(/import\([^)'"]*process\.env/.test(phases), false);
 });
