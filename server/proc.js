@@ -56,3 +56,21 @@ export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = 
   try { process.kill(pid, 'SIGKILL'); } catch {}
   return waitGone(Math.max(1000, waitMs - graceMs));
 }
+
+
+// PID relationships only; never return command lines or environment data.
+export async function processParents({ platform = process.platform, exec = execFile } = {}) {
+  if (platform === 'win32') {
+    const out = await run(exec, 'powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+      'Get-CimInstance Win32_Process | ForEach-Object { "{0},{1}" -f $_.ProcessId,$_.ParentProcessId }']);
+    return String(out || '').split(/\r?\n/).map(line => {
+      const [pid, parentPid] = line.trim().split(',').map(Number);
+      return { pid, parentPid };
+    }).filter(p => p.pid > 0 && Number.isInteger(p.parentPid));
+  }
+  const out = await run(exec, 'ps', ['-axo', 'pid=,ppid=']);
+  return String(out || '').split(/\r?\n/).map(line => {
+    const [pid, parentPid] = line.trim().split(/\s+/).map(Number);
+    return { pid, parentPid };
+  }).filter(p => p.pid > 0 && Number.isInteger(p.parentPid));
+}

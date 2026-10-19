@@ -250,6 +250,31 @@ try {
   await api('POST', `/api/profiles/${keep.id}/stop`);
   await settled(keep.id);
 
+  // Reuse a just-cleanly-closed profile immediately: its on-disk Normal can
+  // still belong to the previous launch when taskkill happens. No startup sleep.
+  for (let n = 1; n <= 2; n++) {
+    const rapid = await launch(`Rapid-${n}`);
+    await closeLastWindow(rapid);
+    const clean = await settled(rapid.id);
+    stoppedClean(clean, rapid.cdp.pid, `rapid ${n} clean close`);
+    ok(await waitExitType(rapid.id) === 'Normal', `rapid ${n} has prior-launch Normal`);
+    const relaunched = (await api('POST', `/api/profiles/${rapid.id}/launch`, { headless: false })).d;
+    ok(relaunched.running && relaunched.pid, `rapid ${n} immediately relaunched`);
+    await forceKill(relaunched.pid);
+    let dead = null;
+    for (let i = 0; i < 80; i++) {
+      dead = (await api('GET', `/api/profiles/${rapid.id}`)).d;
+      if (dead && !dead.running && dead.last_error) break;
+      await sleep(100);
+    }
+    ok(!!dead && !dead.running && /unexpectedly|died/.test(dead.last_error || ''), `rapid ${n} taskkill is Error despite old Normal (${dead?.last_error})`);
+    ok(!alive(relaunched.pid) && !fs.existsSync(lockPath(rapid.id)) && runningRows(rapid.id) === 0, `rapid ${n} kill cleaned up once`);
+    const recovered = (await api('POST', `/api/profiles/${rapid.id}/launch`, { headless: false })).d;
+    ok(recovered.running && !recovered.last_error, `rapid ${n} recovery clears error`);
+    await api('POST', `/api/profiles/${rapid.id}/stop`);
+    await settled(rapid.id);
+  }
+
   // A real kill is Error. On Windows that kill is `taskkill /F`. Relaunch clears last_error.
   const crash = await launch('Crash');
   const killedWith = await forceKill(crash.cdp.pid);
@@ -400,3 +425,4 @@ try {
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }
+

@@ -3,6 +3,8 @@
 // The remote-debugging port is OFF unless the launch option `automation` is truthy: an open CDP port
 // gives any local process full control of the session.
 import fs from 'fs';
+import { randomUUID } from 'crypto';
+import { readPreferences, observePreferences, captureTermination, waitForTermination, processCorrelation } from './termination-evidence.js';
 import net from 'net';
 import path from 'path';
 import { EventEmitter } from 'events';
@@ -10,7 +12,7 @@ import { chromium } from 'playwright';
 import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
 import { db, userDataDir, getSetting } from './db.js';
 import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
-import { isAlive, killTree, pidMatches } from './proc.js';
+import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
 import { automationDefault, proxyLoopback } from './testflags.js';
 
@@ -27,7 +29,9 @@ export function lifecycleSmokeSnapshot(id) {
   return {
     live: live.has(id), settling: settling.has(id), launching: launching.has(id),
     runningRow: row ? { pid: row.pid } : null, last_error: profile?.last_error ?? null,
-    browserPid: entry?.browserPid ?? null,
+    browserPid: entry?.browserPid ?? null, launchId: entry?.launchId ?? null,
+    childPid: entry?.childPid ?? null, processCorrelation: entry?.processCorrelation ?? null,
+    exitEventSeen: entry?.exitEventSeen ?? null, exitEvidenceTimedOut: entry?.exitEvidenceTimedOut ?? null,
     processAlive: entry?.browserPid ? isAlive(entry.browserPid) : null,
     stopping: entry?.stopping ?? null, cleaned: entry?.cleaned ?? null,
     exitCode: entry?.proc?.exitCode ?? entry?.exitCode ?? null,
@@ -152,7 +156,7 @@ async function doLaunch(p, opts = {}) {
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
   await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
-  let relayUrl = null, ctx = null;
+  let relayUrl = null, ctx = null, entry = null;
   try {
     const cdpPort = automation ? await freePort() : null;
     const args = automation ? [`--remote-debugging-port=${cdpPort}`, '--remote-debugging-address=127.0.0.1'] : [];
@@ -169,16 +173,29 @@ async function doLaunch(p, opts = {}) {
       } else launchOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
       if (proxyLoopback()) args.push('--proxy-bypass-list=<-loopback>'); // dev/test only; packaged builds ignore it
     }
+    const preferencesBaseline = readPreferences(dir);
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {
       if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !executablePath) throw chromiumMissingError(!!headless, true);
       const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
       throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
     }
+    entry = { ctx, relayUrl, launchId: randomUUID(), browserPid: null,
+      stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
+      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null };
+    trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
+    entry.browserPid = browserPid;
+    const owned = await browserOwnedByProfile(browserPid, dir);
+    const parents = entry.childPid && browserPid && Number(entry.childPid) !== Number(browserPid)
+      ? await processParents() : [];
+    entry.processCorrelation = processCorrelation(entry.childPid, browserPid, owned, parents);
+    readExit(entry);
+    applyProfileExit(entry, dir);
+    console.log('PROCESS-CORRELATION ' + JSON.stringify({ id: p.id, launchId: entry.launchId,
+      childPid: entry.childPid, browserPid, correlation: entry.processCorrelation, owned }));
     updateLock(dir, { browserPid, cdpPort });
-    const entry = { ctx, relayUrl, browserPid, stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null, exitType: null, exitTypeState: null, closeReason: null };
     live.set(p.id, entry);
     try {
       db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
@@ -187,12 +204,12 @@ async function doLaunch(p, opts = {}) {
       throw e;
     }
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
-    trackExit(entry);
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
     if (url) await (ctx.pages()[0] || await ctx.newPage()).goto(url).catch(() => {});
     return runInfo(p.id);
   } catch (e) {
+    entry?.detachTermination?.();
     if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
     if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
     releaseLock(dir);
@@ -227,44 +244,15 @@ export function browserProcess(ctx) {
 // (https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/profiles/profile_impl.cc).
 // The service writes Crashed as the profile opens, and Normal only when it shuts down cleanly.
 export function trackExit(entry) {
-  const proc = browserProcess(entry.ctx);
-  entry.proc = proc;
-  if (!proc) {
-    console.warn('CLASSIFIER-FALLBACK playwright browser process handle is missing; not treating that as a crash');
-    return;
-  }
-  if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
-  if (proc.signalCode) entry.exitSignal = proc.signalCode;
-  proc.once('exit', (code, signal) => {
-    entry.exitCode = code;
-    entry.exitSignal = signal;
-  });
+  captureTermination(entry, browserProcess(entry.ctx));
+  if (!entry.proc) console.warn('CLASSIFIER-FALLBACK playwright browser process handle is missing; not treating that as a crash');
 }
-function readExit(entry) {
-  const proc = entry.proc;
-  if (!proc) return;
-  if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
-  if (proc.signalCode) entry.exitSignal = proc.signalCode;
-}
-// missing: no file or no string. unreadable: the file is there but is not JSON yet.
-function readProfileExit(dir) {
-  if (!dir) return { state: 'missing' };
-  const file = path.join(dir, 'Default', 'Preferences');
-  if (!fs.existsSync(file)) return { state: 'missing' };
-  try {
-    const value = JSON.parse(fs.readFileSync(file, 'utf8'))?.profile?.exit_type;
-    if (typeof value !== 'string' || !value) return { state: 'missing' };
-    return { state: 'ok', value };
-  } catch { return { state: 'unreadable' }; }
-}
-function applyProfileExit(entry, dir) {
-  const reading = readProfileExit(dir);
-  entry.exitTypeState = reading.state;
-  entry.exitType = reading.state === 'ok' ? reading.value : null;
-}
+function readExit(entry) { entry.readTermination?.(); }
+function readProfileExit(dir) { return readPreferences(dir); }
+function applyProfileExit(entry, dir) { observePreferences(entry, readProfileExit(dir)); }
 const CLEAN_EXIT_TYPES = new Set(['Normal', 'SessionEnded']);
-// How long to wait for the pid to die. The SOCKS relay can hold the child-handle
-// exit event after the window is already gone.
+// How long to wait for the PID to die. Process death and delivery of the child
+// exit status are separate observations; stdio can delay close, not exit.
 const PID_WAIT_MS = 3000;
 // Chromium writes Preferences during shutdown. Until the pid is dead the file can
 // still say Crashed, which is the value written when the profile opened. After the
@@ -290,9 +278,8 @@ async function waitUntilDead(entry, ms) {
       proc?.removeListener('exit', onExit);
       resolve();
     };
-    const onExit = (code, signal) => {
-      entry.exitCode = code;
-      entry.exitSignal = signal;
+    const onExit = () => {
+      readExit(entry); // Never promote an unverified launcher event to browser evidence.
       if (browserDead(entry)) finish();
     };
     const iv = setInterval(() => { if (browserDead(entry)) finish(); }, 50);
@@ -300,13 +287,16 @@ async function waitUntilDead(entry, ms) {
     if (proc) proc.on('exit', onExit);
   });
 }
-async function waitForCloseEvidence(entry, dir) {
+export async function waitForCloseEvidence(entry, dir, { exitStatusMs = 3000, prefsMs = PREFS_AFTER_EXIT_MS } = {}) {
   await waitUntilDead(entry, PID_WAIT_MS);
   if (!browserDead(entry)) return;
+  // Even when liveness already says dead, preserve a bounded opportunity for
+  // the matching child status to arrive before inspecting fallback Preferences.
+  await waitForTermination(entry, exitStatusMs);
   const started = Date.now();
-  while (Date.now() - started < PREFS_AFTER_EXIT_MS) {
+  while (Date.now() - started < prefsMs) {
     applyProfileExit(entry, dir);
-    if (CLEAN_EXIT_TYPES.has(entry.exitType)) return;
+    if (entry.exitTypeFresh && CLEAN_EXIT_TYPES.has(entry.exitType)) return;
     await sleep(50);
   }
   applyProfileExit(entry, dir);
@@ -337,28 +327,33 @@ async function waitForCloseEvidence(entry, dir) {
 //                                      is missing (headless shell never writes it) or
 //                                      still says Crashed (startup sentinel). A signal
 //                                      or a non-zero code stays Error.
-//   unknown code + Crashed           → error
-//   unknown code + Normal            → stopped
-//   unknown code + missing/unreadable/other → stopped, and CLASSIFIER-UNKNOWN is logged
+//   unknown code + current-launch Crashed → error
+//   unknown code + current-launch Normal  → stopped
+//   unknown code + stale/missing/unreadable/other → unknown (no new UI/DB status)
 export function classifyExitCode(entry) {
   if (entry.exitSignal) return 'error';
   if (typeof entry.exitCode === 'number') return entry.exitCode === 0 ? 'stopped' : 'error';
   return 'unknown';
 }
 export function classifyPreferences(entry) {
-  if (entry.exitTypeState !== 'ok') return 'unknown';
+  if (entry.exitTypeState !== 'ok' || entry.exitTypeFresh === false) return 'unknown';
   if (CLEAN_EXIT_TYPES.has(entry.exitType)) return 'stopped';
   if (entry.exitType === 'Crashed') return 'error';
   return 'unknown';
 }
-export function closeOutcome(entry) {
+export function terminationOutcome(entry) {
   if (entry.stopping) return 'stopped';
   if (entry.stillAlive) return 'error';
-  if (entry.exitTypeState === 'ok' && entry.exitType === 'SessionEnded') return 'stopped';
+  if (entry.exitTypeState === 'ok' && entry.exitTypeFresh !== false && entry.exitType === 'SessionEnded') return 'stopped';
   const byCode = classifyExitCode(entry);
   if (byCode !== 'unknown') return byCode;
-  if (classifyPreferences(entry) === 'error') return 'error';
-  return 'stopped';
+  return classifyPreferences(entry);
+}
+// Existing external/unit helper keeps the legacy stopped presentation for unknown.
+// Production finalization uses terminationOutcome directly and retains unknown.
+export function closeOutcome(entry) {
+  const outcome = terminationOutcome(entry);
+  return outcome === 'unknown' ? 'stopped' : outcome;
 }
 function logClassifierEvidence(id, entry, chosen) {
   let name = null;
@@ -366,7 +361,12 @@ function logClassifierEvidence(id, entry, chosen) {
   const byCode = classifyExitCode(entry);
   const byPrefs = classifyPreferences(entry);
   console.log('CLASSIFIER-EVIDENCE ' + JSON.stringify({
-    id, name,
+    id, name, launchId: entry.launchId ?? null,
+    childPid: entry.childPid ?? null, browserPid: entry.browserPid ?? null,
+    processCorrelation: entry.processCorrelation ?? null,
+    childExitCode: entry.childExitCode ?? null, childExitSignal: entry.childExitSignal ?? null,
+    exitEventSeen: !!entry.exitEventSeen, exitEvidenceSource: entry.exitEvidenceSource ?? null,
+    exitEvidenceTimedOut: !!entry.exitEvidenceTimedOut, exitTypeFresh: entry.exitTypeFresh ?? null,
     exitCode: entry.exitCode ?? null,
     signal: entry.exitSignal ?? null,
     exitType: entry.exitType ?? null,
@@ -381,10 +381,6 @@ function logClassifierEvidence(id, entry, chosen) {
   if (!entry.stopping && !entry.stillAlive && byCode === 'unknown' && byPrefs === 'unknown') {
     console.warn('CLASSIFIER-UNKNOWN exit code and exit_type are both unknown; not marking a crash');
   }
-}
-function cleanExit(entry) {
-  readExit(entry);
-  return closeOutcome(entry) === 'stopped';
 }
 function crashMessage(entry, reason) {
   readExit(entry);
@@ -436,8 +432,9 @@ async function finishClose(id, e) {
   readExit(e);
   e.stillAlive = !browserDead(e);
   if (browserDead(e) && !e.exitTypeState) applyProfileExit(e, dir);
-  const crashed = !cleanExit(e);
-  logClassifierEvidence(id, e, crashed ? 'error' : 'stopped');
+  const outcome = terminationOutcome(e);
+  const crashed = outcome === 'error';
+  logClassifierEvidence(id, e, outcome);
   // A newer launch owns the row and the lock. releaseLock keys off ownerPid, which
   // is this server for both launches, so the browser pid has to match too.
   const superseded = live.has(id) || launching.has(id);
@@ -457,14 +454,20 @@ async function finishClose(id, e) {
       try { setStatus(id, { last_error: message }); } catch {}
       emit('profile:crashed', id, { error: message });
       emit('profile:stopped', id, { error: message });
-    } else {
+    } else if (outcome === 'stopped') {
       try { setStatus(id, { last_error: null }); } catch {}
       emit('profile:stopped', id, { error: null });
+    } else {
+      // No new persisted/UI status. Release dead-process resources, preserve the
+      // existing error field, and explicitly report uncertainty in evidence/events.
+      const error = db.prepare('SELECT last_error FROM profiles WHERE id=?').get(id)?.last_error ?? null;
+      emit('profile:stopped', id, { error, termination: 'unknown' });
     }
   }
   // The relay belongs to this launch. Close it after the row and the lock are gone
   // so a clean window close is already Stopped, including for an authenticated SOCKS proxy.
   if (e.relayUrl) await closeAnonymizedProxy(e.relayUrl, true).catch(() => {});
+  e.detachTermination?.();
   e.closed = true;
 }
 
@@ -473,7 +476,10 @@ let healthTimer = null;
 export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
   stopHealthMonitor();
   healthTimer = setInterval(() => {
-    for (const [id, e] of live) if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
+    for (const [id, e] of live) {
+      if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
+      else if (!e.stopping) applyProfileExit(e, userDataDir(id));
+    }
   }, intervalMs);
   healthTimer.unref?.();
 }

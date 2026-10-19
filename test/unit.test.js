@@ -198,6 +198,12 @@ test('installed playwright-core 1.64.1 exposes the launched browser child', asyn
     assert.equal(typeof proc?.pid, 'number');
     assert.ok(proc.pid > 0);
     assert.equal(typeof proc.once, 'function');
+    const session = await ctx.browser().newBrowserCDPSession();
+    const info = await session.send('SystemInfo.getProcessInfo');
+    await session.detach();
+    const pid = Number(info.processInfo.find(p => p.type === 'browser').id);
+    assert.equal(Number(proc.pid), pid, 'Playwright child PID equals Chromium browser PID');
+    assert.ok(await (await import('../server/proc.js')).pidMatches(pid, dir), 'browser command line belongs to this profile');
   } finally {
     await ctx.close();
   }
@@ -268,3 +274,7 @@ test('migrations: v6 moves inline proxies into the library (dedupe identical, ke
   assert.throws(() => db.prepare("UPDATE profiles SET proxy_id='nope' WHERE id='d'").run(), /FOREIGN KEY/);
   assert.throws(() => db.prepare("INSERT INTO proxies (id,name,type,host,port,created_at,updated_at) VALUES ('x','x','ftp','h',1,'t','t')").run(), /CHECK/);
 });
+
+
+// Per-launch evidence regressions run under the same unit-test command.
+await import('./termination-evidence.test.js');
