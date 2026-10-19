@@ -6,7 +6,7 @@ import http from 'http';
 import os from 'os';
 import path from 'path';
 import {
-  SMOKE_PHASES, selectSmokePhase, dispatchSmokePhase, phaseHandlers,
+  SMOKE_PHASES, selectSmokePhase, classifyLaunch, writeSmokeRejection, dispatchSmokePhase, phaseHandlers,
   runCleanPhase, runUpgradePhase, runLifecyclePhase, runSeedPhase, runCheckPhase, commonSmokeFacts,
 } from '../electron/smoke-phases.js';
 
@@ -208,6 +208,79 @@ test('the handler table is exactly the five phases', () => {
   const handlers = phaseHandlers(base());
   assert.deepEqual(Object.keys(handlers), [...SMOKE_PHASES]);
   for (const name of SMOKE_PHASES) assert.equal(typeof handlers[name], 'function');
+});
+
+test('a missing phase is rejected only after both smoke gates are set', () => {
+  assert.deepEqual(classifyLaunch({}), { mode: 'app' });
+  assert.deepEqual(classifyLaunch({ PM_SMOKE_PHASE: 'nope' }), { mode: 'app' });
+  assert.deepEqual(classifyLaunch({ PM_SMOKE: '1' }), { mode: 'desktop-smoke' });
+  assert.deepEqual(classifyLaunch({ PM_SMOKE: '1', PM_SMOKE_PHASE: 'seed' }), { mode: 'desktop-smoke' });
+  assert.deepEqual(classifyLaunch({ PM_SMOKE_OFFLINE: '1', PM_SMOKE_PHASE: 'clean' }), { mode: 'app' });
+  const missing = classifyLaunch({ PM_SMOKE: '1', PM_SMOKE_OFFLINE: '1' });
+  assert.equal(missing.mode, 'rejected');
+  assert.equal(missing.body.phase, null);
+  assert.match(missing.error, /PM_SMOKE_PHASE must be one of clean, upgrade, seed, check, lifecycle; got \(missing\)/);
+  const bad = classifyLaunch({ PM_SMOKE: '1', PM_SMOKE_OFFLINE: '1', PM_SMOKE_PHASE: 'seeded' });
+  assert.equal(bad.mode, 'rejected');
+  assert.equal(bad.body.phase, 'seeded');
+  assert.match(bad.error, /got "seeded"/);
+  assert.deepEqual(classifyLaunch({ PM_SMOKE: '1', PM_SMOKE_OFFLINE: '1', PM_SMOKE_PHASE: 'lifecycle' }), { mode: 'offline', phase: 'lifecycle' });
+});
+
+test('a rejected phase writes a result file the harness can read', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-phase-reject-'));
+  const file = path.join(dir, 'result.json');
+  const decision = classifyLaunch({ PM_SMOKE: '1', PM_SMOKE_OFFLINE: '1', PM_SMOKE_PHASE: 'seeded', PM_SMOKE_RESULT: file });
+  writeSmokeRejection({ PM_SMOKE_RESULT: file }, decision.body, fs.writeFileSync);
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), decision.body);
+  assert.match(decision.body.error, /got "seeded"/);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('packaged entry rejects a bad offline phase before the backend starts', () => {
+  const src = fs.readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
+  const ready = src.slice(src.indexOf('app.whenReady'));
+  const gate = ready.indexOf("process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1'");
+  const exit = ready.indexOf('app.exit(1)');
+  const start = ready.indexOf('await startBackend()');
+  assert.ok(gate >= 0 && exit > gate && start > exit, 'rejection exits before startBackend');
+  assert.equal(src.includes('selectSmokePhase'), false, 'main does not validate the phase on its own');
+  const offline = fs.readFileSync(new URL('../electron/offline-smoke.js', import.meta.url), 'utf8');
+  const flag = offline.indexOf("process.env.PM_SMOKE !== '1' || process.env.PM_SMOKE_OFFLINE !== '1'");
+  const rejectExit = offline.indexOf('app.exit(1)');
+  const go = offline.indexOf('await dispatchSmokePhase');
+  assert.ok(flag >= 0 && rejectExit > flag && go > rejectExit, 'dispatch follows the gate and the non-zero exit');
+  assert.ok(offline.indexOf('app.quit()') > go, 'quit is the success path');
+});
+
+test('workflow smoke steps that enter offline smoke set PM_SMOKE_PHASE explicitly', () => {
+  const yml = fs.readFileSync(new URL('../.github/workflows/windows-native-validation.yml', import.meta.url), 'utf8');
+  const step = name => {
+    const start = yml.indexOf(`- name: ${name}`);
+    assert.ok(start >= 0, name);
+    const next = yml.indexOf('\n      - name:', start + 1);
+    return yml.slice(start, next === -1 ? undefined : next);
+  };
+  const ui = step('UI smoke');
+  const desktop = step('Electron desktop smoke on Windows');
+  const offline = step('Offline smoke of the installed app');
+  assert.equal(ui.includes('PM_SMOKE'), false);
+  assert.equal(desktop.includes('PM_SMOKE'), false);
+  assert.match(desktop, /npm run test:electron/);
+  assert.match(offline, /node test\/electron-smoke-offline\.js/);
+  assert.equal(offline.includes('PM_SMOKE_PHASE:'), false, 'one YAML value cannot name all five phases');
+  const harness = fs.readFileSync(new URL('./electron-smoke-offline.js', import.meta.url), 'utf8');
+  assert.match(harness, /env\.PM_SMOKE_PHASE = phase/);
+  for (const phase of SMOKE_PHASES) assert.match(harness, new RegExp(`runPhase\\('${phase}'`));
+  const desktopSmoke = fs.readFileSync(new URL('./electron-smoke.js', import.meta.url), 'utf8');
+  assert.match(desktopSmoke, /PM_SMOKE: '1'/);
+  assert.match(desktopSmoke, /delete smokeEnv\.PM_SMOKE_OFFLINE/);
+  assert.match(desktopSmoke, /delete smokeEnv\.PM_SMOKE_PHASE/);
+  assert.equal(/PM_SMOKE_PHASE\s*=/.test(desktopSmoke), false);
+  assert.equal(/PM_SMOKE_OFFLINE\s*=/.test(desktopSmoke), false);
+  const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(pkg.main, 'electron/main.js');
+  assert.ok(pkg.build.files.includes('electron/**'));
 });
 
 test('common facts keep the native and bundled-browser fields', async () => {

@@ -6,6 +6,7 @@ import fs from 'fs';
 import https from 'https';
 import os from 'os';
 import path from 'path';
+import { SMOKE_PHASES } from '../electron/smoke-gate.js';
 
 if (process.platform !== 'win32') {
   console.error('This smoke runs on Windows against the installed per-user Profile Manager.');
@@ -19,6 +20,9 @@ let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); };
 
 function childEnv(phase, tlsPort) {
+  if (!SMOKE_PHASES.includes(phase)) {
+    throw new Error(`PM_SMOKE_PHASE must be set explicitly to one of ${SMOKE_PHASES.join(', ')}; got ${phase}`);
+  }
   const env = { ...process.env };
   delete env.PM_BROWSERS_PATH;
   delete env.PLAYWRIGHT_BROWSERS_PATH;

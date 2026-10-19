@@ -228,6 +228,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $path)) { Write-Error "missing $path"; exit 1 }
             Write-Output "present $path"
           }
+      # Each launch in test/electron-smoke-offline.js sets PM_SMOKE_PHASE to clean, upgrade, seed, check, or lifecycle.
       - name: Offline smoke of the installed app
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         timeout-minutes: 35

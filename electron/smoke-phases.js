@@ -6,8 +6,9 @@ import { execFile } from 'child_process';
 import { createRequire } from 'module';
 import { MANIFEST } from '../server/chromium.js';
 import { processCommandLine } from '../server/proc.js';
+import { selectSmokePhase } from './smoke-gate.js';
 
-export const SMOKE_PHASES = Object.freeze(['clean', 'upgrade', 'seed', 'check', 'lifecycle']);
+export { SMOKE_PHASES, selectSmokePhase, classifyLaunch, writeSmokeRejection } from './smoke-gate.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const closeServer = server => new Promise(resolve => server.close(() => resolve()));
@@ -22,14 +23,6 @@ function nativeModulePath() {
   const db = new Database(':memory:');
   db.close();
   return Object.keys(require.cache).find(p => p.includes('better-sqlite3') && p.endsWith('.node')) || '';
-}
-
-export function selectSmokePhase(value) {
-  if (typeof value !== 'string' || !SMOKE_PHASES.includes(value)) {
-    const shown = value === undefined || value === null || value === '' ? '(missing)' : JSON.stringify(value);
-    throw Object.assign(new Error(`PM_SMOKE_PHASE must be one of ${SMOKE_PHASES.join(', ')}; got ${shown}`), { code: 'SMOKE_PHASE' });
-  }
-  return value;
 }
 
 // handlers is the explicit table { clean, upgrade, seed, check, lifecycle }.

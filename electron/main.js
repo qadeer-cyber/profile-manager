@@ -7,6 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { applyPackagedFlag } from '../server/testflags.js';
 import { durableShutdown } from '../server/shutdown.js';
+import { classifyLaunch, writeSmokeRejection } from './smoke-gate.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
@@ -135,6 +136,19 @@ app.on('before-quit', e => {
 app.on('window-all-closed', () => app.quit());
 
 app.whenReady().then(async () => {
+  // Phase is validated only inside offline smoke, and before the backend starts,
+  // so a bad phase writes its result and exits before the harness can time out.
+  // A normal launch leaves both gates unset and never enters this branch.
+  if (process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1') {
+    const decision = classifyLaunch(process.env);
+    if (decision.mode === 'rejected') {
+      log(decision.error);
+      try { writeSmokeRejection(process.env, decision.body, fs.writeFileSync); }
+      catch (err) { logErr('could not write smoke result', err); }
+      app.exit(1);
+      return;
+    }
+  }
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
   if (!SMOKE) Menu.setApplicationMenu(null);
   try { await startBackend(); }

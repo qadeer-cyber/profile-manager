@@ -67,6 +67,11 @@ test('electron before-quit is a one-shot literal-import shutdown', () => {
   const flag = offline.indexOf("process.env.PM_SMOKE !== '1' || process.env.PM_SMOKE_OFFLINE !== '1'");
   const go = offline.indexOf('await dispatchSmokePhase');
   assert.ok(flag >= 0 && go > flag, 'phase dispatch runs only after both smoke flags are checked');
+  const ready = src.slice(src.indexOf('app.whenReady'));
+  const readyGate = ready.indexOf("process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1'");
+  const readyExit = ready.indexOf('app.exit(1)');
+  const readyStart = ready.indexOf('await startBackend()');
+  assert.ok(readyGate >= 0 && readyExit > readyGate && readyStart > readyExit, 'a bad phase exits before the backend starts');
   assert.ok(phases.includes("'/api/profiles'"), 'profile creation stays in the phase handlers');
   assert.equal(offline.includes('PRIVATE KEY'), false);
   assert.equal(phases.includes('PRIVATE KEY'), false);

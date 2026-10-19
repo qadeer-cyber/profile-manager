@@ -24,7 +24,10 @@ const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} 
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 const t0 = Date.now();
-const child = spawn(cmd, finalArgs, { env: { ...process.env, PM_SMOKE: '1', PM_USER_DATA: userData, PM_SMOKE_RESULT: result, PM_SMOKE_SCREENSHOT: shot, ...(packaged && { PM_BROWSERS_PATH: path.join(userData, 'browsers') }), ELECTRON_DISABLE_SECURITY_WARNINGS: '0' }, stdio: ['ignore', 'pipe', 'pipe'] });
+const smokeEnv = { ...process.env, PM_SMOKE: '1', PM_USER_DATA: userData, PM_SMOKE_RESULT: result, PM_SMOKE_SCREENSHOT: shot, ...(packaged && { PM_BROWSERS_PATH: path.join(userData, 'browsers') }), ELECTRON_DISABLE_SECURITY_WARNINGS: '0' };
+delete smokeEnv.PM_SMOKE_OFFLINE;
+delete smokeEnv.PM_SMOKE_PHASE;
+const child = spawn(cmd, finalArgs, { env: smokeEnv, stdio: ['ignore', 'pipe', 'pipe'] });
 let out = ''; child.stdout.on('data', d => out += d); child.stderr.on('data', d => out += d);
 child.on('error', err => { out += '\n' + (err.stack || err.message); });
 const code = await new Promise(r => { const t = setTimeout(() => { child.kill('SIGKILL'); r('timeout'); }, packaged ? 600000 : 90000); child.on('exit', c => { clearTimeout(t); r(c); }); });
