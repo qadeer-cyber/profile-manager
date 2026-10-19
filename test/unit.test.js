@@ -14,7 +14,7 @@ const { migrate, migrations, currentVersion } = await import('../server/migratio
 const lock = await import('../server/lock.js');
 const { killTree, isAlive } = await import('../server/proc.js');
 const secrets = await import('../server/secrets.js');
-const { closeOutcome } = await import('../server/browsers.js');
+const { browserProcess, classifyExitCode, classifyPreferences, closeOutcome, trackExit } = await import('../server/browsers.js');
 
 // ---------- migrations ----------
 test('migrations: fresh database reaches latest version', () => {
@@ -100,18 +100,64 @@ test('killTree (Windows path): calls taskkill /PID <pid> /T /F', async () => {
 });
 test('isAlive: false for a dead pid', () => assert.equal(isAlive(2 ** 22 + 12345), false));
 
-test('closeOutcome: Normal and SessionEnded are Stopped; Crashed, missing, and unreadable are Error', () => {
+test('closeOutcome: known exit status decides, unknown is not a crash, SessionEnded is Stopped', () => {
   const base = { stopping: false, exitCode: null, exitSignal: null, exitType: null, exitTypeState: 'missing' };
+  assert.equal(classifyExitCode({ exitSignal: 'SIGKILL', exitCode: null }), 'error');
+  assert.equal(classifyExitCode({ exitCode: 0, exitSignal: null }), 'stopped');
+  assert.equal(classifyExitCode({ exitCode: 1, exitSignal: null }), 'error');
+  assert.equal(classifyExitCode({ exitCode: null, exitSignal: null }), 'unknown');
+  assert.equal(classifyPreferences({ exitTypeState: 'ok', exitType: 'Normal' }), 'stopped');
+  assert.equal(classifyPreferences({ exitTypeState: 'ok', exitType: 'SessionEnded' }), 'stopped');
+  assert.equal(classifyPreferences({ exitTypeState: 'ok', exitType: 'Crashed' }), 'error');
+  assert.equal(classifyPreferences({ exitTypeState: 'missing', exitType: null }), 'unknown');
+  assert.equal(classifyPreferences({ exitTypeState: 'unreadable', exitType: null }), 'unknown');
+  assert.equal(classifyPreferences({ exitTypeState: 'ok', exitType: 'Other' }), 'unknown');
   assert.equal(closeOutcome({ ...base, stopping: true, exitSignal: 'SIGKILL', exitType: 'Crashed', exitTypeState: 'ok' }), 'stopped');
   assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok', exitCode: 0 }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitTypeState: 'missing' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitTypeState: 'unreadable' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitCode: 0, exitType: 'Crashed', exitTypeState: 'ok' }), 'stopped');
   assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok' }), 'stopped');
   assert.equal(closeOutcome({ ...base, exitType: 'SessionEnded', exitTypeState: 'ok', exitCode: 1, exitSignal: 'SIGTERM' }), 'stopped');
-  assert.equal(closeOutcome({ ...base, exitType: 'Crashed', exitTypeState: 'ok', exitCode: 0 }), 'error');
-  assert.equal(closeOutcome({ ...base, exitCode: 0, exitTypeState: 'missing' }), 'error');
-  assert.equal(closeOutcome({ ...base, exitCode: 0, exitTypeState: 'unreadable' }), 'error');
-  assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok', exitSignal: 'SIGKILL' }), 'error');
-  assert.equal(closeOutcome({ ...base, exitType: 'Normal', exitTypeState: 'ok', exitCode: 1 }), 'error');
-  assert.equal(closeOutcome(base), 'error');
+  assert.equal(closeOutcome({ ...base, exitType: 'Crashed', exitTypeState: 'ok' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitSignal: 'SIGKILL', exitType: 'Normal', exitTypeState: 'ok' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitCode: 1, exitType: 'Normal', exitTypeState: 'ok' }), 'error');
+  assert.equal(closeOutcome({ ...base, exitCode: 1, exitTypeState: 'missing' }), 'error');
+  assert.equal(closeOutcome(base), 'stopped');
+  assert.equal(closeOutcome({ ...base, exitTypeState: 'unreadable' }), 'stopped');
+  assert.equal(closeOutcome({ ...base, stillAlive: true, exitCode: 0 }), 'error');
+});
+test('missing playwright process handle is logged and is not a crash', () => {
+  const logs = [];
+  const orig = console.warn;
+  console.warn = (...a) => logs.push(a.join(' '));
+  try {
+    const entry = { ctx: { browser() { return {}; } }, exitCode: null, exitSignal: null, exitType: null, exitTypeState: 'missing' };
+    trackExit(entry);
+    assert.equal(entry.proc, null);
+    assert.match(logs.join('\n'), /CLASSIFIER-FALLBACK/);
+    assert.equal(closeOutcome(entry), 'stopped');
+  } finally { console.warn = orig; }
+});
+test('installed playwright-core 1.64.1 exposes the launched browser child', async () => {
+  const file = path.resolve('node_modules/playwright-core/lib/coreBundle.js');
+  const lines = fs.readFileSync(file, 'utf8').split(/\n/);
+  assert.match(lines[41260], /browserProcess = \{/);
+  assert.match(lines[41262], /process: launchedProcess/);
+  assert.match(lines[65543], /clientConnection\.toImpl = /);
+  const { chromium } = await import('playwright');
+  const dir = fs.mkdtempSync(path.join(tmp, 'pw-'));
+  const ctx = await chromium.launchPersistentContext(dir, {
+    headless: true, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false,
+  });
+  try {
+    const proc = browserProcess(ctx);
+    assert.equal(typeof proc?.pid, 'number');
+    assert.ok(proc.pid > 0);
+    assert.equal(typeof proc.once, 'function');
+  } finally {
+    await ctx.close();
+  }
 });
 
 // ---------- secrets ----------

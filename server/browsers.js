@@ -185,9 +185,14 @@ async function doLaunch(p, opts = {}) {
   }
 }
 
-// This Playwright build does not put process() on the Browser client. The in-process
-// connection exposes the launched child on the server browser, which is what actually exits.
-function browserProcess(ctx) {
+// playwright-core 1.64.1 does not put process() on the Browser client. The in-process
+// connection's server browser holds the launched Node child:
+// node_modules/playwright-core/lib/coreBundle.js line 41263 (`process: launchedProcess`
+// inside BrowserType._launchProcess). That object is browserOptions.browserProcess
+// (line 41142), stored as this.options (line 54032). clientConnection.toImpl (line 65544)
+// returns that server browser. If this reference is missing, the caller must not treat
+// the profile as crashed; trackExit logs CLASSIFIER-FALLBACK and leaves the exit code unknown.
+export function browserProcess(ctx) {
   try {
     const browser = ctx.browser?.();
     if (!browser) return null;
@@ -204,10 +209,13 @@ function browserProcess(ctx) {
 // SessionEnded. profile_impl.cc asks ExitTypeService and treats only kCrashed as a crash
 // (https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/profiles/profile_impl.cc).
 // The service writes Crashed as the profile opens, and Normal only when it shuts down cleanly.
-function trackExit(entry) {
+export function trackExit(entry) {
   const proc = browserProcess(entry.ctx);
   entry.proc = proc;
-  if (!proc) return;
+  if (!proc) {
+    console.warn('CLASSIFIER-FALLBACK playwright browser process handle is missing; not treating that as a crash');
+    return;
+  }
   if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
   if (proc.signalCode) entry.exitSignal = proc.signalCode;
   proc.once('exit', (code, signal) => {
@@ -286,18 +294,76 @@ async function waitForCloseEvidence(entry, dir) {
   }
   applyProfileExit(entry, dir);
 }
-// App Stop (stopping) is our own shutdown, so it is Stopped even if the tree kill
-// leaves Crashed. Otherwise SessionEnded is an OS logoff and is Stopped even when
-// the process is then torn down. A signal or a non-zero code is Error, including
-// when the file still says Normal. Normal with a clean process status is Stopped.
-// Crashed, a missing file, or an unreadable file is Error.
+// Two observations, recorded on every close as CLASSIFIER-EVIDENCE. Neither one is a
+// crash when it has nothing to say.
+//
+// Exit-code approach (93c54e0, except a missing code is unknown rather than a crash):
+//   signal            → error
+//   exit code 0       → stopped
+//   any other number  → error
+//   null / undefined  → unknown
+//
+// Preferences approach, read only after the pid is fully dead (Chromium writes
+// Crashed when the profile opens and rewrites the file during shutdown):
+//   Normal, SessionEnded → stopped
+//   Crashed              → error
+//   missing, unreadable, or any other string → unknown
+// SessionEnded is ExitType::kForcedShutdown (OS logoff / WM_ENDSESSION), not a crash.
+// See exit_type_service.cc, exit_type_service.h, BrowserProcessImpl::EndSession,
+// and profile_impl.cc (only kCrashed restores a crashed session).
+//
+// Combination, chosen because each source is wrong in a case the other covers:
+//   stopping                         → stopped (app Stop, even if the tree kill signals)
+//   still alive after the wait       → error (the process did not exit; not an unknown code)
+//   SessionEnded                     → stopped, even if the OS then kills the process
+//   known exit code or signal        → that result. Code 0 stays Stopped when the file
+//                                      is missing (headless shell never writes it) or
+//                                      still says Crashed (startup sentinel). A signal
+//                                      or a non-zero code stays Error.
+//   unknown code + Crashed           → error
+//   unknown code + Normal            → stopped
+//   unknown code + missing/unreadable/other → stopped, and CLASSIFIER-UNKNOWN is logged
+export function classifyExitCode(entry) {
+  if (entry.exitSignal) return 'error';
+  if (typeof entry.exitCode === 'number') return entry.exitCode === 0 ? 'stopped' : 'error';
+  return 'unknown';
+}
+export function classifyPreferences(entry) {
+  if (entry.exitTypeState !== 'ok') return 'unknown';
+  if (CLEAN_EXIT_TYPES.has(entry.exitType)) return 'stopped';
+  if (entry.exitType === 'Crashed') return 'error';
+  return 'unknown';
+}
 export function closeOutcome(entry) {
   if (entry.stopping) return 'stopped';
-  if (entry.exitType === 'SessionEnded') return 'stopped';
-  if (entry.exitSignal) return 'error';
-  if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) return 'error';
-  if (entry.exitType === 'Normal') return 'stopped';
-  return 'error';
+  if (entry.stillAlive) return 'error';
+  if (entry.exitTypeState === 'ok' && entry.exitType === 'SessionEnded') return 'stopped';
+  const byCode = classifyExitCode(entry);
+  if (byCode !== 'unknown') return byCode;
+  if (classifyPreferences(entry) === 'error') return 'error';
+  return 'stopped';
+}
+function logClassifierEvidence(id, entry, chosen) {
+  let name = null;
+  try { name = db.prepare('SELECT name FROM profiles WHERE id=?').get(id)?.name ?? null; } catch {}
+  const byCode = classifyExitCode(entry);
+  const byPrefs = classifyPreferences(entry);
+  console.log('CLASSIFIER-EVIDENCE ' + JSON.stringify({
+    id, name,
+    exitCode: entry.exitCode ?? null,
+    signal: entry.exitSignal ?? null,
+    exitType: entry.exitType ?? null,
+    exitTypeState: entry.exitTypeState ?? null,
+    procMissing: !entry.proc,
+    stopping: !!entry.stopping,
+    stillAlive: !!entry.stillAlive,
+    exitCodeApproach: byCode,
+    prefsApproach: byPrefs,
+    chosen,
+  }));
+  if (!entry.stopping && !entry.stillAlive && byCode === 'unknown' && byPrefs === 'unknown') {
+    console.warn('CLASSIFIER-UNKNOWN exit code and exit_type are both unknown; not marking a crash');
+  }
 }
 function cleanExit(entry) {
   readExit(entry);
@@ -306,6 +372,7 @@ function cleanExit(entry) {
 function crashMessage(entry, reason) {
   readExit(entry);
   const bits = [];
+  if (entry.stillAlive) bits.push('process still alive');
   if (entry.exitSignal) bits.push(`signal ${entry.exitSignal}`);
   else if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) bits.push(`exit code ${entry.exitCode}`);
   if (entry.exitType === 'Crashed') bits.push('exit_type Crashed');
@@ -322,40 +389,62 @@ function crashMessage(entry, reason) {
 function onClosed(id, ctx, reason) {
   const e = live.get(id);
   if (!e || (ctx && e.ctx !== ctx)) return Promise.resolve();
-  // One-shot per launch. The close event and the health monitor both call this.
-  // The second caller finds the entry gone and does not classify again.
+  // One-shot per launch. The close event, the health monitor, Stop, and a relaunch
+  // all meet here. The second caller finds the entry gone and does not classify again.
+  if (e.cleaned || e.done) return e.done || Promise.resolve();
   live.delete(id);
   settling.set(id, e);
   if (reason && !e.closeReason) e.closeReason = reason;
   e.done = finishClose(id, e).finally(() => { if (settling.get(id) === e) settling.delete(id); });
   return e.done;
 }
+function ownsLock(lock, browserPid) {
+  if (!lock || lock.corrupt) return true;
+  if (!lock.browserPid || !browserPid) return true;
+  return lock.browserPid === browserPid;
+}
 async function finishClose(id, e) {
-  if (!e.stopping) {
-    let dir = null;
-    try { dir = userDataDir(id); } catch {}
-    await waitForCloseEvidence(e, dir);
-  }
-  // A launch that started after this entry was removed owns the profile now.
-  if (live.has(id) || launching.has(id)) return;
-  e.closed = true;
+  if (e.cleaned) return;
+  e.cleaned = true;
+  let dir = null;
+  try { dir = userDataDir(id); } catch {}
+  if (!e.stopping) await waitForCloseEvidence(e, dir);
+  readExit(e);
+  e.stillAlive = !e.stopping && !browserDead(e);
+  // Preferences is meaningful only after the process has fully exited.
+  if (!e.stillAlive && browserDead(e) && !e.exitTypeState) applyProfileExit(e, dir);
   const crashed = !cleanExit(e);
-  if (crashed && e.browserPid && isAlive(e.browserPid)) { try { await killTree(e.browserPid, { expect: userDataDir(id) }); } catch {} }
-  const row = db.prepare('SELECT pid FROM running WHERE id=?').get(id);
-  if (row && e.browserPid && row.pid && row.pid !== e.browserPid) return;
-  db.prepare('DELETE FROM running WHERE id=?').run(id);
-  try { const dir = userDataDir(id); releaseLock(dir); if (crashed) clearChromeLocks(dir); } catch {}
-  // The relay is local bookkeeping. Close it after the row and the lock are gone
+  logClassifierEvidence(id, e, crashed ? 'error' : 'stopped');
+  if (crashed && e.browserPid && isAlive(e.browserPid)) {
+    try { await killTree(e.browserPid, { expect: dir || userDataDir(id) }); } catch {}
+  }
+  // A newer launch owns the row and the lock. releaseLock keys off ownerPid, which
+  // is this server for both launches, so the browser pid has to match too.
+  const superseded = live.has(id) || launching.has(id);
+  if (!superseded) {
+    const row = db.prepare('SELECT pid FROM running WHERE id=?').get(id);
+    if (!row || !e.browserPid || !row.pid || row.pid === e.browserPid) {
+      db.prepare('DELETE FROM running WHERE id=?').run(id);
+    }
+    try {
+      if (dir && ownsLock(readLock(dir), e.browserPid)) {
+        releaseLock(dir);
+        if (crashed) clearChromeLocks(dir);
+      }
+    } catch {}
+    if (crashed) {
+      const message = crashMessage(e, e.closeReason);
+      try { setStatus(id, { last_error: message }); } catch {}
+      emit('profile:crashed', id, { error: message });
+    } else {
+      try { setStatus(id, { last_error: null }); } catch {}
+    }
+    emit('profile:stopped', id);
+  }
+  // The relay belongs to this launch. Close it after the row and the lock are gone
   // so a clean window close is already Stopped, including for an authenticated SOCKS proxy.
   if (e.relayUrl) await closeAnonymizedProxy(e.relayUrl, true).catch(() => {});
-  if (crashed) {
-    const message = crashMessage(e, e.closeReason);
-    try { setStatus(id, { last_error: message }); } catch {}
-    emit('profile:crashed', id, { error: message });
-  } else {
-    try { setStatus(id, { last_error: null }); } catch {}
-  }
-  emit('profile:stopped', id);
+  e.closed = true;
 }
 
 // Health monitor: detects browsers that died without Playwright noticing (e.g. killed externally).

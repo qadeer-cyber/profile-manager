@@ -6,6 +6,7 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import { execFile } from 'child_process';
+import Database from 'better-sqlite3';
 import { chromium } from 'playwright';
 import { listenFree, spawnServer, stopServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(10 * 60 * 1000);
@@ -48,12 +49,44 @@ const api = async (m, u, b) => {
   return { s: r.status, d: r.status === 204 ? null : await r.json() };
 };
 const lockPath = id => path.join(dataDir, 'profiles', id, '.pm-lock');
+function runningRows(id) {
+  const file = path.join(dataDir, 'profiles.db');
+  const db = new Database(file, { readonly: true, fileMustExist: true });
+  try { return db.prepare('SELECT COUNT(*) n FROM running WHERE id=?').get(id).n; }
+  finally { db.close(); }
+}
+const evs = [];
+let eventsAbort = null;
+function startEvents() {
+  eventsAbort = new AbortController();
+  fetch(B + '/api/events', { signal: eventsAbort.signal }).then(async res => {
+    const rd = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await rd.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        const line = block.split('\n').find(l => l.startsWith('data: '));
+        if (line) evs.push(JSON.parse(line.slice(6)));
+      }
+    }
+  }).catch(() => {});
+}
+const eventCounts = id => ({
+  stopped: evs.filter(e => e.type === 'profile:stopped' && e.id === id).length,
+  crashed: evs.filter(e => e.type === 'profile:crashed' && e.id === id).length,
+});
 
 async function launch(name, extra) {
   const created = await api('POST', '/api/profiles', { name, ...extra });
   if (created.s !== 201) throw new Error('create failed ' + created.s + ' ' + JSON.stringify(created.d));
-  // The headless shell never writes profile.exit_type. A missing value is an error,
-  // so this suite launches the full browser, which records Normal on a clean quit.
+  // The headless shell never writes profile.exit_type. This suite launches the full
+  // browser so a clean quit records Normal and the Windows log can compare both classifiers.
   const started = await api('POST', `/api/profiles/${created.d.id}/launch`, { headless: false });
   if (!started.d?.running) throw new Error('launch failed ' + JSON.stringify(started.d));
   return started.d;
@@ -70,7 +103,13 @@ async function settled(id) {
 function stoppedClean(p, pid, label) {
   ok(!!p && !p.running && !p.last_error, `${label}: Stopped with no last_error (${p && p.last_error})`);
   ok(!alive(pid), `${label}: browser process is gone`);
-  ok(!fs.existsSync(lockPath(p.id)), `${label}: lockfile released`);
+  ok(!!p && !fs.existsSync(lockPath(p.id)), `${label}: lockfile released`);
+  ok(!!p && runningRows(p.id) === 0, `${label}: no running row`);
+}
+function onceEach(id, label, expect) {
+  const got = eventCounts(id);
+  ok(got.stopped === expect.stopped, `${label}: profile:stopped ${got.stopped} time(s), want ${expect.stopped}`);
+  ok(got.crashed === expect.crashed, `${label}: profile:crashed ${got.crashed} time(s), want ${expect.crashed}`);
 }
 async function connect(profile) {
   return chromium.connectOverCDP(profile.cdp.wsEndpoint);
@@ -109,6 +148,8 @@ const writeState = (pg, v) => pg.evaluate(v => {
 try {
   srv = await spawnServer(env, { envName: 'PM_TEST_PORT', echo: true });
   B = srv.url;
+  startEvents();
+  await sleep(200);
 
   // Tab close keeps the browser. Closing the last window is Stopped, not Error.
   const plain = await launch('Plain');
@@ -120,10 +161,26 @@ try {
   await sleep(400);
   let row = (await api('GET', `/api/profiles/${plain.id}`)).d;
   ok(row.running && alive(plain.cdp.pid) && ctx.pages().length >= 1, 'closing one tab leaves the profile running');
+  const keepPage = ctx.pages()[0] || await ctx.newPage();
+  await keepPage.goto(ORIGIN);
+  await writeState(keepPage, 'window');
   await br.close().catch(() => {});
   await closeLastWindow(plain);
   row = await settled(plain.id);
+  await sleep(900);
   stoppedClean(row, plain.cdp.pid, 'last window closed');
+  onceEach(plain.id, 'last window closed', { stopped: 1, crashed: 0 });
+  const plainAgain = (await api('POST', `/api/profiles/${plain.id}/launch`)).d;
+  ok(plainAgain.running && !plainAgain.last_error, 'relaunch after last window is running with no last_error');
+  const brPlain = await connect(plainAgain);
+  const pgPlain = await brPlain.contexts()[0].newPage();
+  await pgPlain.goto(ORIGIN);
+  const windowState = await readState(pgPlain, brPlain.contexts()[0]);
+  ok(windowState[0] === 'window' && windowState[1] === 'window', 'cookie and localStorage survived last window close');
+  await pgPlain.close();
+  await brPlain.close().catch(() => {});
+  await api('POST', `/api/profiles/${plain.id}/stop`);
+  await settled(plain.id);
 
   // Authenticated SOCKS5 uses the local relay. Closing that window is still Stopped.
   const socksProfile = await launch('Socks', { proxy: { type: 'socks5', host: '127.0.0.1', port: SOCKS, username: 'alice', password: 's3cret' } });
@@ -142,7 +199,9 @@ try {
   await brKeep.close().catch(() => {});
   ok((await api('POST', `/api/profiles/${keep.id}/stop`)).s === 200, 'app Stop returns 200');
   row = await settled(keep.id);
+  await sleep(900);
   stoppedClean(row, keep.cdp.pid, 'app Stop');
+  onceEach(keep.id, 'app Stop', { stopped: 1, crashed: 0 });
   const again = (await api('POST', `/api/profiles/${keep.id}/launch`)).d;
   ok(again.running && !again.last_error, 'relaunch after Stop is running with no last_error');
   const brAgain = await connect(again);
@@ -156,30 +215,21 @@ try {
 
   // A real kill is Error. On Windows that kill is `taskkill /F`. Relaunch clears last_error.
   const crash = await launch('Crash');
-  const evs = [];
-  const ac = new AbortController();
-  fetch(B + '/api/events', { signal: ac.signal }).then(async res => {
-    const rd = res.body.getReader(), dec = new TextDecoder();
-    for (;;) {
-      const { value, done } = await rd.read();
-      if (done) break;
-      for (const m of dec.decode(value).matchAll(/data: (.*)/g)) evs.push(JSON.parse(m[1]));
-    }
-  }).catch(() => {});
-  await sleep(200);
   const killedWith = await forceKill(crash.cdp.pid);
   row = null;
   for (let i = 0; i < 40 && !(row && !row.running && row.last_error); i++) {
     row = (await api('GET', `/api/profiles/${crash.id}`)).d;
     await sleep(100);
   }
+  await sleep(900);
   ok(!!row && !row.running && /unexpectedly|died/.test(row.last_error || ''), `${killedWith} marks Error (${row && row.last_error})`);
-  ok(evs.some(e => e.type === 'profile:crashed' && e.id === crash.id), 'kill emits profile:crashed');
+  onceEach(crash.id, killedWith, { stopped: 1, crashed: 1 });
   ok(!alive(crash.cdp.pid) && !fs.existsSync(lockPath(crash.id)), 'kill releases the process and the lockfile');
+  ok(runningRows(crash.id) === 0, 'kill leaves no running row');
   const revived = (await api('POST', `/api/profiles/${crash.id}/launch`)).d;
   ok(revived.running && !revived.last_error, 'successful relaunch clears last_error');
   await api('POST', `/api/profiles/${crash.id}/stop`);
-  ac.abort();
+  await settled(crash.id);
 
   // SessionEnded is an OS logoff. CI cannot log off, so the test writes the pref
   // Chromium would have written, once the pid is already dead.
@@ -201,7 +251,51 @@ try {
   await forceKill(ended.cdp.pid);
   await wrote;
   row = await settled(ended.id);
+  await sleep(900);
   stoppedClean(row, ended.cdp.pid, 'SessionEnded');
+  onceEach(ended.id, 'SessionEnded', { stopped: 1, crashed: 0 });
+
+  // Close, Stop, and the health monitor together clean up once. A launch issued
+  // while that cleanup is in flight must not start a second browser.
+  const race = await launch('Race');
+  const brRace = await connect(race);
+  const pgRace = await brRace.contexts()[0].newPage();
+  await pgRace.goto(ORIGIN);
+  await writeState(pgRace, 'race');
+  await pgRace.close();
+  const session = await brRace.newBrowserCDPSession();
+  let overlap = false;
+  // Stop and Browser.close are in flight together. Either one may win; the loser throws.
+  const closing = session.send('Browser.close').catch(() => {});
+  const stopping = api('POST', `/api/profiles/${race.id}/stop`);
+  const probing = (async () => {
+    for (let i = 0; i < 40; i++) {
+      const cur = (await api('GET', `/api/profiles/${race.id}`)).d;
+      if (cur && !cur.running) return;
+      const again = await api('POST', `/api/profiles/${race.id}/launch`);
+      const pid = again.d?.cdp?.pid;
+      if (again.d?.running && pid && pid !== race.cdp.pid && alive(race.cdp.pid)) overlap = true;
+      await sleep(50);
+    }
+  })();
+  await Promise.all([closing, stopping, probing]);
+  await brRace.close().catch(() => {});
+  row = await settled(race.id);
+  await sleep(900);
+  stoppedClean(row, race.cdp.pid, 'close and Stop together');
+  ok(!overlap, 'relaunch during close does not start a second browser');
+  onceEach(race.id, 'close and Stop together', { stopped: 1, crashed: 0 });
+  const raceAgain = (await api('POST', `/api/profiles/${race.id}/launch`)).d;
+  ok(raceAgain.running && raceAgain.cdp.pid !== race.cdp.pid, 'launch after cleanup starts one new browser');
+  const brRaceAgain = await connect(raceAgain);
+  const pgRaceAgain = await brRaceAgain.contexts()[0].newPage();
+  await pgRaceAgain.goto(ORIGIN);
+  const raceState = await readState(pgRaceAgain, brRaceAgain.contexts()[0]);
+  ok(raceState[0] === 'race' && raceState[1] === 'race', 'cookie and localStorage survived the close/Stop race');
+  await pgRaceAgain.close();
+  await brRaceAgain.close().catch(() => {});
+  await api('POST', `/api/profiles/${race.id}/stop`);
+  await settled(race.id);
 
   // IPC shutdown still persists storage and leaves no running row.
   const persist = await launch('Persist');
@@ -214,6 +308,7 @@ try {
   await stopServer(srv);
   srv = null;
   ok(!alive(persist.cdp.pid), 'IPC shutdown stops the browser');
+  ok(runningRows(persist.id) === 0 && !fs.existsSync(lockPath(persist.id)), 'IPC shutdown leaves no running row and no lock');
   srv = await spawnServer(env, { envName: 'PM_TEST_PORT', echo: true });
   B = srv.url;
   const back = (await api('POST', `/api/profiles/${persist.id}/launch`)).d;
@@ -230,6 +325,7 @@ try {
   fail++;
   console.error(e);
 } finally {
+  eventsAbort?.abort();
   if (srv) await stopServer(srv);
   killTracked();
   target.close();
