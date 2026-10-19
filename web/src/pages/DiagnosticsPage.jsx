@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
+import { ProfileDiagnostics } from '../components/ProfileDiagnostics.jsx';
 
 export function DiagnosticsPage({ eventsLog }) {
   const toast = useToast();
@@ -11,7 +12,8 @@ export function DiagnosticsPage({ eventsLog }) {
   const install = async () => { try { await api('/api/browser/install', { method: 'POST' }); toast('Downloading Chromium…'); load(); } catch (e) { toast(e.message, 'error'); } };
   const Row = ({ k, v }) => <tr><th>{k}</th><td>{v}</td></tr>;
   return <>
-    <header className="page-head"><h1>Diagnostics</h1><button onClick={load}>Refresh</button></header>
+    <header className="page-head"><h1>Diagnostics</h1><button onClick={load} aria-label="Refresh app information">Refresh</button></header>
+    <ProfileDiagnostics />
     <div className="cols">
       <section className="panel"><h2>App</h2><table className="kv"><tbody>
         <Row k="Version" v={`${d.app.version} (${d.app.mode})`} /><Row k="Platform" v={d.platform} />
