@@ -4,3 +4,15 @@ node_modules/
 release/
 web/dist/
 build/bundled-browsers/
+
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+*.cer
+id_rsa*
+*.keystore
