@@ -9,7 +9,8 @@ Status: **WIP / UNVERIFIED**. A pushed SHA is not acceptance, integration, or re
 - Sole backend writer: `bc-ac164b2e`
 - Baseline: `d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9`
 - Source checkpoint (pushed): `aa052d900ecbb0da120e5c06b33c6ced3b262a06`
-- This file is the commit after that checkpoint. After it is pushed, `origin/feature/m2-diagnostics-backend` is the branch tip. Fetch that ref; do not assume this file's parent is still the tip.
+- Handoff commit already pushed: `90193f6477de3e29f19ce19f31623ea2e19864b9`
+- Fetch `origin/feature/m2-diagnostics-backend` for the tip. A later commit on this file only records that SHA.
 - Contract: DiagnosticsV1, SHA-256 `cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8`
 - Directive read: `MASTER_DIRECTIVE.md` at `ecf4aedb54e672ccc3b13456875b176aeccf7bf8`
 
