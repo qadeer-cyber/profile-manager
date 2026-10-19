@@ -54,6 +54,24 @@ function readLog(userData) {
   try { return fs.readFileSync(path.join(userData, 'logs', 'main.log'), 'utf8'); } catch { return ''; }
 }
 
+async function stop(run) {
+  kill(run.child);
+  await Promise.race([run.exited, new Promise(r => setTimeout(r, 8000))]);
+  const deadline = Date.now() + 10000;
+  let last;
+  while (Date.now() < deadline) {
+    try {
+      fs.rmSync(run.userData, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      last = err;
+      if (err.code !== 'EBUSY' && err.code !== 'EPERM' && err.code !== 'ENOTEMPTY') throw err;
+      await new Promise(r => setTimeout(r, 300));
+    }
+  }
+  console.log(`cleanup left ${run.userData}: ${last && last.message}`);
+}
+
 async function waitFor(run, pred, timeoutMs) {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -79,9 +97,7 @@ try {
   ok(normal.child.exitCode === null, `normal launch stays running (code ${normal.child.exitCode})`);
   ok(!/PM_SMOKE_PHASE must be one of/.test(normal.output()), 'normal launch does not reject a missing phase');
 } finally {
-  kill(normal.child);
-  await Promise.race([normal.exited, new Promise(r => setTimeout(r, 3000))]);
-  fs.rmSync(normal.userData, { recursive: true, force: true });
+  await stop(normal);
 }
 if (fail) console.log(normal.output().split('\n').slice(-40).join('\n'));
 
@@ -93,16 +109,16 @@ for (const phase of [undefined, 'seeded']) {
   const run = launch(extra);
   const t0 = Date.now();
   let code;
+  let elapsed;
   try {
     code = await Promise.race([
       run.exited,
       new Promise(resolve => setTimeout(() => resolve('timeout'), 45000)),
     ]);
+    elapsed = Date.now() - t0;
   } finally {
-    kill(run.child);
-    await Promise.race([run.exited, new Promise(r => setTimeout(r, 3000))]);
+    await stop(run);
   }
-  const elapsed = Date.now() - t0;
   const label = phase || '(missing)';
   ok(code === 1, `bad phase ${label} exits 1 (code ${code}, ${elapsed} ms)`);
   ok(elapsed < 45000, `bad phase ${label} fails inside 45s, not the harness timeout`);
@@ -112,7 +128,6 @@ for (const phase of [undefined, 'seeded']) {
   ok(body && /PM_SMOKE_PHASE must be one of clean, upgrade, seed, check, lifecycle/.test(body.error || ''), `bad phase ${label} result explains the rejection (${body && body.error})`);
   ok(!/backend on /.test(run.output()), `bad phase ${label} does not start the backend`);
   fs.rmSync(result, { force: true });
-  fs.rmSync(run.userData, { recursive: true, force: true });
   if (!body || code !== 1) console.log(run.output().split('\n').slice(-30).join('\n'));
 }
 
