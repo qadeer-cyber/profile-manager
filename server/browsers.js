@@ -160,7 +160,7 @@ async function doLaunch(p, opts = {}) {
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     updateLock(dir, { browserPid, cdpPort });
-    const entry = { ctx, relayUrl, browserPid, stopping: false };
+    const entry = { ctx, relayUrl, browserPid, stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null };
     live.set(p.id, entry);
     try {
       db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, browserPid, cdpPort, ws, relayUrl, new Date().toISOString());
@@ -169,6 +169,7 @@ async function doLaunch(p, opts = {}) {
       throw e;
     }
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
+    trackExit(entry);
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
     if (url) await (ctx.pages()[0] || await ctx.newPage()).goto(url).catch(() => {});
@@ -183,18 +184,99 @@ async function doLaunch(p, opts = {}) {
   }
 }
 
+// This Playwright build does not put process() on the Browser client. The in-process
+// connection exposes the launched child on the server browser, which is what actually exits.
+function browserProcess(ctx) {
+  try {
+    const browser = ctx.browser?.();
+    if (!browser) return null;
+    if (typeof browser.process === 'function' && browser.process()) return browser.process();
+    const impl = browser._connection?.toImpl?.(browser);
+    return impl?.options?.browserProcess?.process || null;
+  } catch { return null; }
+}
+// The Node child exit is the difference between the user closing the last window (code 0)
+// and a kill or crash (signal, or a non-zero code). App Stop sets stopping first.
+function trackExit(entry) {
+  const proc = browserProcess(entry.ctx);
+  entry.proc = proc;
+  if (!proc) return;
+  if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
+  if (proc.signalCode) entry.exitSignal = proc.signalCode;
+  proc.once('exit', (code, signal) => {
+    entry.exitCode = code;
+    entry.exitSignal = signal;
+  });
+}
+function readExit(entry) {
+  const proc = entry.proc;
+  if (!proc) return;
+  if (proc.exitCode !== null && proc.exitCode !== undefined) entry.exitCode = proc.exitCode;
+  if (proc.signalCode) entry.exitSignal = proc.signalCode;
+}
+function waitExit(entry, ms = 3000) {
+  readExit(entry);
+  if (entry.exitSignal || entry.exitCode !== null) return Promise.resolve();
+  const proc = entry.proc;
+  if (!proc) return Promise.resolve();
+  // The local SOCKS relay can keep the child-handle 'exit' event behind the
+  // window closing. Poll the handle so a late code 0 is still a clean stop.
+  return new Promise(resolve => {
+    const done = () => { clearInterval(iv); clearTimeout(t); resolve(); };
+    const iv = setInterval(() => {
+      readExit(entry);
+      if (entry.exitSignal || entry.exitCode !== null) done();
+    }, 50);
+    const t = setTimeout(done, ms);
+    proc.once('exit', (code, signal) => {
+      entry.exitCode = code;
+      entry.exitSignal = signal;
+      done();
+    });
+  });
+}
+function cleanExit(entry) {
+  if (entry.stopping) return true;
+  readExit(entry);
+  if (entry.exitSignal) return false;
+  return entry.exitCode === 0;
+}
+function crashMessage(entry, reason) {
+  readExit(entry);
+  const bits = [];
+  if (entry.exitSignal) bits.push(`signal ${entry.exitSignal}`);
+  else if (typeof entry.exitCode === 'number' && entry.exitCode !== 0) bits.push(`exit code ${entry.exitCode}`);
+  const detail = bits.join(', ');
+  if (reason && detail) return `${reason} (${detail})`;
+  if (reason) return reason;
+  if (detail) return `Browser exited unexpectedly (${detail})`;
+  return 'Browser exited unexpectedly';
+}
+
 async function onClosed(id, ctx, reason) {
   const e = live.get(id);
-  if (!e || (ctx && e.ctx !== ctx)) return;
-  live.delete(id);
-  const crashed = !e.stopping;
-  db.prepare('DELETE FROM running WHERE id=?').run(id);
-  if (e.relayUrl) await closeAnonymizedProxy(e.relayUrl, true).catch(() => {});
+  if (!e || (ctx && e.ctx !== ctx) || e.closed) return;
+  e.closed = true;
+  // A user closing the last window drops the process before Playwright's close event
+  // carries an exit status. Wait briefly so code 0 is not mistaken for a crash.
+  // The SOCKS relay is closed below for both outcomes; it does not decide the outcome.
+  if (!e.stopping) await waitExit(e);
+  if (live.get(id) !== e) return;
+  const crashed = !cleanExit(e);
+  // Kill a leftover process before anyone else can launch this profile.
   if (crashed && e.browserPid && isAlive(e.browserPid)) { try { await killTree(e.browserPid, { expect: userDataDir(id) }); } catch {} }
+  live.delete(id);
+  db.prepare('DELETE FROM running WHERE id=?').run(id);
   try { const dir = userDataDir(id); releaseLock(dir); if (crashed) clearChromeLocks(dir); } catch {}
+  // The relay is local bookkeeping. Close it after the row and the lock are gone
+  // so a clean window close is already Stopped, including for an authenticated SOCKS proxy.
+  if (e.relayUrl) await closeAnonymizedProxy(e.relayUrl, true).catch(() => {});
   if (crashed) {
-    try { setStatus(id, { last_error: reason || 'Browser exited unexpectedly' }); } catch {}
-    emit('profile:crashed', id, { error: reason || 'Browser exited unexpectedly' });
+    const message = crashMessage(e, reason);
+    try { setStatus(id, { last_error: message }); } catch {}
+    emit('profile:crashed', id, { error: message });
+  } else {
+    try { setStatus(id, { last_error: null }); } catch {}
   }
   emit('profile:stopped', id);
 }
@@ -204,7 +286,7 @@ let healthTimer = null;
 export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
   stopHealthMonitor();
   healthTimer = setInterval(() => {
-    for (const [id, e] of live) if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
+    for (const [id, e] of live) if (!e.stopping && !e.closed && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
   }, intervalMs);
   healthTimer.unref?.();
 }

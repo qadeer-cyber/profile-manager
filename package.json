@@ -11,7 +11,7 @@
     "dev:web": "vite web",
     "test:unit": "node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js test/shutdown-ack.test.js test/shutdown-durable.test.js test/testflags.test.js",
     "test:api": "node scripts/run-with-automation.mjs test/api.e2e.js",
-    "test:engine": "node scripts/run-with-automation.mjs test/engine.e2e.js",
+    "test:engine": "node scripts/run-with-automation.mjs test/engine.e2e.js && node scripts/run-with-automation.mjs test/lifecycle.e2e.js",
     "test:electron": "npm run build && node test/electron-smoke.js",
     "test": "npm run build && npm run test:unit && npm run test:desktop && npm run test:api && npm run test:engine && npm run test:proxies && npm run test:security && npm run test:ui",
     "dist:win": "npm run build && electron-builder --win nsis portable --x64",
