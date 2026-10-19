@@ -284,25 +284,46 @@ try {
   const session = await brRace.newBrowserCDPSession();
   let overlap = false;
   // Stop and Browser.close are in flight together. Either one may win; the loser throws.
+  // launch() returns the live entry while that close is settling, so a second pid
+  // can appear only after the original cleanup has already emitted. Count that
+  // close before stopping the replacement the probe itself started.
   const closing = session.send('Browser.close').catch(() => {});
   const stopping = api('POST', `/api/profiles/${race.id}/stop`);
   const probing = (async () => {
     for (let i = 0; i < 40; i++) {
+      if (!alive(race.cdp.pid)) return;
       const cur = (await api('GET', `/api/profiles/${race.id}`)).d;
-      if (cur && !cur.running) return;
+      if (!cur?.running || !alive(race.cdp.pid)) return;
       const again = await api('POST', `/api/profiles/${race.id}/launch`);
       const pid = again.d?.cdp?.pid;
       if (again.d?.running && pid && pid !== race.cdp.pid && alive(race.cdp.pid)) overlap = true;
+      if (!alive(race.cdp.pid)) return;
       await sleep(50);
     }
   })();
   await Promise.all([closing, stopping, probing]);
   await brRace.close().catch(() => {});
-  row = await settled(race.id);
-  await sleep(900);
+  row = (await api('GET', `/api/profiles/${race.id}`)).d;
+  const replacement = row?.running && row.cdp?.pid && row.cdp.pid !== race.cdp.pid;
+  let during = null;
+  if (replacement) {
+    const start = Date.now();
+    do {
+      during = eventCounts(race.id);
+      if (during.stopped >= 1) break;
+      await sleep(50);
+    } while (Date.now() - start < 2000);
+    await api('POST', `/api/profiles/${race.id}/stop`);
+    row = await settled(race.id);
+  } else {
+    row = await settled(race.id);
+    await sleep(900);
+    during = eventCounts(race.id);
+  }
   stoppedClean(row, race.cdp.pid, 'close and Stop together');
   ok(!overlap, 'relaunch during close does not start a second browser');
-  onceEach(race.id, 'close and Stop together', { stopped: 1, crashed: 0 });
+  ok(during.stopped === 1, `close and Stop together: profile:stopped ${during.stopped} time(s), want 1`);
+  ok(during.crashed === 0, `close and Stop together: profile:crashed ${during.crashed} time(s), want 0`);
   const raceAgain = (await api('POST', `/api/profiles/${race.id}/launch`)).d;
   ok(raceAgain.running && raceAgain.cdp.pid !== race.cdp.pid, 'launch after cleanup starts one new browser');
   const brRaceAgain = await connect(raceAgain);
