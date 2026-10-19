@@ -8,6 +8,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import Database from 'better-sqlite3';
 import { chromium } from 'playwright';
+import { closeLastPage } from '../electron/smoke-phases.js';
 import { listenFree, spawnServer, stopServer, armWatchdog, killTracked, missedGracefulShutdowns } from './_ports.mjs';
 armWatchdog(10 * 60 * 1000);
 
@@ -124,16 +125,22 @@ function onceEach(id, label, expect) {
 async function connect(profile) {
   return chromium.connectOverCDP(profile.cdp.wsEndpoint);
 }
-// Headless Chromium stays up after the last page closes because Playwright owns the
-// context. The window Close button is a graceful browser quit (exit code 0), which
-// CDP Browser.close reproduces without going through the app's Stop route.
+// Target.closeTarget on the last page is the window close. Chromium exits on its own.
+// Browser.close is the app-quit path and is not used here.
 async function closeLastWindow(profile) {
-  const br = await connect(profile);
-  try {
-    const session = await br.newBrowserCDPSession();
-    await session.send('Browser.close');
-  } catch { /* the pipe drops as the browser exits */ }
-  finally { await br.close().catch(() => {}); }
+  const address = profile.cdp?.debuggerAddress || '';
+  if (!String(address).startsWith('127.0.0.1:')) throw new Error(`last-window close CDP is not loopback-only (${address || 'missing'})`);
+  await closeLastPage(profile.cdp.wsEndpoint);
+}
+async function waitExitType(id) {
+  const file = path.join(dataDir, 'profiles', id, 'Default', 'Preferences');
+  let value = null;
+  for (let i = 0; i < 30; i++) {
+    try { value = JSON.parse(fs.readFileSync(file, 'utf8'))?.profile?.exit_type || null; } catch {}
+    if (value === 'Normal') return value;
+    await sleep(100);
+  }
+  return value;
 }
 // Windows: taskkill /F is TerminateProcess. Elsewhere SIGKILL is the same kind of kill.
 // A forced kill must stay Error, including when Chromium never rewrites exit_type.
@@ -178,8 +185,10 @@ try {
   await closeLastWindow(plain);
   row = await settled(plain.id);
   await sleep(900);
-  stoppedClean(row, plain.cdp.pid, 'last window closed');
-  onceEach(plain.id, 'last window closed', { stopped: 1, crashed: 0 });
+  stoppedClean(row, plain.cdp.pid, 'last-window close');
+  const plainExit = await waitExitType(plain.id);
+  ok(plainExit === 'Normal', `last-window close wrote exit_type Normal (${plainExit})`);
+  onceEach(plain.id, 'last-window close', { stopped: 1, crashed: 0 });
   const plainAgain = (await api('POST', `/api/profiles/${plain.id}/launch`)).d;
   ok(plainAgain.running && !plainAgain.last_error, 'relaunch after last window is running with no last_error');
   const brPlain = await connect(plainAgain);
@@ -294,7 +303,8 @@ try {
   const session = await brRace.newBrowserCDPSession();
   const oldPid = race.cdp.pid;
   let overlap = false;
-  // Stop and Browser.close are in flight together. Either one may win; the loser throws.
+  // Stop and Browser.close are in flight together. Browser.close is an app-initiated
+  // quit, not a last-window close. Either one may win; the loser throws.
   // launch() refuses a second browser while that close is still settling. A launch that
   // returns after settling has cleared is a new browser, and the old pid is already dead.
   const closing = session.send('Browser.close').catch(() => {});

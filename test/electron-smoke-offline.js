@@ -158,6 +158,8 @@ ok(seed.bannerBefore === false, 'rendered window has no Download Chromium text b
 ok(seed.launchClicked === true, 'Plain profile Launch button was clicked in the window');
 ok(seed.bannerAfter === false, 'rendered window has no Download Chromium text after the Launch click');
 ok(seed.plain?.status === 200 && seed.plain?.code !== 'CHROMIUM_MISSING' && seed.plain?.error !== 'CHROMIUM_MISSING', `profile launch is not CHROMIUM_MISSING (${seed.plain?.status} ${seed.plain?.error || ''})`);
+ok(seed.plain?.automationEnabled === false, 'a normally created profile has automation off');
+ok(Array.isArray(seed.plain?.listening) && seed.plain.listening.length === 0, `a normally created profile has no CDP port listening (${JSON.stringify(seed.plain?.listening)})`);
 const launched = norm(seed.plain?.cmd);
 ok(seed.plain?.cdp === false && launched.length > 0 && !String(seed.plain?.cmd).includes('--remote-debugging-port'), 'default launch exposes no CDP port with the test flags set');
 ok(launched.includes(prefix), `launched browser executable is under resources\\browsers (${seed.plain?.cmd})`);
@@ -179,7 +181,9 @@ ok(check.saved?.read?.ls === 'pm_v' && String(check.saved?.read?.c || '').includ
 const lifeRun = await runPhase('lifecycle', tlsPort);
 const life = load(lifeRun);
 ok(life.exit === 0 && !life.error, `lifecycle launch exited (${life.exit})`);
-ok(life.lifecycle?.close?.running === false && !life.lifecycle?.close?.error, `window close is Stopped (${life.lifecycle?.close?.error})`);
+ok(life.lifecycle?.close?.running === false && !life.lifecycle?.close?.error, `last-window close is Stopped (${life.lifecycle?.close?.error})`);
+ok(life.lifecycle?.close?.exitType === 'Normal' && life.lifecycle?.close?.method === 'last-window', `last-window close wrote exit_type Normal (${life.lifecycle?.close?.exitType}, ${life.lifecycle?.close?.method})`);
+ok(String(life.lifecycle?.close?.address || '').startsWith('127.0.0.1:'), `lifecycle CDP binds loopback only (${life.lifecycle?.close?.address})`);
 ok(life.lifecycle?.kill?.running === false && /unexpectedly|died|exit code|signal|Crashed/i.test(life.lifecycle?.kill?.error || ''), `taskkill is Error (${life.lifecycle?.kill?.error})`);
 ok(life.lifecycle?.restart?.running === true && !life.lifecycle?.restart?.error, `relaunch after kill is running with no error (${life.lifecycle?.restart?.error})`);
 

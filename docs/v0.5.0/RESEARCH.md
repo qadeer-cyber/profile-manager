@@ -26,7 +26,7 @@ Each milestone is small enough to land on `development/v0.5.0` without a release
 Acceptance tests, in `test/lifecycle.e2e.js` unless noted:
 
 - Closing one tab while another page is open leaves the profile running.
-- A graceful browser quit (the window Close button, reproduced with `Browser.close`) leaves Stopped, with `last_error` null, the process gone, and `.pm-lock` gone. The same holds for an authenticated SOCKS5 profile. The suite launches the full browser so Preferences is written. A missing `exit_type` is not a crash on its own: exit code 0 is Stopped, and an unknown exit code stays Stopped unless Preferences says `Crashed`.
+- A last-window close, sent with `Target.closeTarget` on the last page so Chromium exits on its own, leaves Stopped and writes `exit_type` `Normal`. The process and the lock are gone. The same holds for an authenticated SOCKS5 profile. The suite launches the full browser so Preferences is written. `Browser.close` is the app-quit path and is not used as that window close. A missing `exit_type` is not a crash on its own: exit code 0 is Stopped, and an unknown exit code stays Stopped unless Preferences says `Crashed`.
 - App Stop does the same and keeps a cookie and localStorage for the next launch.
 - A forced kill sets `last_error`, emits `profile:crashed`, and releases the lock. The lifecycle test uses `taskkill /F` on Windows and `SIGKILL` elsewhere. The existing engine suite still asserts `/unexpectedly|died/`.
 - `profile.exit_type` of `SessionEnded` is Stopped. The test writes that value after the pid is dead, because CI cannot log the machine off.

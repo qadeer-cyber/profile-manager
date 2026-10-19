@@ -8,6 +8,7 @@ import path from 'path';
 import {
   SMOKE_PHASES, selectSmokePhase, classifyLaunch, writeSmokeRejection, dispatchSmokePhase, phaseHandlers,
   runCleanPhase, runUpgradePhase, runLifecyclePhase, runSeedPhase, runCheckPhase, commonSmokeFacts,
+  portsFromNetstat, portsFromProcNet,
 } from '../electron/smoke-phases.js';
 
 const noop = async () => {};
@@ -29,7 +30,9 @@ const base = (over = {}) => ({
   manifest: { revision: '1248' },
   execPath: 'C:\\Users\\me\\AppData\\Local\\Programs\\Profile Manager\\Profile Manager.exe',
   taskkill: noop,
-  browserClose: noop,
+  closeLastWindow: async () => ({ method: 'last-window' }),
+  readExitType: async () => 'Normal',
+  listeningPorts: async () => [],
   proxyPassword: async () => 'enc:v1:test',
   decrypt: async () => 'alpha-secret',
   backendUrl: 'http://127.0.0.1:1',
@@ -120,9 +123,9 @@ test('lifecycle asks for CDP, closes that endpoint, and returns Stopped then Err
       if (m === 'POST' && u === '/api/profiles') return { s: 201, d: { id: 'win-1' } };
       if (m === 'POST' && u.endsWith('/launch')) {
         stage = stage === 'new' ? 'open' : stage === 'closed' ? 'reopen' : 'restart';
-        if (stage === 'open') return { s: 200, d: { running: true, pid: 111, cdp: { wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/abc' } } };
-        if (stage === 'reopen') return { s: 200, d: { running: true, pid: 222, cdp: { wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/def' } } };
-        return { s: 200, d: { running: true, pid: 333, last_error: null, cdp: { wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/ghi' } } };
+        if (stage === 'open') return { s: 200, d: { running: true, pid: 111, cdp: { wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/abc', debuggerAddress: '127.0.0.1:9' } } };
+        if (stage === 'reopen') return { s: 200, d: { running: true, pid: 222, cdp: { wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/def', debuggerAddress: '127.0.0.1:9' } } };
+        return { s: 200, d: { running: true, pid: 333, last_error: null, cdp: { wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/ghi', debuggerAddress: '127.0.0.1:9' } } };
       }
       if (m === 'GET' && u === '/api/profiles') {
         if (stage === 'closed') return { s: 200, d: [{ id: 'win-1', running: false, last_error: null }] };
@@ -131,19 +134,32 @@ test('lifecycle asks for CDP, closes that endpoint, and returns Stopped then Err
       }
       return { s: 200, d: {} };
     },
-    browserClose: async ws => { closed.push(ws); stage = 'closed'; },
+    closeLastWindow: async ws => { closed.push(ws); stage = 'closed'; return { method: 'last-window' }; },
     taskkill: async () => { stage = 'killed'; },
   }));
   assert.deepEqual(calls[0].b, { name: 'Window', automationEnabled: true });
   assert.deepEqual(closed, ['ws://127.0.0.1:9/devtools/browser/abc']);
   assert.equal(out.lifecycle.close.running, false);
   assert.equal(out.lifecycle.close.error, null);
+  assert.equal(out.lifecycle.close.exitType, 'Normal');
+  assert.equal(out.lifecycle.close.method, 'last-window');
+  assert.equal(out.lifecycle.close.address, '127.0.0.1:9');
   assert.equal(out.lifecycle.kill.running, false);
   assert.match(out.lifecycle.kill.error, /unexpectedly|died|exit code|signal|Crashed/i);
   assert.equal(out.lifecycle.kill.taskkill, null);
   assert.equal(out.lifecycle.restart.status, 200);
   assert.equal(out.lifecycle.restart.running, true);
   assert.equal(out.lifecycle.restart.error, null);
+});
+
+test('lifecycle CDP must be loopback and is not opened for a public address', async () => {
+  await assert.rejects(() => runLifecyclePhase(base({
+    call: async (m, u) => {
+      if (m === 'POST' && u === '/api/profiles') return { s: 201, d: { id: 'win-1' } };
+      if (m === 'POST' && u.endsWith('/launch')) return { s: 200, d: { running: true, pid: 5, cdp: { wsEndpoint: 'ws://0.0.0.0:9/devtools/browser/abc', debuggerAddress: '0.0.0.0:9' } } };
+      return { s: 200, d: {} };
+    },
+  })), /not loopback-only/);
 });
 
 test('lifecycle without a CDP endpoint fails instead of reporting a false Stopped', async () => {
@@ -192,6 +208,8 @@ test('seed and check return the objects the acceptance script reads', async () =
   assert.equal(seed.bannerAfter, false);
   assert.equal(seed.plain.status, 200);
   assert.equal(seed.plain.cdp, false);
+  assert.equal(seed.plain.automationEnabled, false);
+  assert.deepEqual(seed.plain.listening, []);
   assert.equal(seed.auto.cdp, true);
   assert.equal(seed.auto.status, 200);
   assert.equal(seed.persist.status, 200);
@@ -281,6 +299,23 @@ test('workflow smoke steps that enter offline smoke set PM_SMOKE_PHASE explicitl
   const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(pkg.main, 'electron/main.js');
   assert.ok(pkg.build.files.includes('electron/**'));
+});
+
+test('listening-port parsers keep only LISTEN sockets for the named pids', () => {
+  const netstat = [
+    '  Proto  Local Address          Foreign Address        State           PID',
+    '  TCP    0.0.0.0:135            0.0.0.0:0              LISTENING       4',
+    '  TCP    127.0.0.1:9222         0.0.0.0:0              LISTENING       4242',
+    '  TCP    127.0.0.1:9223         0.0.0.0:0              ESTABLISHED     4242',
+    '  TCP    [::1]:9224             [::]:0                 LISTENING       4243',
+  ].join('\n');
+  assert.deepEqual(portsFromNetstat(netstat, [4242, 4243]), [9222, 9224]);
+  const proc = [
+    '  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode',
+    '   0: 0100007F:2406 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 99 1 0000000000000000 100 0 0 10 0',
+    '   1: 0100007F:2407 00000000:0000 01 00000000:00000000 00:00000000 00000000     0        0 99 1 0000000000000000 100 0 0 10 0',
+  ].join('\n');
+  assert.deepEqual(portsFromProcNet(proc, new Set(['99'])), [0x2406]);
 });
 
 test('common facts keep the native and bundled-browser fields', async () => {

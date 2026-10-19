@@ -60,7 +60,9 @@ export function createSmokeContext({ backend, win, uiToken, userData, log, env =
     taskkill: pid => new Promise((resolve, reject) => {
       execFile('taskkill', ['/F', '/PID', String(pid)], err => err ? reject(err) : resolve());
     }),
-    browserClose: browserClose,
+    closeLastWindow: closeLastPage,
+    readExitType: id => readProfileExitType(env.PM_DATA_DIR, id),
+    listeningPorts: listeningTcpPorts,
     proxyPassword: async name => {
       const { db } = await import('../server/db.js');
       return db.prepare('SELECT password FROM proxies WHERE name=?').get(name)?.password ?? null;
@@ -72,16 +74,156 @@ export function createSmokeContext({ backend, win, uiToken, userData, log, env =
   };
 }
 
-function browserClose(wsUrl) {
-  return new Promise(resolve => {
+function cdpRequest(wsUrl, method, params, timeoutMs = 8000) {
+  return new Promise((resolve, reject) => {
     let ws;
-    const done = () => { clearTimeout(t); try { ws?.close(); } catch {} resolve(); };
-    const t = setTimeout(done, 8000);
-    try { ws = new WebSocket(wsUrl); } catch { done(); return; }
-    ws.onopen = () => { try { ws.send(JSON.stringify({ id: 1, method: 'Browser.close' })); } catch { done(); } };
-    ws.onerror = done;
-    ws.onclose = done;
+    const timer = setTimeout(() => {
+      try { ws?.close(); } catch {}
+      reject(new Error(`CDP ${method} timed out`));
+    }, timeoutMs);
+    const finish = (err, result) => {
+      clearTimeout(timer);
+      try { ws?.close(); } catch {}
+      if (err) reject(err);
+      else resolve(result || {});
+    };
+    try { ws = new WebSocket(wsUrl); }
+    catch (err) { finish(err); return; }
+    ws.onopen = () => {
+      try { ws.send(JSON.stringify({ id: 1, method, params: params || {} })); }
+      catch (err) { finish(err); }
+    };
+    ws.onmessage = ev => {
+      let msg;
+      try { msg = JSON.parse(String(ev.data)); } catch { return; }
+      if (msg.id !== 1) return;
+      if (msg.error) finish(new Error(msg.error.message || method));
+      else finish(null, msg.result || {});
+    };
+    ws.onerror = () => finish(new Error(`CDP ${method} socket error`));
   });
+}
+
+// Close every page target. The last page is the window close: Chromium exits on its
+// own and writes exit_type Normal. Browser.close is the app-quit path and is not used here.
+export async function closeLastPage(wsUrl) {
+  const listed = await cdpRequest(wsUrl, 'Target.getTargets', {});
+  const pages = (listed.targetInfos || []).filter(t => t.type === 'page' && t.targetId);
+  if (!pages.length) throw new Error('last-window close found no page target');
+  let closed = 0;
+  for (const page of pages) {
+    try {
+      const result = await cdpRequest(wsUrl, 'Target.closeTarget', { targetId: page.targetId });
+      if (result.success === false) throw new Error('Target.closeTarget rejected the page');
+      closed += 1;
+    } catch (err) {
+      if (closed === 0) throw err;
+    }
+  }
+  return { method: 'last-window', closed };
+}
+
+async function readProfileExitType(dataDir, id) {
+  if (!dataDir || !id) return null;
+  const file = path.join(dataDir, 'profiles', id, 'Default', 'Preferences');
+  let last = null;
+  for (let i = 0; i < 30; i++) {
+    try {
+      const value = JSON.parse(fs.readFileSync(file, 'utf8'))?.profile?.exit_type;
+      if (typeof value === 'string' && value) last = value;
+      if (last === 'Normal') return last;
+    } catch {}
+    await sleep(100);
+  }
+  return last;
+}
+
+const execText = (cmd, args) => new Promise(resolve => {
+  execFile(cmd, args, { timeout: 15000, windowsHide: true, maxBuffer: 4 * 1024 * 1024 }, (err, out) => resolve(err ? '' : String(out)));
+});
+
+export function portsFromNetstat(text, pids) {
+  const want = new Set((pids || []).map(p => String(p)));
+  const ports = new Set();
+  for (const line of String(text).split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] !== 'TCP' || String(parts[3] || '').toUpperCase() !== 'LISTENING') continue;
+    if (!want.has(parts[4])) continue;
+    const port = Number(String(parts[1] || '').slice(String(parts[1] || '').lastIndexOf(':') + 1));
+    if (port) ports.add(port);
+  }
+  return [...ports];
+}
+
+export function portsFromProcNet(text, inodes) {
+  const ports = new Set();
+  for (const line of String(text).trim().split('\n').slice(1)) {
+    if (!line.trim()) continue;
+    const parts = line.trim().split(/\s+/);
+    if (parts[3] !== '0A' || !inodes.has(parts[9])) continue;
+    const local = parts[1] || '';
+    const port = parseInt(local.slice(local.lastIndexOf(':') + 1), 16);
+    if (port) ports.add(port);
+  }
+  return [...ports];
+}
+
+function procDescendants(root) {
+  const parent = new Map();
+  let ents = [];
+  try { ents = fs.readdirSync('/proc'); } catch { return new Set([Number(root)]); }
+  for (const ent of ents) {
+    if (!/^\d+$/.test(ent)) continue;
+    try {
+      const stat = fs.readFileSync(`/proc/${ent}/stat`, 'utf8');
+      const rest = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+      parent.set(Number(ent), Number(rest[1]));
+    } catch {}
+  }
+  const out = new Set([Number(root)]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [pid, ppid] of parent) {
+      if (out.has(ppid) && !out.has(pid)) { out.add(pid); grew = true; }
+    }
+  }
+  return out;
+}
+
+function socketInodes(pids) {
+  const inodes = new Set();
+  for (const pid of pids) {
+    let fds = [];
+    try { fds = fs.readdirSync(`/proc/${pid}/fd`); } catch { continue; }
+    for (const fd of fds) {
+      try {
+        const m = /^socket:\[(\d+)\]$/.exec(fs.readlinkSync(path.join('/proc', String(pid), 'fd', fd)));
+        if (m) inodes.add(m[1]);
+      } catch {}
+    }
+  }
+  return inodes;
+}
+
+async function windowsProcessTree(pid) {
+  const script = `$root=${Number(pid)}; $all=@(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId); $want=New-Object System.Collections.Generic.List[int]; $want.Add($root); $changed=$true; while ($changed) { $changed=$false; foreach ($p in $all) { if ($null -eq $p.ProcessId) { continue }; $id=[int]$p.ProcessId; $parent=[int]$p.ParentProcessId; if ($want.Contains($parent) -and -not $want.Contains($id)) { [void]$want.Add($id); $changed=$true } } }; $want -join ','`;
+  const out = await execText('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+  const ids = out.split(/[^0-9]+/).map(Number).filter(n => n > 0);
+  return ids.length ? ids : [Number(pid)];
+}
+
+export async function listeningTcpPorts(pid) {
+  const root = Number(pid);
+  if (!root) return [];
+  if (process.platform === 'win32') {
+    const [text, tree] = await Promise.all([execText('netstat', ['-ano', '-p', 'tcp']), windowsProcessTree(root)]);
+    return portsFromNetstat(text, tree);
+  }
+  const inodes = socketInodes(procDescendants(root));
+  const tcp = fs.existsSync('/proc/net/tcp') ? fs.readFileSync('/proc/net/tcp', 'utf8') : '';
+  const tcp6 = fs.existsSync('/proc/net/tcp6') ? fs.readFileSync('/proc/net/tcp6', 'utf8') : '';
+  return [...new Set([...portsFromProcNet(tcp, inodes), ...portsFromProcNet(tcp6, inodes)])];
 }
 
 async function pageText(win) {
@@ -207,10 +349,19 @@ export async function runLifecyclePhase(ctx) {
   const created = await ctx.call('POST', '/api/profiles', { name: 'Window', automationEnabled: true });
   const id = created.d?.id;
   const opened = id && await ctx.call('POST', `/api/profiles/${id}/launch`, { headless: false });
-  const ws = opened?.d?.cdp?.wsEndpoint;
-  if (id && !ws) throw new Error('lifecycle launch did not return a CDP endpoint; the profile must be created with automationEnabled so Browser.close can run');
-  if (ws) await ctx.browserClose(ws);
+  const cdp = opened?.d?.cdp;
+  const ws = cdp?.wsEndpoint;
+  const address = cdp?.debuggerAddress || '';
+  if (id && !ws) throw new Error('lifecycle launch did not return a CDP endpoint; only this lifecycle profile enables automation so the last page can be closed');
+  if (ws && !address.startsWith('127.0.0.1:')) throw new Error(`lifecycle CDP is not loopback-only (${address || 'missing'})`);
+  if (ws) {
+    let host = '';
+    try { host = new URL(ws).hostname; } catch {}
+    if (host !== '127.0.0.1') throw new Error(`lifecycle CDP socket is not loopback-only (${ws})`);
+  }
+  const how = ws ? await ctx.closeLastWindow(ws) : null;
   const closed = id && await waitProfile(ctx, id, p => !p.running && !p.last_error);
+  const exitType = id ? await ctx.readExitType(id) : null;
   const killedLaunch = id && await ctx.call('POST', `/api/profiles/${id}/launch`, { headless: false });
   if (id && !killedLaunch?.d?.pid) throw new Error('lifecycle relaunch did not return a browser pid');
   let killed = null;
@@ -222,7 +373,7 @@ export async function runLifecyclePhase(ctx) {
   if (id) await ctx.call('POST', `/api/profiles/${id}/stop`);
   return {
     lifecycle: {
-      close: { running: closed?.running ?? null, error: closed?.last_error || null },
+      close: { running: closed?.running ?? null, error: closed?.last_error || null, exitType, method: how?.method || null, address },
       kill: { running: errored?.running ?? null, error: errored?.last_error || null, taskkill: killed },
       restart: { status: restarted?.s || null, running: !!restarted?.d?.running, error: restarted?.d?.last_error || null },
     },
@@ -276,6 +427,8 @@ export async function runSeedPhase(ctx) {
     error: row?.last_error || null,
     code: null,
     cdp: !!row?.cdp,
+    automationEnabled: row?.automationEnabled === true,
+    listening: row?.pid ? await ctx.listeningPorts(row.pid) : [],
     cmd,
     proxyHits: hits.slice(),
     echoed,
