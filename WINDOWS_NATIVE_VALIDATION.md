@@ -1,5 +1,7 @@
 # Windows-native validation candidate — NOT a verified release
 
+> The procedure and the `%APPDATA%\Profile Manager` log path below are out of date. Current build steps, the real data directory `%APPDATA%\profile-manager`, and build 30 are in [BUILD_AND_RELEASE.md](BUILD_AND_RELEASE.md).
+
 This is a **separate copy** of the original v0.4.0 source. The unmodified original release remains unchanged.
 
 ## Why this copy exists

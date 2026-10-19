@@ -1,5 +1,7 @@
 # Windows build & test guide
 
+> Superseded for the current candidate. Use [../BUILD_AND_RELEASE.md](../BUILD_AND_RELEASE.md). The sizes and `%APPDATA%\Profile Manager` paths below describe the older Linux cross-build, not build 30.
+
 > Status: the Windows artifacts below were **cross-built on Linux (wine)** and have **never been run on Windows**.
 > Everything in the "Windows 10/11 manual test checklist" is **NOT YET RUN**.
 
