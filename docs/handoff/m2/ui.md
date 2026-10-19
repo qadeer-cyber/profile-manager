@@ -4,7 +4,7 @@
 - **Branch:** `feature/m2-diagnostics-ui` (created from frozen M1 `d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9`)
 - **Remote SHA:** see `git log` on the branch (recorded in the room report)
 - **Contract:** `DIAGNOSTICS_CONTRACT.md` v1, SHA-256 `cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8`
-- **Evidence level:** 3 locally (real backend `32f9089` + real pinned Chromium 156.0.8078.4 on Linux, combined tree from `d7a000e`). Not Windows, Electron or installed EXE. Reconciled against contract §1–12 and the owner's completeness decision.
+- **Evidence level:** 2 (real backend `32f9089` + real pinned Chromium 156.0.8078.4 on Linux, combined tree from `d7a000e`). Not Windows, Electron or installed EXE. Reconciled against contract §1–12 and the owner's completeness decision.
 
 ## Files changed (UI-owned only)
 - `web/src/pages/DiagnosticsPage.jsx` (mounts the new component; +3/−1)
@@ -42,7 +42,7 @@ No changes to App.jsx, shared navigation, backend, `web/src/api.js`, package.jso
 ## Checkpoint 2 (fix1)
 - Transient errors (429/500/network) on Refresh keep the previous observation and POST result; Refresh disabled while the environment POST is in flight.
 - Web mode (no desktop UI token): shows "Profile diagnostics are available in the Profile Manager desktop app.", both actions disabled, zero diagnostics requests.
-- Tests: mock e2e 54/0; test:unit 95/0; test:ui 25/0; real backend + real Chromium 29/0 (UI token) and 9/0 (web mode); mutation check 5 new steps fail when fixes reverted.
+- Tests: mock e2e 54/0; test:unit 95/0; test:ui 25/0; real backend + real Chromium (level 2, Linux) 29/0 (UI token) and 9/0 (web mode); mutation check 5 new steps fail when fixes reverted.
 
 ## Next exact step
 After the owner's B1/source decision, add the approved Source value to `SOURCES` in `useProfileDiagnostics.js` with a plain label, rerun mock e2e and the real-backend run against the fixed backend commit. Read MASTER_DIRECTIVE.md from branch `docs/master-directive-handoff`.
