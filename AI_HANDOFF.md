@@ -8,7 +8,16 @@ Read this file, [ARCHITECTURE.md](ARCHITECTURE.md), [DEVELOPMENT.md](DEVELOPMENT
 - Validation branch: `windows-validation`
 - Documented commit: `be575c770a8b76596e6bbcb9f8dda1b12cc79be0`
 - This documentation branch: `docs/ai-handoff` (docs only; do not merge it on your own)
+- v0.5.0 work: `development/v0.5.0`, branched from `21e67e1`. Do not push this work onto `windows-validation` or `docs/ai-handoff`.
 - Do not use `main`. Do not edit pull request #1. Do not move or delete tag `v0.4.0`. Do not publish a release.
+
+## v0.5.0 milestone 1
+
+M1 is the browser lifecycle fix. Closing the last window used to call `onClosed` with `stopping` still false, so every such close was stored as `Browser exited unexpectedly` and the UI showed Error (`web/src/lib.js` treats any `last_error` as error).
+
+`server/browsers.js` now reads the launched Chromium child's exit status. Exit code 0 is Stopped and clears `last_error`. A signal or a non-zero code is still Error, with that status in the message. App Stop still sets `stopping` first, so it stays Stopped. The profile row and `.pm-lock` are released before the SOCKS relay is closed. One page closing does not close the context.
+
+Regression coverage is `test/lifecycle.e2e.js`, run from `npm run test:engine` on Linux and on the Windows workflow for this branch. Local result before the Windows run: lifecycle 21 passed, 0 failed; existing engine suite 42 passed, 0 failed. See [docs/v0.5.0/RESEARCH.md](docs/v0.5.0/RESEARCH.md) for the rest of the milestone plan.
 
 ## v0.4.0 build 30
 
