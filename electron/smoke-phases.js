@@ -5,6 +5,7 @@ import path from 'path';
 import { execFile } from 'child_process';
 import { createRequire } from 'module';
 import { MANIFEST } from '../server/chromium.js';
+import { isAlive } from '../server/proc.js';
 import { processCommandLine } from '../server/proc.js';
 import { selectSmokePhase } from './smoke-gate.js';
 
@@ -58,8 +59,19 @@ export function createSmokeContext({ backend, win, uiToken, userData, log, env =
     nativeModulePath, processCommandLine, manifest: MANIFEST,
     execPath: process.execPath,
     taskkill: pid => new Promise((resolve, reject) => {
-      execFile('taskkill', ['/F', '/PID', String(pid)], err => err ? reject(err) : resolve());
+      execFile('taskkill', ['/F', '/PID', String(pid)], (err, stdout, stderr) => {
+        const evidence = { pid, exitStatus: err ? err.code ?? null : 0, signal: err?.signal ?? null,
+          stdout: String(stdout || ''), stderr: String(stderr || ''), exception: err?.message || null };
+        if (err) { err.taskkillEvidence = evidence; reject(err); }
+        else resolve(evidence);
+      });
     }),
+    lifecycleSnapshot: async (id, pid) => {
+      const { lifecycleSmokeSnapshot } = await import('../server/browsers.js');
+      return { ...lifecycleSmokeSnapshot(id), observedPid: pid ?? null,
+        observedPidAlive: pid ? isAlive(pid) : null,
+        preferencesExitType: await readProfileExitTypeOnce(env.PM_DATA_DIR, id) };
+    },
     closeLastWindow: closeLastPage,
     readExitType: id => readProfileExitType(env.PM_DATA_DIR, id),
     listeningPorts: listeningTcpPorts,
@@ -121,6 +133,11 @@ export async function closeLastPage(wsUrl) {
     }
   }
   return { method: 'last-window', closed };
+}
+
+function readProfileExitTypeOnce(dataDir, id) {
+  try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'profiles', id, 'Default', 'Preferences'), 'utf8'))?.profile?.exit_type ?? null; }
+  catch { return null; }
 }
 
 async function readProfileExitType(dataDir, id) {
@@ -280,12 +297,14 @@ export async function runCleanPhase(ctx) {
   };
 }
 
-async function waitProfile(ctx, id, pred) {
+async function waitProfile(ctx, id, pred, observe) {
   let row = null;
   for (let i = 0; i < 80; i++) {
     const list = (await ctx.call('GET', '/api/profiles')).d || [];
     row = list.find(p => p.id === id) || null;
-    if (row && pred(row)) return row;
+    const matched = !!(row && pred(row));
+    if (observe) await observe(row, { attempt: i + 1, matched, timedOut: !matched && i === 79 });
+    if (matched) return row;
     await ctx.sleep(250);
   }
   return row;
@@ -346,6 +365,16 @@ export async function runUpgradePhase(ctx) {
 }
 
 export async function runLifecyclePhase(ctx) {
+  const started = Date.now();
+  const timeline = [];
+  const record = async (stage, id, pid, extra = {}) => {
+    let snapshot = null;
+    try { snapshot = ctx.lifecycleSnapshot ? await ctx.lifecycleSnapshot(id, pid) : null; }
+    catch (err) { snapshot = { diagnosticError: String(err.message || err) }; }
+    const item = { stage, at: new Date().toISOString(), elapsedMs: Date.now() - started, ...extra, snapshot };
+    timeline.push(item);
+    ctx.log('LIFECYCLE-DIAGNOSTIC ' + JSON.stringify(item));
+  };
   const created = await ctx.call('POST', '/api/profiles', { name: 'Window', automationEnabled: true });
   const id = created.d?.id;
   const opened = id && await ctx.call('POST', `/api/profiles/${id}/launch`, { headless: false });
@@ -359,19 +388,34 @@ export async function runLifecyclePhase(ctx) {
     try { host = new URL(ws).hostname; } catch {}
     if (host !== '127.0.0.1') throw new Error(`lifecycle CDP socket is not loopback-only (${ws})`);
   }
+  await record('before-window-close', id, opened?.d?.pid);
   const how = ws ? await ctx.closeLastWindow(ws) : null;
   const closed = id && await waitProfile(ctx, id, p => !p.running && !p.last_error);
   const exitType = id ? await ctx.readExitType(id) : null;
+  await record('after-window-close', id, opened?.d?.pid);
   const killedLaunch = id && await ctx.call('POST', `/api/profiles/${id}/launch`, { headless: false });
   if (id && !killedLaunch?.d?.pid) throw new Error('lifecycle relaunch did not return a browser pid');
   let killed = null;
+  let taskkillResult = null;
+  await record('before-taskkill', id, killedLaunch?.d?.pid, { launchStatus: killedLaunch?.s ?? null });
   if (killedLaunch?.d?.pid) {
-    try { await ctx.taskkill(killedLaunch.d.pid); } catch (e) { killed = String(e.message || e); }
+    try { taskkillResult = await ctx.taskkill(killedLaunch.d.pid); }
+    catch (e) { killed = String(e.message || e); taskkillResult = e.taskkillEvidence || { exception: killed }; }
   }
-  const errored = id && await waitProfile(ctx, id, p => !p.running && !!p.last_error);
+  await record('after-taskkill', id, killedLaunch?.d?.pid, { taskkill: taskkillResult });
+  let errorWait = null;
+  const errored = id && await waitProfile(ctx, id, p => !p.running && !!p.last_error, async (row, wait) => {
+    errorWait = wait;
+    await record('wait-for-error', id, killedLaunch?.d?.pid, { ...wait,
+      profile: row ? { running: row.running, last_error: row.last_error ?? null } : null });
+  });
+  await record('before-relaunch', id, killedLaunch?.d?.pid, { errorWait });
   const restarted = id && await ctx.call('POST', `/api/profiles/${id}/launch`, { headless: false });
+  await record('after-relaunch', id, restarted?.d?.pid, { status: restarted?.s ?? null, running: !!restarted?.d?.running, last_error: restarted?.d?.last_error ?? null });
   if (id) await ctx.call('POST', `/api/profiles/${id}/stop`);
+  await record('after-final-stop', id, restarted?.d?.pid);
   return {
+    diagnostics: { timeline, taskkill: taskkillResult, errorWait },
     lifecycle: {
       close: { running: closed?.running ?? null, error: closed?.last_error || null, exitType, method: how?.method || null, address },
       kill: { running: errored?.running ?? null, error: errored?.last_error || null, taskkill: killed },
@@ -497,3 +541,4 @@ export async function runCheckPhase(ctx) {
   await closeServer(pages);
   return { saved: { profile: !!row, proxy: proxies.some(p => p.name === 'PersistProxy'), read, launch: launched?.s || null } };
 }
+

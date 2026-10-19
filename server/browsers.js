@@ -18,6 +18,23 @@ export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
+// Read-only, in-process evidence for the installed offline smoke; no HTTP surface.
+// Select fields explicitly: running rows also contain CDP/relay connection details.
+export function lifecycleSmokeSnapshot(id) {
+  const entry = live.get(id) || settling.get(id);
+  const row = db.prepare('SELECT pid FROM running WHERE id=?').get(id);
+  const profile = db.prepare('SELECT last_error FROM profiles WHERE id=?').get(id);
+  return {
+    live: live.has(id), settling: settling.has(id), launching: launching.has(id),
+    runningRow: row ? { pid: row.pid } : null, last_error: profile?.last_error ?? null,
+    browserPid: entry?.browserPid ?? null,
+    processAlive: entry?.browserPid ? isAlive(entry.browserPid) : null,
+    stopping: entry?.stopping ?? null, cleaned: entry?.cleaned ?? null,
+    exitCode: entry?.proc?.exitCode ?? entry?.exitCode ?? null,
+    signal: entry?.proc?.signalCode ?? entry?.exitSignal ?? null,
+    exitType: entry?.exitType ?? null, exitTypeState: entry?.exitTypeState ?? null,
+  };
+}
 export const isRunning = id => live.has(id) || settling.has(id);
 export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()])];
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
@@ -479,3 +496,4 @@ export async function shutdown() {
   // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
   await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
 }
+

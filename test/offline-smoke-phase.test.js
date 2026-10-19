@@ -117,6 +117,7 @@ test('lifecycle asks for CDP, closes that endpoint, and returns Stopped then Err
   let stage = 'new';
   const calls = [];
   const closed = [];
+  const diagnosticLogs = [];
   const out = await runLifecyclePhase(base({
     call: async (m, u, b) => {
       calls.push({ m, u, b });
@@ -135,7 +136,9 @@ test('lifecycle asks for CDP, closes that endpoint, and returns Stopped then Err
       return { s: 200, d: {} };
     },
     closeLastWindow: async ws => { closed.push(ws); stage = 'closed'; return { method: 'last-window' }; },
-    taskkill: async () => { stage = 'killed'; },
+    taskkill: async () => { stage = 'killed'; return { exitStatus: 0, stdout: 'SUCCESS', stderr: '', exception: null }; },
+    log: line => diagnosticLogs.push(line),
+    lifecycleSnapshot: async (_id, pid) => ({ observedPid: pid, observedPidAlive: stage !== 'killed', settling: false, runningRow: stage === 'killed' ? null : { pid } }),
   }));
   assert.deepEqual(calls[0].b, { name: 'Window', automationEnabled: true });
   assert.deepEqual(closed, ['ws://127.0.0.1:9/devtools/browser/abc']);
@@ -150,6 +153,16 @@ test('lifecycle asks for CDP, closes that endpoint, and returns Stopped then Err
   assert.equal(out.lifecycle.restart.status, 200);
   assert.equal(out.lifecycle.restart.running, true);
   assert.equal(out.lifecycle.restart.error, null);
+  assert.equal(out.diagnostics.taskkill.exitStatus, 0);
+  assert.equal(out.diagnostics.errorWait.matched, true);
+  assert.equal(out.diagnostics.errorWait.timedOut, false);
+  const timeline = out.diagnostics.timeline;
+  assert.ok(timeline.findIndex(x => x.stage === 'before-taskkill') < timeline.findIndex(x => x.stage === 'after-taskkill'));
+  assert.ok(timeline.findIndex(x => x.stage === 'wait-for-error') < timeline.findIndex(x => x.stage === 'before-relaunch'));
+  assert.equal(timeline.find(x => x.stage === 'before-taskkill').snapshot.observedPid, 222);
+  assert.equal(timeline.find(x => x.stage === 'after-taskkill').snapshot.observedPidAlive, false);
+  assert.equal(timeline.at(-1).stage, 'after-final-stop');
+  assert.equal(diagnosticLogs.length, timeline.length);
 });
 
 test('lifecycle CDP must be loopback and is not opened for a public address', async () => {
@@ -326,4 +339,30 @@ test('common facts keep the native and bundled-browser fields', async () => {
   assert.equal(facts.revision, '1248');
   assert.equal(typeof facts.headlessShellExists, 'boolean');
   assert.match(facts.native.path, /better_sqlite3\.node$/);
+});
+
+
+
+test('lifecycle diagnostics retain taskkill failure and the original 80-poll timeout', async () => {
+  let polls = 0;
+  const failure = Object.assign(new Error('taskkill failed'), { taskkillEvidence: {
+    exitStatus: 128, stdout: '', stderr: 'process not found', exception: 'taskkill failed',
+  } });
+  const out = await runLifecyclePhase(base({
+    call: async (m, u) => {
+      if (m === 'POST' && u === '/api/profiles') return { s: 201, d: { id: 'timeout' } };
+      if (u.endsWith('/launch')) return { s: 200, d: { running: true, pid: 7, cdp: {
+        wsEndpoint: 'ws://127.0.0.1:9/devtools/browser/test', debuggerAddress: '127.0.0.1:9',
+      } } };
+      if (m === 'GET' && u === '/api/profiles') { polls++; return { s: 200, d: [{ id: 'timeout', running: false, last_error: null }] }; }
+      return { s: 200, d: {} };
+    },
+    taskkill: async () => { throw failure; },
+  }));
+  assert.equal(out.diagnostics.taskkill.exitStatus, 128);
+  assert.equal(out.diagnostics.taskkill.stderr, 'process not found');
+  assert.equal(out.lifecycle.kill.taskkill, 'taskkill failed');
+  assert.equal(out.lifecycle.kill.error, null);
+  assert.deepEqual(out.diagnostics.errorWait, { attempt: 80, matched: false, timedOut: true });
+  assert.equal(polls, 81); // One clean-close poll, then the unchanged 80 Error polls.
 });

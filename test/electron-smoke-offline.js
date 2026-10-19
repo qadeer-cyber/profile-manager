@@ -48,8 +48,24 @@ function runPhase(phase, tlsPort) {
   return new Promise(resolve => {
     const child = spawn(exe, [], { env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: false });
     let out = '';
-    child.stdout.on('data', d => { out += d; });
-    child.stderr.on('data', d => { out += d; });
+    // Timestamp receipt of allowlisted classifier records, including records hidden
+    // by the former output filter. Keep separate buffers for the two streams.
+    const capture = () => {
+      let pending = '';
+      return d => {
+        out += d;
+        pending += String(d);
+        let end;
+        while ((end = pending.indexOf('\n')) >= 0) {
+          const line = pending.slice(0, end); pending = pending.slice(end + 1);
+          if (/^CLASSIFIER-(?:EVIDENCE|UNKNOWN|FALLBACK)\b/.test(line)) {
+            console.log(`LIFECYCLE-DIAGNOSTIC classifier received ${new Date().toISOString()} ${line}`);
+          }
+        }
+      };
+    };
+    child.stdout.on('data', capture());
+    child.stderr.on('data', capture());
     const t = setTimeout(() => { try { child.kill(); } catch {} resolve({ code: 'timeout', out, result: env.PM_SMOKE_RESULT }); }, 300000);
     child.on('error', err => { clearTimeout(t); resolve({ code: 'error', out: out + '\n' + err.message, result: env.PM_SMOKE_RESULT }); });
     child.on('exit', code => { clearTimeout(t); resolve({ code, out, result: env.PM_SMOKE_RESULT }); });
@@ -57,7 +73,7 @@ function runPhase(phase, tlsPort) {
 }
 
 function load(run) {
-  console.log(run.out.split('\n').filter(l => /\[main\]|Error|FAIL|offline smoke/i.test(l)).map(l => '  | ' + l).join('\n'));
+  console.log(run.out.split('\n').filter(l => /\[main\]|Error|FAIL|offline smoke|CLASSIFIER-(?:EVIDENCE|UNKNOWN|FALLBACK)|LIFECYCLE-DIAGNOSTIC/i.test(l)).map(l => '  | ' + l).join('\n'));
   if (!fs.existsSync(run.result)) return { error: 'no result file', exit: run.code };
   return { ...JSON.parse(fs.readFileSync(run.result, 'utf8')), exit: run.code };
 }
@@ -180,6 +196,7 @@ ok(check.saved?.read?.ls === 'pm_v' && String(check.saved?.read?.c || '').includ
 
 const lifeRun = await runPhase('lifecycle', tlsPort);
 const life = load(lifeRun);
+console.log('LIFECYCLE-DIAGNOSTIC result ' + JSON.stringify(life.diagnostics || { missing: true }));
 ok(life.exit === 0 && !life.error, `lifecycle launch exited (${life.exit})`);
 ok(life.lifecycle?.close?.running === false && !life.lifecycle?.close?.error, `last-window close is Stopped (${life.lifecycle?.close?.error})`);
 ok(life.lifecycle?.close?.exitType === 'Normal' && life.lifecycle?.close?.method === 'last-window', `last-window close wrote exit_type Normal (${life.lifecycle?.close?.exitType}, ${life.lifecycle?.close?.method})`);
@@ -193,3 +210,4 @@ console.log(`\n${pass} passed, ${fail} failed`);
   fs.rmSync(certDir, { recursive: true, force: true });
 }
 process.exit(fail ? 1 : 0);
+
