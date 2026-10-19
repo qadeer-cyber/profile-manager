@@ -28,7 +28,7 @@ Acceptance tests, in `test/lifecycle.e2e.js` unless noted:
 - Closing one tab while another page is open leaves the profile running.
 - A graceful browser quit (the headed window Close button; `Browser.close` in the headless test) leaves Stopped, with `last_error` null, the process gone, and `.pm-lock` gone. The same holds for an authenticated SOCKS5 profile.
 - App Stop does the same and keeps a cookie and localStorage for the next launch.
-- `SIGKILL` sets `last_error`, emits `profile:crashed`, and releases the lock. The existing engine suite still asserts `/unexpectedly|died/`.
+- A forced kill sets `last_error`, emits `profile:crashed`, and releases the lock. The lifecycle test uses `taskkill /F` on Windows and `SIGKILL` elsewhere. The existing engine suite still asserts `/unexpectedly|died/`.
 - A successful relaunch clears `last_error`.
 - IPC `stopServer` still persists the cookie and localStorage. The existing engine suite's safe-shutdown section must stay green.
 
@@ -56,23 +56,27 @@ Playwright's default switches include `--disable-extensions`. Acceptance test: a
 
 ## Playwright and Electron now, versus a custom Chromium
 
-What this process can set reliably, because Playwright already exposes it and the tests can read it back over CDP:
+What this process can set with the current Playwright launch, and can read back over CDP:
 
 - Locale and `Accept-Language` (`locale` on the context).
 - Timezone (`timezoneId`).
 - Viewport and device scale factor.
 - Geolocation permission and a fixed geolocation, only after the user grants the permission in the profile.
 - A WebRTC IP-handling policy, as a Chromium switch. This is a policy flag, not a guarantee about every ICE candidate.
-- User-agent and client hints, via Playwright's user-agent override, which uses CDP `Emulation.setUserAgentOverride`.
 - An unpacked extension, once `--disable-extensions` is not applied to that launch.
 
-What needs a browser build of our own, because stock Chromium and Playwright do not give a stable, consistent surface for them:
+The font list the browser reports is the host operating system's. This note does not choose a way to replace it.
 
-- Canvas, WebGL, and audio output that stay consistent for a profile and still match a real device.
-- The font list, beyond what the host operating system has installed.
-- Lower-level graphics and media parameters that change between machines and Chromium versions.
+### Canvas, WebGL, audio, and client hints (research only)
 
-Maintenance cost of a custom build: every Chromium security update has to be rebased, rebuilt for Windows, and run through the offline installer again. The unsigned NSIS package is already about 354 MB with stock Chromium 156. A fork adds a build farm, a longer supply chain, and a wider gap when a site starts checking a version we have not merged. The risk is shipping an old Chromium, not looking "more real." Stay on the pinned Chrome for Testing build until a milestone has an acceptance test that stock Chromium cannot pass.
+These four are not implemented. Mohammad has not decided where the boundary is, so this section only describes them. Do not add a setting, a launch flag, or a CDP override for them until that decision exists.
+
+- Canvas. A page can read back pixels from a canvas. Profiles in other products expose this as a setting. No method is chosen here.
+- WebGL. A page can read the renderer and vendor strings, and pixels from a WebGL canvas. Same status as canvas.
+- Audio. `AudioContext` output can differ from one machine to another. No processing change is proposed.
+- Client hints. Chromium sends `Sec-CH-UA` and related hints alongside the user-agent. Playwright can call `Emulation.setUserAgentOverride`, which also covers those hints. This app does not call it, and this note does not decide that it should.
+
+A custom Chromium would mean rebasing every security update, rebuilding for Windows, and running the offline installer again. The unsigned NSIS package is already about 354 MB with stock Chromium 156. That cost is context for the boundary decision above. It is not a decision to fork, and it is not a decision to ship these controls on stock Chromium.
 
 ## What the launched browser sends today
 
