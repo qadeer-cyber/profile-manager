@@ -124,4 +124,4 @@ Nothing below is authorized for implementation. Each packet still needs its own 
 
 ## Notes
 - Every packet must follow the §13 pipeline and §14 packet reporting. Installer workflow dispatch needs separate approval.
-- Matrix row counts: see the `FEATURE_PARITY_MATRIX.md` scorecard (120 rows; A3.3 split into A3.3a/A3.3b).
+- Matrix row counts: see the `FEATURE_PARITY_MATRIX.md` scorecard (122 rows; A3.3 split into A3.3a/A3.3b; A1.12b and F2b split out for loopback binding).
