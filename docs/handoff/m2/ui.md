@@ -50,3 +50,21 @@ After the owner's B1/source decision, add the approved Source value to `SOURCES`
 ## Outstanding approvals
 - `api.js` error-body fix (ownership exception).
 - Integration, merge and installer dispatch: not authorized.
+
+## Codex recovery — 2026-10-19 (WIP, not M2 acceptance)
+
+Original UI checkpoint 204152cbd1b9e670b13c674c84ff77520be774a7 preserved.
+Backend amendment is versioned at backend commit 9f375ef8d2b398e18e920f6477846a606f29d44a,
+`docs/handoff/m2/contracts/DiagnosticsV1.process-command-line.md`, SHA-256
+e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4.
+UI now accepts process_command_line with the label Browser process observation.
+Recognized policy values remain allowlisted. The approved api.js exception retains
+safe error.code, error.message and error.requestId for diagnostics URLs only.
+Ordinary error handling, auth, headers, token retrieval and request transport are
+unchanged. Browser e2e fixtures now exercise process_command_line.
+
+Actual evidence (Node 24.19.0, macOS 13 x64):
+- node --test web/e2e/diagnostics-client.test.mjs: 4 pass / 0 fail / 0 skip / 0 todo.
+- Vite production build: success (33 modules).
+- Real pinned Chromium UI e2e: blocked; Playwright refuses mac13 as unsupported.
+No Windows or installed-app evidence. No acceptance, PR, merge or installer run.

@@ -33,7 +33,7 @@ function diag(profileId, o = {}) {
     expected: { chromiumVersion: A('131.0.6778.85', 'manifest') },
     environment: { timezone: U('permission_required'), locale: U('permission_required'), languages: U('permission_required') },
     proxy: A({ configured: true, type: 'socks5', host: 'proxy.example.net', port: 1080 }, 'launch_snapshot'),
-    webrtc: { commandLinePolicy: A({ state: 'present', value: 'disable_non_proxied_udp' }, 'browser_protocol'), effectivePolicy: U('unsupported'), iceCollection: 'not_collected' },
+    webrtc: { commandLinePolicy: A({ state: 'present', value: 'disable_non_proxied_udp' }, 'process_command_line'), effectivePolicy: U('unsupported'), iceCollection: 'not_collected' },
     consistency: { chromiumVersion: 'match' },
   };
   o.mut?.(d); return d;

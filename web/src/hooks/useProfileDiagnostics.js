@@ -10,7 +10,7 @@ import { api, subscribe } from '../api.js';
 
 export const CONSENT = 'open-visible-diagnostic-tab';
 export const REASONS = ['not_running', 'launching', 'stopping', 'launch_changed', 'browser_disconnected', 'timeout', 'unsupported', 'permission_required', 'probe_closed', 'probe_navigated', 'collection_failed'];
-export const SOURCES = ['browser_protocol', 'launch_snapshot', 'visible_probe', 'manifest'];
+export const SOURCES = ['browser_protocol', 'process_command_line', 'launch_snapshot', 'visible_probe', 'manifest'];
 export const STATES = ['complete', 'partial', 'unavailable', 'invalidated'];
 export const CONSISTENCY = ['match', 'mismatch', 'unknown'];
 export const ERROR_CODES = ['INVALID_REQUEST', 'UNAUTHORIZED', 'PROFILE_NOT_FOUND', 'LAUNCH_CHANGED', 'DIAGNOSTICS_BUSY', 'INTERNAL_ERROR'];
@@ -61,7 +61,10 @@ function proxyValue(v, at) {
 function cmdPolicy(v, at) {
   if (!isObj(v)) throw new Bad(`${at} is not an object`);
   keys(v, ['state', 'value'], at);
-  if (v.state === 'present') s128(v.value, `${at}.value`);
+  if (v.state === 'present') {
+    s128(v.value, `${at}.value`);
+    oneOf(v.value, ['default', 'default_public_and_private_interfaces', 'default_public_interface_only', 'disable_non_proxied_udp'], `${at}.value`);
+  }
   else if (v.state === 'absent' || v.state === 'conflicting') { if (v.value !== null) throw new Bad(`${at}.value must be null`); }
   else throw new Bad(`${at}.state has an unrecognized value`);
 }
@@ -102,9 +105,8 @@ export function validateDiagnosticsV1(d) {
 const check = d => { try { validateDiagnosticsV1(d); return null; } catch (e) { if (e instanceof Bad) return e.message; throw e; } };
 
 // ---------- errors (section 4) ----------
-// api() throws Error{status, code}. With the contract body {error:{code,message,requestId}} api() cannot
-// surface code/requestId (its message becomes "[object Object]"), so the code is derived from the status.
-// e.message is never rendered.
+// api() preserves safe diagnostics code/requestId metadata; status mapping remains
+// a fallback. e.message is never rendered by the diagnostics component.
 export function toError(e) {
   if (e?.kind) return e;
   const status = typeof e?.status === 'number' ? e.status : null;

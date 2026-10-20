@@ -21,6 +21,7 @@ export const REASON_TEXT = {
 };
 export const SOURCE_TEXT = {
   browser_protocol: 'Browser protocol',
+  process_command_line: 'Browser process observation',
   launch_snapshot: 'Launch snapshot',
   visible_probe: 'Visible diagnostic tab',
   manifest: 'Chromium manifest',
