@@ -95,3 +95,18 @@ When `feature/m2-diagnostics-backend` is pushed:
    - GET/POST bodies through `validateDiagnosticsV1(body, {route})`
    - the 400/401/404/409/429/500 error bodies and `Cache-Control: no-store`
    - then §7 visible-tab cases 1–8 on real Chromium (level 2)
+
+## Codex recovery — 2026-10-19, WIP / NOT ACCEPTED
+
+See `recovery-review.md` for reconstructed findings, exact contract hashes,
+changed-file ownership, actual new test counts and supported-host blockers.
+Original QA checkpoint 20649252417b1bf4b4656c273bfc6b657edf007e is preserved.
+No independent QA sign-off is claimed by Codex. Backend absence assertions remain
+for absent-backend trees; frozen-M1 absence is verified from its exact Git object.
+The assembled backend/UI tree now has strict live HTTP status/schema checks.
+Original schema negatives remain, with only owner-authorized Source updates and
+stronger unavailable-validUntil validation. No failing M1 assertions removed.
+
+Final QA runs: contract 54/0/0 skip/1 todo; security 24/0/0 skip/16 todo;
+existing E2E 5/0/0 skip/18 todo; recovery 12/0/0 skip/0 todo; real browser 0/0/1 skip.
+Real Linux/Windows Chromium is pending. No CI or installer dispatch performed.

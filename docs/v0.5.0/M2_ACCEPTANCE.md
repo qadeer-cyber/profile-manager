@@ -116,3 +116,12 @@ node --test test/diagnostics.e2e.js
 npm run test:unit
 ```
 Files (QA-owned only): `docs/handoff/m2/qa.md`, `test/diagnostics-v1-validator.mjs` (test-only helper), `test/diagnostics-contract.test.js`, `test/diagnostics-security.test.js`, `test/diagnostics.e2e.js`, `docs/v0.5.0/M2_ACCEPTANCE.md`. UI patch `/workspace/m2ui-review/diagnostics-ui.patch` read only, not modified.
+
+## Codex recovery packet — supersedes prior local-results narrative only
+
+M2 remains NOT ACCEPTED. See `../handoff/m2/recovery-review.md` for the complete
+new packet, preserved hashes, scope, files, actual pass/fail/skip/todo counts and
+remaining high-severity platform-evidence blockers. The earlier QA test intent
+and every negative assertion are retained. Source enum expectations are updated
+only for the authorized process_command_line amendment. No mock result is
+represented as Windows or real Chromium evidence. Installer dispatch forbidden.

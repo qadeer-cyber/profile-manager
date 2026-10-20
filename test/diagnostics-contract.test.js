@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { execFileSync } from 'node:child_process';
 import {
   validateDiagnosticsV1,
   validateDiagnosticsErrorBody,
@@ -55,8 +56,11 @@ test('§7/§8 constants match contract text', { skip: CONTRACT_SKIP }, () => {
 });
 
 test('baseline still has no server/diagnostics.js and no M2 routes', () => {
-  assert.equal(fs.existsSync(path.join(root, 'server', 'diagnostics.js')), false);
-  const src = fs.readFileSync(path.join(root, 'server', 'app.js'), 'utf8');
+  const repository = process.env.PM_DIAG_REPOSITORY || root;
+  const baseline = 'd7a000eeadd4f4645a608a1e0cc2b8ad154a75d9';
+  const files = execFileSync('git', ['-C', repository, 'ls-tree', '-r', '--name-only', baseline], { encoding: 'utf8' }).split('\n');
+  assert.equal(files.includes('server/diagnostics.js'), false);
+  const src = execFileSync('git', ['-C', repository, 'show', `${baseline}:server/app.js`], { encoding: 'utf8' });
   assert.ok(!/profiles\/:id\/diagnostics/.test(src));
   assert.match(src, /ui\.get\('\/diagnostics'/); // global app-health unchanged presence
 });
@@ -225,7 +229,7 @@ test('validator ACCEPTS commandLinePolicy union + REJECTS bad iceCollection / co
   ]) {
     const r = validateDiagnosticsV1(validDiagnosticsFixture({
       webrtc: {
-        commandLinePolicy: { availability: 'available', value, source: 'browser_protocol' },
+        commandLinePolicy: { availability: 'available', value, source: 'process_command_line' },
         effectivePolicy: { availability: 'unavailable', value: null, source: null, reason: 'unsupported' },
         iceCollection: 'not_collected',
       },
@@ -234,7 +238,7 @@ test('validator ACCEPTS commandLinePolicy union + REJECTS bad iceCollection / co
   }
   assert.equal(validateDiagnosticsV1(validDiagnosticsFixture({
     webrtc: {
-      commandLinePolicy: { availability: 'available', value: { state: 'absent', value: null }, source: 'browser_protocol' },
+      commandLinePolicy: { availability: 'available', value: { state: 'absent', value: null }, source: 'process_command_line' },
       effectivePolicy: { availability: 'unavailable', value: null, source: null, reason: 'unsupported' },
       iceCollection: 'collected',
     },
@@ -280,7 +284,7 @@ test('enum tables match contract section 2', () => {
     'timeout', 'unsupported', 'permission_required', 'probe_closed', 'probe_navigated',
     'collection_failed',
   ]);
-  assert.deepEqual([...SOURCES], ['browser_protocol', 'launch_snapshot', 'visible_probe', 'manifest']);
+  assert.deepEqual([...SOURCES], ['browser_protocol', 'process_command_line', 'launch_snapshot', 'visible_probe', 'manifest']);
   assert.deepEqual([...OBSERVATION_STATES], ['complete', 'partial', 'unavailable', 'invalidated']);
   assert.deepEqual([...ERROR_CODES], [
     'INVALID_REQUEST', 'UNAUTHORIZED', 'PROFILE_NOT_FOUND', 'LAUNCH_CHANGED', 'DIAGNOSTICS_BUSY', 'INTERNAL_ERROR',
@@ -289,7 +293,7 @@ test('enum tables match contract section 2', () => {
 
 const webrtcWith = (value) => validDiagnosticsFixture({
   webrtc: {
-    commandLinePolicy: { availability: 'available', value, source: 'browser_protocol' },
+    commandLinePolicy: { availability: 'available', value, source: 'process_command_line' },
     effectivePolicy: { availability: 'unavailable', value: null, source: null, reason: 'unsupported' },
     iceCollection: 'not_collected',
   },
@@ -493,7 +497,7 @@ test('§9 hard: raw command-line flags / user-data-dir / remote-debugging fail v
 
 test('§6 hard: effective WebRTC policy is always unavailable in M2', () => {
   for (const src of ['browser_protocol', 'launch_snapshot']) {
-    const b = validDiagnosticsFixture({ webrtc: { commandLinePolicy: A({ state: 'absent', value: null }, 'browser_protocol'), effectivePolicy: A('default', src), iceCollection: 'not_collected' } });
+    const b = validDiagnosticsFixture({ webrtc: { commandLinePolicy: A({ state: 'absent', value: null }, 'process_command_line'), effectivePolicy: A('default', src), iceCollection: 'not_collected' } });
     assert.equal(validateDiagnosticsV1(b, { provisional: false }).ok, false, src);
   }
 });
@@ -528,10 +532,10 @@ test("PROVISIONAL: GET timezone/locale/languages unavailable with reason 'permis
   assert.equal(validateDiagnosticsV1(t2, { route: 'GET', provisional: false }).ok, true);
 });
 
-test("PROVISIONAL: effectivePolicy reason 'unsupported'; commandLinePolicy source 'browser_protocol'", () => {
+test("PROVISIONAL: effectivePolicy reason 'unsupported'; commandLinePolicy source 'process_command_line'", () => {
   assert.equal(PROVISIONAL.effectivePolicyReason, 'unsupported');
-  assert.equal(PROVISIONAL.commandLinePolicySource, 'browser_protocol');
-  const ep = validDiagnosticsFixture({ webrtc: { commandLinePolicy: A({ state: 'absent', value: null }, 'browser_protocol'), effectivePolicy: U('timeout'), iceCollection: 'not_collected' } });
+  assert.equal(PROVISIONAL.commandLinePolicySource, 'process_command_line');
+  const ep = validDiagnosticsFixture({ webrtc: { commandLinePolicy: A({ state: 'absent', value: null }, 'process_command_line'), effectivePolicy: U('timeout'), iceCollection: 'not_collected' } });
   assert.equal(validateDiagnosticsV1(ep).ok, false);
   assert.equal(validateDiagnosticsV1(ep, { provisional: false }).ok, true);
   const cl = validDiagnosticsFixture({ webrtc: { commandLinePolicy: A({ state: 'absent', value: null }, 'launch_snapshot'), effectivePolicy: U('unsupported'), iceCollection: 'not_collected' } });
@@ -558,7 +562,7 @@ test('owner GET: complete with env unavailable(permission_required); effectivePo
   const r = validateDiagnosticsV1(b, { route: 'GET' });
   assert.equal(r.ok, true, r.errors.join('\n'));
   for (const v of [{ state: 'absent', value: null }, { state: 'conflicting', value: null }, { state: 'present', value: 'disable_non_proxied_udp' }]) {
-    const w = validDiagnosticsFixture({ ...DONE, webrtc: { ...b.webrtc, commandLinePolicy: A(v, 'browser_protocol') } });
+    const w = validDiagnosticsFixture({ ...DONE, webrtc: { ...b.webrtc, commandLinePolicy: A(v, 'process_command_line') } });
     assert.equal(validateDiagnosticsV1(w, { route: 'GET' }).ok, true, JSON.stringify(v));
   }
 });
@@ -652,3 +656,19 @@ test('owner: invalidated (launch changed / observation invalid) carries no launc
 });
 
 test('live GET/POST bodies pass validateDiagnosticsV1 (GET with route:GET); errors pass validateDiagnosticsErrorBody', { todo: 'Blocked: backend absent' }, () => {});
+
+test('authorized amendment is separately versioned and changes only Source', { skip: !process.env.PM_DIAG_AMENDED_CONTRACT && 'Set PM_DIAG_AMENDED_CONTRACT to the versioned backend contract' }, () => {
+  const original = fs.readFileSync(CONTRACT, 'utf8');
+  const amended = fs.readFileSync(process.env.PM_DIAG_AMENDED_CONTRACT, 'utf8');
+  assert.equal(crypto.createHash('sha256').update(amended).digest('hex'), 'e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4');
+  assert.equal(amended, original.replace('  | "browser_protocol"\n', '  | "browser_protocol"\n  | "process_command_line"\n'));
+});
+
+
+test('owner F3: unavailable cannot advertise display freshness', () => {
+  const empty = allUnavailable('not_running');
+  const correct = validDiagnosticsFixture({ ...obs({ state: 'unavailable', reason: 'not_running', launchId: null, validUntil: null }), ...empty });
+  assert.equal(validateDiagnosticsV1(correct, { route: 'GET' }).ok, true);
+  correct.observation.validUntil = '2026-10-19T16:00:30.000Z';
+  assert.equal(validateDiagnosticsV1(correct, { route: 'GET' }).ok, false);
+});

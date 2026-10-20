@@ -14,7 +14,7 @@ export const REASONS = Object.freeze([
 ]);
 
 export const SOURCES = Object.freeze([
-  'browser_protocol', 'launch_snapshot', 'visible_probe', 'manifest',
+  'browser_protocol', 'process_command_line', 'launch_snapshot', 'visible_probe', 'manifest',
 ]);
 
 export const OBSERVATION_STATES = Object.freeze([
@@ -62,7 +62,7 @@ export const DURATION_TOLERANCE_MS = 250;
 export const PROVISIONAL = Object.freeze({
   getEnvironmentReason: 'permission_required', // §2 reason for "visible tab required"
   effectivePolicyReason: 'unsupported',
-  commandLinePolicySource: 'browser_protocol',
+  commandLinePolicySource: 'process_command_line',
 });
 
 /**
@@ -451,6 +451,7 @@ export function validateSemantics(b, opts, errors, warnings = []) {
   const req = Date.parse(o.requestedAt), done = Date.parse(o.completedAt);
   // §2/§8: completion cannot precede the request.
   if (done < req) errors.push('observation.completedAt: precedes requestedAt');
+  if (o.state === 'unavailable' && o.validUntil !== null) errors.push('observation.validUntil: unavailable must be null');
   // §8: validUntil is a display freshness ceiling of at most 30 s after completion.
   if (o.validUntil !== null) {
     const vu = Date.parse(o.validUntil);
@@ -619,7 +620,7 @@ export function validDiagnosticsFixture(overrides = {}) {
       commandLinePolicy: {
         availability: 'available',
         value: { state: 'absent', value: null },
-        source: 'browser_protocol', // PROVISIONAL source
+        source: 'process_command_line', // approved OS process source
       },
       effectivePolicy: {
         availability: 'unavailable', value: null, source: null, reason: 'unsupported',

@@ -24,6 +24,7 @@ import {
 
 // External artifact (UI agent's patch, not in the repo): override with PM_DIAG_UI_PATCH. When absent, dependent
 // tests are skipped with an explicit 'external artifact absent' reason, never passed silently.
+const HAS_BACKEND = fs.existsSync(new URL('../server/diagnostics.js', import.meta.url));
 const UI_PATCH = process.env.PM_DIAG_UI_PATCH || '/workspace/m2ui-review/diagnostics-ui.patch';
 const UI_PATCH_SKIP = fs.existsSync(UI_PATCH) ? false
   : `external artifact absent: UI patch not found at ${UI_PATCH} (set PM_DIAG_UI_PATCH)`;
@@ -127,10 +128,16 @@ test('§1/§5 Blocked: GET /api/profiles/:id/diagnostics — backend absent (exp
     headers: { 'X-UI-Token': SENTINELS.uiToken },
   });
   // Backend absent → 404 (or similar). Must not return a DiagnosticsV1 200.
-  assert.notEqual(r.status, 200);
-  assert.ok([404, 405, 501].includes(r.status), `unexpected ${r.status}`);
-  if (r.json && r.json.schemaVersion != null) {
-    assert.fail('DiagnosticsV1 body must not be returned while backend absent');
+  if (!HAS_BACKEND) {
+    assert.notEqual(r.status, 200);
+    assert.ok([404, 405, 501].includes(r.status), `unexpected ${r.status}`);
+    if (r.json && r.json.schemaVersion != null) assert.fail('DiagnosticsV1 body must not be returned while backend absent');
+  } else {
+    assert.equal(r.status, 200);
+    assert.equal(assertCacheControlNoStore(r.headers).ok, true);
+    const result = validateDiagnosticsV1(r.json, { route: 'GET' });
+    assert.equal(result.ok, true, result.errors.join('\n'));
+    assert.equal(r.json.observation.state, 'unavailable');
   }
   assertNoSentinels(r.text);
   // When backend lands, success AND error must set Cache-Control: no-store — cannot assert on 404 HTML/JSON today.
@@ -170,7 +177,14 @@ test('§1/§7.1–2 Blocked: live POST /diagnostics/environment — backend abse
     body: { expectedLaunchId: '33333333-3333-4333-8333-333333333333', consent: POST_CONSENT },
   });
   assert.notEqual(r.status, 200);
-  assert.ok([404, 405, 501].includes(r.status), `unexpected ${r.status}`);
+  if (!HAS_BACKEND) assert.ok([404, 405, 501].includes(r.status), `unexpected ${r.status}`);
+  else {
+    assert.equal(r.status, 409);
+    assert.equal(assertCacheControlNoStore(r.headers).ok, true);
+    const checked = validateDiagnosticsErrorBody(r.json);
+    assert.equal(checked.ok, true, checked.errors.join('\n'));
+    assert.equal(r.json.error.code, 'LAUNCH_CHANGED');
+  }
   assertNoSentinels(r.text);
 });
 
@@ -389,7 +403,7 @@ test('§7.1/§8 static: UI production code has no polling, storage, hidden probe
 // ---- Blocked: need the M2 backend (live routes) ----
 // Case 8 live spec: with PM_API_TOKEN set to a sentinel, run GET and POST diagnostics; assert response bodies
 //   and headers never contain the API_TOKEN value; request log shows no GET /api/api-token from M2 flows.
-const BLOCKED = 'Blocked: backend absent';
+const BLOCKED = 'Live pinned Chromium and backend integration acceptance pending on a supported host';
 for (const name of [
   'case 8: live GET/POST diagnostics bodies/headers never contain automation API_TOKEN value',
   '§4: live 400/401/404/409/429/500 envelopes {error:{code,message,requestId}} + Cache-Control: no-store on every response',
