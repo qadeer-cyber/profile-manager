@@ -120,3 +120,9 @@ is fail-closed (collection_failed), since ps cannot guarantee original boundarie
 Pinned Chromium 156.0.8078.4 and real evaluation detach require a supported host.
 No independent review or milestone acceptance is claimed. Remaining suite results
 will be recorded in the integration packet. No Windows CI or installer dispatched.
+
+Final local review follow-up: Windows OS subprocess cancellation now waits for the
+child close event (an AbortError alone is not termination acknowledgement), and
+Linux proc reads receive the cancellation signal. Rechecked process unit suite:
+3 pass / 0 fail / 1 skip / 0 todo; syntax and diff checks pass. Actual platform
+termination/timing behavior is still unverified. No original contract bytes changed.

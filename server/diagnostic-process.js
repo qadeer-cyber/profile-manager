@@ -55,9 +55,13 @@ function windowsArguments(line) {
 
 function run(args, signal) {
   return new Promise(resolve => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', args],
+    let output = null;
+    const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', args],
       { windowsHide: true, timeout: 2400, maxBuffer: 1024 * 1024, signal },
-      (error, stdout) => resolve(error ? null : stdout));
+      (error, stdout) => { output = error ? null : stdout; });
+    // Abort can report an error before process exit. Keep ownership until the
+    // helper has actually closed and its stdio can no longer deliver evidence.
+    child.once('close', () => resolve(output));
   });
 }
 
@@ -65,11 +69,11 @@ async function snapshot(pid, command, signal) {
   if (!Number.isSafeInteger(pid) || pid <= 0 || signal?.aborted) return null;
   try {
     if (process.platform === 'linux') {
-      const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+      const stat = await readFile(`/proc/${pid}/stat`, { encoding: 'utf8', signal });
       const start = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
       if (!/^\d+$/.test(start)) return null;
-      const argv = command ? (await readFile(`/proc/${pid}/cmdline`, 'utf8')).replace(/\0$/, '').split('\0') : null;
-      const after = await readFile(`/proc/${pid}/stat`, 'utf8');
+      const argv = command ? (await readFile(`/proc/${pid}/cmdline`, { encoding: 'utf8', signal })).replace(/\0$/, '').split('\0') : null;
+      const after = await readFile(`/proc/${pid}/stat`, { encoding: 'utf8', signal });
       if (after.slice(after.lastIndexOf(')') + 2).split(' ')[19] !== start || signal?.aborted) return null;
       return { start, argv };
     }
