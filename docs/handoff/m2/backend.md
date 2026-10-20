@@ -81,3 +81,42 @@ Install pinned Chromium and run `node --test test/lifecycle.e2e.js` plus the dia
 
 - Pending working defaults listed above
 - No merge, no PR, no installer dispatch, no tag, no release
+
+## Codex recovery checkpoint — 2026-10-19 (WIP; not accepted)
+
+Owner transferred single-writer ownership after Grok stopped. Original upstream
+checkpoint: 32f90895e7ee9f3ac2b60f2337e8604d9c3117d8. All M1 assertions preserved.
+
+Contracts are preserved under `contracts/` with SHA256SUMS. The amended file adds
+only `process_command_line` to Source. Original SHA: cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8.
+Amended SHA: e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4.
+Owner's state/timeout/auth decisions supplement the original prose; no new fields,
+per-fact timestamps, policy cache, migrations, or Chromium flags were added.
+
+Changes: bounded Linux /proc and Windows CIM process observation; identity pinned
+to launchId, launched-child PID and OS process start; allowlisted summary only;
+Chromium switch syntax; manifest-only unavailable; null invalidated launchId;
+all diagnostic sessions detached at deadline; dedicated page CDP evaluation;
+headless rejection; visibility, exact data URL and navigation checks; route/listener
+cleanup; diagnostics auth before JSON parsing; trailing slash error envelopes;
+diagnostics included in test:unit.
+
+Chromium source references used for parsing (read-only):
+- https://chromium.googlesource.com/chromium/src/+/main/base/command_line.cc
+- https://chromium.googlesource.com/chromium/src/+/0b49fa16f0265a0b1274383546fe933c288d2106/content/public/common/content_switches.cc
+The recognized name is force-webrtc-ip-handling-policy. Separated values are not
+switch values. Windows prefixes/case differ from POSIX. '--' stops switches.
+
+Actual local evidence: Node 24.19.0, macOS 13 x64. Diagnostics unit + OS helper:
+37 pass / 0 fail / 1 skip / 0 todo (skip is real Linux/Windows OS observation).
+Combined unit snapshot before the final four regressions: 127 pass / 1 fail /
+1 skip / 0 todo; unchanged M1 real-browser-child test fails because pinned
+Chromium is absent. Playwright install chromium refuses mac13 as unsupported.
+No host-platform override or installation restriction bypass was attempted.
+
+Limitations: actual Windows process/CIM, quoting, process reuse and timing are
+UNVERIFIED. Linux /proc behavior is UNVERIFIED on a real Linux host. macOS argv
+is fail-closed (collection_failed), since ps cannot guarantee original boundaries.
+Pinned Chromium 156.0.8078.4 and real evaluation detach require a supported host.
+No independent review or milestone acceptance is claimed. Remaining suite results
+will be recorded in the integration packet. No Windows CI or installer dispatched.

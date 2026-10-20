@@ -102,16 +102,16 @@ function mapProxy(proxy, reason) {
   return available({ configured: true, type: value.type, host: value.host, port: value.port }, 'launch_snapshot');
 }
 
-// PENDING: command-line policy source is browser_protocol. The pipe read stays in the browser adapter.
+// OS adapter returns only the recognized policy summary.
 function mapWebrtc(summary, reason) {
   if (reason) return unavailable(reason);
-  if (!summary) return unavailable('unsupported');
-  if (summary.kind === 'absent') return available({ state: 'absent', value: null }, 'browser_protocol');
-  if (summary.kind === 'conflicting') return available({ state: 'conflicting', value: null }, 'browser_protocol');
+  if (!summary) return unavailable('collection_failed');
+  if (summary.kind === 'absent') return available({ state: 'absent', value: null }, 'process_command_line');
+  if (summary.kind === 'conflicting') return available({ state: 'conflicting', value: null }, 'process_command_line');
   if (summary.kind === 'present' && WEBRTC_POLICIES.has(summary.value)) {
-    return available({ state: 'present', value: summary.value }, 'browser_protocol');
+    return available({ state: 'present', value: summary.value }, 'process_command_line');
   }
-  return unavailable('unsupported');
+  return unavailable('collection_failed');
 }
 
 function mapRuntime(facts, reason) {
@@ -159,6 +159,8 @@ export function decideObservationState(mode, facts, invalidated = false) {
     ? [facts.environment.timezone, facts.environment.locale, facts.environment.languages]
     : [facts.runtime.chromiumVersion, facts.runtime.userAgent, facts.expected, facts.proxy, facts.webrtc];
   const obtained = required.filter(fact => fact.availability === 'available').length;
+  const live = mode === 'environment' ? required : [facts.runtime.chromiumVersion, facts.runtime.userAgent, facts.proxy, facts.webrtc];
+  if (!live.some(fact => fact.availability === 'available')) return { state: 'unavailable', reason: primaryReason(live) };
   if (obtained === required.length) return { state: 'complete', reason: null };
   const reason = primaryReason(required);
   if (obtained === 0) return { state: 'unavailable', reason };
@@ -228,16 +230,7 @@ export function diagnosticDataUrl() {
 
 function ownedDiagnosticUrl(url, expected) {
   if (typeof url !== 'string' || url.length < 1 || url.length > 2000) return false;
-  if (url === expected) return true;
-  if (!url.startsWith('data:text/html')) return false;
-  const comma = url.indexOf(',');
-  if (comma < 0) return false;
-  try {
-    const body = decodeURIComponent(url.slice(comma + 1));
-    return body.includes(DIAGNOSTIC_MARKER) && !/https?:\/\//i.test(body);
-  } catch {
-    return false;
-  }
+  return url === expected;
 }
 
 export function readDiagnosticEnvironment() {
@@ -245,7 +238,7 @@ export function readDiagnosticEnvironment() {
   const timezone = resolved && typeof resolved.timeZone === 'string' ? resolved.timeZone : '';
   const locale = typeof navigator !== 'undefined' && typeof navigator.language === 'string' ? navigator.language : '';
   const list = typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? Array.from(navigator.languages) : [];
-  return { timezone, locale, languages: list };
+  return { timezone, locale, languages: list, visible: document.visibilityState === 'visible' };
 }
 
 function validLanguage(value) {
@@ -257,7 +250,7 @@ function validLanguages(languages) {
 }
 
 function validateEnvironment(raw) {
-  if (!raw || typeof raw !== 'object') return { timezone: null, locale: null, languages: null };
+  if (!raw || typeof raw !== 'object' || raw.visible !== true) return { timezone: null, locale: null, languages: null };
   const timezone = typeof raw.timezone === 'string' && raw.timezone.length <= 128 && TIMEZONE.test(raw.timezone) ? raw.timezone : null;
   const locale = validLanguage(raw.locale) ? raw.locale : null;
   const languages = validLanguages(raw.languages) ? raw.languages.slice() : null;
@@ -287,35 +280,45 @@ async function readEnvironment(view, token, deadlineStart, deadlineMs) {
     if (typeof view.openDiagnosticPage !== 'function') return { failed: 'collection_failed' };
   let page;
   const dataUrl = diagnosticDataUrl();
+  let blocker;
+  let navigated = false;
+  let observing = false;
+  const onNavigation = frame => { if (observing && (!page.mainFrame || frame === page.mainFrame())) navigated = true; };
   try {
-    page = await view.openDiagnosticPage();
+    page = await view.openDiagnosticPage(token.hooks);
     if (token.cancelled) return { failed: 'timeout' };
     if (typeof page?.route !== 'function' || typeof page.bringToFront !== 'function' || typeof page.goto !== 'function' || typeof page.evaluate !== 'function') {
       return { failed: 'collection_failed' };
     }
-    await page.route('**/*', route => {
+    blocker = route => {
       let url = '';
       try { url = route.request().url(); } catch { url = ''; }
       if (url === dataUrl || url.startsWith('data:text/html') || url === 'about:blank') return route.continue();
       return route.abort();
-    });
+    };
+    await page.route('**/*', blocker);
+    page.on?.('framenavigated', onNavigation);
     await page.bringToFront();
     const remaining = () => Math.max(1, deadlineMs - (Date.now() - deadlineStart));
-    if (typeof page.setDefaultTimeout === 'function') page.setDefaultTimeout(remaining());
     await page.goto(dataUrl, { waitUntil: 'domcontentloaded', timeout: remaining() });
     if (await pageClosed(page)) return { failed: 'probe_closed' };
     if (!ownedDiagnosticUrl(pageUrl(page), dataUrl)) return { failed: 'probe_navigated' };
     await page.bringToFront();
     if (token.cancelled) return { failed: 'timeout' };
-    const raw = await page.evaluate(readDiagnosticEnvironment);
+    observing = true;
+    const raw = await (page.diagnosticEvaluate || page.evaluate).call(page, readDiagnosticEnvironment);
     if (token.cancelled) return { failed: 'timeout' };
     if (await pageClosed(page)) return { failed: 'probe_closed' };
     if (!ownedDiagnosticUrl(pageUrl(page), dataUrl)) return { failed: 'probe_navigated' };
+    if (navigated) return { failed: 'probe_navigated' };
     return validateEnvironment(raw);
   } catch {
     if (page && await pageClosed(page)) return { failed: 'probe_closed' };
     if (page && pageUrl(page) && !ownedDiagnosticUrl(pageUrl(page), dataUrl)) return { failed: 'probe_navigated' };
-    return { failed: 'collection_failed' };
+    return { failed: token.cancelled ? 'timeout' : 'collection_failed' };
+  } finally {
+    page?.off?.('framenavigated', onNavigation);
+    if (blocker && page?.unroute) await page.unroute('**/*', blocker).catch(() => {});
   }
 }
 
@@ -331,6 +334,9 @@ function blankFacts(reason, mode, expectedVersion) {
 
 function finishObservation(profileId, launchId, requestedMs, completedMs, mode, facts, invalidated = false) {
   const decided = decideObservationState(mode, facts, invalidated);
+  if (decided.state === 'unavailable') {
+    facts = { ...blankFacts(decided.reason, mode, null), expected: facts.expected };
+  }
   return buildPayload({
     profileId, launchId, requestedMs, completedMs, facts,
     state: decided.state, reason: decided.reason,
@@ -339,7 +345,7 @@ function finishObservation(profileId, launchId, requestedMs, completedMs, mode, 
 
 export async function collectDiagnostics(profileId, opts = {}) {
   if (guards.has(profileId)) throw requestError('DIAGNOSTICS_BUSY');
-  const token = { cancelled: false, session: null, done: false };
+  const token = { cancelled: false, sessions: new Set(), controller: new AbortController(), done: false };
   guards.set(profileId, token);
   const release = () => {
     if (token.done) return;
@@ -366,9 +372,12 @@ export async function collectDiagnostics(profileId, opts = {}) {
         return { kind: 'phase', launchId: launchAtStart, reason };
       }
       const hooks = {
+        signal: token.controller.signal,
         cancelled: () => token.cancelled,
-        trackSession: session => { token.session = session; },
+        trackSession: session => { token.sessions.add(session); if (token.cancelled) Promise.resolve().then(() => session.detach()).catch(() => {}); },
       };
+      token.hooks = hooks;
+      if (mode === 'environment' && started.headless === true) return { kind: 'phase', launchId: launchAtStart, reason: 'unsupported' };
       const [pipe, environment] = await Promise.all([
         typeof started.readPipeFacts === 'function'
           ? started.readPipeFacts(hooks).catch(() => null)
@@ -385,8 +394,10 @@ export async function collectDiagnostics(profileId, opts = {}) {
     const timed = new Promise(resolve => {
       timer = setTimeout(() => {
         token.cancelled = true;
-        const session = token.session;
-        if (session && typeof session.detach === 'function') Promise.resolve(session.detach()).catch(() => {});
+        token.controller.abort();
+        for (const session of token.sessions) {
+          if (typeof session.detach === 'function') Promise.resolve().then(() => session.detach()).catch(() => {});
+        }
         resolve({ timeout: true });
       }, deadlineMs);
     });
@@ -397,16 +408,15 @@ export async function collectDiagnostics(profileId, opts = {}) {
     const completedMs = now();
     if (outcome.timeout) {
       hold = true;
-      work.finally(() => release());
+      work.then(release, release);
       const after = safeObserve(observe, profileId);
       if (after.launchId !== launchAtStart) {
         return finishObservation(
-          profileId, after.launchId ?? null, requestedMs, completedMs, mode,
+          profileId, null, requestedMs, completedMs, mode,
           blankFacts('launch_changed', mode, expectedVersion), true,
         );
       }
-      // A deadline miss discards in-flight browser facts. State is then decided
-      // from that blank required set, so a still-available manifest can make GET partial.
+      // Discard unfinished facts; the manifest alone is not live evidence.
       return finishObservation(
         profileId, launchAtStart, requestedMs, completedMs, mode,
         blankFacts('timeout', mode, expectedVersion),
@@ -421,9 +431,8 @@ export async function collectDiagnostics(profileId, opts = {}) {
       );
     }
     if (value.kind === 'invalidated') {
-      const after = safeObserve(observe, profileId);
       return finishObservation(
-        profileId, after.launchId ?? null, requestedMs, completedMs, mode,
+        profileId, null, requestedMs, completedMs, mode,
         blankFacts('launch_changed', mode, expectedVersion), true,
       );
     }
@@ -459,11 +468,11 @@ export async function collectDiagnostics(profileId, opts = {}) {
 
 export function isProfileDiagnosticsRequest(req) {
   const path = req?.path || '';
-  return /^\/api\/profiles\/[^/]+\/diagnostics$/.test(path)
-    || /^\/api\/profiles\/[^/]+\/diagnostics\/environment$/.test(path);
+  return /^\/api\/profiles\/[^/]+\/diagnostics\/?$/.test(path)
+    || /^\/api\/profiles\/[^/]+\/diagnostics\/environment\/?$/.test(path);
 }
 
-function authorized(req, deps) {
+export function diagnosticsAuthorized(req, deps) {
   try {
     if (deps.uiToken) return deps.tokenOk(req.get('x-ui-token'), deps.uiToken) === true;
     const header = req.get('authorization') || '';
@@ -492,7 +501,7 @@ function sendError(res, code) {
 async function handle(req, res, deps, mode) {
   res.set('Cache-Control', 'no-store');
   try {
-    if (!authorized(req, deps)) return sendError(res, 'UNAUTHORIZED');
+    if (!diagnosticsAuthorized(req, deps)) return sendError(res, 'UNAUTHORIZED');
     if (!PROFILE_ID.test(req.params.id || '')) return sendError(res, 'INVALID_REQUEST');
     if (mode === 'environment' && !validConsent(req.body)) return sendError(res, 'INVALID_REQUEST');
     const profile = deps.loadProfile(req.params.id);

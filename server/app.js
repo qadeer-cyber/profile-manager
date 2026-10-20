@@ -13,7 +13,7 @@ import { chromium } from 'playwright';
 import { db, userDataDir, DATA_DIR, migration, getSetting, setSetting, scrubDatabaseFile } from './db.js';
 import { encrypt, decrypt, needsReencrypt, loadApiToken, encryptionStatus, setStrictPrefixes } from './secrets.js';
 import * as engine from './browsers.js';
-import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpError } from './diagnostics.js';
+import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpError, diagnosticsAuthorized } from './diagnostics.js';
 import { currentVersion } from './migrations.js';
 import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
 import { proxyTestInsecureTls } from './testflags.js';
@@ -393,6 +393,14 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   const API_TOKEN = loadApiToken();
   const app = express();
   app.disable('x-powered-by');
+  // Diagnostics authentication precedes body parsing, including malformed JSON.
+  app.use((req, res, next) => {
+    if (!isProfileDiagnosticsRequest(req)) return next();
+    res.set('Cache-Control', 'no-store');
+    if (diagnosticsAuthorized(req, { uiToken, apiToken: API_TOKEN, tokenOk })) return next();
+    const { status, body } = diagnosticsHttpError('UNAUTHORIZED');
+    return res.status(status).json(body);
+  });
   app.use(express.json({ limit: '1mb' }));
   app.use((req, res, next) => { req.body ??= {}; next(); });
 

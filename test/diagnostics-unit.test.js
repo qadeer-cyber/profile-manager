@@ -178,7 +178,7 @@ function fakePage({ env, urlAfter, closed = false, evaluateGate } = {}) {
       assert.equal(fn, diagnostics.readDiagnosticEnvironment);
       if (closed === 'after-evaluate') page._closed = true;
       if (evaluateGate) return evaluateGate;
-      return env;
+      return env ? { visible: true, ...env } : env;
     },
     close: () => { calls.push('close'); },
   };
@@ -331,7 +331,7 @@ describe('profile diagnostics', { concurrency: false }, () => {
     assert.deepEqual(body.expected.chromiumVersion, avail(VERSION, 'manifest'));
     assert.equal(body.consistency.chromiumVersion, 'match');
     assert.deepEqual(body.proxy, avail({ configured: true, type: 'socks5', host: 'proxy.example', port: 1080 }, 'launch_snapshot'));
-    assert.deepEqual(body.webrtc.commandLinePolicy, avail({ state: 'conflicting', value: null }, 'browser_protocol'));
+    assert.deepEqual(body.webrtc.commandLinePolicy, avail({ state: 'conflicting', value: null }, 'process_command_line'));
     for (const fact of [body.environment.timezone, body.environment.locale, body.environment.languages]) {
       assert.deepEqual(fact, miss('permission_required'));
     }
@@ -366,8 +366,8 @@ describe('profile diagnostics', { concurrency: false }, () => {
       readPipeFacts: async () => pipeOk({ webrtc: { kind: 'unverified', value: `${SENTINEL}-policy` } }),
     }));
     assert.equal(unverified.observation.state, 'partial');
-    assert.equal(unverified.observation.reason, 'unsupported');
-    assert.deepEqual(unverified.webrtc.commandLinePolicy, miss('unsupported'));
+    assert.equal(unverified.observation.reason, 'collection_failed');
+    assert.deepEqual(unverified.webrtc.commandLinePolicy, miss('collection_failed'));
     assertNoSentinel(unverified);
 
     const suppressed = await collect('read', connected({ proxy: { state: 'suppressed' } }));
@@ -376,12 +376,34 @@ describe('profile diagnostics', { concurrency: false }, () => {
     assert.deepEqual(suppressed.proxy, miss('unsupported'));
 
     const stopped = await collect('read', () => ({ phase: 'not_running', launchId: null, proxy: { state: 'off' } }));
-    assert.equal(stopped.observation.state, 'partial');
+    assert.equal(stopped.observation.state, 'unavailable');
     assert.equal(stopped.observation.reason, 'not_running');
     assert.deepEqual(stopped.expected.chromiumVersion, avail(VERSION, 'manifest'));
     assert.deepEqual(stopped.runtime.chromiumVersion, miss('not_running'));
     assert.deepEqual(stopped.proxy, miss('not_running'));
     assert.deepEqual(stopped.environment.timezone, miss('permission_required'));
+  });
+
+  for (const phase of ['not_running', 'launching', 'stopping', 'disconnected']) {
+    test(`F3: ${phase} plus manifest is unavailable`, async () => {
+      const body = await collect('read', () => ({ phase, launchId: null }));
+      assert.equal(body.observation.state, 'unavailable');
+      assert.equal(body.observation.validUntil, null);
+      assert.equal(body.expected.chromiumVersion.value, VERSION);
+    });
+  }
+  test('F3: failed live required facts plus manifest are unavailable', async () => {
+    const body = await collect('read', connected({ proxy: { state: 'suppressed' }, readPipeFacts: async () => null }));
+    assert.equal(body.observation.state, 'unavailable');
+    assert.equal(body.observation.validUntil, null);
+    assert.equal(body.expected.chromiumVersion.value, VERSION);
+  });
+  test('F3: deadline without a live fact is unavailable', async () => {
+    const body = await collect('read', connected({ readPipeFacts: async () => { await new Promise(r => setTimeout(r, 30)); return pipeOk(); } }), { deadlineMs: 5 });
+    assert.equal(body.observation.state, 'unavailable');
+    assert.equal(body.observation.validUntil, null);
+    assert.equal(body.expected.chromiumVersion.value, VERSION);
+    await new Promise(r => setTimeout(r, 40));
   });
 
   test('GET observation state unavailable', async () => {
@@ -408,13 +430,13 @@ describe('profile diagnostics', { concurrency: false }, () => {
     }));
     assert.equal(body.observation.state, 'invalidated');
     assert.equal(body.observation.reason, 'launch_changed');
-    assert.equal(body.observation.launchId, 'launch-b');
+    assert.equal(body.observation.launchId, null);
     assert.equal(body.runtime.userAgent.reason, 'launch_changed');
     assert.equal(body.expected.chromiumVersion.availability, 'available');
     assertNoSentinel(body);
   });
 
-  test('GET timeout is partial when the manifest is still represented and drops late facts', async () => {
+  test('GET timeout is unavailable with manifest-only metadata and drops late facts', async () => {
     let release;
     const gate = new Promise(resolve => { release = resolve; });
     let detached = false;
@@ -435,7 +457,7 @@ describe('profile diagnostics', { concurrency: false }, () => {
     });
     const body = await pending;
     assertSchema(body);
-    assert.equal(body.observation.state, 'partial');
+    assert.equal(body.observation.state, 'unavailable');
     assert.equal(body.observation.reason, 'timeout');
     assert.equal(detached, true);
     assert.deepEqual(body.runtime.userAgent, miss('timeout'));
@@ -562,10 +584,60 @@ describe('profile diagnostics', { concurrency: false }, () => {
     }), { expectedLaunchId: 'launch-1' });
     assert.equal(body.observation.state, 'invalidated');
     assert.equal(body.observation.reason, 'launch_changed');
-    assert.equal(body.observation.launchId, 'launch-2');
+    assert.equal(body.observation.launchId, null);
     assert.equal(body.environment.timezone.reason, 'launch_changed');
     assertNoSentinel(body);
     assert.equal(page.calls.includes('close'), false);
+  });
+
+  test('headless consent never creates a diagnostic tab', async () => {
+    const body = await collect('environment', connected({ headless: true, openDiagnosticPage: () => { throw new Error('must not open'); } }), { expectedLaunchId: 'launch-1' });
+    assert.equal(body.observation.state, 'unavailable');
+    assert.equal(body.observation.reason, 'unsupported');
+    assert.equal(body.observation.validUntil, null);
+  });
+
+  test('a non-visible probe provides no environment facts', async () => {
+    const page = fakePage({ env: { visible: false, timezone: 'UTC', locale: 'en-US', languages: ['en-US'] } });
+    const body = await collect('environment', envView(page).observe, { expectedLaunchId: 'launch-1' });
+    assert.equal(body.observation.state, 'unavailable');
+    assert.equal(body.runtime.userAgent.availability, 'unavailable');
+    assert.equal(body.environment.timezone.availability, 'unavailable');
+  });
+
+  test('timed-out evaluation detaches before guard release, cleans routes and permits retry', async () => {
+    const id = crypto.randomUUID();
+    let rejectEvaluation, tracked, detached = false, cleaned = false;
+    const page = fakePage({});
+    page.unroute = async () => { cleaned = true; };
+    page.diagnosticEvaluate = () => {
+      tracked.trackSession({ detach: async () => { detached = true; rejectEvaluation(new Error('detached')); } });
+      return new Promise((_, reject) => { rejectEvaluation = reject; });
+    };
+    const view = { ...connected()(), openDiagnosticPage: async hooks => { tracked = hooks; return page; } };
+    const body = await diagnostics.collectDiagnostics(id, { mode: 'environment', expectedLaunchId: 'launch-1', deadlineMs: 20, observe: () => view });
+    assert.equal(body.observation.state, 'unavailable');
+    assert.equal(body.observation.reason, 'timeout');
+    for (let i = 0; i < 20 && diagnostics.diagnosticsActiveCount(); i++) await new Promise(r => setTimeout(r, 5));
+    assert.equal(detached, true);
+    assert.equal(cleaned, true);
+    assert.equal(diagnostics.diagnosticsActiveCount(), 0);
+    const retry = await diagnostics.collectDiagnostics(id, { observe: connected() });
+    assert.equal(retry.observation.state, 'complete');
+  });
+
+  test('navigation away and back during evaluation rejects facts and removes listeners', async () => {
+    const page = fakePage({ env: { timezone: 'UTC', locale: 'en-US', languages: ['en-US'] } });
+    let listener, cleaned = false;
+    page.on = (_event, fn) => { listener = fn; };
+    page.off = (_event, fn) => { assert.equal(fn, listener); listener = null; };
+    page.unroute = async () => { cleaned = true; };
+    page.evaluate = async () => { listener({}); return { visible: true, timezone: 'UTC', locale: 'en-US', languages: ['en-US'] }; };
+    const body = await collect('environment', envView(page).observe, { expectedLaunchId: 'launch-1' });
+    assert.equal(body.observation.reason, 'probe_navigated');
+    assert.equal(body.environment.timezone.availability, 'unavailable');
+    assert.equal(listener, null);
+    assert.equal(cleaned, true);
   });
 
   test('initial launch mismatch is 409 and does not hold the guard or open a tab', async () => {
@@ -598,14 +670,14 @@ describe('profile diagnostics', { concurrency: false }, () => {
   test('WebRTC argument summary stays inside the allowlist', () => {
     const { summarizeWebRtcArguments } = browsers;
     assert.deepEqual(summarizeWebRtcArguments(['--no-sandbox']), { kind: 'absent' });
-    assert.deepEqual(summarizeWebRtcArguments(['--webrtc-ip-handling-policy=default']), { kind: 'present', value: 'default' });
-    assert.deepEqual(summarizeWebRtcArguments(['--force-webrtc-ip-handling-policy', 'default_public_interface_only']), { kind: 'present', value: 'default_public_interface_only' });
+    assert.deepEqual(summarizeWebRtcArguments(['--force-webrtc-ip-handling-policy=default']), { kind: 'present', value: 'default' });
+    assert.deepEqual(summarizeWebRtcArguments(['--force-webrtc-ip-handling-policy=default_public_interface_only']), { kind: 'present', value: 'default_public_interface_only' });
     assert.deepEqual(summarizeWebRtcArguments([
-      '--webrtc-ip-handling-policy=default',
+      '--force-webrtc-ip-handling-policy=default',
       '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
     ]), { kind: 'conflicting' });
-    assert.deepEqual(summarizeWebRtcArguments(['--webrtc-ip-handling-policy=surprise']), { kind: 'unverified' });
-    assert.deepEqual(summarizeWebRtcArguments(['--webrtc-ip-handling-policy', `${SENTINEL}-raw`]), { kind: 'unverified' });
+    assert.deepEqual(summarizeWebRtcArguments(['--force-webrtc-ip-handling-policy=surprise']), { kind: 'unverified' });
+    assert.deepEqual(summarizeWebRtcArguments(['--force-webrtc-ip-handling-policy', `${SENTINEL}-raw`]), { kind: 'unverified' });
     assert.deepEqual(summarizeWebRtcArguments('not-an-array'), { kind: 'unreadable' });
     assert.deepEqual(summarizeWebRtcArguments(['ok', 1]), { kind: 'unreadable' });
     const summary = summarizeWebRtcArguments(['--webrtc-ip-handling-policy=default', `${SENTINEL}-argv`]);
@@ -627,10 +699,10 @@ describe('profile diagnostics', { concurrency: false }, () => {
         detach: async () => { detached = true; },
       }),
     });
-    assert.deepEqual(sent, ['Browser.getVersion', 'Browser.getBrowserCommandLine']);
+    assert.deepEqual(sent, ['Browser.getVersion']);
     assert.equal(facts.chromiumVersion, VERSION);
     assert.equal(facts.userAgent, 'Mozilla/5.0 (pipe)');
-    assert.deepEqual(facts.webrtc, { kind: 'present', value: 'default_public_and_private_interfaces' });
+    assert.deepEqual(facts.webrtc, { kind: 'unreadable' });
     assert.equal(detached, true);
     assertNoSentinel(facts);
     const odd = await browsers.readPipeBrowserFacts({
@@ -643,7 +715,7 @@ describe('profile diagnostics', { concurrency: false }, () => {
     });
     assert.equal(odd.chromiumVersion, null);
     assert.equal(odd.userAgent, null);
-    assert.deepEqual(odd.webrtc, { kind: 'absent' });
+    assert.deepEqual(odd.webrtc, { kind: 'unreadable' });
   });
 
   test('proxy snapshot drops credentials and local relay endpoints', () => {
@@ -660,10 +732,11 @@ describe('profile diagnostics', { concurrency: false }, () => {
     assertNoSentinel(snap);
   });
 
-  test('diagnostic entry view does not copy the relay, command line, or page list', () => {
+  test('diagnostic entry view does not copy the relay, command line, or page list', async () => {
     let pagesCalled = 0;
     let newPageCalled = 0;
     const entry = {
+      diagnosticHeadless: false,
       ctx: {
         browser: () => ({ isConnected: () => true }),
         newPage: () => { newPageCalled += 1; return { marker: 'page' }; },
@@ -679,7 +752,7 @@ describe('profile diagnostics', { concurrency: false }, () => {
     assert.equal(view.launchId, 'launch-1');
     assert.deepEqual(view.proxy, { state: 'on', value: { configured: true, type: 'http', host: 'proxy.example', port: 8080 } });
     assert.equal(pagesCalled, 0);
-    assert.equal(view.openDiagnosticPage().marker, 'page');
+    assert.equal((await view.openDiagnosticPage({})).marker, 'page');
     assert.equal(newPageCalled, 1);
     assert.equal(pagesCalled, 0);
     assertNoSentinel(view.proxy);
@@ -747,7 +820,7 @@ describe('profile diagnostics', { concurrency: false }, () => {
     assert.equal(observed.status, 200);
     assert.equal(observed.cache, 'no-store');
     assertSchema(observed.json);
-    assert.equal(observed.json.observation.state, 'partial');
+    assert.equal(observed.json.observation.state, 'unavailable');
     assert.equal(observed.json.observation.reason, 'not_running');
     assert.deepEqual(observed.json.expected.chromiumVersion, avail(VERSION, 'manifest'));
     assert.deepEqual(observed.json.proxy, miss('not_running'));
@@ -777,7 +850,7 @@ describe('profile diagnostics', { concurrency: false }, () => {
     const bearer = await call(automation, 'GET', `/api/profiles/${id}/diagnostics`, { headers: { authorization: `Bearer ${process.env.PM_API_TOKEN}` } });
     assert.equal(bearer.status, 200);
     assert.equal(bearer.cache, 'no-store');
-    assert.equal(bearer.json.observation.state, 'partial');
+    assert.equal(bearer.json.observation.state, 'unavailable');
     assertNoSentinel(bearer.text);
     const apiKey = await call(automation, 'GET', `/api/profiles/${id}/diagnostics`, { headers: { 'x-api-key': process.env.PM_API_TOKEN } });
     assert.equal(apiKey.status, 200);
@@ -812,6 +885,14 @@ describe('profile diagnostics', { concurrency: false }, () => {
       raw: `{"expectedLaunchId":"${SENTINEL}"`,
     });
     assertError(diagnostic, 400, 'INVALID_REQUEST');
+    for (const suffix of ['', '/']) {
+      const denied = await call(desktop, 'POST', `/api/profiles/${PROFILE}/diagnostics/environment${suffix}`, {
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.PM_API_TOKEN}` }, raw: '{',
+      });
+      assertError(denied, 401, 'UNAUTHORIZED');
+      const malformed = await call(desktop, 'POST', `/api/profiles/${PROFILE}/diagnostics/environment${suffix}`, { headers: ui, raw: '{' });
+      assertError(malformed, 400, 'INVALID_REQUEST');
+    }
     const other = await call(desktop, 'POST', '/api/profiles', { headers: ui, raw: `{"name":"${SENTINEL}"` });
     assert.equal(other.status, 400);
     assert.deepEqual(other.json, { error: 'invalid JSON body' });
