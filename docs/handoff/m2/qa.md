@@ -110,3 +110,30 @@ stronger unavailable-validUntil validation. No failing M1 assertions removed.
 Final QA runs: contract 54/0/0 skip/1 todo; security 24/0/0 skip/16 todo;
 existing E2E 5/0/0 skip/18 todo; recovery 12/0/0 skip/0 todo; real browser 0/0/1 skip.
 Real Linux/Windows Chromium is pending. No CI or installer dispatch performed.
+
+## Supported-host source CI authorization — 2026-10-21
+
+Owner approved proceeding from the review packet with Linux/Windows source tests.
+Only the QA branch's version of the registered Windows workflow is changed: it
+contains a manual-only Linux/Windows source matrix and no installer, packaging,
+Electron-rebuild, merge, tag or release commands. build_installers must be false.
+Protected branches and their original workflow are unchanged. Read-only checkout
+permissions; checkout credentials are not persisted for test scripts.
+
+Assembly pins backend d41eb1c6c5d65fa2f2a3ba861c1a8c509ac50838 and UI
+5a2aea74ecb4f117b6a05def042726a868033c25. QA is the workflow's own full commit.
+Assembly checks M1 ancestry, changed-file ownership and both complete contract
+hashes. A disposable local rehearsal succeeded. No source merge is performed.
+
+The evidence runner records each suite independently and fails the job if any
+suite fails, while retaining later suite evidence. CI requires the real pinned
+browser test to execute; missing platform/browser prerequisites cannot become a
+quiet skip. The live cancellation case uses the actual 3000 ms contract deadline
+and verifies that evaluation really began. A separate real-OS child fixture
+checks absent/present/conflicting extraction, mismatched identity and elapsed
+read time without modifying Chromium launch flags or exposing raw command lines.
+
+Local checks: syntax, whitespace, disposable assembly, and live-suite skip path
+(0 pass / 0 fail / 2 explicit skips on unsupported/unassembled macOS tree).
+These are preparation checks, not Linux/Windows execution evidence. Actual run
+IDs, source SHAs and suite results follow only after the remote jobs complete.

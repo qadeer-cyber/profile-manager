@@ -5,12 +5,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { validateDiagnosticsV1 } from './diagnostics-v1-validator.mjs';
 const backend = fs.existsSync(new URL('../server/diagnostics.js', import.meta.url));
 const executable = chromium.executablePath();
 const supported = ['linux', 'win32'].includes(process.platform);
 const skip = !backend ? 'Assemble backend + UI + QA first' : !supported ? 'Real Windows/Linux process evidence requires a supported host' : !fs.existsSync(executable) ? 'Pinned Chromium executable absent' : false;
+
+if (process.env.PM_DIAG_REQUIRE_LIVE === '1' && skip) throw new Error(String(skip));
 
 test('real Chromium 156: OS process identity, foreground probe, cancellation and launch invalidation', { skip, timeout: 90000 }, async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m2-live-'));
@@ -42,13 +45,14 @@ test('real Chromium 156: OS process identity, foreground probe, cancellation and
     assert.equal(env.observation.state, 'complete'); assert.equal(env.environment.timezone.source, 'visible_probe');
     // Real pending Runtime.evaluate: timeout must detach its dedicated session and
     // settle the underlying send before a second observation can own the guard.
-    let page;
+    let page, evaluationStarted = false;
     const current = engine.diagnosticObservation(id);
-    const timed = await collectDiagnostics(id, { mode: 'environment', expectedLaunchId: first.observation.launchId, deadlineMs: 250,
+    const timed = await collectDiagnostics(id, { mode: 'environment', expectedLaunchId: first.observation.launchId, deadlineMs: 3000,
       observe: () => ({ ...current, openDiagnosticPage: async hooks => {
         page = await current.openDiagnosticPage(hooks);
         page.diagnosticEvaluate = async () => {
           const session = await page.context().newCDPSession(page); hooks.trackSession(session);
+          evaluationStarted = true;
           try { return await session.send('Runtime.evaluate', { expression: 'new Promise(() => {})', awaitPromise: true, returnByValue: true }); }
           finally { await session.detach().catch(() => {}); }
         };
@@ -56,6 +60,8 @@ test('real Chromium 156: OS process identity, foreground probe, cancellation and
       } }),
     });
     assert.equal(timed.observation.reason, 'timeout');
+    assert.equal(evaluationStarted, true, 'the real evaluation must actually be pending before the deadline');
+    assert.ok(timed.observation.durationMs <= 3250, 'overall deadline including OS work');
     for (let i = 0; i < 100 && diagnosticsActiveCount(); i++) await new Promise(r => setTimeout(r, 10));
     assert.equal(diagnosticsActiveCount(), 0); assert.equal(page.isClosed(), false);
     assert.equal((await collectDiagnostics(id)).observation.state, 'complete');
@@ -69,4 +75,32 @@ test('real Chromium 156: OS process identity, foreground probe, cancellation and
     if (server) await new Promise(r => server.close(r));
     db.close(); fs.rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+
+test('real OS child observation: absent/present/conflicting, identity rejection and timing', { skip, timeout: 45000 }, async () => {
+  const { diagnosticProcessStart, observeProcessPolicy } = await import('../server/diagnostic-process.js');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m2-process-'));
+  const fixture = path.join(tmp, 'child with spaces.mjs');
+  fs.writeFileSync(fixture, 'setTimeout(() => {}, 40000);');
+  try {
+    for (const [args, kind] of [[[], 'absent'], [['--force-webrtc-ip-handling-policy=default'], 'present'], [['--force-webrtc-ip-handling-policy=default', '--force-webrtc-ip-handling-policy=disable_non_proxied_udp'], 'conflicting']]) {
+      const child = spawn(process.execPath, [fixture, ...args, 'private fixture with spaces and "quotes"'], { stdio: 'ignore' });
+      await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+      try {
+        const start = await diagnosticProcessStart(child.pid); assert.ok(start);
+        const before = performance.now();
+        const result = await observeProcessPolicy({ pid: child.pid, start, launchId: 'fixture-launch', stillCurrent: () => true });
+        const durationMs = performance.now() - before;
+        assert.equal(result.kind, kind);
+        assert.equal(JSON.stringify(result).includes('private fixture'), false);
+        if (kind === 'present') assert.equal(result.value, 'default');
+        assert.deepEqual(await observeProcessPolicy({ pid: child.pid, start: 'wrong', launchId: 'fixture-launch', stillCurrent: () => true }), { kind: 'unreadable' });
+        assert.deepEqual(await observeProcessPolicy({ pid: child.pid, start, launchId: 'fixture-launch', stillCurrent: () => false }), { kind: 'unreadable' });
+        console.log(JSON.stringify({ evidence: 'actual_os_process_observation', platform: process.platform, state: kind, durationMs }));
+      } finally {
+        const closed = new Promise(resolve => child.once('close', resolve)); child.kill(); await closed;
+      }
+    }
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
