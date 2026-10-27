@@ -2,7 +2,7 @@
 
 Local browser profile manager: Electron, React, Express, SQLite, and Playwright Chromium. Each profile is its own Chromium user-data directory, with an optional proxy and a local automation API.
 
-Version in `package.json` is **0.4.0**. The branch `windows-validation` is a Windows-native validation candidate. It is not merged to `main`, and it does not replace the tagged v0.4.0 release. See [BUILD_AND_RELEASE.md](BUILD_AND_RELEASE.md) and [AI_HANDOFF.md](AI_HANDOFF.md).
+The version in `package.json` remains **0.4.0**. Milestone integration does not imply a new tagged release. The verified M1 lifecycle baseline is tracked by its source SHA; unfinished M2/M3 work is kept in separate branches. See [CHANGELOG.md](CHANGELOG.md), [BUILD_AND_RELEASE.md](BUILD_AND_RELEASE.md), and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 `docs/WINDOWS_BUILD.md` and `WINDOWS_NATIVE_VALIDATION.md` describe the earlier Linux cross-build. The current Windows procedure is [BUILD_AND_RELEASE.md](BUILD_AND_RELEASE.md).
 
@@ -41,7 +41,9 @@ npm test
 
 Native-module order, every suite, and operator environment variables are in [DEVELOPMENT.md](DEVELOPMENT.md). Layout is in [ARCHITECTURE.md](ARCHITECTURE.md). The proxy HTTP API is in [docs/proxy-api.md](docs/proxy-api.md).
 
-## Tests on this commit
+## Validation history
+
+The approved M1 baseline is [`d7a000ee`](https://github.com/qadeer-cyber/profile-manager/commit/d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9). Its Windows-native validation passed in [Actions run #48](https://github.com/qadeer-cyber/profile-manager/actions/runs/39263296226). The following older run is retained as historical validation evidence, not as the final M1 gate.
 
 GitHub Actions run [39178407526](https://github.com/qadeer-cyber/profile-manager/actions/runs/39178407526) (workflow run number 30, `workflow_dispatch`, `build_installers=true`, commit `be575c770a8b76596e6bbcb9f8dda1b12cc79be0`) succeeded with:
 
