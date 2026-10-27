@@ -1,4 +1,5 @@
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
+import { installRegionalLocale } from './regional-locale.js';
 // Browser engine: launch/stop with per-profile locks, persisted running state, startup recovery,
 // crash detection (health monitor), safe shutdown, a local proxy relay and (opt-in) CDP endpoints.
 // The remote-debugging port is OFF unless the launch option `automation` is truthy: an open CDP port
@@ -193,6 +194,16 @@ async function doLaunch(p, opts = {}) {
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
+    if (regional.languages.length) await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
+      onFailure: async error => {
+        // Let normal close bookkeeping finish before recording the regional
+        // failure; otherwise a clean process exit can clear its error message.
+        if (entry.done) await entry.done;
+        if (live.has(p.id) || launching.has(p.id) || !db.open) return;
+        setStatus(p.id, { last_error: error.message });
+        emit('profile:launch-failed', p.id, { error: error.message });
+      },
+    });
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     entry.browserPid = browserPid;

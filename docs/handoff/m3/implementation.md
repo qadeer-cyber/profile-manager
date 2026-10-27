@@ -1,85 +1,110 @@
-# M3 locale, timezone and preferred languages
+# M3 implementation and current acceptance state
 
 Branch: `feature/m3-locale-timezone-language`.
-Parent: frozen M1 `d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9`.
-Status: **WIP / PARTIAL / NOT ACCEPTED**. No M2 code is merged into this branch.
+Starting M3 commit: `3b9414e332a9ace1874135085bec1ea2c6374924`.
+Frozen M1 parent: `d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9`.
+Status: **WIP — real headless Chromium verification passes; full acceptance pending**.
 
-Owner authorized implementation on 2026-10-27. Scope follows the existing master
-directive B2/B3: explicit per-profile settings, host defaults, persistence,
-validation, browser observation and next-launch application. No location lookup,
-IP changes, new automation permissions, installers, merges or releases.
+## Completed scope
 
-## Implemented and tested without a browser
+Per-profile locale, validated IANA timezone and ordered BCP 47 preferred languages
+persist through create, edit, settings-only clone, reset and server restart.
+Migration 8 preserves existing M1 rows and host defaults. UI validation and
+next-launch notices remain in the profile editor. Authentication, migration
+backup, proxy secrets, default automation-off and all M1 classifiers are retained.
 
-- Profile create/read/update/list/clone carry `browserSettings`:
-  `{ locale: '', timezoneId: '', languages: [] }` by default.
-- Empty settings retain host/browser defaults. Partial updates preserve omitted
-  fields; explicit empty strings/array reset settings. Null is rejected.
-- BCP 47 tags are canonicalized, ordered language lists reject duplicates and
-  more than 10 entries, and IANA timezone IDs are validated/canonicalized with
-  Intl. An explicit locale must match the first explicit preferred language.
-- Invalid settings return HTTP 400 with `INVALID_BROWSER_SETTINGS` before
-  profile/proxy writes. Existing authentication is retained.
-- Additive migration 8 stores regional JSON. Migration backup, M1 row retention,
-  idempotence and a genuine server stop/restart are tested.
-- Profile editor has a Region & language tab, validation and next-launch notice.
-  Existing settings are loaded and sent through the profile API.
-- Saving a running profile reports `appliesOnNextLaunch`; it does not mutate the
-  running browser. Runtime verification of that behavior remains pending.
-- Launch options carry timezone and locale; ordered preferred languages use
-  native Chromium `--accept-lang` and `--lang`, avoiding Playwright's locale
-  option in that case because it sets a single-language CDP override.
-  **This ordered-language path is NOT browser-verified**, including Intl locale
-  behavior on Linux, and must pass the real-browser suite before acceptance.
-- Automation remains off by default; no new listener or lifecycle classifier
-  change. Stub launch tests check options and failed-launch lock release only.
+Real Chromium exposed an actual implementation defect: native language flags
+changed navigator languages and headers while Intl stayed en-US. Playwright's
+locale option instead reduced preferred languages to one entry.
 
-## Actual validation on this host
+The fix keeps native --accept-lang and configures ICU through
+Emulation.setLocaleOverride before new page scripts run. Commands use the existing
+Playwright pipe, with no new TCP port and no JavaScript getter replacements.
+The native session adapter uses the exact pinned playwright-core 1.64.1 bridge,
+as the existing lifecycle process adapter does. Missing capability fails explicitly.
+Shared-renderer override conflicts are accepted only after observing the native
+locale. In-process teardown events reclaim the override for surviving popups
+before the client observes opener closure; a repeated first-observation regression
+covers that race. Setup failure closes the context and reports an error.
 
-Runtime: Linux, Node 24.22.1. Locked dependencies installed using npm ci
-`--ignore-scripts`; better-sqlite3 rebuilt with separately extracted official
-Node headers. No package or lockfile dependency versions changed. Repository
-supported CI uses Node 22; this host is not Windows qualification.
+## Actual evidence — Node 22.23.4, Linux x64
 
-| Command | Actual result |
-|---|---|
-| `npm run test:m3` | 29 passed, 0 failed, 0 skipped, 0 todo |
-| `npm run build` | pass |
-| `npm run test:unit` | 94 passed, 1 failed, 0 skipped, 0 todo |
-| `node --test test/termination-evidence.test.js test/desktop-unit.test.js` | 19 passed, 2 failed, 0 skipped, 0 todo |
-| `node --test test/browser-settings-browser.test.js` | 0 passed, 1 failed, 0 skipped, 0 todo |
-| `git diff --check` | pass |
+| Command | Passed | Failed | Skipped |
+|---|---:|---:|---:|
+| npm run test:m3 | 33 | 0 | 0 |
+| npm run test:m3:browser | 2 | 0 | 0 |
+| npm run test:unit | 94 | 1 | 0 |
+| node --test test/termination-evidence.test.js test/desktop-unit.test.js | 19 | 2 | 0 |
+| npm run test:api | 41 | 0 | not reported |
+| npm run test:proxies | 62 | 0 | not reported |
+| npm run test:security — security | 37 | 0 | not reported |
+| npm run test:security — migration | 4 | 0 | not reported |
+| node scripts/run-with-automation.mjs test/engine.e2e.js | 38 | 4 | not reported |
+| npm run test:ui | 24 | 1 | not reported |
+| Frozen-baseline focused process assertions | 0 | 3 | 0 |
 
-The named `npm run test:m3` command was also executed successfully.
-Migration regression expectation changes `[6,7]` to `[6,7,8]`; no checks or
-lifecycle assertions were removed. Migrations 1–7 remain unchanged.
+UI builds, syntax and whitespace checks pass. The two real-browser tests are
+broad integration tests with multiple assertions, not two individual field checks.
+They execute genuine pinned Chromium with no mock/skip fallback. Unit protocol
+stubs are explicitly identified and do not count as browser evidence.
 
-## Genuine blockers
+Real observations cover locale-only, languages-only and combined settings; IANA
+timezone; navigator.language/languages; Intl; ordered HTTP Accept-Language; first
+scripts in new pages/popups; opener closure; repeated page lifetimes; simultaneous
+independent browsers; clone; unchanged running browser after save; next-launch
+application; real server restart; native reset to a default control browser;
+a migrated M1 profile retaining native defaults; UI create/edit and reload.
+Native protocol tests confirm pipe transport without a CDP TCP port. API tests
+continue checking default automation-off.
 
-1. Pinned Chromium 1248 download returns a small HTML response instead of a ZIP;
-   Playwright reports an invalid/truncated ZIP. No Chromium executable exists.
-   The existing unit test that observes the launched browser child fails because
-   the headless shell is missing. The real M3 acceptance suite fails with
-   `CHROMIUM_MISSING`; it does not skip or replace browser checks with mocks.
-2. This host cannot read its spawned child via `/proc/<child pid>/cmdline`
-   (direct diagnostic: ENOENT). Two unchanged desktop process-inspection tests
-   fail. Process inspection implementation and those tests are unchanged.
+## Runtime recovery
 
-An initial unit run also encountered the QA-branch workflow snapshot. Local
-validation was corrected to use the exact M1 workflow that exists on this
-branch; the final result above includes only the missing-Chromium failure.
-No workflow edit is included in the M3 commit.
+CDN: HTTP 200, Content-Type text/html, 195 bytes, "Site Unavailable".
+Response SHA-256: 5b131ca14aa96311d3432b0062c7443d3b0e6346ec279bd376a75f0a76bcd5d7.
+Requests traverse this host's managed loopback proxy. The observed response is
+path-specific; this does not establish whether the proxy or upstream generated it.
 
-## Exact next step
+Google's official Chrome for Testing bucket supplied the exact pinned version
+156.0.8078.4 / revision 1248. Both full archives matched the unchanged manifest:
 
-On a supported host with the locked Chromium installed, run `npm run test:m3`,
-`npm run test:m3:browser`, then the existing unit/lifecycle/proxy/security/UI suites.
-The browser suite checks native Intl/navigator/header observations, two isolated
-profiles, next-launch application, restart and UI save persistence. It must run
-before claiming runtime correctness; native language/Intl consistency may need
-adjustment if observation disagrees. Complete Windows source tests and required
-manual gates separately. No CI was dispatched here.
+- Chromium: 200345244 bytes;
+  43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79
+- Headless shell: 125797539 bytes;
+  c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20
 
-M2 evidence and the quota exception are recorded independently in
-`../m2/run-52-attempt-2.md` and its JSON companion. Original M1 and all M2 branch
-heads remain frozen. This commit is not milestone acceptance.
+One full download per archive was used. No browser revision, dependency lockfile,
+manifest pin or verification policy changed. The scoped runtime helper validates
+archives through the existing size/SHA checks before installation, records the
+actual source, and supports verified local archives without another download.
+
+## Remaining gates and precise causes
+
+1. **PID namespace/procfs mismatch.** A live Node process reported PID 5, while
+   /proc/5/cmdline named /bin/bash; its child reported PID 13 and /proc/13/cmdline
+   returned ENOENT. The same three process assertions fail in an isolated frozen
+   baseline source copy, using the same Node 22/browser. No process guard or
+   failing assertion was changed. The unit failure now reaches browser ownership;
+   it is no longer a missing-Chromium failure.
+2. **Process-dependent regressions are not green.** Engine failures concern crash
+   status/event classification, orphan liveness and verified orphan cleanup.
+   UI failure is the existing lifecycle event/status check (20-second timeout).
+   Logs record unverified-owner and CLASSIFIER-UNKNOWN on this host. This is
+   consistent with the reproduced procfs mismatch, not a proven new M3 regression;
+   supported-host confirmation is still required.
+3. **Full desktop Chromium is blocked.** It aborts in process_singleton_posix.cc
+   at socket() with EPERM (Operation not permitted); /proc task inspection is
+   also unavailable. No Xvfb/display is installed. The headed M1 lifecycle suite
+   was not run, and no forbidden socket/process workaround was introduced.
+4. **Windows qualification is pending.** No Windows CI, installer or manual QA
+   was dispatched here. The private native-session adapter and supported full
+   Chromium/desktop path must pass the required Windows/Linux regression gates.
+
+Draft PR #3 stays draft, based on integration/m1-to-main. PR #2 is unchanged and
+unmerged by this work. M2 backend/UI/QA pins remain frozen, M2's artifact exception
+and 35 QA todos remain open, and no M2 code is silently integrated into M3.
+Eventual integration must preserve both M1 integration history and separately
+approved M2 work; a clean source test here is not authority to merge or sign off.
+
+See runtime-verification.md for reproduction, and runtime-evidence.json for
+machine-readable summaries and local log hashes. The JSON is a source-test
+summary, not an uploaded CI artifact bundle.
