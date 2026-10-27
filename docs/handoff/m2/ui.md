@@ -68,3 +68,5 @@ Actual evidence (Node 24.19.0, macOS 13 x64):
 - Vite production build: success (33 modules).
 - Real pinned Chromium UI e2e: blocked; Playwright refuses mac13 as unsupported.
 No Windows or installed-app evidence. No acceptance, PR, merge or installer run.
+
+- 2026-10-27: the HTTP 500 mock fixture always sends `requestId`, so the support-hint assertion now requires `Request ID for support:` plus that UUID and still rejects `SERVER-MESSAGE` and the note-the-time fallback. `node web/e2e/diagnostics-ui.mjs`: 54 pass / 0 fail (Playwright Chromium 156.0.8078.4, Linux).

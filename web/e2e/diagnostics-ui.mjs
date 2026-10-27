@@ -249,7 +249,7 @@ for (const [status, code, want] of [[400, 'INVALID_REQUEST', 'rejected as invali
     const el = pg.locator(`${PD} [data-error-code=${code}]`); await el.waitFor();
     const t = await el.innerText(); ok(t.includes(want), t);
     const all = await pg.locator(PD).innerText(); ok(!all.includes('[object Object]') && !all.includes('SERVER-MESSAGE'), 'raw message rendered');
-    if (status === 500) ok(/note the time/.test(t), 'support hint');
+    if (status === 500) ok(/Request ID for support:\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(t) && !t.includes('SERVER-MESSAGE') && !/note the time/.test(t), 'support hint');
     ok(await pg.locator(`${PD} [data-live]`).innerText().then(x => x.includes('failed')), 'announced');
     if (status === 429) await shot(pg, 'after-error-429.png');
   });
