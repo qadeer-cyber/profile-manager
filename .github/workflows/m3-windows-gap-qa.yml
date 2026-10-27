@@ -1,0 +1,101 @@
+name: M3 Windows gap QA (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_no_installers:
+        description: Must be true. Never builds installers or uploads artifacts.
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-gap-qa:
+    if: ${{ inputs.confirm_no_installers == true }}
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Checkout pinned SHA
+        uses: actions/checkout@v4
+        with:
+          ref: "72432735866aff79867e9b5ef15642348847f99a"
+          fetch-depth: 0
+
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          got=$(git rev-parse HEAD)
+          echo "HEAD=$got"
+          test "$got" = "72432735866aff79867e9b5ef15642348847f99a"
+
+      - name: Install Node 22 x64
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          architecture: x64
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Install pinned Chromium (Google, checksummed)
+        run: node scripts/m3-install-runtime.mjs --source=google
+
+      - name: Build web UI
+        run: npm run build
+
+      - name: M3 targeted unit/adapter tests
+        id: m3
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:m3 2>&1 | tee test-logs/m3.log
+
+      - name: M3 real Chromium locale/popup tests
+        id: m3browser
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:m3:browser 2>&1 | tee test-logs/m3-browser.log
+
+      - name: Confirm Node prebuild (pre-Electron)
+        run: node scripts/confirm-node-native.mjs
+
+      - name: Rebuild better-sqlite3 for Electron ABI
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf node_modules/better-sqlite3/prebuilds
+          npx electron-builder install-app-deps
+          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
+
+      - name: Electron desktop smoke
+        id: electron
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:electron 2>&1 | tee test-logs/electron.log
+
+      - name: Write job summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## M3 Windows gap QA"
+            echo "Cloud windows-2022 automated gap QA. Not Win10/11 manual qualification."
+            echo
+            echo "- requested pin: 72432735866aff79867e9b5ef15642348847f99a"
+            echo "- actual HEAD: $(git rev-parse HEAD)"
+            echo "- M3 targeted: ${{ steps.m3.outcome }}"
+            echo "- M3 browser: ${{ steps.m3browser.outcome }}"
+            echo "- Electron: ${{ steps.electron.outcome }}"
+            echo "- artifacts uploaded: none"
+            echo "- installers built: none"
+            echo
+            echo "Skipped on purpose (already verified in run 40556530581): unit, desktop, api, engine, lifecycle, proxies, security, UI."
+          } >> "$GITHUB_STEP_SUMMARY"

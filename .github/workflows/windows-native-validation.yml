@@ -10,6 +10,9 @@ on:
     branches: [windows-validation, development/v0.5.0]
   pull_request:
     branches: [main]
+    paths-ignore:
+      - '.github/workflows/m3-windows-gap-qa.yml'
+      - '.github/workflows/windows-native-validation.yml'
 
 jobs:
   windows-build:
