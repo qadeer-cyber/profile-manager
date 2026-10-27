@@ -27,14 +27,15 @@ const CONTRACT = process.env.PM_DIAG_CONTRACT || '/workspace/DIAGNOSTICS_CONTRAC
 const CONTRACT_SKIP = fs.existsSync(CONTRACT) ? false
   : `external artifact absent: DiagnosticsV1 contract not found at ${CONTRACT} (set PM_DIAG_CONTRACT; expected SHA-256 cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8)`;
 const CONTRACT_SHA256 = 'cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8';
+const readContractLf = (file) => fs.readFileSync(file).toString('utf8').replace(/\r\n/g, '\n');
 
 test('contract file is the verified full DiagnosticsV1 (SHA-256 pinned)', { skip: CONTRACT_SKIP }, () => {
-  const raw = fs.readFileSync(CONTRACT);
-  assert.equal(crypto.createHash('sha256').update(raw).digest('hex'), CONTRACT_SHA256);
+  const text = readContractLf(CONTRACT);
+  assert.equal(crypto.createHash('sha256').update(text).digest('hex'), CONTRACT_SHA256);
 });
 
 test('contract has sections 1–12 and the END marker; no truncation', { skip: CONTRACT_SKIP }, () => {
-  const text = fs.readFileSync(CONTRACT, 'utf8');
+  const text = readContractLf(CONTRACT);
   for (let n = 1; n <= 12; n++) assert.ok(new RegExp(`^## ${n}\\. `, 'm').test(text), `missing section ${n}`);
   assert.ok(text.includes('END OF AUTHORITATIVE M2 CONTRACT — VERSION 1'));
   assert.ok(!/TRUNCATED/i.test(text));
@@ -47,7 +48,7 @@ test('§7/§8 constants (no contract file needed)', () => {
 });
 
 test('§7/§8 constants match contract text', { skip: CONTRACT_SKIP }, () => {
-  const text = fs.readFileSync(CONTRACT, 'utf8');
+  const text = readContractLf(CONTRACT);
   assert.ok(text.includes(DISCLOSURE), 'disclosure text');
   assert.ok(text.includes('Total observation deadline: 3 seconds.'));
   assert.ok(text.includes('Display freshness ceiling: 30 seconds.'));
@@ -658,8 +659,8 @@ test('owner: invalidated (launch changed / observation invalid) carries no launc
 test('live GET/POST bodies pass validateDiagnosticsV1 (GET with route:GET); errors pass validateDiagnosticsErrorBody', { todo: 'Blocked: backend absent' }, () => {});
 
 test('authorized amendment is separately versioned and changes only Source', { skip: !process.env.PM_DIAG_AMENDED_CONTRACT && 'Set PM_DIAG_AMENDED_CONTRACT to the versioned backend contract' }, () => {
-  const original = fs.readFileSync(CONTRACT, 'utf8');
-  const amended = fs.readFileSync(process.env.PM_DIAG_AMENDED_CONTRACT, 'utf8');
+  const original = readContractLf(CONTRACT);
+  const amended = readContractLf(process.env.PM_DIAG_AMENDED_CONTRACT);
   assert.equal(crypto.createHash('sha256').update(amended).digest('hex'), 'e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4');
   assert.equal(amended, original.replace('  | "browser_protocol"\n', '  | "browser_protocol"\n  | "process_command_line"\n'));
 });

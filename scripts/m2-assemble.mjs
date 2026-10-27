@@ -7,7 +7,7 @@ const root = process.cwd();
 const baseline = 'd7a000eeadd4f4645a608a1e0cc2b8ad154a75d9';
 const sources = [
   ['backend', 'd41eb1c6c5d65fa2f2a3ba861c1a8c509ac50838'],
-  ['ui', '5a2aea74ecb4f117b6a05def042726a868033c25'],
+  ['ui', '14beab8ea27905c6a8fdd387babe6de83ad41c51'],
 ];
 const git = (dir, ...args) => execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8' }).trim();
 const m1tests = new Set(git(root, 'ls-tree', '-r', '--name-only', baseline, 'test').split('\n'));
@@ -28,14 +28,17 @@ for (const [name, sha] of sources) {
   }
   manifest.sources.push({ name, sha, files });
 }
+const contractLf = (file) => fs.readFileSync(file).toString('utf8').replace(/\r\n/g, '\n');
 for (const [name, expected] of [
   ['DiagnosticsV1.original.md', 'cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8'],
   ['DiagnosticsV1.process-command-line.md', 'e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4'],
 ]) {
-  const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'docs/handoff/m2/contracts', name))).digest('hex');
+  const actual = crypto.createHash('sha256').update(contractLf(path.join(root, 'docs/handoff/m2/contracts', name))).digest('hex');
   if (actual !== expected) throw new Error('Contract checksum mismatch');
   manifest.contracts[name] = actual;
 }
+const workflow = '.github/workflows/windows-native-validation.yml';
+fs.writeFileSync(path.join(root, workflow), execFileSync('git', ['-C', root, 'cat-file', 'blob', `${baseline}:${workflow}`]));
 fs.mkdirSync('.m2/evidence', { recursive: true });
 fs.writeFileSync('.m2/evidence/source-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
 console.log(JSON.stringify(manifest, null, 2));
