@@ -62,8 +62,10 @@ browser's real Preferences exit_type. Do not add skip flags or relax PID ownersh
 6. Record exact OS, Node/browser versions, commit SHA, commands and pass/fail/skip/
 todo totals, distinguishing mocked unit tests from real browser tests. Preserve
 all failed output. Keep draft PR #3 WIP until supported-host regression and
-required review/manual gates pass. Do not dispatch CI merely to probe artifact
-quota, build installers, merge PR #2/#3, retarget the PR, or release.
+required review/manual gates pass. The final state check observed PR #2 already
+merged and PR #3 based on main; neither merge nor retarget was performed by this
+work. Do not dispatch CI merely to probe artifact quota, build installers, merge
+PR #3, retarget the PR, or release.
 
 ## Host-specific failures reproduced here
 

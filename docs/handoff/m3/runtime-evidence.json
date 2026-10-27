@@ -200,5 +200,13 @@
     "ciDispatched": false,
     "mergesOrReleases": false
   },
-  "evidenceType": "Local source-test summary with raw log hashes; not a CI artifact bundle"
+  "evidenceType": "Local source-test summary with raw log hashes; not a CI artifact bundle",
+  "observedGitHubState": {
+    "pr2Merged": true,
+    "pr2MergedAt": "2026-10-27T16:37:12Z",
+    "pr2MergeSHA": "851ff06371ee50554d1599d0a34e8c80cb820077",
+    "pr3Base": "main",
+    "pr3Draft": true,
+    "explanation": "Observed after source verification; no merge, PR #2 edit or PR retarget was performed by this run. main differs from frozen M1 only in four documentation/template files."
+  }
 }

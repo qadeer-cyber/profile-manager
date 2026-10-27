@@ -99,8 +99,9 @@ actual source, and supports verified local archives without another download.
    was dispatched here. The private native-session adapter and supported full
    Chromium/desktop path must pass the required Windows/Linux regression gates.
 
-Draft PR #3 stays draft, based on integration/m1-to-main. PR #2 is unchanged and
-unmerged by this work. M2 backend/UI/QA pins remain frozen, M2's artifact exception
+Draft PR #3 remains draft. A final read observed PR #2 merged and PR #3 based on
+main, both outside this run’s actions. No merge, PR #2 edit, or PR-base change was
+issued by this work. M2 backend/UI/QA pins remain frozen, M2's artifact exception
 and 35 QA todos remain open, and no M2 code is silently integrated into M3.
 Eventual integration must preserve both M1 integration history and separately
 approved M2 work; a clean source test here is not authority to merge or sign off.
