@@ -45,13 +45,14 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
     else toast(`${verb} ${plural(r.ok, 'profile')}`, 'success');
   };
   const save = f => act('dlg', f.id ? 'Profile saved' : 'Profile created', async () => {
-    const body = { name: f.name, tags: f.tags, folder: f.folder, notes: f.notes, automationEnabled: !!f.automationEnabled };
+    const body = { name: f.name, tags: f.tags, folder: f.folder, notes: f.notes, automationEnabled: !!f.automationEnabled, browserSettings: f.browserSettings };
     if (f.proxyMode !== 'library') body.proxy = f.proxyMode === 'custom' ? { ...f.proxy, port: Number(f.proxy.port) } : null;
     const p = await api(f.id ? `/api/profiles/${f.id}` : '/api/profiles', { method: f.id ? 'PUT' : 'POST', body });
     if (f.proxyMode === 'library' && f.proxyId !== (f.id ? initialProxyId(f) : null)) {
       const r = await api(`/api/profiles/${p.id}/proxy`, { method: 'POST', body: { proxyId: f.proxyId } });
       if (r?.appliesOnNextLaunch) toast('Proxy change applies on the next launch');
     }
+    if (p.appliesOnNextLaunch) toast('Regional settings saved. Stop and relaunch this profile to apply.');
     setDialog(null);
   });
   const toForm = p => ({ ...emptyForm, ...p, _orig: p.proxyId || null, tags: p.tags.join(', '), proxyId: p.proxyId || '',

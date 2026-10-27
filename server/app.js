@@ -15,6 +15,7 @@ import { encrypt, decrypt, needsReencrypt, loadApiToken, encryptionStatus, setSt
 import * as engine from './browsers.js';
 import { currentVersion } from './migrations.js';
 import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
+import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { proxyTestInsecureTls } from './testflags.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
@@ -84,7 +85,9 @@ const row2p = r => {
     try { proxy.password = decrypt(lib.password); } catch (e) { secretError = e.message; }
   }
   delete r.proxy; // legacy inline column (cleared by migration v6)
-  return { ...r, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const browserSettings = r.browser_settings ? JSON.parse(r.browser_settings) : { ...DEFAULT_BROWSER_SETTINGS, languages: [] };
+  delete r.browser_settings;
+  return { ...r, browserSettings, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -118,8 +121,9 @@ function validate(b, prev) {
   const name = String(b.name ?? prev?.name ?? '').trim();
   if (!name) throw err(400, 'name is required');
   if (name.length > 200) throw err(400, 'name too long');
+  const browserSettings = validateBrowserSettings('browserSettings' in b ? b.browserSettings : {}, prev?.browserSettings);
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
-  return { name, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
+  return { name, browserSettings, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
     folder: String(b.folder ?? prev?.folder ?? '').trim(), notes: String(b.notes ?? prev?.notes ?? ''),
     proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : prev?.proxy_id ?? null,
     automationEnabled: 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false };
@@ -138,8 +142,8 @@ function insert(v) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   const dir = userDataDir(id);
   if (fs.existsSync(dir)) throw err(500, 'data directory collision'); // never share a data dir
-  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
-    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, now, now);
+  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), now, now);
   fs.mkdirSync(dir, { recursive: true });
   return id;
 }
@@ -170,9 +174,11 @@ async function remove(id) {
 const headlessDefault = () => process.env.HEADLESS === '1' || getSetting('defaultHeadless', false);
 const updateHandler = (req, res) => {
   const v = validate(req.body, must(req.params.id));
-  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,updated_at=? WHERE id=?')
-    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, new Date().toISOString(), req.params.id);
-  res.json(publicP(get(req.params.id)));
+  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,updated_at=? WHERE id=?')
+    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), new Date().toISOString(), req.params.id);
+  const result = publicP(get(req.params.id));
+  if (result.running && 'browserSettings' in req.body) result.appliesOnNextLaunch = true;
+  res.json(result);
 };
 // allowOverride: only the automation API (/api/v1) may override the profile's automation flag per launch.
 const doLaunch = async (id, b = {}, { allowOverride = false } = {}) => {

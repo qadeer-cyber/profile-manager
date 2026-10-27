@@ -1,0 +1,772 @@
+{
+  "runId": 40533634628,
+  "runNumber": 52,
+  "attempt": 2,
+  "workflowConclusion": "failure",
+  "qaSHA": "bca3a9d6dec9ae43c30ac13765fdf90cdf078a57",
+  "backendSHA": "d41eb1c6c5d65fa2f2a3ba861c1a8c509ac50838",
+  "uiSHA": "14beab8ea27905c6a8fdd387babe6de83ad41c51",
+  "m1SHA": "d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9",
+  "jobs": [
+    {
+      "jobId": 122301673909,
+      "name": "source-tests (windows-2022)",
+      "url": "https://github.com/qadeer-cyber/profile-manager/actions/runs/40533634628/job/122301673909",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-27T15:57:24Z",
+          "completed_at": "2026-10-27T15:57:25Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-27T15:57:25Z",
+          "completed_at": "2026-10-27T15:57:32Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-27T15:57:32Z",
+          "completed_at": "2026-10-27T15:57:37Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-27T15:57:37Z",
+          "completed_at": "2026-10-27T15:57:42Z"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-27T15:57:42Z",
+          "completed_at": "2026-10-27T15:57:47Z"
+        },
+        {
+          "name": "Assemble exact M2 source snapshots without merging",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-27T15:57:47Z",
+          "completed_at": "2026-10-27T15:57:48Z"
+        },
+        {
+          "name": "Install locked source dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-27T15:57:48Z",
+          "completed_at": "2026-10-27T15:59:01Z"
+        },
+        {
+          "name": "Install pinned Chromium and Linux runtime dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-10-27T15:59:01Z",
+          "completed_at": "2026-10-27T15:59:01Z"
+        },
+        {
+          "name": "Install pinned Chromium on Windows",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-10-27T15:59:01Z",
+          "completed_at": "2026-10-27T15:59:18Z"
+        },
+        {
+          "name": "Run source acceptance under a Linux display",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-10-27T15:59:18Z",
+          "completed_at": "2026-10-27T15:59:18Z"
+        },
+        {
+          "name": "Run source acceptance on Windows",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-10-27T15:59:18Z",
+          "completed_at": "2026-10-27T16:03:12Z"
+        },
+        {
+          "name": "Preserve actual source-test evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 12,
+          "started_at": "2026-10-27T16:03:12Z",
+          "completed_at": "2026-10-27T16:03:13Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 21,
+          "started_at": "2026-10-27T16:03:13Z",
+          "completed_at": "2026-10-27T16:03:13Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-10-27T16:03:13Z",
+          "completed_at": "2026-10-27T16:03:15Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-10-27T16:03:15Z",
+          "completed_at": "2026-10-27T16:03:17Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-10-27T16:03:17Z",
+          "completed_at": "2026-10-27T16:03:20Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-10-27T16:03:20Z",
+          "completed_at": "2026-10-27T16:03:20Z"
+        }
+      ],
+      "summaries": [
+        {
+          "timestamp": "2026-10-27T15:59:20.3396901Z",
+          "name": "build",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 975,
+          "counts": []
+        },
+        {
+          "timestamp": "2026-10-27T15:59:20.3398890Z",
+          "name": "qa-contract",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 310,
+          "counts": [
+            "ℹ tests 55",
+            "ℹ pass 54",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 1"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:24.1991677Z",
+          "name": "qa-security",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 4251,
+          "counts": [
+            "ℹ tests 40",
+            "ℹ pass 24",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 16"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:28.2645615Z",
+          "name": "qa-e2e",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 4065,
+          "counts": [
+            "ℹ tests 23",
+            "ℹ pass 5",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 18"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:29.4986089Z",
+          "name": "qa-recovery",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 1234,
+          "counts": [
+            "ℹ tests 12",
+            "ℹ pass 12",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:47.1017208Z",
+          "name": "qa-live",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 17603,
+          "counts": [
+            "ℹ tests 2",
+            "ℹ pass 2",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:00:25.7639445Z",
+          "name": "unit",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 38656,
+          "counts": [
+            "ℹ tests 133",
+            "ℹ pass 133",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:00:29.7839106Z",
+          "name": "desktop-unit",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 4019,
+          "counts": [
+            "ℹ tests 11",
+            "ℹ pass 11",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:00:35.9942750Z",
+          "name": "desktop-engine",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 6210,
+          "counts": []
+        },
+        {
+          "timestamp": "2026-10-27T16:00:50.4949022Z",
+          "name": "api",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 14500,
+          "counts": [
+            "41 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:01:15.7947905Z",
+          "name": "engine",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 25299,
+          "counts": [
+            "42 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:01:58.7800833Z",
+          "name": "lifecycle",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 42981,
+          "counts": [
+            "79 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:02:03.5917736Z",
+          "name": "proxies",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 4812,
+          "counts": [
+            "62 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:02:09.6425835Z",
+          "name": "security",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 6051,
+          "counts": [
+            "37 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:02:13.4742463Z",
+          "name": "security-migration",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 3831,
+          "counts": [
+            "4 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:02:13.6535996Z",
+          "name": "ui-client",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 180,
+          "counts": [
+            "ℹ tests 4",
+            "ℹ pass 4",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:02:32.6536064Z",
+          "name": "ui-diagnostics",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 19000,
+          "counts": [
+            "54 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:03:12.6211351Z",
+          "name": "ui-smoke",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 39975,
+          "counts": [
+            "25 passed, 0 failed"
+          ]
+        }
+      ],
+      "uploadFailure": "2026-10-27T16:03:13.0866708Z ##[error]Failed to CreateArtifact: Artifact storage quota has been hit. Unable to upload any new artifacts. Usage is recalculated every 6-12 hours."
+    },
+    {
+      "jobId": 122301674406,
+      "name": "source-tests (ubuntu-22.04)",
+      "url": "https://github.com/qadeer-cyber/profile-manager/actions/runs/40533634628/job/122301674406",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-10-27T15:57:24Z",
+          "completed_at": "2026-10-27T15:57:25Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-10-27T15:57:25Z",
+          "completed_at": "2026-10-27T15:57:27Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-10-27T15:57:27Z",
+          "completed_at": "2026-10-27T15:57:28Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-10-27T15:57:28Z",
+          "completed_at": "2026-10-27T15:57:28Z"
+        },
+        {
+          "name": "Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-10-27T15:57:28Z",
+          "completed_at": "2026-10-27T15:57:30Z"
+        },
+        {
+          "name": "Assemble exact M2 source snapshots without merging",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-10-27T15:57:30Z",
+          "completed_at": "2026-10-27T15:57:30Z"
+        },
+        {
+          "name": "Install locked source dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-10-27T15:57:30Z",
+          "completed_at": "2026-10-27T15:57:39Z"
+        },
+        {
+          "name": "Install pinned Chromium and Linux runtime dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-10-27T15:57:39Z",
+          "completed_at": "2026-10-27T15:58:05Z"
+        },
+        {
+          "name": "Install pinned Chromium on Windows",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-10-27T15:58:05Z",
+          "completed_at": "2026-10-27T15:58:05Z"
+        },
+        {
+          "name": "Run source acceptance under a Linux display",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-10-27T15:58:05Z",
+          "completed_at": "2026-10-27T16:00:36Z"
+        },
+        {
+          "name": "Run source acceptance on Windows",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-10-27T16:00:36Z",
+          "completed_at": "2026-10-27T16:00:36Z"
+        },
+        {
+          "name": "Preserve actual source-test evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 12,
+          "started_at": "2026-10-27T16:00:36Z",
+          "completed_at": "2026-10-27T16:00:36Z"
+        },
+        {
+          "name": "Post Run actions/setup-node@v4",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 21,
+          "started_at": "2026-10-27T16:00:36Z",
+          "completed_at": "2026-10-27T16:00:36Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-10-27T16:00:36Z",
+          "completed_at": "2026-10-27T16:00:36Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-10-27T16:00:36Z",
+          "completed_at": "2026-10-27T16:00:36Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 24,
+          "started_at": "2026-10-27T16:00:36Z",
+          "completed_at": "2026-10-27T16:00:37Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 25,
+          "started_at": "2026-10-27T16:00:37Z",
+          "completed_at": "2026-10-27T16:00:37Z"
+        }
+      ],
+      "summaries": [
+        {
+          "timestamp": "2026-10-27T15:58:06.8529577Z",
+          "name": "build",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 264,
+          "counts": []
+        },
+        {
+          "timestamp": "2026-10-27T15:58:07.0660067Z",
+          "name": "qa-contract",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 117,
+          "counts": [
+            "ℹ tests 55",
+            "ℹ pass 54",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 1"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:58:14.7985883Z",
+          "name": "qa-security",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 7729,
+          "counts": [
+            "ℹ tests 40",
+            "ℹ pass 24",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 16"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:58:18.2507249Z",
+          "name": "qa-e2e",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 3452,
+          "counts": [
+            "ℹ tests 23",
+            "ℹ pass 5",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 18"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:58:18.8255764Z",
+          "name": "qa-recovery",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 575,
+          "counts": [
+            "ℹ tests 12",
+            "ℹ pass 12",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:58:28.6309470Z",
+          "name": "qa-live",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 9805,
+          "counts": [
+            "ℹ tests 2",
+            "ℹ pass 2",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:01.3900117Z",
+          "name": "unit",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 32759,
+          "counts": [
+            "ℹ tests 133",
+            "ℹ pass 133",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:03.5122028Z",
+          "name": "desktop-unit",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 2122,
+          "counts": [
+            "ℹ tests 11",
+            "ℹ pass 11",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:06.1293843Z",
+          "name": "desktop-engine",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 2617,
+          "counts": []
+        },
+        {
+          "timestamp": "2026-10-27T15:59:10.9414589Z",
+          "name": "api",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 4812,
+          "counts": [
+            "41 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:19.8935124Z",
+          "name": "engine",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 8951,
+          "counts": [
+            "42 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:39.5884477Z",
+          "name": "lifecycle",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 19694,
+          "counts": [
+            "79 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:42.3881282Z",
+          "name": "proxies",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 2798,
+          "counts": [
+            "62 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:44.2333276Z",
+          "name": "security",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 1845,
+          "counts": [
+            "37 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:45.8346981Z",
+          "name": "security-migration",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 1602,
+          "counts": [
+            "4 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T15:59:45.9211932Z",
+          "name": "ui-client",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 86,
+          "counts": [
+            "ℹ tests 4",
+            "ℹ pass 4",
+            "ℹ fail 0",
+            "ℹ cancelled 0",
+            "ℹ skipped 0",
+            "ℹ todo 0"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:00:02.0766343Z",
+          "name": "ui-diagnostics",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 16155,
+          "counts": [
+            "54 passed, 0 failed"
+          ]
+        },
+        {
+          "timestamp": "2026-10-27T16:00:36.3295966Z",
+          "name": "ui-smoke",
+          "exit": 0,
+          "signal": null,
+          "error": null,
+          "durationMs": 34252,
+          "counts": [
+            "25 passed, 0 failed"
+          ]
+        }
+      ],
+      "uploadFailure": "2026-10-27T16:00:36.6137734Z ##[error]Failed to CreateArtifact: Artifact storage quota has been hit. Unable to upload any new artifacts. Usage is recalculated every 6-12 hours."
+    }
+  ]
+}
