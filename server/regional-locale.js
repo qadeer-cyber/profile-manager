@@ -54,13 +54,13 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
     pending.add(work);
     void work.finally(() => pending.delete(work));
   };
-  const detach = ({ sessionId }) => {
-    const entry = children.get(sessionId);
-    children.delete(sessionId);
-    entry?.parent.disposeChildSession(sessionId);
-    // ICU overrides are renderer-scoped. If the owner page closes, reclaim
-    // the override for surviving popups before their next navigation.
-    if (!closed) for (const [id, live] of children) {
+  // ICU overrides are renderer-scoped. Closing the owner can clear a shared
+  // renderer after the detach command has already been sent, so reclaim again
+  // after Playwright's own close finishes and do not resolve that close first.
+  const retainSurvivors = () => {
+    if (closed) return Promise.resolve();
+    const jobs = [];
+    for (const [id, live] of children) {
       const work = applyLocale(live.child).catch(async error => {
         if (closed || !children.has(id)) return;
         failure ||= new Error('Failed to retain native browser regional locale', { cause: error });
@@ -68,12 +68,43 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
         await onFailure(failure);
       });
       pending.add(work);
-      void work.finally(() => pending.delete(work));
+      jobs.push(work.finally(() => pending.delete(work)));
     }
+    return Promise.all(jobs);
   };
+  const detach = ({ sessionId }) => {
+    const entry = children.get(sessionId);
+    children.delete(sessionId);
+    entry?.parent.disposeChildSession(sessionId);
+    void retainSurvivors();
+  };
+  const wrapped = new WeakSet(), closing = new WeakSet();
+  const wrapClose = page => {
+    if (!page || wrapped.has(page) || typeof page.close !== 'function') return;
+    wrapped.add(page);
+    const orig = page.close;
+    page.close = async function(options) {
+      if (closing.has(page)) return orig.call(this, options);
+      closing.add(page);
+      try {
+        const result = await orig.call(this, options);
+        if (!closed) {
+          while (pending.size) await Promise.all([...pending]);
+          if (!closed && !failure) await retainSurvivors();
+        }
+        if (failure) throw failure;
+        return result;
+      } finally {
+        closing.delete(page);
+      }
+    };
+  };
+  if (typeof context.on === 'function') context.on('page', wrapClose);
+  if (typeof context.pages === 'function') for (const page of context.pages()) wrapClose(page);
   const onAttach = event => attach(parent, event);
-  // Handle renderer teardown on the in-process protocol session before the
-  // client page-close event is dispatched; the public event bridge adds a race.
+  // In-process detach starts reclaim before the client close event. Page.close
+  // still waits until a post-teardown reclaim finishes, which the event order
+  // alone does not guarantee.
   parent.on('Target.attachedToTarget', onAttach);
   parent.on('Target.detachedFromTarget', detach);
   context.once('close', () => {

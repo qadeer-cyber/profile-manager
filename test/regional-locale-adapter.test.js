@@ -65,3 +65,39 @@ test('late target setup failure closes the context, reports once and resumes no 
   assert.equal(notifications, 1); assert.equal(f.children.size, 0);
   assert.ok(!f.calls.some(c => c.id === 'late' && c.method === 'Runtime.runIfWaitingForDebugger'));
 });
+
+test('page close resolves only after the surviving target is reclaimed post-teardown', async () => {
+  const f = fixture();
+  await installRegionalLocale(f.context, 'fr-FR');
+  const survivor = f.children.get('initial');
+  const origSend = survivor.send;
+  let release = () => {};
+  let gate = new Promise(resolve => { release = resolve; });
+  let nativeFinished = false;
+  const order = [];
+  survivor.send = async (method, params) => {
+    if (method === 'Emulation.setLocaleOverride') {
+      order.push(nativeFinished ? 'after' : 'during');
+      await gate;
+    }
+    return origSend(method, params);
+  };
+  const page = {
+    async close() {
+      f.parent.emit('Target.detachedFromTarget', { sessionId: 'opener' });
+      nativeFinished = true;
+    },
+  };
+  f.context.emit('page', page);
+  let settled = false;
+  const pendingClose = page.close().then(() => { settled = true; }, error => { settled = true; throw error; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false, 'close waits while the survivor override is still in flight');
+  assert.deepEqual(order, ['during']);
+  release();
+  await pendingClose;
+  assert.equal(settled, true);
+  assert.deepEqual(order, ['during', 'after']);
+  await f.context.close();
+  assert.equal(f.children.size, 0);
+});
