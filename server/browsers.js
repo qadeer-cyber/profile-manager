@@ -1,3 +1,5 @@
+import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
+import { installRegionalLocale } from './regional-locale.js';
 // Browser engine: launch/stop with per-profile locks, persisted running state, startup recovery,
 // crash detection (health monitor), safe shutdown, a local proxy relay and (opt-in) CDP endpoints.
 // The remote-debugging port is OFF unless the launch option `automation` is truthy: an open CDP port
@@ -151,6 +153,8 @@ export function launch(p, opts = {}) {
 
 async function doLaunch(p, opts = {}) {
   const { headless, url } = opts, automation = automationEnabled(opts);
+  const regional = validateBrowserSettings(p.browserSettings || {});
+  const contextSettings = browserContextSettings(regional);
   const dir = userDataDir(p.id);
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
@@ -163,7 +167,7 @@ async function doLaunch(p, opts = {}) {
     const executablePath = getSetting('executablePath', '') || undefined;
     if (!executablePath) { const miss = chromiumMissingError(!!headless); if (miss) throw miss; }
     // We own shutdown: Playwright's own signal handlers would kill browsers before cookies/storage are flushed.
-    const launchOpts = { headless, viewport: null, args, executablePath, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false };
+    const launchOpts = { ...contextSettings, headless, viewport: null, args, executablePath, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false };
     if (p.proxy) {
       if (p.proxy.username) {
         // Chromium can't authenticate to SOCKS proxies (and prompts for HTTP); use a local no-auth relay.
@@ -172,6 +176,12 @@ async function doLaunch(p, opts = {}) {
         launchOpts.proxy = { server: relayUrl };
       } else launchOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
       if (proxyLoopback()) args.push('--proxy-bypass-list=<-loopback>'); // dev/test only; packaged builds ignore it
+    }
+    // Preserve native ordered languages: Playwright's locale option otherwise replaces
+    // Accept-Language and navigator.languages with a single locale.
+    if (regional.languages.length) {
+      args.push('--accept-lang=' + regional.languages.join(','));
+      args.push('--lang=' + (regional.locale || regional.languages[0]));
     }
     const preferencesBaseline = readPreferences(dir);
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
@@ -184,6 +194,16 @@ async function doLaunch(p, opts = {}) {
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
+    if (regional.languages.length) await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
+      onFailure: async error => {
+        // Let normal close bookkeeping finish before recording the regional
+        // failure; otherwise a clean process exit can clear its error message.
+        if (entry.done) await entry.done;
+        if (live.has(p.id) || launching.has(p.id) || !db.open) return;
+        setStatus(p.id, { last_error: error.message });
+        emit('profile:launch-failed', p.id, { error: error.message });
+      },
+    });
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     entry.browserPid = browserPid;

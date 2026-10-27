@@ -56,6 +56,9 @@ export const migrations = [
   { version: 7, name: 'profiles updated_at index', up: db => {
       db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_updated_at ON profiles(updated_at)');
     } },
+  { version: 8, name: 'per-profile browser regional settings', up: db => {
+      db.exec(`ALTER TABLE profiles ADD COLUMN browser_settings TEXT NOT NULL DEFAULT '{"locale":"","timezoneId":"","languages":[]}'`);
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

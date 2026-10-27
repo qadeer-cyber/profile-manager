@@ -21,7 +21,9 @@
     "dist:win:offline": "npm run build && node scripts/fetch-bundled-chromium.mjs win64 && electron-builder --config electron-builder.offline.cjs --win nsis --x64 --publish never",
     "chromium:manifest": "node scripts/update-chromium-manifest.mjs",
     "test:security": "node test/security.e2e.js && node test/security-migration.e2e.js",
-    "test:ui": "node test/ui-smoke.run.js"
+    "test:ui": "node test/ui-smoke.run.js",
+    "test:m3": "node --test --experimental-test-module-mocks test/browser-settings.test.js test/browser-settings-api.test.js test/browser-settings-launch.test.js test/regional-locale-adapter.test.js",
+    "test:m3:browser": "npm run build && node --test test/browser-settings-browser.test.js test/regional-locale-browser.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

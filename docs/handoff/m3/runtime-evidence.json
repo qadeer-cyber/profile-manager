@@ -1,0 +1,212 @@
+{
+  "recordedAtUTC": "2026-10-27T16:54:12.728795+00:00",
+  "sourceParent": "3b9414e332a9ace1874135085bec1ea2c6374924",
+  "platform": "Linux x64 managed execution host",
+  "node": "22.23.4",
+  "playwrightCore": "1.64.1",
+  "browserVersion": "156.0.8078.4",
+  "revision": "1248",
+  "acceptance": "WIP; headless native browser checks pass, supported desktop/process/Windows gates pending",
+  "sourceSha256": {
+    "package.json": "69aa1135dc10da3a23621432d857bf4405125298f6495894415c88102fcaaa58",
+    "server/browsers.js": "2f282fac3d6a013669883a49621841fa47b8aa0acc9af55576ce9e18ceed9148",
+    "server/regional-locale.js": "a95bbf5c1e4ab751babbc54d3d31f35945e77db4f4f43487d2d5a8a3d91d4dbe",
+    "scripts/m3-install-runtime.mjs": "1d31afd4a238530899a4d1ebac37028575cf42eaa3a472faacfb504ac7bb1d3e",
+    "test/browser-settings-browser.test.js": "95351c52b7aaf7db2adfe17a565e636a206b39f8226c4340fd44df0ef3ebb703",
+    "test/regional-locale-browser.test.js": "5a32d1891309d6d5f4ae6d951982f88d730d6abb1065a5f575649d46f1b9b77f",
+    "test/regional-locale-adapter.test.js": "eb2fa650e3c103e0ecfb99f9ede188bf20ae1c57c037a76a349c9f6cf5ace1b2"
+  },
+  "commands": [
+    {
+      "command": "npm run test:m3",
+      "logSha256": "fbe7e530f1e4c365b4bb047cb456f4f849f4a4a9e26a179b54d59e32db039435",
+      "summaryLines": [
+        "# tests 33",
+        "# suites 0",
+        "# pass 33",
+        "# fail 0",
+        "# skipped 0",
+        "# todo 0"
+      ],
+      "failureLines": []
+    },
+    {
+      "command": "npm run test:m3:browser",
+      "logSha256": "14a473fd1dee2f29a805efe10fb28f21dea2e92c26f22057752a7c5e635d9cea",
+      "summaryLines": [
+        "# tests 2",
+        "# suites 0",
+        "# pass 2",
+        "# fail 0",
+        "# skipped 0",
+        "# todo 0"
+      ],
+      "failureLines": []
+    },
+    {
+      "command": "npm run test:unit",
+      "logSha256": "636214d58d5bc7089f622bb57a36f394d6cccb67435725d004b7ae5eae25d522",
+      "summaryLines": [
+        "# tests 95",
+        "# suites 1",
+        "# pass 94",
+        "# fail 1",
+        "# skipped 0",
+        "# todo 0"
+      ],
+      "failureLines": [
+        "not ok 77 - installed playwright-core 1.64.1 exposes the launched browser child"
+      ]
+    },
+    {
+      "command": "node --test test/termination-evidence.test.js test/desktop-unit.test.js",
+      "logSha256": "5eef415ac90a3fdfea26d645edffab84a3496d70c6d8370a4a2ab36920090c6f",
+      "summaryLines": [
+        "# tests 21",
+        "# suites 0",
+        "# pass 19",
+        "# fail 2",
+        "# skipped 0",
+        "# todo 0"
+      ],
+      "failureLines": [
+        "not ok 1 - processCommandLine (linux): reads /proc cmdline of a live process",
+        "not ok 2 - pidMatches: true only when the command line contains the needle"
+      ]
+    },
+    {
+      "command": "npm run test:api",
+      "logSha256": "60fb3883ea5ca87897be1024a639a53b5a60846195d851e9328f54a6931151b9",
+      "summaryLines": [
+        "41 passed, 0 failed"
+      ],
+      "failureLines": []
+    },
+    {
+      "command": "npm run test:proxies",
+      "logSha256": "8cfc7e54febb25f767aaa27e8b6cee15135dcac0126811345ef85ae4cd3f5473",
+      "summaryLines": [
+        "62 passed, 0 failed"
+      ],
+      "failureLines": []
+    },
+    {
+      "command": "npm run test:security",
+      "logSha256": "22112c1a8640f19082d3a86014ca35c45064b92cfe8ea066d896f36fc4a36a2c",
+      "summaryLines": [
+        "37 passed, 0 failed",
+        "4 passed, 0 failed"
+      ],
+      "failureLines": []
+    },
+    {
+      "command": "node scripts/run-with-automation.mjs test/engine.e2e.js",
+      "logSha256": "462d198a6d085d78ee23ae7beee20786faf54f03d8fa82b2e1f508f5e8db7804",
+      "summaryLines": [
+        "38 passed, 4 failed"
+      ],
+      "failureLines": [
+        "FAIL crash detected and profile:crashed event emitted to UI stream",
+        "FAIL crashed profile marked stopped with last_error",
+        "FAIL orphan browser running before restart (pid 943)",
+        "FAIL startup recovery killed the orphaned browser (verified via its CDP port)"
+      ]
+    },
+    {
+      "command": "npm run test:ui",
+      "logSha256": "b407a118fc077b2522c48ee68a8171224a00f4c6a97e418e630b048ecc514496",
+      "summaryLines": [
+        "24 passed, 1 failed"
+      ],
+      "failureLines": [
+        "FAIL lifecycle events update status once - page.waitForSelector: Timeout 20000ms exceeded."
+      ]
+    },
+    {
+      "command": "Frozen M1 focused process assertions",
+      "logSha256": "d7b5e8dea0dc52a746fde57df3799075ad91b3e5cc4c46621eaaa537c9837dbb",
+      "summaryLines": [
+        "# tests 3",
+        "# suites 0",
+        "# pass 0",
+        "# fail 3",
+        "# skipped 0",
+        "# todo 0"
+      ],
+      "failureLines": [
+        "not ok 1 - processCommandLine (linux): reads /proc cmdline of a live process",
+        "not ok 2 - pidMatches: true only when the command line contains the needle",
+        "not ok 3 - installed playwright-core 1.64.1 exposes the launched browser child"
+      ]
+    }
+  ],
+  "browserProvenance": [
+    {
+      "name": "chromium",
+      "source": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.4/linux64/chrome-linux64.zip",
+      "size": 200345244,
+      "sha256": "43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79",
+      "reusedVerifiedInstall": true
+    },
+    {
+      "name": "chromium-headless-shell",
+      "source": "https://storage.googleapis.com/chrome-for-testing-public/156.0.8078.4/linux64/chrome-headless-shell-linux64.zip",
+      "size": 125797539,
+      "sha256": "c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20",
+      "reusedVerifiedInstall": true
+    },
+    {
+      "root": "/root/.cache/ms-playwright",
+      "revision": "1248",
+      "browserVersion": "156.0.8078.4",
+      "manifestMatchesPlaywright": true,
+      "chromium": {
+        "path": "/root/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome",
+        "installed": true,
+        "verified": true,
+        "sha256": "43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79"
+      },
+      "chromium-headless-shell": {
+        "path": "/root/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell",
+        "installed": true,
+        "verified": true,
+        "sha256": "c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20"
+      }
+    }
+  ],
+  "cdnProbe": {
+    "status": 200,
+    "contentType": "text/html",
+    "bytes": 195,
+    "bodySha256": "5b131ca14aa96311d3432b0062c7443d3b0e6346ec279bd376a75f0a76bcd5d7",
+    "bodyTitle": "Site Unavailable"
+  },
+  "procfsProbe": {
+    "reportedParentPid": 5,
+    "procParentCommand": "/bin/bash",
+    "reportedChildPid": 13,
+    "childSelfPid": 13,
+    "procChildError": "ENOENT"
+  },
+  "fullChromiumProbe": {
+    "result": "blocked",
+    "reason": "FATAL process_singleton_posix.cc:297 socket() failed: Operation not permitted (1)",
+    "headedLifecycleSuite": "not run; full Chromium socket restriction and no display/Xvfb"
+  },
+  "controls": {
+    "manifestChanged": false,
+    "lockfileChanged": false,
+    "installersGenerated": false,
+    "ciDispatched": false,
+    "mergesOrReleases": false
+  },
+  "evidenceType": "Local source-test summary with raw log hashes; not a CI artifact bundle",
+  "observedGitHubState": {
+    "pr2Merged": true,
+    "pr2MergedAt": "2026-10-27T16:37:12Z",
+    "pr2MergeSHA": "851ff06371ee50554d1599d0a34e8c80cb820077",
+    "pr3Base": "main",
+    "pr3Draft": true,
+    "explanation": "Observed after source verification; no merge, PR #2 edit or PR retarget was performed by this run. main differs from frozen M1 only in four documentation/template files."
+  }
+}
