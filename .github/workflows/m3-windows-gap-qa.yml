@@ -3,10 +3,6 @@ name: M3 Windows gap QA (manual)
 on:
   workflow_dispatch:
     inputs:
-      git_sha:
-        description: Full 40-character SHA to checkout (M3 pin)
-        required: true
-        default: "72432735866aff79867e9b5ef15642348847f99a"
       confirm_no_installers:
         description: Must be true. Never builds installers or uploads artifacts.
         type: boolean
@@ -25,7 +21,7 @@ jobs:
       - name: Checkout pinned SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.git_sha }}
+          ref: "72432735866aff79867e9b5ef15642348847f99a"
           fetch-depth: 0
 
       - name: Verify exact SHA
@@ -34,7 +30,7 @@ jobs:
           set -euo pipefail
           got=$(git rev-parse HEAD)
           echo "HEAD=$got"
-          test "$got" = "${{ inputs.git_sha }}"
+          test "$got" = "72432735866aff79867e9b5ef15642348847f99a"
 
       - name: Install Node 22 x64
         uses: actions/setup-node@v4
@@ -93,7 +89,7 @@ jobs:
             echo "## M3 Windows gap QA"
             echo "Cloud windows-2022 automated gap QA. Not Win10/11 manual qualification."
             echo
-            echo "- requested pin: ${{ inputs.git_sha }}"
+            echo "- requested pin: 72432735866aff79867e9b5ef15642348847f99a"
             echo "- actual HEAD: $(git rev-parse HEAD)"
             echo "- M3 targeted: ${{ steps.m3.outcome }}"
             echo "- M3 browser: ${{ steps.m3browser.outcome }}"
