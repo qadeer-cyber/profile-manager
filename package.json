@@ -1,0 +1,107 @@
+{
+  "name": "profile-manager",
+  "version": "0.5.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build web",
+    "start": "npm run build && node server/index.js",
+    "app": "npm run build && electron .",
+    "dev:api": "node server/index.js",
+    "dev:web": "vite web",
+    "test:unit": "node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js test/shutdown-ack.test.js test/shutdown-durable.test.js test/testflags.test.js test/ui-status.test.js test/offline-smoke-phase.test.js",
+    "test:api": "node scripts/run-with-automation.mjs test/api.e2e.js",
+    "test:engine": "node scripts/run-with-automation.mjs test/engine.e2e.js && node scripts/run-with-automation.mjs test/lifecycle.e2e.js",
+    "test:electron": "npm run build && node test/electron-entry-launch.js && node test/electron-smoke.js",
+    "test": "npm run build && npm run test:unit && npm run test:desktop && npm run test:api && npm run test:engine && npm run test:proxies && npm run test:security && npm run test:ui",
+    "dist:win": "npm run build && electron-builder --win nsis portable --x64",
+    "dist:linux": "npm run build && electron-builder --linux dir",
+    "test:proxies": "node scripts/run-with-automation.mjs test/proxy-library.e2e.js",
+    "test:desktop": "node --test test/desktop-unit.test.js && node test/desktop-engine.e2e.js",
+    "dist:win:offline": "npm run build && node scripts/fetch-bundled-chromium.mjs win64 && electron-builder --config electron-builder.offline.cjs --win nsis --x64 --publish never",
+    "chromium:manifest": "node scripts/update-chromium-manifest.mjs",
+    "test:security": "node test/security.e2e.js && node test/security-migration.e2e.js",
+    "test:ui": "node test/ui-smoke.run.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.3.0",
+    "https-proxy-agent": "^7.0.5",
+    "playwright": "^1.48.0",
+    "proxy-chain": "^2.7.1",
+    "socks-proxy-agent": "^8.0.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.1.2",
+    "electron": "^44.9.0",
+    "electron-builder": "^26.15.3",
+    "puppeteer-core": "^25.14.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "^8.3.4"
+  },
+  "allowScripts": {
+    "electron": true,
+    "electron-winstaller": true
+  },
+  "main": "electron/main.js",
+  "description": "Local browser profile manager",
+  "author": "Mohammad Abbas",
+  "build": {
+    "appId": "local.profilemanager.app",
+    "productName": "Profile Manager",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "server/**",
+      "web/dist/**",
+      "package.json",
+      "!**/*.map",
+      "!node_modules/better-sqlite3/{deps,src,binding.gyp}/**",
+      "!node_modules/better-sqlite3/binding.gyp",
+      "!node_modules/better-sqlite3/prebuilds/**"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/playwright-core/**",
+      "node_modules/playwright/**",
+      "**/*.node"
+    ],
+    "npmRebuild": true,
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName}-Setup-${version}-x64.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-x64-portable.${ext}"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}
