@@ -28,6 +28,10 @@ for (const [name, sha] of sources) {
   }
   manifest.sources.push({ name, sha, files });
 }
+const workflow = '.github/workflows/windows-native-validation.yml';
+if (owned.has(workflow)) throw new Error('Unsafe path or ownership collision');
+fs.writeFileSync(path.join(root, workflow), execFileSync('git', ['-C', root, 'show', `${baseline}:${workflow}`]));
+manifest.restoredFromBaseline = baseline;
 const contractLf = (file) => fs.readFileSync(file).toString('utf8').replace(/\r\n/g, '\n');
 for (const [name, expected] of [
   ['DiagnosticsV1.original.md', 'cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8'],
@@ -37,8 +41,6 @@ for (const [name, expected] of [
   if (actual !== expected) throw new Error('Contract checksum mismatch');
   manifest.contracts[name] = actual;
 }
-const workflow = '.github/workflows/windows-native-validation.yml';
-fs.writeFileSync(path.join(root, workflow), execFileSync('git', ['-C', root, 'cat-file', 'blob', `${baseline}:${workflow}`]));
 fs.mkdirSync('.m2/evidence', { recursive: true });
 fs.writeFileSync('.m2/evidence/source-manifest.json', JSON.stringify(manifest, null, 2) + '\n');
 console.log(JSON.stringify(manifest, null, 2));
