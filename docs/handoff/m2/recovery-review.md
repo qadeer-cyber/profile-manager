@@ -147,3 +147,12 @@ probe/network/no-user-page/cleanup/lifecycle coverage; all M1 failures resolved
 on that supported environment; independent review. Review this packet before
 any separately authorized Windows source CI. Installer approval is a later,
 separate gate. No installer workflow may be dispatched from this packet.
+
+## Owner ratification — 2026-10-27
+
+Mohammad t43u ratified `DiagnosticsV1.process-command-line.md` SHA-256
+`e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4`, limited to
+adding `process_command_line` to Source. `DiagnosticsV1.original.md` SHA-256
+`cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8` is unchanged.
+Commands, counts, and the ten executed sign-off cases are in `docs/handoff/m2/qa.md`.
+Contract files were not rewritten.

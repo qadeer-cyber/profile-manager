@@ -52,10 +52,37 @@ async function ui(method, urlPath, body) {
   return { status: r.status, headers: r.headers, json, text };
 }
 
-test('schema v7 unchanged (no M2 migration)', async () => {
-  const { migrations } = await import('../server/migrations.js');
-  assert.equal(migrations.at(-1).version, 7);
-  assert.equal(db.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, 7);
+test('schema version unchanged by diagnostics GET/POST (equals migration head)', async () => {
+  const { migrations, currentVersion } = await import('../server/migrations.js');
+  const head = migrations.at(-1).version;
+  const before = currentVersion(db);
+  const beforeRows = db.prepare('SELECT version, name FROM schema_version ORDER BY version').all();
+  assert.equal(before, head, 'database must already be at the migration head');
+  assert.equal(typeof head, 'number');
+  assert.ok(Number.isInteger(head) && head >= 1);
+  const created = await ui('POST', '/api/profiles', { name: 'm2-schema-diag' });
+  assert.equal(created.status, 201);
+  const id = created.json.id;
+  const get = await ui('GET', `/api/profiles/${id}/diagnostics`);
+  const post = await ui('POST', `/api/profiles/${id}/diagnostics/environment`, {
+    expectedLaunchId: '33333333-3333-4333-8333-333333333333',
+    consent: POST_CONSENT,
+  });
+  const rejected = await ui('POST', `/api/profiles/${id}/diagnostics/environment`, {});
+  if (!HAS_BACKEND) {
+    for (const r of [get, post, rejected]) assert.ok([404, 405, 501].includes(r.status), `got ${r.status}`);
+  } else {
+    assert.equal(get.status, 200);
+    const checked = validateDiagnosticsV1(get.json, { route: 'GET' });
+    assert.equal(checked.ok, true, checked.errors.join('\n'));
+    assert.equal(post.status, 409);
+    assert.equal(rejected.status, 400);
+  }
+  const after = currentVersion(db);
+  assert.equal(after, before, 'diagnostics GET/POST must not apply a migration');
+  assert.equal(after, head, 'schema must remain the migration head');
+  assert.equal(db.prepare('SELECT MAX(version) AS v FROM schema_version').get().v, head);
+  assert.deepEqual(db.prepare('SELECT version, name FROM schema_version ORDER BY version').all(), beforeRows);
 });
 
 test('launchId already exists in server/browsers.js (compatibility with observation.launchId)', () => {
@@ -130,10 +157,7 @@ test('§8: no polling — zero diagnostics requests without user action over 60 
 test('§8: resource cleanup — no leaked CDP sessions/listeners after N GET/POST/timeout cycles', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
 test('§2/§8: launching/stopping profile => unavailable with reason launching/stopping', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
 test('§8: POST with old expectedLaunchId after relaunch => 409 LAUNCH_CHANGED; launch changed mid-collection => invalidated launch_changed', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§8: rapid stop/relaunch x10 — every response launchId equals the then-active launch; no superseded facts', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-// Case 1 spec: launch, record running/last_error/classification; POST environment (probe tab opens);
-//   assert running unchanged, last_error unchanged, no profile:crashed/stopped event emitted.
-test('PENDING Blocked case 1: opening diagnostic tab does not change lifecycle classification or last_error', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
+// §8 rapid relaunch and blocked case 1 execute in test/diagnostics-live.test.js.
 // Case 4 spec: with probe tab open, app Stop (POST /api/profiles/:id/stop); assert whole profile gone:
 //   no browser process tree, no .pm-lock, no running row, Stopped (no last_error).
 test('PENDING Blocked case 4: app Stop terminates whole profile incl. diagnostic tab (no process, .pm-lock, running row)', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
@@ -142,7 +166,7 @@ test('PENDING Blocked case 4: app Stop terminates whole profile incl. diagnostic
 test('PENDING Blocked case 5: forced taskkill /F still classifies Error (Windows level 3+ only)', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
 // Case 7 spec (level 2): attach CDP observer; Network.requestWillBeSent on probe target only data: URLs
 //   (zero external requests); no Runtime.evaluate/Runtime.callFunctionOn sent to user targets.
-test('PENDING Blocked case 7: data: probe page makes zero external requests and inspects no user page', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
+// Blocked case 7 executes in test/diagnostics-live.test.js.
 
 // ---- Probe-tab lifecycle cases (specs from QA lead; Blocked: backend absent; §7.9 never auto-close, §8 launch identity) ----
 // Case 2 spec:

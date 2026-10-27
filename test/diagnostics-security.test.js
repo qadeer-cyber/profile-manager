@@ -403,21 +403,45 @@ test('§7.1/§8 static: UI production code has no polling, storage, hidden probe
 // ---- Blocked: need the M2 backend (live routes) ----
 // Case 8 live spec: with PM_API_TOKEN set to a sentinel, run GET and POST diagnostics; assert response bodies
 //   and headers never contain the API_TOKEN value; request log shows no GET /api/api-token from M2 flows.
+test('§9: diagnostics GET/POST do not migrate the database (schema stays at currentVersion / migration head)', async () => {
+  const { db } = await import('../server/db.js');
+  const { migrations, currentVersion } = await import('../server/migrations.js');
+  const head = migrations.at(-1).version;
+  const before = currentVersion(db);
+  const beforeRows = db.prepare('SELECT version, name FROM schema_version ORDER BY version').all();
+  assert.equal(before, head, 'database must already be at the migration head');
+  const created = await raw('POST', '/api/profiles', {
+    headers: { 'X-UI-Token': SENTINELS.uiToken },
+    body: { name: 'm2-schema-sec' },
+  });
+  assert.equal(created.status, 201);
+  const id = created.json.id;
+  const get = await raw('GET', `/api/profiles/${id}/diagnostics`, { headers: { 'X-UI-Token': SENTINELS.uiToken } });
+  const post = await raw('POST', `/api/profiles/${id}/diagnostics/environment`, {
+    headers: { 'X-UI-Token': SENTINELS.uiToken },
+    body: { expectedLaunchId: '33333333-3333-4333-8333-333333333333', consent: POST_CONSENT },
+  });
+  if (!HAS_BACKEND) {
+    assert.notEqual(get.status, 200);
+    assert.notEqual(post.status, 200);
+  } else {
+    assert.equal(get.status, 200);
+    assert.equal(post.status, 409);
+  }
+  assert.equal(currentVersion(db), before, 'diagnostics GET/POST must not apply a migration');
+  assert.equal(currentVersion(db), head);
+  assert.deepEqual(db.prepare('SELECT version, name FROM schema_version ORDER BY version').all(), beforeRows);
+});
+
+// Live source-sign-off cases (case 8, §7.1, §7.2/§7.10, §7.5, §7.6/§7.7, §9 payloads, §9 failures)
+// execute in test/diagnostics-live.test.js against a running pinned browser.
 const BLOCKED = 'Live pinned Chromium and backend integration acceptance pending on a supported host';
 for (const name of [
-  'case 8: live GET/POST diagnostics bodies/headers never contain automation API_TOKEN value',
   '§4: live 400/401/404/409/429/500 envelopes {error:{code,message,requestId}} + Cache-Control: no-store on every response',
   '§5: auth runs before profile lookup on real M2 handler (unknown id + no token => 401, not 404)',
   '§5: automation /api/v1 GET-only; POST environment via /api/v1 rejected; automation_enabled not required',
-  '§9: live payloads/logs exclude cookies, storage, page URLs/titles, raw CDP, keys; findForbiddenMaterial (relay-shaped URLs, --flags, user-data-dir, remote-debugging) empty and findRelayValue(actual running-row relay_url of a real proxied launch) empty on every live response',
-  '§9: diagnostics failures leave last_error, lifecycle, .pm-lock, DB rows and browser storage unchanged',
-  '§9: no new DB migration / persisted diagnostic status (schema stays v7 after diagnostics calls)',
-  '§7.1: POST without exact consent body => 400 INVALID_REQUEST and no tab opened',
-  '§7.2/§7.10: exactly one new app-owned visible tab per POST; no hidden/background target',
   '§7.3: probe tab brought to foreground before observation',
   '§7.4: only fixed allowlisted script runs in probe (no Runtime.evaluate with request-supplied code)',
-  '§7.5: existing user targets never attached/evaluated',
-  '§7.6/§7.7: probe makes zero network requests; no cookie/localStorage/sessionStorage access',
   '§7.8: navigation away / probe closed / launch changed during probe => invalidated (probe_navigated|probe_closed|launch_changed)',
   '§7.9: probe tab still open after response (not auto-closed)',
   '§7.11: browser permissions and persisted settings unchanged after POST',

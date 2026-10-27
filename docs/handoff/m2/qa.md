@@ -147,3 +147,88 @@ Windows `source-tests (windows-2022)` stopped in assembly with `Contract checksu
 Linux `source-tests (ubuntu-22.04)` reached the suites. `unit` failed one test, `workflow smoke steps that enter offline smoke set PM_SMOKE_PHASE explicitly` (`test/offline-smoke-phase.test.js`), because the committed workflow is the M2 source-only variant and has no `UI smoke` step. After the source copy and before contract hashing, assembly writes `git show d7a000eeadd4f4645a608a1e0cc2b8ad154a75d9:.github/workflows/windows-native-validation.yml` onto `.github/workflows/windows-native-validation.yml`, sets `manifest.restoredFromBaseline`, and throws if that path is owned by a source snapshot. That write is not committed. The committed workflow remains the source-only variant; its only edit is the UI checkout pin.
 
 `ui-diagnostics` was 53 passed, 1 failed: `HTTP 500 INTERNAL_ERROR shows specific text, no raw message - support hint`. The UI checkout pin moves from `5a2aea74ecb4f117b6a05def042726a868033c25` to `14beab8ea27905c6a8fdd387babe6de83ad41c51` (`fix(m2-ui): assert requestId support hint on INTERNAL_ERROR`) in the assembler and the workflow checkout. The backend pin stays `d41eb1c6c5d65fa2f2a3ba861c1a8c509ac50838`.
+
+## Owner ratification — process_command_line — 2026-10-27
+
+Mohammad t43u ratified `DiagnosticsV1.process-command-line.md`.
+
+- SHA-256: `e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4`
+- Scope: add `process_command_line` to the Source enum only
+- Original contract preserved: `DiagnosticsV1.original.md` SHA-256 `cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8`
+- The amendment does not allow raw browser command lines, credentials, proxy secrets, tokens, or sensitive launch arguments in diagnostics payloads or logs
+- Sanitization, authentication, timeout, and lifecycle rules from the original contract stay in force
+
+Neither contract file was rewritten for this record. Local SHA-256 of those two backend objects matched the pins above.
+
+## Source-sign-off execution — 2026-10-27
+
+Node v22.23.4, Linux. Pinned browser used for the assembled run: Playwright Chromium `156.0.8078.4` (revision 1248). Profiles were disposable directories under `os.tmpdir()`. No CI workflow was dispatched.
+
+The ten source-sign-off cases are real tests in `test/diagnostics-live.test.js`. They skip, and are not counted as passes, when `server/diagnostics.js` or the pinned Chromium executable is absent. Schema checks in `test/diagnostics.e2e.js` and `test/diagnostics-security.test.js` compare `currentVersion(db)` before and after diagnostics GET/POST with `migrations.at(-1).version`. They do not hardcode schema 7. This checkout's migration head is 7, and that is the database those assertions executed against. A v8 database was not in this tree, so v8 was not executed; the same comparison is what a v8 head would use.
+
+### Assembled working tree (not committed)
+
+Backend `d41eb1c6c5d65fa2f2a3ba861c1a8c509ac50838` and, for recovery only, UI `14beab8ea27905c6a8fdd387babe6de83ad41c51` (`web/src/api.js`, `web/src/hooks/useProfileDiagnostics.js`) were copied into the working tree for the run and then removed. Contract bytes were read from those same backend objects via `PM_DIAG_CONTRACT` and `PM_DIAG_AMENDED_CONTRACT`.
+
+```
+node --test --test-reporter=tap test/diagnostics-live.test.js
+# tests 12 / pass 12 / fail 0 / skipped 0 / todo 0
+
+PM_DIAG_CONTRACT=<DiagnosticsV1.original.md> PM_DIAG_AMENDED_CONTRACT=<DiagnosticsV1.process-command-line.md> \
+  node --test --test-reporter=tap test/diagnostics-contract.test.js
+# tests 55 / pass 54 / fail 0 / skipped 0 / todo 1
+
+node --test --test-reporter=tap test/diagnostics.e2e.js
+# tests 20 / pass 5 / fail 0 / skipped 0 / todo 15
+
+node --test --test-reporter=tap test/diagnostics-security.test.js
+# tests 33 / pass 21 / fail 0 / skipped 3 / todo 9
+
+node --test --test-reporter=tap test/diagnostics-recovery.test.js
+# tests 12 / pass 12 / fail 0 / skipped 0 / todo 0
+```
+
+All ten sign-off tests passed in the live file on that assembled tree. The other two live passes are the existing Chromium 156 acceptance test and the real OS child-process test.
+
+### QA tree as committed (no `server/diagnostics.js`)
+
+```
+node --test --test-reporter=tap test/diagnostics-live.test.js
+# tests 12 / pass 0 / fail 0 / skipped 12 / todo 0
+
+node --test --test-reporter=tap test/diagnostics.e2e.js
+# tests 20 / pass 5 / fail 0 / skipped 0 / todo 15
+
+node --test --test-reporter=tap test/diagnostics-security.test.js
+# tests 33 / pass 19 / fail 0 / skipped 3 / todo 11
+
+node --test --test-reporter=tap test/diagnostics-recovery.test.js
+# tests 12 / pass 0 / fail 0 / skipped 12 / todo 0
+
+PM_DIAG_CONTRACT=<DiagnosticsV1.original.md> PM_DIAG_AMENDED_CONTRACT=<DiagnosticsV1.process-command-line.md> \
+  node --test --test-reporter=tap test/diagnostics-contract.test.js
+# tests 55 / pass 54 / fail 0 / skipped 0 / todo 1
+```
+
+On this tree the ten sign-off tests are skipped. They are not passes.
+
+### Ten cases
+
+| Case | Executed assertion | Assembled result |
+|---|---|---|
+| case 8: API token absent from live GET/POST bodies and headers | `test/diagnostics-live.test.js` | pass |
+| §9 live payloads/logs, `findForbiddenMaterial`, `findRelayValue` on a real proxied launch | same file | pass |
+| §9 failures leave last_error, lifecycle, `.pm-lock`, DB rows, and browser storage unchanged | same file | pass |
+| §7.2/§7.10 one new visible app-owned tab; no hidden/background target | same file | pass |
+| §7.5 existing user targets not evaluated | same file | pass |
+| §7.6/§7.7 probe network and storage access | same file | pass |
+| §7.1 missing consent is 400 and opens no tab on a running profile | same file | pass |
+| §8 rapid stop/relaunch ×10 | same file | pass |
+| case 1: diagnostic tab does not change classification or last_error | same file | pass |
+| case 7: `data:` probe makes no external request and does not inspect the user page | same file | pass |
+
+Empty `{ todo }` stubs for these ten were removed from `test/diagnostics-security.test.js` and `test/diagnostics.e2e.js`.
+
+### Still open
+
+These stubs were not part of the ten and are still todos: live §4 error-envelope matrix, §5 auth-before-lookup, §5 automation GET-only, §7.3 foreground ordering, §7.4 allowlisted script, §7.8 invalidation, §7.9 probe left open, §7.11 permissions, e2e disconnect/timeout/429/polling/cleanup/launching/stopping, e2e cases 2–6, Windows taskkill case 5, automation-disabled observation, and the contract-file live-body todo. `npm run test:engine` was not run. M2 is not accepted.
