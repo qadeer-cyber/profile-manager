@@ -11,7 +11,8 @@ on:
   pull_request:
     branches: [main]
     paths-ignore:
-      - '.github/workflows/**'
+      - '.github/workflows/m3-windows-gap-qa.yml'
+      - '.github/workflows/windows-native-validation.yml'
 
 jobs:
   windows-build:
