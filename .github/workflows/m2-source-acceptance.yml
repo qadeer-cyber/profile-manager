@@ -69,6 +69,22 @@ jobs:
       - name: Source acceptance (Windows)
         if: runner.os == 'Windows'
         run: node scripts/m2-source-acceptance.mjs
+      # The runner exits non-zero when a required-live suite skips. Re-read its
+      # verdict so a green step cannot be a skipped live suite that exited 0.
+      - name: Required-live skips are failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'EOF'
+          import fs from 'node:fs';
+          const summary = JSON.parse(fs.readFileSync('.m2/evidence/results.json', 'utf8'));
+          const skipped = (summary.results || []).filter(row =>
+            (row.problems || []).some(problem => /required-live/.test(problem)));
+          if (summary.ok !== true || skipped.length) {
+            console.error(JSON.stringify(skipped.length ? skipped : summary.results, null, 2));
+            process.exit(1);
+          }
+          EOF
       - name: Confirm no installer output was produced
         if: always()
         shell: bash

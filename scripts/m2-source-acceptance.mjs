@@ -2,6 +2,10 @@
 // integrated tree as-is: never assembles or overwrites files from other commits.
 // Strict: a suite fails the job on non-zero exit, any fail/cancelled, a missing
 // test file, or missing counts. skip/todo are recorded verbatim, never as pass.
+// Required-live suites also fail when a test is skipped (TAP summary or `ok # SKIP`).
+// Node exits 0 for an all-skip file, so the exit code alone is not a pass.
+// The one exception is the documented Linux-only socket check (Windows half is a
+// release-gate item, not a source-live requirement).
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -43,7 +47,7 @@ const jobs = [
   ['m2-e2e', t('test/diagnostics.e2e.js'), false],
   ['m2-recovery', t('test/diagnostics-recovery.test.js'), true],
   ['m2-live', t('test/diagnostics-live.test.js'), true],
-  ['m2-gate', t('test/diagnostics-gate.live.test.js'), false],
+  ['m2-gate', t('test/diagnostics-gate.live.test.js'), true],
   ['m3-unit', tm('test/browser-settings.test.js', 'test/browser-settings-api.test.js', 'test/browser-settings-launch.test.js', 'test/regional-locale-adapter.test.js'), false],
   ['m3-browser', t('test/browser-settings-browser.test.js', 'test/regional-locale-browser.test.js'), true],
   ['b1-fault', t('test/regional-locale-diagnostic-failure.test.js', 'test/regional-locale-diagnostic-negative.test.js', 'test/regional-locale-diagnostic-closefail.test.js'), true],
@@ -55,6 +59,10 @@ const sanitize = text => text.replace(/\u001b\[[0-9;]*m/g, '').split('\n').map(l
   /<launching>|(?:chrome|chromium)(?:\.exe)?["']?\s+--|spawnargs\s*[:=]/i.test(line) ? '[browser command line redacted]' : line
 ).join('\n').replace(/(?:gh[pousr]_[A-Za-z0-9_]+|github_pat_[A-Za-z0-9_]+)/g, '[credential redacted]');
 const count = (log, k) => { const m = [...log.matchAll(new RegExp(`^# ${k} (\\d+)$`, 'gm'))]; return m.length ? m.reduce((a, x) => a + Number(x[1]), 0) : null; };
+const countLast = (log, k) => { const m = [...log.matchAll(new RegExp(`^# ${k} (\\d+)$`, 'gm'))]; return m.length ? Number(m.at(-1)[1]) : null; };
+// Exact reason from diagnostics-gate.live.test.js §10. Not a required live result on Windows.
+const RELEASE_ONLY_SKIP = 'Linux-only process evidence; Windows equivalent is a release-gate item';
+const skipDirectives = log => [...log.matchAll(/^ok \d+ .* # SKIP(?: (.*))?$/gm)].map(m => (m[1] || '').trim());
 const results = [];
 for (const [name, args, requiredLive] of jobs) {
   const files = args.filter(a => /\.(m?js)$/.test(a) && !a.startsWith('--'));
@@ -73,7 +81,20 @@ for (const [name, args, requiredLive] of jobs) {
     if (c.tests == null) problems.push('no TAP summary');
     if (c.fail) problems.push(`${c.fail} failed`);
     if (c.cancelled) problems.push(`${c.cancelled} cancelled`);
-    if (requiredLive && c.skipped) problems.push(`${c.skipped} skipped in a required-live suite`);
+    if (requiredLive) {
+      const directives = skipDirectives(log);
+      const allowed = directives.filter(reason => reason === RELEASE_ONLY_SKIP).length;
+      const skippedSummaries = [...log.matchAll(/^# skipped (\d+)$/gm)].map(m => Number(m[1]));
+      const summarySkipped = skippedSummaries.length ? skippedSummaries.at(-1) : null;
+      // Max, not sum: a repeated summary must not double-count, and a later `# skipped 0`
+      // must not hide an earlier skip. A `# SKIP` directive counts even if the summary says 0.
+      const observed = Math.max(0, ...skippedSummaries, directives.length);
+      if (summarySkipped == null) problems.push('required-live suite has no TAP skip count');
+      if (c.tests === 0) problems.push('required-live suite ran 0 tests');
+      const unexplained = observed - allowed;
+      if (unexplained > 0) problems.push(`${unexplained} skipped in a required-live suite`);
+      if (allowed > observed) problems.push('release-only skip was not in the TAP skip count');
+    }
   }
   const row = { name, ok: problems.length === 0, problems, counts: c, durationMs: Date.now() - started };
   results.push(row);
