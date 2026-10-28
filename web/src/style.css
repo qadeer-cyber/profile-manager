@@ -90,7 +90,7 @@ label.check{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:
 .seg{display:inline-flex;padding:3px;background:var(--surface-2);border:1px solid var(--border);border-radius:calc(var(--r) + 2px);margin-bottom:16px;gap:2px}
 .seg button{border:none;background:none;padding:5px 12px;color:var(--text-2)}.seg button.sel{background:var(--surface);color:var(--text);box-shadow:var(--shadow)}
 .seg.sm{margin:0;background:var(--side-hover);border-color:transparent;align-self:flex-start}.seg.sm button{padding:4px 9px;font-size:12px;color:var(--side-text)}.seg.sm button.sel{background:var(--side-sel);color:#fff}
-.tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin:-4px 0 18px}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--border);margin:-4px 0 18px}
 .tab{border:none;border-radius:0;background:none;padding:8px 12px;color:var(--text-2);border-bottom:2px solid transparent;margin-bottom:-1px}.tab:hover{background:none;color:var(--text)}.tab.sel{color:var(--text);border-bottom-color:var(--accent)}
 
 /* ---------- dialogs / drawer ---------- */
@@ -125,3 +125,4 @@ label.check{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:
 }
 @media (max-width:640px){.col-tags,.grid th.col-tags{display:none}.page-head{flex-direction:column}.proxy-grid{grid-template-columns:1fr}.span2{grid-column:auto}}
 .hint{margin:-8px 0 14px 23px}
+.ext-row{padding:8px 0;border-bottom:1px solid var(--border)}.ext-row .perms{margin:0 0 8px 23px}

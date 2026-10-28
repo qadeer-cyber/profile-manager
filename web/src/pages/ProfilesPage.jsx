@@ -45,17 +45,19 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
     else toast(`${verb} ${plural(r.ok, 'profile')}`, 'success');
   };
   const save = f => act('dlg', f.id ? 'Profile saved' : 'Profile created', async () => {
-    const body = { name: f.name, tags: f.tags, folder: f.folder, notes: f.notes, automationEnabled: !!f.automationEnabled, browserSettings: f.browserSettings };
+    const body = { name: f.name, tags: f.tags, folder: f.folder, notes: f.notes, automationEnabled: !!f.automationEnabled, browserSettings: f.browserSettings, webrtcSettings: f.webrtcSettings, extensionAssignments: f.extensionAssignments || [] };
     if (f.proxyMode !== 'library') body.proxy = f.proxyMode === 'custom' ? { ...f.proxy, port: Number(f.proxy.port) } : null;
     const p = await api(f.id ? `/api/profiles/${f.id}` : '/api/profiles', { method: f.id ? 'PUT' : 'POST', body });
     if (f.proxyMode === 'library' && f.proxyId !== (f.id ? initialProxyId(f) : null)) {
       const r = await api(`/api/profiles/${p.id}/proxy`, { method: 'POST', body: { proxyId: f.proxyId } });
       if (r?.appliesOnNextLaunch) toast('Proxy change applies on the next launch');
     }
-    if (p.appliesOnNextLaunch) toast('Regional settings saved. Stop and relaunch this profile to apply.');
+    if (p.appliesOnNextLaunch) toast('Saved. Regional settings, WebRTC policy, and extensions apply on the next launch.');
     setDialog(null);
   });
   const toForm = p => ({ ...emptyForm, ...p, _orig: p.proxyId || null, tags: p.tags.join(', '), proxyId: p.proxyId || '',
+    webrtcSettings: p.webrtcSettings || emptyForm.webrtcSettings,
+    extensionAssignments: (p.extensions || []).map(e => ({ extensionId: e.id, enabled: !!e.enabled })),
     proxyMode: p.proxyId ? 'library' : p.proxy ? 'custom' : 'none', proxy: p.proxy ? { username: '', password: '', ...p.proxy } : emptyForm.proxy });
   const initialProxyId = f => f._orig;
   const sortBy = k => setSort(s => ({ k, dir: s.k === k ? -s.dir : 1 }));

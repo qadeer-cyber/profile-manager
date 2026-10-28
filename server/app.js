@@ -17,6 +17,12 @@ import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpEr
 import { currentVersion } from './migrations.js';
 import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
+import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
+import {
+  assertKnownAssignments, assignExtension, copyExtensionAssignments, deleteExtension, importUnpackedExtension,
+  listExtensions, mustExtension, profileExtensions, publicExtension, replaceProfileExtensions,
+  setExtensionEnabled, unassignExtension,
+} from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
@@ -88,7 +94,10 @@ const row2p = r => {
   delete r.proxy; // legacy inline column (cleared by migration v6)
   const browserSettings = r.browser_settings ? JSON.parse(r.browser_settings) : { ...DEFAULT_BROWSER_SETTINGS, languages: [] };
   delete r.browser_settings;
-  return { ...r, browserSettings, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const webrtcSettings = r.webrtc_settings ? JSON.parse(r.webrtc_settings) : { ...DEFAULT_WEBRTC_SETTINGS };
+  delete r.webrtc_settings;
+  const extensions = profileExtensions(r.id);
+  return { ...r, browserSettings, webrtcSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -123,8 +132,10 @@ function validate(b, prev) {
   if (!name) throw err(400, 'name is required');
   if (name.length > 200) throw err(400, 'name too long');
   const browserSettings = validateBrowserSettings('browserSettings' in b ? b.browserSettings : {}, prev?.browserSettings);
+  const webrtcSettings = validateWebRtcSettings('webrtcSettings' in b ? b.webrtcSettings : {}, prev?.webrtcSettings);
+  const extensionAssignments = 'extensionAssignments' in b ? assertKnownAssignments(b.extensionAssignments) : null;
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
-  return { name, browserSettings, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
+  return { name, browserSettings, webrtcSettings, extensionAssignments, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
     folder: String(b.folder ?? prev?.folder ?? '').trim(), notes: String(b.notes ?? prev?.notes ?? ''),
     proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : prev?.proxy_id ?? null,
     automationEnabled: 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false };
@@ -143,8 +154,9 @@ function insert(v) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   const dir = userDataDir(id);
   if (fs.existsSync(dir)) throw err(500, 'data directory collision'); // never share a data dir
-  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), now, now);
+  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_settings,webrtc_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), now, now);
+  if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   fs.mkdirSync(dir, { recursive: true });
   return id;
 }
@@ -160,6 +172,7 @@ function clone(id, body = {}) {
   const copyData = body.copyData !== false;
   if (copyData && (engine.isRunning(id))) throw err(409, `Profile "${p.name}" is running. Stop it before cloning (browser data can't be copied consistently while in use), or pass {"copyData": false} to clone settings only.`);
   const nid = insert({ ...p, proxyId: p.proxy_id || null, name: body.name || p.name + ' (copy)' });
+  copyExtensionAssignments(id, nid);
   if (copyData) {
     const src = userDataDir(id);
     try { if (fs.existsSync(src)) fs.cpSync(src, userDataDir(nid), { recursive: true, filter: s => !engine.DATA_COPY_SKIP.has(path.basename(s)) }); }
@@ -175,10 +188,11 @@ async function remove(id) {
 const headlessDefault = () => process.env.HEADLESS === '1' || getSetting('defaultHeadless', false);
 const updateHandler = (req, res) => {
   const v = validate(req.body, must(req.params.id));
-  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,updated_at=? WHERE id=?')
-    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), new Date().toISOString(), req.params.id);
+  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,webrtc_settings=?,updated_at=? WHERE id=?')
+    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), new Date().toISOString(), req.params.id);
+  if (v.extensionAssignments) replaceProfileExtensions(req.params.id, v.extensionAssignments);
   const result = publicP(get(req.params.id));
-  if (result.running && 'browserSettings' in req.body) result.appliesOnNextLaunch = true;
+  if (result.running && ('browserSettings' in req.body || 'webrtcSettings' in req.body || 'extensionAssignments' in req.body)) result.appliesOnNextLaunch = true;
   res.json(result);
 };
 // allowOverride: only the automation API (/api/v1) may override the profile's automation flag per launch.
@@ -368,6 +382,40 @@ async function testProxy(px) {
 }
 
 // Routes shared by /api and /api/v1
+function mountExtensionRoutes(r) {
+  r.get('/extensions', (req, res) => res.json(listExtensions()));
+  r.post('/extensions/import', wrap((req, res) => res.status(201).json(importUnpackedExtension(req.body?.path ?? req.body?.sourcePath))));
+  r.get('/extensions/:id', wrap((req, res) => res.json(publicExtension(mustExtension(req.params.id)))));
+  r.delete('/extensions/:id', wrap((req, res) => {
+    deleteExtension(req.params.id, req.query.force === '1' || req.query.force === 'true');
+    res.status(204).end();
+  }));
+  r.post('/profiles/:id/extensions', wrap((req, res) => {
+    const p = must(req.params.id);
+    if (!req.body || typeof req.body.extensionId !== 'string') throw err(400, 'extensionId is required');
+    const enabled = 'enabled' in req.body ? req.body.enabled : true;
+    if (typeof enabled !== 'boolean') throw err(400, 'enabled must be a boolean');
+    assignExtension(p.id, req.body.extensionId, enabled);
+    const out = publicP(get(p.id));
+    if (p.running) out.appliesOnNextLaunch = true;
+    res.status(201).json(out);
+  }));
+  r.patch('/profiles/:id/extensions/:extensionId', wrap((req, res) => {
+    const p = must(req.params.id);
+    if (!req.body || !('enabled' in req.body)) throw err(400, 'enabled is required');
+    setExtensionEnabled(p.id, req.params.extensionId, req.body.enabled);
+    const out = publicP(get(p.id));
+    if (p.running) out.appliesOnNextLaunch = true;
+    res.json(out);
+  }));
+  r.delete('/profiles/:id/extensions/:extensionId', wrap((req, res) => {
+    const p = must(req.params.id);
+    unassignExtension(p.id, req.params.extensionId);
+    const out = publicP(get(p.id));
+    if (p.running) out.appliesOnNextLaunch = true;
+    res.json(out);
+  }));
+}
 function mountProxyRoutes(r) {
   r.get('/proxies', (req, res) => res.json(listProxies(req.query)));
   r.post('/proxies', wrap((req, res) => res.status(201).json(publicProxy(proxyRow(createProxyRow(req.body))))));
@@ -429,6 +477,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/:id/launch', wrap(async (req, res) => res.json(await doLaunch(req.params.id, req.body))));
   ui.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(ui);
+  mountExtensionRoutes(ui);
   ui.post('/proxy/test', wrap(async (req, res) => res.json(await testProxy(req.body.proxy || req.body))));
   ui.post('/profiles/:id/test-proxy', wrap(async (req, res) => {
     const p = must(req.params.id);
@@ -473,6 +522,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   v1.post('/profiles/:id/launch', wrap(async (req, res) => res.json(await doLaunch(req.params.id, req.body, { allowOverride: true }))));
   v1.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(v1);
+  mountExtensionRoutes(v1);
   v1.get('/running', (req, res) => res.json(engine.runningIds().map(id => publicP(get(id)))));
   v1.post('/bulk/create', wrap((req, res) => {
     const items = req.body.profiles;

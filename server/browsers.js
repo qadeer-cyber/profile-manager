@@ -1,4 +1,7 @@
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
+import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
+import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
+import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
 // Browser engine: launch/stop with per-profile locks, persisted running state, startup recovery,
 // crash detection (health monitor), safe shutdown, a local proxy relay and (opt-in) CDP endpoints.
@@ -157,6 +160,8 @@ async function doLaunch(p, opts = {}) {
   const { headless, url } = opts, automation = automationEnabled(opts);
   const regional = validateBrowserSettings(p.browserSettings || {});
   const contextSettings = browserContextSettings(regional);
+  const policy = validateWebRtcSettings(p.webrtcSettings || {});
+  const extensionPlan = extensionLaunchPlan(p.id);
   const dir = userDataDir(p.id);
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
@@ -185,6 +190,14 @@ async function doLaunch(p, opts = {}) {
       args.push('--accept-lang=' + regional.languages.join(','));
       args.push('--lang=' + (regional.locale || regional.languages[0]));
     }
+    for (const flag of chromiumPolicyArgs(policy)) args.push(flag);
+    for (const flag of extensionPlan.args) args.push(flag);
+    if (!verifyWebRtcLaunchArgs(args, policy.mode)) {
+      throw httpErr(500, 'Refusing to launch because the WebRTC arguments do not match the saved policy.', 'WEBRTC_LAUNCH_MISMATCH');
+    }
+    if (extensionPlan.ignoreDefaultArgs.length) launchOpts.ignoreDefaultArgs = extensionPlan.ignoreDefaultArgs;
+    // Preference merge is best-effort. The force flag above is what verification checks.
+    if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
     const preferencesBaseline = readPreferences(dir);
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {

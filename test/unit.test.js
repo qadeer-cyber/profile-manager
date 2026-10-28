@@ -261,7 +261,7 @@ test('migrations: v6 moves inline proxies into the library (dedupe identical, ke
   ins.run('a', 'A', px('enc:v1:SAME')); ins.run('b', 'B', px('enc:v1:SAME')); ins.run('c', 'C', px('enc:v1:OTHER'));
   ins.run('d', 'D', null); ins.run('e', 'E', JSON.stringify({ type: 'ftp', host: 'h', port: 1 }));
   const r = migrate(db);
-  assert.deepEqual(r.applied, [6, 7, 8]);
+  assert.deepEqual(r.applied, [6, 7, 8, 9, 10]);
   const rows = db.prepare('SELECT * FROM proxies ORDER BY password').all();
   assert.equal(rows.length, 2, 'identical endpoint+ciphertext deduped; different password kept separate');
   assert.equal(rows[1].password, 'enc:v1:SAME'); assert.equal(rows[1].name, 'socks5://h:1080');

@@ -59,6 +59,24 @@ export const migrations = [
   { version: 8, name: 'per-profile browser regional settings', up: db => {
       db.exec(`ALTER TABLE profiles ADD COLUMN browser_settings TEXT NOT NULL DEFAULT '{"locale":"","timezoneId":"","languages":[]}'`);
     } },
+  { version: 9, name: 'per-profile WebRTC policy', up: db => {
+      db.exec(`ALTER TABLE profiles ADD COLUMN webrtc_settings TEXT NOT NULL DEFAULT '{"mode":"browser_default"}'`);
+    } },
+  { version: 10, name: 'extension library and profile assignments', up: db => {
+      db.exec(`CREATE TABLE extensions (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '', manifest_version INTEGER NOT NULL,
+        permissions TEXT NOT NULL DEFAULT '[]', host_permissions TEXT NOT NULL DEFAULT '[]',
+        optional_permissions TEXT NOT NULL DEFAULT '[]', optional_host_permissions TEXT NOT NULL DEFAULT '[]',
+        storage_dir TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE profile_extensions (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, extension_id))`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profile_extensions_extension ON profile_extensions(extension_id)');
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

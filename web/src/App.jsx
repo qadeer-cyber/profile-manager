@@ -3,13 +3,14 @@ import { api, subscribe } from './api.js';
 import { useToast } from './components/Toasts.jsx';
 import { ProfilesPage } from './pages/ProfilesPage.jsx';
 import { ProxiesPage } from './pages/ProxiesPage.jsx';
+import { ExtensionsPage } from './pages/ExtensionsPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
 import { DiagnosticsPage } from './pages/DiagnosticsPage.jsx';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
+const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
@@ -59,6 +60,7 @@ export function App() {
       {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
       {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
       {page === 'proxies' && <ProxiesPage />}
+      {page === 'extensions' && <ExtensionsPage />}
       {page === 'settings' && <SettingsPage />}
       {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
     </main>
