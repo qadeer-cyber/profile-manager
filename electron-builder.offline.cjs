@@ -15,6 +15,9 @@ const files = base.files.flatMap(pattern => pattern === '!node_modules/better-sq
 module.exports = {
   ...base,
   npmRebuild: false,
+  // NSIS finalizes the uninstaller by running the installer once. Linux has no
+  // system Wine, so use electron-builder's pinned Wine toolset.
+  toolsets: { wine: '1.0.1' },
   files,
   extraResources: [{ from: 'build/bundled-browsers', to: 'browsers', filter: ['**/*', '!.download-*'] }],
   win: { ...base.win, target: [{ target: 'nsis', arch: ['x64'] }] },
