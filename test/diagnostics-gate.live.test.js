@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-gate-'));
 process.env.PM_DATA_DIR = tmp; process.env.PM_API_TOKEN = 'fixture-gate-api';
-const { db } = await import('../server/db.js');
+const { db, userDataDir } = await import('../server/db.js');
 const { createApp } = await import('../server/app.js');
 const engine = await import('../server/browsers.js');
 const { diagnosticsActiveCount } = await import('../server/diagnostics.js');
@@ -19,7 +19,7 @@ const call = async (m, p, b) => { const r = await fetch(base + p, { method: m, h
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 after(async () => { for (const id of engine.runningIds()) await engine.stop(id).catch(() => {}); server.close(); if (db.open) db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
-let delay = 0, conn;
+let delay = 0, conn, evalHold = null;
 async function launch(name, regional) {
   const id = (await call('POST', '/profiles', regional ? { name, browserSettings: { locale: 'de-DE', languages: ['de-DE', 'en-US'] } } : { name })).json.id;
   assert.equal((await call('POST', `/profiles/${id}/launch`, { headless: false })).status, 200);
@@ -35,6 +35,8 @@ async function arm(id) {
     const orig = proto.send; proto.__gate = true;
     proto.send = function (method, params) {
       if (delay && method === 'Emulation.setLocaleOverride') { const d = delay; return sleep(d).then(() => orig.call(this, method, params)); }
+      // t48u §7.8: hold the probe's allowlisted read (readDiagnosticEnvironment) so a user action lands mid-observation.
+      if (evalHold && method === 'Runtime.evaluate' && String(params?.expression).includes('visibilityState')) { const h = evalHold; evalHold = null; return h().then(() => orig.call(this, method, params)); }
       return orig.call(this, method, params);
     };
   }
@@ -144,6 +146,162 @@ test('case 6 / §8: relaunch -> new launchId, environment unavailable until new 
   const ok = await post(id, fresh);
   assert.equal(ok.status, 200); assert.equal(ok.json.observation.launchId, fresh);
   await call('POST', `/profiles/${id}/stop`);
+});
+
+// ---- t48u: five REQUIRED BEFORE SOURCE SIGN-OFF items still open on this tree (24-item inventory rows S8, E1, E6, E11, E13) ----
+const prefsOf = id => { try { return JSON.parse(fs.readFileSync(path.join(userDataDir(id), 'Default', 'Preferences'), 'utf8')); } catch { return null; } };
+// Chromium-maintained engagement/metadata categories that change on any browsing; never permission grants.
+const VOLATILE_CS = new Set(['site_engagement', 'media_engagement', 'app_banner', 'client_hints', 'important_site_info', 'formfill_metadata', 'cookie_controls_metadata', 'http_allowed', 'https_enforced', 'abusive_notification_permissions', 'durable_storage', 'notification_interactions', 'permission_autorevocation_data', 'safe_browsing_url_check_data', 'ssl_cert_decisions', 'intent_picker_auto_display', 'password_protection', 'sub_resource_filter', 'sub_resource_filter_data', 'third_party_storage_partitioning', 'top_level_storage_access', 'storage_access', 'fedcm_idp_signin', 'tracking_protection', 'insecure_private_network', 'legacy_cookie_access', 'legacy_cookie_scope', 'javascript_optimizer', 'are_suspicious_notifications_allowlisted_by_user', 'suspicious_notification_ids', 'revoked_unused_site_permissions', 'unused_site_permissions', 'permission_actions', 'reduced_accept_language', 'initialized_translations', 'ondevice_languages_downloaded']);
+const permissionView = prefs => {
+  const cs = prefs?.profile?.content_settings || {};
+  const ex = Object.fromEntries(Object.entries(cs.exceptions || {}).filter(([k]) => !VOLATILE_CS.has(k)).map(([k, v]) => [k, Object.fromEntries(Object.entries(v || {}).map(([o, e]) => [o, e?.setting]))]).filter(([, v]) => Object.keys(v).length));
+  return { exceptions: ex, defaults: prefs?.profile?.default_content_setting_values || {}, managed: prefs?.profile?.managed_default_content_settings || {}, intl: prefs?.intl || {} };
+};
+const settingsRow = id => ({ profile: db.prepare('SELECT * FROM profiles WHERE id=?').get(id) });
+const stripVolatileRow = r => { const p = { ...r.profile }; delete p.last_launched_at; delete p.updated_at; return p; };
+
+test('§7.11 (row S8): browser permissions and persisted settings unchanged after POST', { timeout: 120000 }, async () => {
+  const id = await launch('gate-perms', true);
+  // Control cycle without diagnostics so Chromium's own first-run writes settle.
+  assert.equal((await call('POST', `/profiles/${id}/stop`)).status, 200);
+  assert.equal((await call('POST', `/profiles/${id}/launch`, { headless: false })).status, 200);
+  assert.equal((await call('POST', `/profiles/${id}/stop`)).status, 200);
+  const prefs0 = prefsOf(id); assert.ok(prefs0, 'Preferences written');
+  const before = permissionView(prefs0), row0 = stripVolatileRow(settingsRow(id));
+  const bs0 = (await call('GET', `/profiles/${id}`)).json;
+  assert.equal((await call('POST', `/profiles/${id}/launch`, { headless: false })).status, 200);
+  const launchId = await launchIdOf(id);
+  for (let i = 0; i < 2; i++) { const r = await post(id, launchId); assert.equal(r.status, 200); assert.equal(r.json.environment.locale.value, 'de-DE'); }
+  await sleep(1000);
+  assert.equal((await call('POST', `/profiles/${id}/stop`)).status, 200);
+  const after = permissionView(prefsOf(id)), row1 = stripVolatileRow(settingsRow(id));
+  const bs1 = (await call('GET', `/profiles/${id}`)).json;
+  console.log('# GATE-PERMS', JSON.stringify({ categories: Object.keys(after.exceptions), defaults: after.defaults, intl: after.intl }));
+  assert.deepEqual(after.exceptions, before.exceptions, 'permission exceptions unchanged');
+  assert.deepEqual(after.defaults, before.defaults, 'default content settings unchanged');
+  assert.deepEqual(after.managed, before.managed);
+  assert.deepEqual(after.intl, before.intl, 'intl (accept_languages) unchanged');
+  assert.deepEqual(row1, row0, 'profiles row unchanged');
+  assert.deepEqual(bs1.browserSettings, bs0.browserSettings, 'persisted browser settings unchanged');
+});
+
+test('§8 (row E1): GET on a disconnected browser => unavailable, reason browser_disconnected', { timeout: 90000 }, async () => {
+  const id = await launch('gate-disconnected', false);
+  const pid = engine.lifecycleSmokeSnapshot(id).browserPid;
+  process.kill(pid, 'SIGKILL');
+  const seen = [];
+  for (let i = 0; i < 400; i++) {
+    const g = await call('GET', `/profiles/${id}/diagnostics`);
+    assert.equal(g.status, 200);
+    assert.deepEqual(validateDiagnosticsV1(g.json, { route: 'GET' }).errors, []);
+    const o = g.json.observation; seen.push(o.state + ':' + o.reason);
+    if (o.reason === 'browser_disconnected') {
+      assert.ok(['unavailable', 'invalidated'].includes(o.state));
+      for (const k of ['timezone', 'locale', 'languages']) assert.equal(g.json.environment[k].availability, 'unavailable');
+      break;
+    }
+    if (o.reason === 'not_running') break;
+    await sleep(5);
+  }
+  console.log('# GATE-DISCONNECTED', JSON.stringify({ seen: [...new Set(seen)] }));
+  assert.ok(seen.some(x => x.endsWith(':browser_disconnected')), 'observed browser_disconnected before teardown: ' + [...new Set(seen)].join(','));
+  assert.equal(diagnosticsActiveCount(), 0);
+  for (let i = 0; i < 100 && engine.isRunning(id); i++) await sleep(100);
+});
+
+test('§2/§8 (row E6): launching / stopping profile => unavailable with reason launching / stopping', { timeout: 90000 }, async () => {
+  const id = (await call('POST', '/profiles', { name: 'gate-phase' })).json.id;
+  const poll = async (pending, label) => {
+    const seen = []; let done = false; pending.then(() => { done = true; }, () => { done = true; });
+    while (!done) { const g = await call('GET', `/profiles/${id}/diagnostics`); assert.equal(g.status, 200); assert.deepEqual(validateDiagnosticsV1(g.json, { route: 'GET' }).errors, []); seen.push(g.json.observation.state + ':' + g.json.observation.reason); }
+    const r = await pending; console.log('# GATE-PHASE-' + label, JSON.stringify({ seen: [...new Set(seen)] })); return { r, seen };
+  };
+  const l = await poll(call('POST', `/profiles/${id}/launch`, { headless: false }), 'LAUNCH');
+  assert.equal(l.r.status, 200);
+  assert.ok(l.seen.includes('unavailable:launching'), 'GET during launch => unavailable:launching');
+  const s = await poll(call('POST', `/profiles/${id}/stop`), 'STOP');
+  assert.equal(s.r.status, 200);
+  assert.ok(s.seen.includes('unavailable:stopping'), 'GET during stop => unavailable:stopping');
+  for (const x of [...l.seen, ...s.seen]) assert.ok(/^(unavailable:(launching|stopping|not_running)|complete:null|partial:.*)$/.test(x), 'unexpected ' + x);
+  // POST during launch is not served from a stale launch either.
+  const pl = call('POST', `/profiles/${id}/launch`, { headless: false });
+  await sleep(20);
+  const pd = await post(id, '44444444-4444-4444-8444-444444444444');
+  assert.ok([409].includes(pd.status) || (pd.status === 200 && pd.json.observation.state !== 'complete'), 'POST during launch never completes: ' + pd.status);
+  assert.equal((await pl).status, 200);
+  assert.equal(diagnosticsActiveCount(), 0);
+  await call('POST', `/profiles/${id}/stop`);
+});
+
+test('§7.8 (row E13): navigating probe mid-observation => probe_navigated; closing it => probe_closed', { timeout: 120000 }, async () => {
+  const id = await launch('gate-probe-78', false);
+  const ctx = await arm(id);
+  const launchId = await launchIdOf(id);
+  const snap = engine.lifecycleSmokeSnapshot(id);
+  for (const action of ['navigate', 'close']) {
+    const before = new Set((await pages(ctx)).map(t => t.targetId));
+    let release; const held = new Promise(r => { release = r; });
+    let heldHit; const hit = new Promise(r => { heldHit = r; });
+    evalHold = () => { heldHit(); return held; };
+    const pending = post(id, launchId);
+    await hit; // the allowlisted read is pending inside the probe tab
+    const qid = (await pages(ctx)).map(t => t.targetId).find(t => !before.has(t));
+    assert.ok(qid, 'probe tab present');
+    const b = await ctx.browser().newBrowserCDPSession();
+    if (action === 'navigate') {
+      const { sessionId } = await b.send('Target.attachToTarget', { targetId: qid, flatten: true });
+      const qs = b._connection.toImpl(b)._session.createChildSession(sessionId);
+      await qs.send('Page.navigate', { url: 'data:text/html,<p>user-navigated</p>' }).catch(() => {});
+      await sleep(300);
+      b._connection.toImpl(b)._session.disposeChildSession(sessionId);
+    } else {
+      await b.send('Target.closeTarget', { targetId: qid });
+      await sleep(300);
+    }
+    await b.detach().catch(() => {});
+    release();
+    const r = await pending; evalHold = null;
+    const want = action === 'navigate' ? 'probe_navigated' : 'probe_closed';
+    console.log('# GATE-78-' + action, JSON.stringify({ status: r.status, state: r.json?.observation?.state, reason: r.json?.observation?.reason, env: r.json?.environment?.locale }));
+    assert.equal(r.status, 200);
+    assert.deepEqual(validateDiagnosticsV1(r.json, { route: 'POST' }).errors, []);
+    for (const k of ['timezone', 'locale', 'languages']) { assert.equal(r.json.environment[k].availability, 'unavailable', k); assert.equal(r.json.environment[k].reason, want, k); }
+    assert.equal(diagnosticsActiveCount(), 0, 'slot released');
+  }
+  const end = engine.lifecycleSmokeSnapshot(id);
+  assert.equal(engine.isRunning(id), true); assert.equal(end.browserPid, snap.browserPid); assert.equal(end.last_error, null);
+  const ok = await post(id, launchId); assert.equal(ok.status, 200); assert.equal(ok.json.observation.state, 'complete');
+  await call('POST', `/profiles/${id}/stop`);
+});
+
+test('case 3 (row E11): after user tab closed, closing probe via Target.closeTarget => Stopped, exit_type Normal, no process/.pm-lock', { timeout: 120000 }, async () => {
+  const id = await launch('gate-case3', false);
+  const ctx = await arm(id);
+  const launchId = await launchIdOf(id);
+  const pid = engine.lifecycleSmokeSnapshot(id).browserPid;
+  const before = new Set((await pages(ctx)).map(t => t.targetId));
+  const r = await post(id, launchId); assert.equal(r.status, 200); assert.equal(r.json.observation.state, 'complete');
+  const probe = (await pages(ctx)).map(t => t.targetId).find(t => !before.has(t));
+  assert.ok(probe, 'probe tab open (§7.9)');
+  // Case 2 step: close every other (user/helper) tab -> probe is the only page, still Running.
+  const b = await ctx.browser().newBrowserCDPSession();
+  for (const t of before) await b.send('Target.closeTarget', { targetId: t });
+  await sleep(1000);
+  assert.equal(engine.isRunning(id), true, 'still running with only the probe tab');
+  assert.deepEqual((await pages(ctx)).map(t => t.targetId), [probe]);
+  // Case 3: close the probe tab (last window) through the same Target.closeTarget path.
+  await b.send('Target.closeTarget', { targetId: probe }).catch(() => {});
+  for (let i = 0; i < 100 && engine.isRunning(id); i++) await sleep(100);
+  await sleep(1500);
+  const end = engine.lifecycleSmokeSnapshot(id);
+  const exitType = prefsOf(id)?.profile?.exit_type;
+  const alive = (() => { try { process.kill(pid, 0); return true; } catch { return false; } })();
+  console.log('# GATE-CASE3', JSON.stringify({ running: engine.isRunning(id), runningRow: end.runningRow, last_error: end.last_error, exitType, alive, locks: locks().length }));
+  assert.equal(engine.isRunning(id), false, 'Stopped');
+  assert.equal(end.runningRow, null); assert.equal(end.last_error, null, 'no last_error (Stopped, not Error)');
+  assert.equal(exitType, 'Normal', 'Preferences profile.exit_type Normal');
+  assert.equal(alive, false, 'browser process gone'); assert.deepEqual(locks(), [], 'no .pm-lock');
+  assert.equal(diagnosticsActiveCount(), 0);
 });
 
 test('no unhandled rejections', () => { assert.deepEqual(unhandled, []); });

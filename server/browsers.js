@@ -727,7 +727,9 @@ export function diagnosticObservation(id) {
       return inspectDiagnosticEntry(entry, () => live.get(id) === entry);
     }
     if (launching.has(id)) return { phase: 'launching', launchId: null, proxy: { state: 'suppressed' } };
-    if (settling.has(id)) return { phase: 'stopping', launchId: null, proxy: { state: 'suppressed' } };
+    // t48u §8: an app Stop settles as 'stopping'; a browser that closed or died on
+    // its own (crash, kill, last window closed) settles as 'disconnected'.
+    if (settling.has(id)) return { phase: settling.get(id).stopping ? 'stopping' : 'disconnected', launchId: null, proxy: { state: 'suppressed' } };
     return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
   } catch {
     return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };

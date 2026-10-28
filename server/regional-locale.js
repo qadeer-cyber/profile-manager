@@ -2,6 +2,8 @@
 // option also installs a single-language UA override, so it cannot serve this path.
 // New page targets pause before scripts execute. Commands use the existing pipe;
 // this does not enable a CDP TCP port or replace any JavaScript navigator values.
+// Bound for confirming Target.closeTarget of a failed diagnostic tab (addendum A1).
+export const CLOSE_CONFIRM_MS = 1000;
 export async function installRegionalLocale(context, locale, { onFailure = () => {} } = {}) {
   const root = await context.browser().newBrowserCDPSession();
   // Pinned playwright-core 1.64.1 bridge, like browsers.js browserProcess().
@@ -68,7 +70,15 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
           if (closed || !children.has(sessionId)) return;
           quarantined.add(sessionId); // Never resumed / never re-applied.
           let closedOk = false;
-          try { closedOk = (await root.send('Target.closeTarget', { targetId }))?.success !== false; } catch { closedOk = !children.has(sessionId); }
+          // Closure must be confirmed within CLOSE_CONFIRM_MS: a closeTarget that
+          // rejects, reports success:false, or never answers is unconfirmed unless
+          // the target has actually detached, and falls through to fail-closed.
+          const closing = root.send('Target.closeTarget', { targetId });
+          let timer;
+          closedOk = await Promise.race([
+            closing.then(r => r?.success !== false, () => !children.has(sessionId)),
+            new Promise(resolve => { timer = setTimeout(() => resolve(!children.has(sessionId)), CLOSE_CONFIRM_MS); }),
+          ]).finally(() => clearTimeout(timer));
           if (closed) return;
           if (closedOk) { settleDiagnostic(targetId, cause); return; }
           settleDiagnostic(targetId, cause); // Could not close: fall through to fail-closed.

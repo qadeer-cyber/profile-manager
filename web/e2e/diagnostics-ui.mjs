@@ -304,6 +304,13 @@ await step('disclosure: exact text, dialog semantics; Cancel and Escape send not
   ok(await dlg.getAttribute('aria-modal') === 'true', 'aria-modal');
   ok(await pg.locator('[data-disclosure]').innerText() === 'Opens a visible diagnostic tab in the selected browser profile to read its timezone and language settings. Your existing pages will not be inspected. The tab will remain open until you close it.', 'disclosure text');
   ok(await pg.evaluate(() => document.activeElement?.textContent) === 'Cancel', 'initial focus');
+  // t48u: addendum A1 note is rendered and visible inside the dialog before consent (no POST yet).
+  const a1 = pg.locator('[role=dialog] [data-disclosure-addendum]');
+  ok(await a1.isVisible(), 'A1 note visible before consent');
+  ok(await a1.innerText() === "If the profile's language settings cannot be applied to the diagnostic tab, the app closes only that tab. Your other tabs are not affected.", 'A1 note text');
+  ok(await a1.evaluate(n => { const r = n.getBoundingClientRect(), c = getComputedStyle(n); return r.width > 0 && r.height > 0 && c.visibility === 'visible' && c.display !== 'none' && Number(c.opacity) > 0; }), 'A1 note has layout/visibility');
+  ok(posts().length === p0, 'A1 note shown with zero POSTs (before consent)');
+
   await shot(pg, 'after-disclosure-dialog.png', { expand: false });
   await pg.click('[role=dialog] button:has-text("Cancel")'); await dlg.waitFor({ state: 'detached' });
   await pg.waitForFunction(() => document.activeElement?.textContent === 'Observe timezone and language');
