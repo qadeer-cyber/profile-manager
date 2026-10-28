@@ -4,6 +4,8 @@
 const base = require('./package.json').build;
 // Linux cannot node-gyp a Windows native module. better-sqlite3 ships an N-API
 // win32-x64 prebuild, which Electron loads without a from-source rebuild.
+// NSIS finalizes the uninstaller by running a 32-bit stub. electron-builder's
+// bundled Wine 11 build cannot run that stub; the host needs wine and wine32.
 const files = base.files.flatMap(pattern => pattern === '!node_modules/better-sqlite3/prebuilds/**'
   ? [
       '!node_modules/better-sqlite3/prebuilds/darwin-*',
