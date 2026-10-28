@@ -5,6 +5,8 @@ import { installRegionalLocale } from './regional-locale.js';
 // The remote-debugging port is OFF unless the launch option `automation` is truthy: an open CDP port
 // gives any local process full control of the session.
 import fs from 'fs';
+import { diagnosticProcessStart, observeProcessPolicy } from './diagnostic-process.js';
+export { summarizeWebRtcArguments } from './diagnostic-process.js';
 import { randomUUID } from 'crypto';
 import { readPreferences, observePreferences, captureTermination, waitForTermination, processCorrelation } from './termination-evidence.js';
 import net from 'net';
@@ -192,8 +194,11 @@ async function doLaunch(p, opts = {}) {
     }
     entry = { ctx, relayUrl, launchId: randomUUID(), browserPid: null,
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
-      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null };
+      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
+      // Sanitized launch-time proxy only. The classifier never reads this field.
+      launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
+    const diagnosticStart = diagnosticProcessStart(Number(entry.childPid));
     if (regional.languages.length) await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
       onFailure: async error => {
         // Let normal close bookkeeping finish before recording the regional
@@ -207,6 +212,8 @@ async function doLaunch(p, opts = {}) {
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     entry.browserPid = browserPid;
+    // Bind identity to the launched child, never to a later PID-only lookup.
+    entry.diagnosticStart = Number(browserPid) === Number(entry.childPid) ? await diagnosticStart : null;
     const owned = await browserOwnedByProfile(browserPid, dir);
     const parents = entry.childPid && browserPid && Number(entry.childPid) !== Number(browserPid)
       ? await processParents() : [];
@@ -521,5 +528,172 @@ export async function shutdown() {
   stopHealthMonitor();
   // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
   await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
+}
+
+// --- Read-only diagnostics observation. Not used by the lifecycle classifier. ---
+const PROXY_TYPES = new Set(['http', 'https', 'socks5']);
+
+function isRelayHost(host) {
+  const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '::1' || h === '::' || h === '0.0.0.0' || /^127(?:\.\d{1,3}){3}$/.test(h);
+}
+
+// Launch-time proxy with credentials and local relay endpoints removed.
+// `{ configured: false }` means no proxy. `{ unsafe: true }` means a proxy existed
+// but must not be published. The returned object never keeps username, password, or a URL.
+export function proxyLaunchSnapshot(proxy) {
+  try {
+    if (!proxy || typeof proxy !== 'object') return { configured: false };
+    const host = proxy.host;
+    if (host == null || host === '') return { configured: false };
+    if (typeof host !== 'string' || typeof proxy.type !== 'string') return { unsafe: true };
+    if (!PROXY_TYPES.has(proxy.type)) return { unsafe: true };
+    if (host.length === 0 || host.length > 253 || /[\s@/\\?#]/.test(host)) return { unsafe: true };
+    const hostOk = /^[A-Za-z0-9.-]+$/.test(host) || /^\[[0-9A-Fa-f:.]+\]$/.test(host);
+    if (!hostOk) return { unsafe: true };
+    const port = typeof proxy.port === 'number' ? proxy.port : Number(proxy.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return { unsafe: true };
+    const bare = host.startsWith('[') ? host.slice(1, -1) : host;
+    if (isRelayHost(bare)) return { unsafe: true };
+    return { configured: true, type: proxy.type, host, port };
+  } catch {
+    return { unsafe: true };
+  }
+}
+
+function relayMatches(snapshot, relayUrl) {
+  if (!snapshot || snapshot.configured !== true || typeof relayUrl !== 'string' || !relayUrl) return false;
+  try {
+    const url = new URL(relayUrl);
+    const port = Number(url.port);
+    const host = url.hostname;
+    if (!host || !Number.isInteger(port)) return false;
+    const snapHost = snapshot.host.startsWith('[') ? snapshot.host.slice(1, -1) : snapshot.host;
+    return snapHost.toLowerCase() === host.toLowerCase() && snapshot.port === port;
+  } catch {
+    return false;
+  }
+}
+
+function publishProxy(snapshot, relayUrl) {
+  if (!snapshot || snapshot.unsafe || relayMatches(snapshot, relayUrl)) return { state: 'suppressed' };
+  if (snapshot.configured === false) return { state: 'off' };
+  if (snapshot.configured === true && PROXY_TYPES.has(snapshot.type)) {
+    return { state: 'on', value: { configured: true, type: snapshot.type, host: snapshot.host, port: snapshot.port } };
+  }
+  return { state: 'suppressed' };
+}
+
+function chromiumVersionFromProduct(product) {
+  if (typeof product !== 'string' || product.length > 256) return null;
+  const match = /^(?:HeadlessChrome|Chrome)\/(\d{1,8}(?:\.\d{1,8}){1,3})$/.exec(product);
+  if (!match || match[1].length > 128) return null;
+  return match[1];
+}
+
+function userAgentFromProtocol(userAgent) {
+  if (typeof userAgent !== 'string' || userAgent.length < 1 || userAgent.length > 1024) return null;
+  if (!/^[\x20-\x7E]+$/.test(userAgent)) return null;
+  return userAgent;
+}
+
+// Browser.getVersion only on the existing Playwright pipe. OS policy is separate.
+export async function readPipeBrowserFacts(browser, hooks = {}) {
+  const empty = { chromiumVersion: null, userAgent: null, webrtc: { kind: 'unreadable' } };
+  if (!browser || typeof browser.newBrowserCDPSession !== 'function') return empty;
+  let session;
+  try { session = await browser.newBrowserCDPSession(); } catch { return empty; }
+  try { hooks.trackSession?.(session); } catch { /* ignore */ }
+  try {
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    let versionRaw = null;
+    try { versionRaw = await session.send('Browser.getVersion'); } catch { versionRaw = null; }
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    return {
+      chromiumVersion: chromiumVersionFromProduct(versionRaw && versionRaw.product),
+      userAgent: userAgentFromProtocol(versionRaw && versionRaw.userAgent),
+      webrtc: { kind: 'unreadable' },
+    };
+  } finally {
+    try { await session.detach(); } catch { /* ignore */ }
+  }
+}
+
+function publishedLaunchId(launchId) {
+  if (typeof launchId !== 'string' || launchId.length < 1 || launchId.length > 128) return null;
+  if (!/^[\x21-\x7E]+$/.test(launchId)) return null;
+  return launchId;
+}
+
+function connectedBrowser(entry) {
+  try {
+    const browser = entry.ctx?.browser?.();
+    if (!browser) return null;
+    if (typeof browser.isConnected === 'function' && browser.isConnected() === false) return null;
+    return browser;
+  } catch {
+    return null;
+  }
+}
+
+// Plain view of one live entry. Browser objects and command lines are not copied onto it.
+export function inspectDiagnosticEntry(entry, current = () => true) {
+  const launchId = publishedLaunchId(entry?.launchId);
+  const suppressed = { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  if (!entry || !entry.ctx) return suppressed;
+  if (entry.stopping) return { phase: 'stopping', launchId, proxy: { state: 'suppressed' } };
+  const browser = connectedBrowser(entry);
+  if (!browser) return { phase: 'disconnected', launchId, proxy: { state: 'suppressed' } };
+  const proxy = publishProxy(entry.launchSnapshot, entry.relayUrl);
+  return {
+    phase: 'connected',
+    launchId,
+    proxy,
+    headless: entry.diagnosticHeadless !== false,
+    readPipeFacts: async hooks => {
+      const launchId = entry.launchId, pid = entry.browserPid, start = entry.diagnosticStart;
+      const stillCurrent = () => current() && entry.launchId === launchId && entry.browserPid === pid
+        && entry.diagnosticStart === start && !entry.stopping && !entry.closed
+        && connectedBrowser(entry) === browser;
+      const [facts, webrtc] = await Promise.all([
+        readPipeBrowserFacts(browser, hooks),
+        observeProcessPolicy({ pid, start, launchId, stillCurrent, signal: hooks.signal }),
+      ]);
+      return { ...facts, webrtc };
+    },
+    openDiagnosticPage: async hooks => {
+      if (entry.diagnosticHeadless !== false) throw new Error('headless');
+      const page = await entry.ctx.newPage();
+      // Dedicated page session: detaching cancels pending Runtime.evaluate without
+      // closing the visible tab or touching the shared browser connection.
+      page.diagnosticEvaluate = async fn => {
+        const session = await entry.ctx.newCDPSession(page);
+        hooks.trackSession(session);
+        try {
+          if (hooks.cancelled()) throw new Error('cancelled');
+          const result = await session.send('Runtime.evaluate', {
+            expression: `(${fn.toString()})()`, returnByValue: true,
+          });
+          if (result.exceptionDetails) throw new Error('evaluation failed');
+          return result.result?.value;
+        } finally { await session.detach().catch(() => {}); }
+      };
+      return page;
+    },
+  };
+}
+
+export function diagnosticObservation(id) {
+  try {
+    if (live.has(id)) {
+      const entry = live.get(id);
+      return inspectDiagnosticEntry(entry, () => live.get(id) === entry);
+    }
+    if (launching.has(id)) return { phase: 'launching', launchId: null, proxy: { state: 'suppressed' } };
+    if (settling.has(id)) return { phase: 'stopping', launchId: null, proxy: { state: 'suppressed' } };
+    return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  } catch {
+    return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  }
 }
 
