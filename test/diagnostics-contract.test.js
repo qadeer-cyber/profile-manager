@@ -23,9 +23,9 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // External artifact (not in the repo): override with PM_DIAG_CONTRACT. When absent, the contract-file tests are
 // skipped with an explicit 'external artifact absent' reason, never passed silently.
-const CONTRACT = process.env.PM_DIAG_CONTRACT || '/workspace/DIAGNOSTICS_CONTRACT.md';
+const CONTRACT = process.env.PM_DIAG_CONTRACT || path.join(root, 'docs/handoff/m2/contracts/DiagnosticsV1.original.md');
 const CONTRACT_SKIP = fs.existsSync(CONTRACT) ? false
-  : `external artifact absent: DiagnosticsV1 contract not found at ${CONTRACT} (set PM_DIAG_CONTRACT; expected SHA-256 cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8)`;
+  : `DiagnosticsV1 contract not found at ${CONTRACT} (set PM_DIAG_CONTRACT; expected SHA-256 cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8)`;
 const CONTRACT_SHA256 = 'cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8';
 const readContractLf = (file) => fs.readFileSync(file).toString('utf8').replace(/\r\n/g, '\n');
 
@@ -656,7 +656,9 @@ test('owner: invalidated (launch changed / observation invalid) carries no launc
   }
 });
 
-test('live GET/POST bodies pass validateDiagnosticsV1 (GET with route:GET); errors pass validateDiagnosticsErrorBody', { todo: 'Blocked: backend absent' }, () => {});
+// Live GET/POST bodies: test/diagnostics-live.test.js and test/diagnostics-gate.live.test.js
+// call validateDiagnosticsV1 / validateDiagnosticsErrorBody on real responses.
+// This file keeps the offline validator. It does not re-declare that work as a todo.
 
 test('authorized amendment is separately versioned and changes only Source', { skip: !process.env.PM_DIAG_AMENDED_CONTRACT && 'Set PM_DIAG_AMENDED_CONTRACT to the versioned backend contract' }, () => {
   const original = readContractLf(CONTRACT);

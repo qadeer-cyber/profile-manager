@@ -1,0 +1,181 @@
+=== 2026-10-28T09:20:22Z ss=/usr/bin/ss ===
+TAP version 13
+# PROCESS-CORRELATION {"id":"f9196434-8b32-42c0-8179-e6cd7d93c3a8","launchId":"1f2d468a-941f-49b0-b197-d68760806698","childPid":13831,"browserPid":13831,"correlation":"same-pid-owned","owned":true}
+# PROCESS-CORRELATION {"id":"86ed636d-1239-44a0-928b-dca43299fcac","launchId":"cd5c6298-0f15-4172-bd33-4363dc06a363","childPid":13976,"browserPid":13976,"correlation":"same-pid-owned","owned":true}
+# \# GATE-429 {"second":429,"code":"DIAGNOSTICS_BUSY","other":200,"otherGet":200,"first":200,"firstLocale":{"availability":"available","value":"de-DE","source":"visible_probe"}}
+# CLASSIFIER-EVIDENCE {"id":"f9196434-8b32-42c0-8179-e6cd7d93c3a8","name":"gate-busy-a","launchId":"1f2d468a-941f-49b0-b197-d68760806698","childPid":13831,"browserPid":13831,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# CLASSIFIER-EVIDENCE {"id":"86ed636d-1239-44a0-928b-dca43299fcac","name":"gate-busy-b","launchId":"cd5c6298-0f15-4172-bd33-4363dc06a363","childPid":13976,"browserPid":13976,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §8 429 DIAGNOSTICS_BUSY on overlap; other profile unaffected; slot released
+ok 1 - §8 429 DIAGNOSTICS_BUSY on overlap; other profile unaffected; slot released
+  ---
+  duration_ms: 2328.509493
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"49cfc906-b4a0-450f-a466-b11b1fd13c55","launchId":"422bf977-f97d-4139-a1d9-8b66e703d079","childPid":14211,"browserPid":14211,"correlation":"same-pid-owned","owned":true}
+# \# GATE-CLEANUP {"sessionsBefore":9,"sessionsAfter":19,"pagesBefore":3,"pagesAfter":8,"active":0}
+# CLASSIFIER-EVIDENCE {"id":"49cfc906-b4a0-450f-a466-b11b1fd13c55","name":"gate-lifecycle","launchId":"422bf977-f97d-4139-a1d9-8b66e703d079","childPid":14211,"browserPid":14211,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# \# GATE-STOP {"running":false,"runningRow":null,"locks":0,"alive":false}
+# Subtest: §7.9 tab stays open after success; case 2 closing user tab keeps Running; §8 no CDP session growth over cycles; case 4 stop
+ok 2 - §7.9 tab stays open after success; case 2 closing user tab keeps Running; §8 no CDP session growth over cycles; case 4 stop
+  ---
+  duration_ms: 4339.897635
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"d8b10267-7cc1-4709-8675-343bec802ef2","launchId":"c12332eb-7c09-42a4-9231-616931ec1896","childPid":14470,"browserPid":14470,"correlation":"same-pid-owned","owned":true}
+# \# GATE-NO-TCP {"pid":14470,"listeners":[]}
+# CLASSIFIER-EVIDENCE {"id":"d8b10267-7cc1-4709-8675-343bec802ef2","name":"gate-no-tcp","launchId":"c12332eb-7c09-42a4-9231-616931ec1896","childPid":14470,"browserPid":14470,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §10 no debugging TCP port during GET/POST (Linux /proc + ss evidence)
+ok 3 - §10 no debugging TCP port during GET/POST (Linux /proc + ss evidence)
+  ---
+  duration_ms: 387.366093
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"4781aff4-ea73-4f0c-80cb-04e876f14bb5","launchId":"3a82de14-e2ff-4fe6-a6ab-ca0045ec319e","childPid":14650,"browserPid":14650,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"4781aff4-ea73-4f0c-80cb-04e876f14bb5","name":"gate-relaunch","launchId":"3a82de14-e2ff-4fe6-a6ab-ca0045ec319e","childPid":14650,"browserPid":14650,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"4781aff4-ea73-4f0c-80cb-04e876f14bb5","launchId":"81a505fc-3ef3-4396-a387-663f843f30bf","childPid":14826,"browserPid":14826,"correlation":"same-pid-owned","owned":true}
+# \# GATE-RELAUNCH {"old":"3a82de14-e2ff-4fe6-a6ab-ca0045ec319e","fresh":"81a505fc-3ef3-4396-a387-663f843f30bf","envLocale":"unavailable","envReason":"permission_required"}
+# CLASSIFIER-EVIDENCE {"id":"4781aff4-ea73-4f0c-80cb-04e876f14bb5","name":"gate-relaunch","launchId":"81a505fc-3ef3-4396-a387-663f843f30bf","childPid":14826,"browserPid":14826,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: case 6 / §8: relaunch -> new launchId, environment unavailable until new POST; old expectedLaunchId -> 409
+ok 4 - case 6 / §8: relaunch -> new launchId, environment unavailable until new POST; old expectedLaunchId -> 409
+  ---
+  duration_ms: 727.995025
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"12f11b64-2a7f-4843-8354-12b7c51a0f21","launchId":"863f650f-3e08-40e6-b8e6-65c18dd88059","childPid":14999,"browserPid":14999,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"12f11b64-2a7f-4843-8354-12b7c51a0f21","name":"gate-perms","launchId":"863f650f-3e08-40e6-b8e6-65c18dd88059","childPid":14999,"browserPid":14999,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"12f11b64-2a7f-4843-8354-12b7c51a0f21","launchId":"e8b5b7da-2074-4c20-8cb3-a5ea73bbe424","childPid":15138,"browserPid":15138,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"12f11b64-2a7f-4843-8354-12b7c51a0f21","name":"gate-perms","launchId":"e8b5b7da-2074-4c20-8cb3-a5ea73bbe424","childPid":15138,"browserPid":15138,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"12f11b64-2a7f-4843-8354-12b7c51a0f21","launchId":"ea3a6898-01fc-4eb6-9794-fa02d31067b4","childPid":15298,"browserPid":15298,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"12f11b64-2a7f-4843-8354-12b7c51a0f21","name":"gate-perms","launchId":"ea3a6898-01fc-4eb6-9794-fa02d31067b4","childPid":15298,"browserPid":15298,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# \# GATE-PERMS {"categories":[],"defaults":{"has_migrated_local_network_access":true},"intl":{"accept_languages":"de-DE,en-US"}}
+# Subtest: §7.11 (row S8): browser permissions and persisted settings unchanged after POST
+ok 5 - §7.11 (row S8): browser permissions and persisted settings unchanged after POST
+  ---
+  duration_ms: 1993.985386
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"0be6c587-b5fd-4bc7-9c44-08768e8e6f80","launchId":"74f14161-2866-4016-a1cb-6c6f4ac78c29","childPid":15506,"browserPid":15506,"correlation":"same-pid-owned","owned":true}
+# \# GATE-DISCONNECTED {"seen":["invalidated:launch_changed","unavailable:browser_disconnected"]}
+# CLASSIFIER-EVIDENCE {"id":"0be6c587-b5fd-4bc7-9c44-08768e8e6f80","name":"gate-disconnected","launchId":"74f14161-2866-4016-a1cb-6c6f4ac78c29","childPid":15506,"browserPid":15506,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":null,"signal":"SIGKILL","exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"unknown","chosen":"error"}
+# Subtest: §8 (row E1): GET on a disconnected browser => unavailable, reason browser_disconnected
+ok 6 - §8 (row E1): GET on a disconnected browser => unavailable, reason browser_disconnected
+  ---
+  duration_ms: 1266.503693
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"0f9915ed-1c71-41d1-b5c6-674dc17afd48","launchId":"d97063ff-7f50-4808-a36e-878b3bcba2f0","childPid":15649,"browserPid":15649,"correlation":"same-pid-owned","owned":true}
+# \# GATE-PHASE-LAUNCH {"seen":["unavailable:launching","complete:null"]}
+# CLASSIFIER-EVIDENCE {"id":"0f9915ed-1c71-41d1-b5c6-674dc17afd48","name":"gate-phase","launchId":"d97063ff-7f50-4808-a36e-878b3bcba2f0","childPid":15649,"browserPid":15649,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# \# GATE-PHASE-STOP {"seen":["unavailable:stopping","unavailable:not_running"]}
+# PROCESS-CORRELATION {"id":"0f9915ed-1c71-41d1-b5c6-674dc17afd48","launchId":"4226f6ef-b302-49f1-9fc0-c3cf0d0ae57a","childPid":15796,"browserPid":15796,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"0f9915ed-1c71-41d1-b5c6-674dc17afd48","name":"gate-phase","launchId":"4226f6ef-b302-49f1-9fc0-c3cf0d0ae57a","childPid":15796,"browserPid":15796,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §2/§8 (row E6): launching / stopping profile => unavailable with reason launching / stopping
+ok 7 - §2/§8 (row E6): launching / stopping profile => unavailable with reason launching / stopping
+  ---
+  duration_ms: 642.606634
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"5ba89fed-5d39-4e6f-8c6c-9130304ea964","launchId":"13bad038-e495-4f48-bd42-3415a55239ca","childPid":15957,"browserPid":15957,"correlation":"same-pid-owned","owned":true}
+# \# GATE-78-navigate {"status":200,"state":"unavailable","reason":"probe_navigated","env":{"availability":"unavailable","value":null,"source":null,"reason":"probe_navigated"}}
+# \# GATE-78-close {"status":200,"state":"unavailable","reason":"probe_closed","env":{"availability":"unavailable","value":null,"source":null,"reason":"probe_closed"}}
+# CLASSIFIER-EVIDENCE {"id":"5ba89fed-5d39-4e6f-8c6c-9130304ea964","name":"gate-probe-78","launchId":"13bad038-e495-4f48-bd42-3415a55239ca","childPid":15957,"browserPid":15957,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §7.8 (row E13): navigating probe mid-observation => probe_navigated; closing it => probe_closed
+ok 8 - §7.8 (row E13): navigating probe mid-observation => probe_navigated; closing it => probe_closed
+  ---
+  duration_ms: 1124.548065
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"f28d9ade-f108-4cc2-a3c2-dfed4e72f01c","launchId":"4c5728a5-1ec9-4534-b1f6-d3510d39e89e","childPid":16200,"browserPid":16200,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"f28d9ade-f108-4cc2-a3c2-dfed4e72f01c","name":"gate-case3","launchId":"4c5728a5-1ec9-4534-b1f6-d3510d39e89e","childPid":16200,"browserPid":16200,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"stopped","chosen":"stopped"}
+# \# GATE-CASE3 {"running":false,"runningRow":null,"last_error":null,"exitType":"Normal","alive":false,"locks":0}
+# Subtest: case 3 (row E11): after user tab closed, closing probe via Target.closeTarget => Stopped, exit_type Normal, no process/.pm-lock
+ok 9 - case 3 (row E11): after user tab closed, closing probe via Target.closeTarget => Stopped, exit_type Normal, no process/.pm-lock
+  ---
+  duration_ms: 2963.646438
+  type: 'test'
+  ...
+# Subtest: no unhandled rejections
+ok 10 - no unhandled rejections
+  ---
+  duration_ms: 0.386663
+  type: 'test'
+  ...
+1..10
+# tests 10
+# suites 0
+# pass 10
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 18144.462194
+GATE_EXIT:0
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 43 modules transformed.
+rendering chunks...
+computing gzip size...
+web/dist/index.html                   0.27 kB │ gzip:  0.21 kB
+web/dist/assets/index-BLTROog1.css   19.56 kB │ gzip:  5.00 kB
+web/dist/assets/index-CMBY6esy.js   275.82 kB │ gzip: 82.24 kB
+
+✓ built in 117ms
+PASS existing Diagnostics content is kept (App, Browser engine, Download Chromium, Recent events)
+PASS no profile is preselected (listbox shows the placeholder, not a profile)
+PASS no diagnostics request on page load or profile selection/search
+PASS selected profile identity: name, folder, availability as text
+PASS profile name with HTML is rendered as text (identity + options)
+PASS search filters and groups by folder
+PASS Observe button disabled before any observation
+PASS loading state, then complete observation with every panel
+PASS duplicate refresh clicks send one request
+PASS response for a superseded profile selection is dropped
+PASS response with another profileId is rejected
+PASS malformed response is an error, nothing rendered: extra property
+PASS malformed response is an error, nothing rendered: schemaVersion 2
+PASS malformed response is an error, nothing rendered: unavailable fact with value
+PASS malformed response is an error, nothing rendered: unknown reason
+PASS malformed response is an error, nothing rendered: proxy port out of range
+PASS malformed response is an error, nothing rendered: user agent over 1024
+PASS malformed response is an error, nothing rendered: non-UTC timestamp
+PASS malformed response is an error, nothing rendered: negative durationMs
+PASS malformed response is an error, nothing rendered: 21 languages
+PASS malformed response is an error, nothing rendered: iceCollection changed
+PASS HTTP 400 INVALID_REQUEST shows specific text, no raw message
+PASS HTTP 401 UNAUTHORIZED shows specific text, no raw message
+PASS HTTP 404 PROFILE_NOT_FOUND shows specific text, no raw message
+PASS HTTP 409 LAUNCH_CHANGED shows specific text, no raw message
+PASS HTTP 429 DIAGNOSTICS_BUSY shows specific text, no raw message
+PASS HTTP 500 INTERNAL_ERROR shows specific text, no raw message
+PASS unavailable (not_running) for a stopped profile; observe disabled
+PASS partial observation with version mismatch indicator
+PASS invalidated observation; observe disabled
+PASS stale observation (validUntil in the past)
+PASS fresh turns stale on its own without fetching; 30 s display ceiling
+PASS disclosure: exact text, dialog semantics; Cancel and Escape send nothing
+PASS confirm sends exactly {expectedLaunchId, consent}; values shown; consent asked again
+PASS Refresh is disabled while the environment POST is in flight; the POST result is shown
+PASS Refresh 429 keeps the previous observation and POST result, notice shown alongside
+PASS Refresh 500 keeps the previous observation and POST result, notice shown alongside
+PASS Refresh network failure keeps the previous observation and POST result, notice shown alongside
+PASS 401 on Refresh still clears the observation
+PASS environment result from a different launch is not shown
+PASS POST 409 LAUNCH_CHANGED: relaunch text, observation superseded, observe disabled
+PASS lifecycle event for selected profile marks observation superseded, no auto-fetch
+PASS profile availability label follows profile events (list refresh only; one extra event stream)
+PASS accessible names, live region, definition lists
+PASS keyboard-only: select, refresh, disclosure focus trap, Escape returns focus, Enter confirms
+PASS 1,024-char user agent with HTML wraps without overflow and renders as text
+PASS web mode (no desktop UI token): desktop-only message, both actions disabled, zero diagnostics requests
+PASS every diagnostics request carried the desktop X-UI-Token header
+PASS narrow 700px window: single column, no horizontal overflow
+PASS 200% zoom (1360x820 window => 680x410 CSS px at DPR 2): single column, no overflow
+PASS wide window: two-column panel grid
+PASS dark theme renders the panels
+PASS zero POSTs without an explicit consent confirmation (whole run)
+PASS no page or console errors
+
+54 passed, 0 failed
+screenshots: /tmp
+UI_EXIT:0
+RERUN_DONE

@@ -150,43 +150,25 @@ test('Blocked: live valid DiagnosticsV1 observation against real Chromium (backe
   }
 });
 
-test('§8: GET on a disconnected browser => observation unavailable/invalidated, reason browser_disconnected', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§8: probe exceeding 3 s => reason timeout, response within deadline; late completion ignored, nothing queued', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§8: overlapping request for same profile => 429 DIAGNOSTICS_BUSY; other profiles unaffected; slot released after timeout/error', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§8: no polling — zero diagnostics requests without user action over 60 s; no persistent cache after restart', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§8: resource cleanup — no leaked CDP sessions/listeners after N GET/POST/timeout cycles', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§2/§8: launching/stopping profile => unavailable with reason launching/stopping', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§8: POST with old expectedLaunchId after relaunch => 409 LAUNCH_CHANGED; launch changed mid-collection => invalidated launch_changed', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-// §8 rapid relaunch and blocked case 1 execute in test/diagnostics-live.test.js.
-// Case 4 spec: with probe tab open, app Stop (POST /api/profiles/:id/stop); assert whole profile gone:
-//   no browser process tree, no .pm-lock, no running row, Stopped (no last_error).
-test('PENDING Blocked case 4: app Stop terminates whole profile incl. diagnostic tab (no process, .pm-lock, running row)', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-// Case 5 spec (evidence level 3+, Windows only): with probe tab open, taskkill /F the browser;
-//   assert Error classification, last_error set, profile:crashed emitted, lock released.
-test('PENDING Blocked case 5: forced taskkill /F still classifies Error (Windows level 3+ only)', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-// Case 7 spec (level 2): attach CDP observer; Network.requestWillBeSent on probe target only data: URLs
-//   (zero external requests); no Runtime.evaluate/Runtime.callFunctionOn sent to user targets.
-// Blocked case 7 executes in test/diagnostics-live.test.js.
+// Stale scaffold todos removed. These rows are pointers to executing tests.
+// They are not passes by themselves. test/diagnostics-coverage-pointers.test.js
+// checks that each cited test name still exists.
+// E1  test/diagnostics-gate.live.test.js  "§8 (row E1): GET on a disconnected browser"
+// E2  test/diagnostics-live.test.js       "real Chromium 156: OS process identity, foreground probe, cancellation and launch invalidation"
+// E3  test/diagnostics-gate.live.test.js  "§8 429 DIAGNOSTICS_BUSY on overlap"
+// E4  test/diagnostics-e4-merge-gate.test.js  60 s idle + restart (no observation cache, stale .pm-lock cleanup)
+// E5  test/diagnostics-gate.live.test.js  "§7.9 tab stays open after success"
+// E6  test/diagnostics-gate.live.test.js  "§2/§8 (row E6): launching / stopping"
+// E7  test/diagnostics-gate.live.test.js  "case 6 / §8: relaunch"
+// E8  test/diagnostics-gate.live.test.js  "§7.9 tab stays open after success" (case 4 stop)
+// E10 test/diagnostics-gate.live.test.js  "§7.9 tab stays open after success" (case 2)
+// E11 test/diagnostics-gate.live.test.js  "case 3 (row E11)"
+// E12 test/diagnostics-gate.live.test.js  "case 6 / §8: relaunch"
+// E13 test/diagnostics-gate.live.test.js  "§7.8 (row E13)"
+// E14 Linux half: test/diagnostics-gate.live.test.js "§10 no debugging TCP port"
+// E15 test/lifecycle.e2e.js via npm run test:engine
+// Case 1 and case 7: test/diagnostics-live.test.js
+// Case 5 (E9) and the Windows socket half of E14 stay open below.
 
-// ---- Probe-tab lifecycle cases (specs from QA lead; Blocked: backend absent; §7.9 never auto-close, §8 launch identity) ----
-// Case 2 spec:
-//   1. Launch profile (full browser, one user tab). Record pid P, launchId L, last_error E.
-//   2. POST /api/profiles/:id/diagnostics/environment {expectedLaunchId: L, consent:'open-visible-diagnostic-tab'}
-//      -> probe tab opens.
-//   3. Close the USER tab via Target.closeTarget (probe tab is now the only page).
-//   4. Assert: profile running === true; last_error === E (unchanged); browser pid === P.
-test('PENDING Blocked case 2: open probe tab, close user tab -> still Running, last_error unchanged, same PID', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-// Case 3 spec (continues from case 2):
-//   1. Close the PROBE tab via the same Target.closeTarget path (last window close).
-//   2. Assert: profile Stopped (running === false, no last_error set);
-//      Default/Preferences profile.exit_type === 'Normal'; process and .pm-lock gone.
-test('PENDING Blocked case 3: close probe tab via Target.closeTarget -> Stopped, exit_type Normal', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-// Case 6 spec:
-//   1. Relaunch the profile; GET /api/profiles/:id/diagnostics.
-//   2. Assert: observation.launchId !== previous launchId; observation.id is a new UUID
-//      (!== any previous observation id); environment.timezone/locale/languages are all
-//      {availability:'unavailable', value:null, source:null, reason:<Reason>} until a new POST.
-test('PENDING Blocked case 6: relaunch + GET -> new launchId, new observation id, environment unavailable until new POST', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§7.8: navigating probe tab mid-observation => invalidated probe_navigated; closing it => probe_closed', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('§9/§10: observations work with automation disabled; no extra debugging TCP port during GET/POST', { todo: 'Pinned Chromium 156 integration required on a supported host; no mock substitution' }, () => {});
-test('PENDING: M1 lifecycle still green — run test/lifecycle.e2e.js via npm run test:engine (level 2, separate suite)', { todo: 'not run in this packet' }, () => {});
+test('PENDING case 5: forced taskkill /F still classifies Error (Windows 10/11 only)', { todo: 'Windows 10/11 release QA. Linux SIGKILL is not this case. Do not mark PASS from a Linux run.' }, () => {});
+test('PENDING §10 Windows: no extra debugging TCP port during GET/POST (Get-NetTCPConnection)', { todo: 'Windows 10/11 release QA. Linux /proc + ss evidence is test/diagnostics-gate.live.test.js and does not close this half.' }, () => {});

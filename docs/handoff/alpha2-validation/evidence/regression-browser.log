@@ -1,0 +1,528 @@
+=== 2026-10-28T09:18:34Z DISPLAY=:1 ===
+=== gate ===
+TAP version 13
+# PROCESS-CORRELATION {"id":"f9b99c95-a386-4308-9da8-79c786e39798","launchId":"7a6828a6-7d6c-4314-9051-850e1f60bd5f","childPid":4386,"browserPid":4386,"correlation":"same-pid-owned","owned":true}
+# PROCESS-CORRELATION {"id":"4e63bf21-f311-4663-8bb5-72015520ee77","launchId":"9e127465-5c5c-4ea1-bb59-24ca3257e26f","childPid":4532,"browserPid":4532,"correlation":"same-pid-owned","owned":true}
+# \# GATE-429 {"second":429,"code":"DIAGNOSTICS_BUSY","other":200,"otherGet":200,"first":200,"firstLocale":{"availability":"available","value":"de-DE","source":"visible_probe"}}
+# CLASSIFIER-EVIDENCE {"id":"f9b99c95-a386-4308-9da8-79c786e39798","name":"gate-busy-a","launchId":"7a6828a6-7d6c-4314-9051-850e1f60bd5f","childPid":4386,"browserPid":4386,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# CLASSIFIER-EVIDENCE {"id":"4e63bf21-f311-4663-8bb5-72015520ee77","name":"gate-busy-b","launchId":"9e127465-5c5c-4ea1-bb59-24ca3257e26f","childPid":4532,"browserPid":4532,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §8 429 DIAGNOSTICS_BUSY on overlap; other profile unaffected; slot released
+ok 1 - §8 429 DIAGNOSTICS_BUSY on overlap; other profile unaffected; slot released
+  ---
+  duration_ms: 2380.506393
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"1e90a38b-d1b7-49c5-a483-da0fd63f65a4","launchId":"0f2e3a78-4a20-49e6-9de7-333d422b1fb5","childPid":4765,"browserPid":4765,"correlation":"same-pid-owned","owned":true}
+# \# GATE-CLEANUP {"sessionsBefore":9,"sessionsAfter":19,"pagesBefore":3,"pagesAfter":8,"active":0}
+# CLASSIFIER-EVIDENCE {"id":"1e90a38b-d1b7-49c5-a483-da0fd63f65a4","name":"gate-lifecycle","launchId":"0f2e3a78-4a20-49e6-9de7-333d422b1fb5","childPid":4765,"browserPid":4765,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# \# GATE-STOP {"running":false,"runningRow":null,"locks":0,"alive":false}
+# Subtest: §7.9 tab stays open after success; case 2 closing user tab keeps Running; §8 no CDP session growth over cycles; case 4 stop
+ok 2 - §7.9 tab stays open after success; case 2 closing user tab keeps Running; §8 no CDP session growth over cycles; case 4 stop
+  ---
+  duration_ms: 4335.103982
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"17efb875-3f5f-47ab-a65e-74c9e3473a85","launchId":"348766f9-cb45-4e2e-b310-80b7ef6f4936","childPid":5044,"browserPid":5044,"correlation":"same-pid-owned","owned":true}
+# Subtest: §10 no debugging TCP port during GET/POST (Linux /proc + ss evidence)
+not ok 3 - §10 no debugging TCP port during GET/POST (Linux /proc + ss evidence)
+  ---
+  duration_ms: 240.990083
+  type: 'test'
+  location: '/workspace/test/diagnostics-gate.live.test.js:113:1'
+  failureType: 'testCodeFailure'
+  error: 'spawnSync ss ENOENT'
+  code: 'ENOENT'
+  stack: |-
+    Object.spawnSync (node:internal/child_process:1120:20)
+    spawnSync (node:child_process:902:24)
+    execFileSync (node:child_process:945:15)
+    TestContext.<anonymous> (file:///workspace/test/diagnostics-gate.live.test.js:124:14)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# PROCESS-CORRELATION {"id":"4fc84a39-f289-4b6f-b472-986909630bbc","launchId":"21240927-a410-4c19-a8c6-14678b3f3f2a","childPid":5198,"browserPid":5198,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"4fc84a39-f289-4b6f-b472-986909630bbc","name":"gate-relaunch","launchId":"21240927-a410-4c19-a8c6-14678b3f3f2a","childPid":5198,"browserPid":5198,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"4fc84a39-f289-4b6f-b472-986909630bbc","launchId":"1c1d0119-2e89-49bd-9e02-c1bb0b002350","childPid":5413,"browserPid":5413,"correlation":"same-pid-owned","owned":true}
+# \# GATE-RELAUNCH {"old":"21240927-a410-4c19-a8c6-14678b3f3f2a","fresh":"1c1d0119-2e89-49bd-9e02-c1bb0b002350","envLocale":"unavailable","envReason":"permission_required"}
+# CLASSIFIER-EVIDENCE {"id":"4fc84a39-f289-4b6f-b472-986909630bbc","name":"gate-relaunch","launchId":"1c1d0119-2e89-49bd-9e02-c1bb0b002350","childPid":5413,"browserPid":5413,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: case 6 / §8: relaunch -> new launchId, environment unavailable until new POST; old expectedLaunchId -> 409
+ok 4 - case 6 / §8: relaunch -> new launchId, environment unavailable until new POST; old expectedLaunchId -> 409
+  ---
+  duration_ms: 736.090142
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"c24bea45-cced-46bb-b0d1-40cc24a89ca4","launchId":"42bb3c8f-aa4a-4811-9dcd-36163311658d","childPid":5584,"browserPid":5584,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"c24bea45-cced-46bb-b0d1-40cc24a89ca4","name":"gate-perms","launchId":"42bb3c8f-aa4a-4811-9dcd-36163311658d","childPid":5584,"browserPid":5584,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"c24bea45-cced-46bb-b0d1-40cc24a89ca4","launchId":"3c923d11-cc8f-4025-b911-c61d51fee389","childPid":5730,"browserPid":5730,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"c24bea45-cced-46bb-b0d1-40cc24a89ca4","name":"gate-perms","launchId":"3c923d11-cc8f-4025-b911-c61d51fee389","childPid":5730,"browserPid":5730,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"c24bea45-cced-46bb-b0d1-40cc24a89ca4","launchId":"92a5820f-b6c0-40d3-b6a7-842fefafd1dc","childPid":5884,"browserPid":5884,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"c24bea45-cced-46bb-b0d1-40cc24a89ca4","name":"gate-perms","launchId":"92a5820f-b6c0-40d3-b6a7-842fefafd1dc","childPid":5884,"browserPid":5884,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# \# GATE-PERMS {"categories":[],"defaults":{"has_migrated_local_network_access":true},"intl":{"accept_languages":"de-DE,en-US"}}
+# Subtest: §7.11 (row S8): browser permissions and persisted settings unchanged after POST
+ok 5 - §7.11 (row S8): browser permissions and persisted settings unchanged after POST
+  ---
+  duration_ms: 1994.151656
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"e0006f85-9b3f-4d98-845a-f66ebdf837b5","launchId":"bd844c36-8f42-4b03-b025-4a7dceca6ca3","childPid":6088,"browserPid":6088,"correlation":"same-pid-owned","owned":true}
+# \# GATE-DISCONNECTED {"seen":["invalidated:launch_changed","unavailable:browser_disconnected"]}
+# CLASSIFIER-EVIDENCE {"id":"e0006f85-9b3f-4d98-845a-f66ebdf837b5","name":"gate-disconnected","launchId":"bd844c36-8f42-4b03-b025-4a7dceca6ca3","childPid":6088,"browserPid":6088,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":null,"signal":"SIGKILL","exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"unknown","chosen":"error"}
+# Subtest: §8 (row E1): GET on a disconnected browser => unavailable, reason browser_disconnected
+ok 6 - §8 (row E1): GET on a disconnected browser => unavailable, reason browser_disconnected
+  ---
+  duration_ms: 1265.060422
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"261dc6c5-7108-49af-a2c4-d4d9efb1ab14","launchId":"7ad78ca6-12a0-4a99-84e4-2004f5596173","childPid":6227,"browserPid":6227,"correlation":"same-pid-owned","owned":true}
+# \# GATE-PHASE-LAUNCH {"seen":["unavailable:launching","complete:null"]}
+# CLASSIFIER-EVIDENCE {"id":"261dc6c5-7108-49af-a2c4-d4d9efb1ab14","name":"gate-phase","launchId":"7ad78ca6-12a0-4a99-84e4-2004f5596173","childPid":6227,"browserPid":6227,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# \# GATE-PHASE-STOP {"seen":["unavailable:stopping","unavailable:not_running"]}
+# PROCESS-CORRELATION {"id":"261dc6c5-7108-49af-a2c4-d4d9efb1ab14","launchId":"3072dddf-ed04-4e95-993d-89063e37022e","childPid":6389,"browserPid":6389,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"261dc6c5-7108-49af-a2c4-d4d9efb1ab14","name":"gate-phase","launchId":"3072dddf-ed04-4e95-993d-89063e37022e","childPid":6389,"browserPid":6389,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §2/§8 (row E6): launching / stopping profile => unavailable with reason launching / stopping
+ok 7 - §2/§8 (row E6): launching / stopping profile => unavailable with reason launching / stopping
+  ---
+  duration_ms: 600.16235
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"9853714b-f74a-4493-a880-e650c90ccfc2","launchId":"6e3aa030-b41a-4247-a96a-fa30b0e420b2","childPid":6525,"browserPid":6525,"correlation":"same-pid-owned","owned":true}
+# \# GATE-78-navigate {"status":200,"state":"unavailable","reason":"probe_navigated","env":{"availability":"unavailable","value":null,"source":null,"reason":"probe_navigated"}}
+# \# GATE-78-close {"status":200,"state":"unavailable","reason":"probe_closed","env":{"availability":"unavailable","value":null,"source":null,"reason":"probe_closed"}}
+# CLASSIFIER-EVIDENCE {"id":"9853714b-f74a-4493-a880-e650c90ccfc2","name":"gate-probe-78","launchId":"6e3aa030-b41a-4247-a96a-fa30b0e420b2","childPid":6525,"browserPid":6525,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: §7.8 (row E13): navigating probe mid-observation => probe_navigated; closing it => probe_closed
+ok 8 - §7.8 (row E13): navigating probe mid-observation => probe_navigated; closing it => probe_closed
+  ---
+  duration_ms: 1111.844809
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"b215329d-d9b6-43cd-b73d-2ea26a61149b","launchId":"e922c950-952a-4222-9df9-d1e67482e91a","childPid":6746,"browserPid":6746,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"b215329d-d9b6-43cd-b73d-2ea26a61149b","name":"gate-case3","launchId":"e922c950-952a-4222-9df9-d1e67482e91a","childPid":6746,"browserPid":6746,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"stopped","chosen":"stopped"}
+# \# GATE-CASE3 {"running":false,"runningRow":null,"last_error":null,"exitType":"Normal","alive":false,"locks":1}
+# Subtest: case 3 (row E11): after user tab closed, closing probe via Target.closeTarget => Stopped, exit_type Normal, no process/.pm-lock
+not ok 9 - case 3 (row E11): after user tab closed, closing probe via Target.closeTarget => Stopped, exit_type Normal, no process/.pm-lock
+  ---
+  duration_ms: 2971.46391
+  type: 'test'
+  location: '/workspace/test/diagnostics-gate.live.test.js:277:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    no .pm-lock
+    + actual - expected
+    
+    + [
+    +   '/tmp/pm-gate-5KAWFZ/profiles/17efb875-3f5f-47ab-a65e-74c9e3473a85/.pm-lock'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: '/tmp/pm-gate-5KAWFZ/profiles/17efb875-3f5f-47ab-a65e-74c9e3473a85/.pm-lock'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///workspace/test/diagnostics-gate.live.test.js:303:62)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: no unhandled rejections
+ok 10 - no unhandled rejections
+  ---
+  duration_ms: 0.521113
+  type: 'test'
+  ...
+# CLASSIFIER-EVIDENCE {"id":"17efb875-3f5f-47ab-a65e-74c9e3473a85","name":"gate-no-tcp","launchId":"348766f9-cb45-4e2e-b310-80b7ef6f4936","childPid":5044,"browserPid":5044,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+1..10
+# tests 10
+# suites 0
+# pass 8
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 21045.534939
+GATE_EXIT:1
+=== live ===
+TAP version 13
+# PROCESS-CORRELATION {"id":"bbdc766b-1701-45a5-ab5e-84f457d31904","launchId":"9ca0b317-d02d-492d-9cfd-2336ffe49a25","childPid":6951,"browserPid":6951,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"bbdc766b-1701-45a5-ab5e-84f457d31904","name":"M2 live acceptance fixture","launchId":"9ca0b317-d02d-492d-9cfd-2336ffe49a25","childPid":6951,"browserPid":6951,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"bbdc766b-1701-45a5-ab5e-84f457d31904","launchId":"c53aadb9-aef4-4b37-917a-db37937e349e","childPid":7160,"browserPid":7160,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"bbdc766b-1701-45a5-ab5e-84f457d31904","name":"M2 live acceptance fixture","launchId":"c53aadb9-aef4-4b37-917a-db37937e349e","childPid":7160,"browserPid":7160,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# Subtest: real Chromium 156: OS process identity, foreground probe, cancellation and launch invalidation
+ok 1 - real Chromium 156: OS process identity, foreground probe, cancellation and launch invalidation
+  ---
+  duration_ms: 3785.954524
+  type: 'test'
+  ...
+# {"evidence":"actual_os_process_observation","platform":"linux","state":"absent","durationMs":0.5329959999999119}
+# {"evidence":"actual_os_process_observation","platform":"linux","state":"present","durationMs":0.46484400000008463}
+# {"evidence":"actual_os_process_observation","platform":"linux","state":"conflicting","durationMs":0.4620329999997921}
+# Subtest: real OS child observation: absent/present/conflicting, identity rejection and timing
+ok 2 - real OS child observation: absent/present/conflicting, identity rejection and timing
+  ---
+  duration_ms: 12.009759
+  type: 'test'
+  ...
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"7b6f5d5c-a5d7-4d06-9e6b-e077aff4a21a","childPid":7305,"browserPid":7305,"correlation":"same-pid-owned","owned":true}
+# Subtest: §7.1: POST without exact consent body => 400 INVALID_REQUEST and no tab opened
+ok 3 - §7.1: POST without exact consent body => 400 INVALID_REQUEST and no tab opened
+  ---
+  duration_ms: 431.81416
+  type: 'test'
+  ...
+# Subtest: case 8: live GET/POST diagnostics bodies/headers never contain automation API_TOKEN value
+ok 4 - case 8: live GET/POST diagnostics bodies/headers never contain automation API_TOKEN value
+  ---
+  duration_ms: 84.4391
+  type: 'test'
+  ...
+# Subtest: §9: live payloads/logs exclude cookies, storage, page URLs/titles, raw CDP, keys; findForbiddenMaterial (relay-shaped URLs, --flags, user-data-dir, remote-debugging) empty and findRelayValue(actual running-row relay_url of a real proxied launch) empty on every live response
+ok 5 - §9: live payloads/logs exclude cookies, storage, page URLs/titles, raw CDP, keys; findForbiddenMaterial (relay-shaped URLs, --flags, user-data-dir, remote-debugging) empty and findRelayValue(actual running-row relay_url of a real proxied launch) empty on every live response
+  ---
+  duration_ms: 82.816668
+  type: 'test'
+  ...
+# Subtest: §7.2/§7.10: exactly one new app-owned visible tab per POST; no hidden/background target
+ok 6 - §7.2/§7.10: exactly one new app-owned visible tab per POST; no hidden/background target
+  ---
+  duration_ms: 96.576085
+  type: 'test'
+  ...
+# Subtest: §7.5: existing user targets never attached/evaluated
+ok 7 - §7.5: existing user targets never attached/evaluated
+  ---
+  duration_ms: 87.86417
+  type: 'test'
+  ...
+# Subtest: §7.6/§7.7: probe makes zero network requests; no cookie/localStorage/sessionStorage access
+ok 8 - §7.6/§7.7: probe makes zero network requests; no cookie/localStorage/sessionStorage access
+  ---
+  duration_ms: 96.189615
+  type: 'test'
+  ...
+# Subtest: case 7: data: probe page makes zero external requests and inspects no user page
+ok 9 - case 7: data: probe page makes zero external requests and inspects no user page
+  ---
+  duration_ms: 82.208807
+  type: 'test'
+  ...
+# Subtest: case 1: opening diagnostic tab does not change lifecycle classification or last_error
+ok 10 - case 1: opening diagnostic tab does not change lifecycle classification or last_error
+  ---
+  duration_ms: 71.155068
+  type: 'test'
+  ...
+# Subtest: §9: diagnostics failures leave last_error, lifecycle, .pm-lock, DB rows and browser storage unchanged
+ok 11 - §9: diagnostics failures leave last_error, lifecycle, .pm-lock, DB rows and browser storage unchanged
+  ---
+  duration_ms: 58.589027
+  type: 'test'
+  ...
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"7b6f5d5c-a5d7-4d06-9e6b-e077aff4a21a","childPid":7305,"browserPid":7305,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"ad82e8ed-690e-487c-b5ab-16316a9b6817","childPid":7579,"browserPid":7579,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"ad82e8ed-690e-487c-b5ab-16316a9b6817","childPid":7579,"browserPid":7579,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"dfab0310-a101-46ef-beee-71c68271903b","childPid":7765,"browserPid":7765,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"dfab0310-a101-46ef-beee-71c68271903b","childPid":7765,"browserPid":7765,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"af8d929f-e9fe-4e66-a065-64f5313fc5b9","childPid":7938,"browserPid":7938,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"af8d929f-e9fe-4e66-a065-64f5313fc5b9","childPid":7938,"browserPid":7938,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"bc604d16-2140-4bd7-9bba-5f8e2a7a3d3d","childPid":8128,"browserPid":8128,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"bc604d16-2140-4bd7-9bba-5f8e2a7a3d3d","childPid":8128,"browserPid":8128,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"7c6d77e0-97ec-4571-8b61-0b33542a019b","childPid":8305,"browserPid":8305,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"7c6d77e0-97ec-4571-8b61-0b33542a019b","childPid":8305,"browserPid":8305,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"5a70e241-01f6-431e-8ced-e273e9116014","childPid":8497,"browserPid":8497,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"5a70e241-01f6-431e-8ced-e273e9116014","childPid":8497,"browserPid":8497,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"dfeaf14f-7172-4a56-abab-cfe576b91718","childPid":8669,"browserPid":8669,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"dfeaf14f-7172-4a56-abab-cfe576b91718","childPid":8669,"browserPid":8669,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"6265bf04-2f9a-45e4-81fc-dfc3546c2c04","childPid":8844,"browserPid":8844,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"6265bf04-2f9a-45e4-81fc-dfc3546c2c04","childPid":8844,"browserPid":8844,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"25821574-5a4a-4590-b3d7-f8b27a467e0e","childPid":9018,"browserPid":9018,"correlation":"same-pid-owned","owned":true}
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"25821574-5a4a-4590-b3d7-f8b27a467e0e","childPid":9018,"browserPid":9018,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+# PROCESS-CORRELATION {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","launchId":"4ad73505-6e06-4448-9701-e91cf12adac9","childPid":9195,"browserPid":9195,"correlation":"same-pid-owned","owned":true}
+# Subtest: §8: rapid stop/relaunch x10 — every response launchId equals the then-active launch; no superseded facts
+ok 12 - §8: rapid stop/relaunch x10 — every response launchId equals the then-active launch; no superseded facts
+  ---
+  duration_ms: 3707.68791
+  type: 'test'
+  ...
+# CLASSIFIER-EVIDENCE {"id":"470c2854-b762-4e98-94b0-c87d3fba8e32","name":"m2 signoff disposable","launchId":"4ad73505-6e06-4448-9701-e91cf12adac9","childPid":9195,"browserPid":9195,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13916.171185
+LIVE_EXIT:0
+=== diagnostics ui ===
+PASS existing Diagnostics content is kept (App, Browser engine, Download Chromium, Recent events)
+PASS no profile is preselected (listbox shows the placeholder, not a profile)
+PASS no diagnostics request on page load or profile selection/search
+PASS selected profile identity: name, folder, availability as text
+PASS profile name with HTML is rendered as text (identity + options)
+PASS search filters and groups by folder
+PASS Observe button disabled before any observation
+FAIL loading state, then complete observation with every panel - match
+PASS duplicate refresh clicks send one request
+PASS response for a superseded profile selection is dropped
+PASS response with another profileId is rejected
+PASS malformed response is an error, nothing rendered: extra property
+PASS malformed response is an error, nothing rendered: schemaVersion 2
+PASS malformed response is an error, nothing rendered: unavailable fact with value
+PASS malformed response is an error, nothing rendered: unknown reason
+PASS malformed response is an error, nothing rendered: proxy port out of range
+PASS malformed response is an error, nothing rendered: user agent over 1024
+PASS malformed response is an error, nothing rendered: non-UTC timestamp
+PASS malformed response is an error, nothing rendered: negative durationMs
+PASS malformed response is an error, nothing rendered: 21 languages
+PASS malformed response is an error, nothing rendered: iceCollection changed
+PASS HTTP 400 INVALID_REQUEST shows specific text, no raw message
+PASS HTTP 401 UNAUTHORIZED shows specific text, no raw message
+PASS HTTP 404 PROFILE_NOT_FOUND shows specific text, no raw message
+PASS HTTP 409 LAUNCH_CHANGED shows specific text, no raw message
+PASS HTTP 429 DIAGNOSTICS_BUSY shows specific text, no raw message
+PASS HTTP 500 INTERNAL_ERROR shows specific text, no raw message
+FAIL unavailable (not_running) for a stopped profile; observe disabled - fact unavailable
+FAIL partial observation with version mismatch indicator - ⚠ version mismatch — the running chromium differs from the expected version
+PASS invalidated observation; observe disabled
+PASS stale observation (validUntil in the past)
+PASS fresh turns stale on its own without fetching; 30 s display ceiling
+PASS disclosure: exact text, dialog semantics; Cancel and Escape send nothing
+PASS confirm sends exactly {expectedLaunchId, consent}; values shown; consent asked again
+PASS Refresh is disabled while the environment POST is in flight; the POST result is shown
+PASS Refresh 429 keeps the previous observation and POST result, notice shown alongside
+PASS Refresh 500 keeps the previous observation and POST result, notice shown alongside
+PASS Refresh network failure keeps the previous observation and POST result, notice shown alongside
+PASS 401 on Refresh still clears the observation
+PASS environment result from a different launch is not shown
+PASS POST 409 LAUNCH_CHANGED: relaunch text, observation superseded, observe disabled
+PASS lifecycle event for selected profile marks observation superseded, no auto-fetch
+PASS profile availability label follows profile events (list refresh only; one extra event stream)
+PASS accessible names, live region, definition lists
+PASS keyboard-only: select, refresh, disclosure focus trap, Escape returns focus, Enter confirms
+PASS 1,024-char user agent with HTML wraps without overflow and renders as text
+PASS web mode (no desktop UI token): desktop-only message, both actions disabled, zero diagnostics requests
+PASS every diagnostics request carried the desktop X-UI-Token header
+PASS narrow 700px window: single column, no horizontal overflow
+PASS 200% zoom (1360x820 window => 680x410 CSS px at DPR 2): single column, no overflow
+PASS wide window: two-column panel grid
+PASS dark theme renders the panels
+PASS zero POSTs without an explicit consent confirmation (whole run)
+PASS no page or console errors
+
+51 passed, 3 failed
+screenshots: /tmp
+UI_EXIT:1
+=== engine ===
+  [srv] Profile manager on http://127.0.0.1:36651
+API token: (from PM_API_TOKEN)
+Database migrated v0 -> v12
+PASS upgraded DB: legacy profile kept with its data
+PASS upgraded DB: schema_version 0 -> 12
+PASS original DB file untouched (upgrade ran on a copy)
+PASS upgraded DB: inline proxy moved to the library with its AES ciphertext unchanged
+PASS each profile has its own data dir
+  [srv] PROCESS-CORRELATION {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","launchId":"d4fc1059-557b-4592-8885-280ab494a624","childPid":10062,"browserPid":10062,"correlation":"same-pid-owned","owned":true}
+  [srv] PROCESS-CORRELATION {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","launchId":"fad8bc7f-c79a-4d0b-9166-6fee95d09f0e","childPid":10124,"browserPid":10124,"correlation":"same-pid-owned","owned":true}
+PASS two profiles running at once (separate browser processes)
+PASS B does not see A's localStorage or cookie
+PASS A keeps its own values after B writes
+PASS CDP disconnect leaves the profile running
+PASS lock file records owner pid and browser pid
+  [srv] Profile manager on http://127.0.0.1:42941
+API token: (from PM_API_TOKEN)
+PASS second instance gets 409 "in use by another process"
+PASS second instance's recovery did not kill the first instance's browser
+  [srv] CLASSIFIER-EVIDENCE {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","name":"A","launchId":"d4fc1059-557b-4592-8885-280ab494a624","childPid":10062,"browserPid":10062,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] CLASSIFIER-EVIDENCE {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","name":"B","launchId":"fad8bc7f-c79a-4d0b-9166-6fee95d09f0e","childPid":10124,"browserPid":10124,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS safe shutdown: SIGTERM closes all browsers
+PASS safe shutdown: running table empty
+PASS safe shutdown: locks released
+  [srv] Profile manager on http://127.0.0.1:44609
+API token: (from PM_API_TOKEN)
+  [srv] PROCESS-CORRELATION {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","launchId":"f5a9b409-4dd1-4cf1-bc42-8987cc461df4","childPid":10260,"browserPid":10260,"correlation":"same-pid-owned","owned":true}
+PASS after restart: cookie + localStorage persisted
+  [srv] CLASSIFIER-EVIDENCE {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","name":"A","launchId":"f5a9b409-4dd1-4cf1-bc42-8987cc461df4","childPid":10260,"browserPid":10260,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS clone gets its own data directory
+  [srv] PROCESS-CORRELATION {"id":"6fc28e80-3fa9-4c9d-b832-ea0041d14367","launchId":"973ae721-8193-437d-8014-25a2f9df7232","childPid":10333,"browserPid":10333,"correlation":"same-pid-owned","owned":true}
+PASS clone starts with a copy of the original's data
+  [srv] CLASSIFIER-EVIDENCE {"id":"6fc28e80-3fa9-4c9d-b832-ea0041d14367","name":"A (copy)","launchId":"973ae721-8193-437d-8014-25a2f9df7232","childPid":10333,"browserPid":10333,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","launchId":"fade61ef-4e1f-4247-bd88-9d3a9d05d9eb","childPid":10418,"browserPid":10418,"correlation":"same-pid-owned","owned":true}
+PASS original unchanged after clone was modified
+  [srv] CLASSIFIER-EVIDENCE {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","name":"A","launchId":"fade61ef-4e1f-4247-bd88-9d3a9d05d9eb","childPid":10418,"browserPid":10418,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":null,"signal":"SIGKILL","exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"unknown","chosen":"error"}
+PASS crash detected and profile:crashed event emitted to UI stream
+PASS crashed profile marked stopped with last_error
+PASS crash releases the profile lock
+  [srv] PROCESS-CORRELATION {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","launchId":"10e29464-0021-4b70-a19c-e68267b47d64","childPid":10494,"browserPid":10494,"correlation":"same-pid-owned","owned":true}
+PASS crashed profile relaunches
+PASS profile data survives a browser crash
+  [srv] CLASSIFIER-EVIDENCE {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","name":"A","launchId":"10e29464-0021-4b70-a19c-e68267b47d64","childPid":10494,"browserPid":10494,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS settings reject a missing executable path
+PASS bad executable -> clear error (Failed to launch browser: Failed to launch the browser process.…)
+PASS failed launch: not stuck running, lock released, last_error set
+  [srv] PROCESS-CORRELATION {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","launchId":"6a3e7e51-11af-4770-9c6d-73a18cda6eda","childPid":10572,"browserPid":10572,"correlation":"same-pid-owned","owned":true}
+PASS launch works again after fixing the executable
+  [srv] CLASSIFIER-EVIDENCE {"id":"8c4d7875-9dd2-4240-998b-a62997c0c047","name":"A","launchId":"6a3e7e51-11af-4770-9c6d-73a18cda6eda","childPid":10572,"browserPid":10572,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS corrupt data dir -> clear CORRUPT_DIR error
+PASS corrupt dir: state not stuck
+PASS corrupt profile can still be deleted
+  [srv] PROCESS-CORRELATION {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","launchId":"af980303-ff30-4c0b-86a2-1bcec696a739","childPid":10635,"browserPid":10635,"correlation":"same-pid-owned","owned":true}
+PASS concurrent launch requests for one profile start a single browser
+  [srv] CLASSIFIER-EVIDENCE {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","name":"B","launchId":"af980303-ff30-4c0b-86a2-1bcec696a739","childPid":10635,"browserPid":10635,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","launchId":"66c250e5-7cd7-46a5-9039-ccd2f6f58e3f","childPid":10699,"browserPid":10699,"correlation":"same-pid-owned","owned":true}
+  [srv] Profile manager on http://127.0.0.1:40199
+  [srv] API token: (from PM_API_TOKEN)
+Recovery: cleared 1 running record(s), 1 stale lock(s), killed 0 orphaned browser(s)
+PASS startup recovery reported cleanup
+PASS stale locks removed on startup
+PASS orphaned browser from the crashed session is gone
+PASS running state reset after crash
+  [srv] PROCESS-CORRELATION {"id":"6fc28e80-3fa9-4c9d-b832-ea0041d14367","launchId":"cc4ea682-177c-42d7-a050-6252cd9df614","childPid":10775,"browserPid":10775,"correlation":"same-pid-owned","owned":true}
+PASS previously stale-locked profile launches
+  [srv] PROCESS-CORRELATION {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","launchId":"4f688acc-7316-40ca-90fe-0026d0bf2484","childPid":10836,"browserPid":10836,"correlation":"same-pid-owned","owned":true}
+PASS previously orphaned profile launches
+  [srv] CLASSIFIER-EVIDENCE {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","name":"B","launchId":"4f688acc-7316-40ca-90fe-0026d0bf2484","childPid":10836,"browserPid":10836,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] CLASSIFIER-EVIDENCE {"id":"6fc28e80-3fa9-4c9d-b832-ea0041d14367","name":"A (copy)","launchId":"cc4ea682-177c-42d7-a050-6252cd9df614","childPid":10775,"browserPid":10775,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS orphan browser running before restart (pid 10907)
+  [srv] Profile manager on http://127.0.0.1:42279
+API token: (from PM_API_TOKEN)
+Recovery: cleared 2 running record(s), 0 stale lock(s), killed 1 orphaned browser(s)
+PASS startup recovery killed the orphaned browser (verified via its CDP port)
+PASS unrelated process with a recorded pid but no CDP port was NOT killed
+  [srv] PROCESS-CORRELATION {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","launchId":"f94a1a4a-d61a-4aef-a385-3d5bd607d173","childPid":11076,"browserPid":11076,"correlation":"same-pid-owned","owned":true}
+PASS profile launches after orphan cleanup
+  [srv] CLASSIFIER-EVIDENCE {"id":"b28409c2-a1a4-4b08-abb9-d26ec3738606","name":"B","launchId":"f94a1a4a-d61a-4aef-a385-3d5bd607d173","childPid":11076,"browserPid":11076,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"SessionEnded","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+
+42 passed, 0 failed
+  [srv] Profile manager on http://127.0.0.1:37207
+API token: (from PM_API_TOKEN)
+Database migrated v0 -> v12
+  [srv] PROCESS-CORRELATION {"id":"6b700ecd-d430-446e-a190-133bc04eba20","launchId":"d36b4feb-6bb9-49ed-850b-92057756d887","childPid":11170,"browserPid":11170,"correlation":"same-pid-owned","owned":true}
+PASS closing one tab leaves the profile running
+  [srv] CLASSIFIER-EVIDENCE {"id":"6b700ecd-d430-446e-a190-133bc04eba20","name":"Plain","launchId":"d36b4feb-6bb9-49ed-850b-92057756d887","childPid":11170,"browserPid":11170,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"stopped","chosen":"stopped"}
+PASS last-window close: Stopped with no last_error (null)
+PASS last-window close: browser process is gone
+PASS last-window close: lockfile released
+PASS last-window close: no running row
+PASS last-window close wrote exit_type Normal (Normal)
+PASS last-window close: profile:stopped 1 time(s), want 1
+PASS last-window close: profile:crashed 0 time(s), want 0
+  [srv] PROCESS-CORRELATION {"id":"6b700ecd-d430-446e-a190-133bc04eba20","launchId":"d1f4d2fb-9773-4d05-abad-bcc45c81b64e","childPid":11354,"browserPid":11354,"correlation":"same-pid-owned","owned":true}
+PASS relaunch after last window is running with no last_error
+PASS cookie and localStorage survived last window close
+  [srv] CLASSIFIER-EVIDENCE {"id":"6b700ecd-d430-446e-a190-133bc04eba20","name":"Plain","launchId":"d1f4d2fb-9773-4d05-abad-bcc45c81b64e","childPid":11354,"browserPid":11354,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"209959be-0a3e-4fde-aa55-355010f7c3f3","launchId":"f0b80a6e-6497-42d8-8ce8-e2afa1110912","childPid":11430,"browserPid":11430,"correlation":"same-pid-owned","owned":true}
+PASS authenticated SOCKS5 profile launched
+  [srv] CLASSIFIER-EVIDENCE {"id":"209959be-0a3e-4fde-aa55-355010f7c3f3","name":"Socks","launchId":"f0b80a6e-6497-42d8-8ce8-e2afa1110912","childPid":11430,"browserPid":11430,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"stopped","chosen":"stopped"}
+PASS SOCKS5 last window closed: Stopped with no last_error (null)
+PASS SOCKS5 last window closed: browser process is gone
+PASS SOCKS5 last window closed: lockfile released
+PASS SOCKS5 last window closed: no running row
+  [srv] PROCESS-CORRELATION {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","launchId":"64d28a4b-d5e3-4d4e-922e-e9d8f5db294b","childPid":11575,"browserPid":11575,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","name":"Keep","launchId":"64d28a4b-d5e3-4d4e-922e-e9d8f5db294b","childPid":11575,"browserPid":11575,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS app Stop returns 200
+PASS app Stop: Stopped with no last_error (null)
+PASS app Stop: browser process is gone
+PASS app Stop: lockfile released
+PASS app Stop: no running row
+PASS app Stop: profile:stopped 1 time(s), want 1
+PASS app Stop: profile:crashed 0 time(s), want 0
+  [srv] PROCESS-CORRELATION {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","launchId":"e1c1dece-cf15-4d85-abf1-947c1bae0dd1","childPid":11753,"browserPid":11753,"correlation":"same-pid-owned","owned":true}
+PASS relaunch after Stop is running with no last_error
+PASS cookie and localStorage survived app Stop
+  [srv] CLASSIFIER-EVIDENCE {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","name":"Keep","launchId":"e1c1dece-cf15-4d85-abf1-947c1bae0dd1","childPid":11753,"browserPid":11753,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS second Stop: Stopped with no last_error (null)
+PASS second Stop: browser process is gone
+PASS second Stop: lockfile released
+PASS second Stop: no running row
+  [srv] PROCESS-CORRELATION {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","launchId":"9b746a0a-83ec-4784-ad3e-ed27bc12fa64","childPid":11828,"browserPid":11828,"correlation":"same-pid-owned","owned":true}
+PASS repeat launch 1 is running with no last_error
+  [srv] CLASSIFIER-EVIDENCE {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","name":"Keep","launchId":"9b746a0a-83ec-4784-ad3e-ed27bc12fa64","childPid":11828,"browserPid":11828,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS repeat stop 1 returns 200
+PASS repeat 1 released the process, the lock, and the running row
+  [srv] PROCESS-CORRELATION {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","launchId":"b544e196-a464-434a-8bcb-bb092fcb62e7","childPid":11893,"browserPid":11893,"correlation":"same-pid-owned","owned":true}
+PASS repeat launch 2 is running with no last_error
+  [srv] CLASSIFIER-EVIDENCE {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","name":"Keep","launchId":"b544e196-a464-434a-8bcb-bb092fcb62e7","childPid":11893,"browserPid":11893,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS repeat stop 2 returns 200
+PASS repeat 2 released the process, the lock, and the running row
+  [srv] PROCESS-CORRELATION {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","launchId":"0723d487-3dc7-4870-a2fe-8125751460bc","childPid":11956,"browserPid":11956,"correlation":"same-pid-owned","owned":true}
+PASS cookie and localStorage survived repeated launch and stop
+  [srv] CLASSIFIER-EVIDENCE {"id":"9121bf2c-369e-4348-b998-5e2c67732bbf","name":"Keep","launchId":"0723d487-3dc7-4870-a2fe-8125751460bc","childPid":11956,"browserPid":11956,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"963fb582-4c90-4c66-aa28-8b8466b1032a","launchId":"91f9a730-a019-4fd7-a7ea-ebea047c1b8a","childPid":12030,"browserPid":12030,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"963fb582-4c90-4c66-aa28-8b8466b1032a","name":"Rapid-1","launchId":"91f9a730-a019-4fd7-a7ea-ebea047c1b8a","childPid":12030,"browserPid":12030,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"stopped","chosen":"stopped"}
+PASS rapid 1 clean close: Stopped with no last_error (null)
+PASS rapid 1 clean close: browser process is gone
+PASS rapid 1 clean close: lockfile released
+PASS rapid 1 clean close: no running row
+PASS rapid 1 has prior-launch Normal
+  [srv] PROCESS-CORRELATION {"id":"963fb582-4c90-4c66-aa28-8b8466b1032a","launchId":"4bfc4c53-4df1-45fe-8095-7e2917ae2d17","childPid":12178,"browserPid":12178,"correlation":"same-pid-owned","owned":true}
+PASS rapid 1 immediately relaunched
+  [srv] CLASSIFIER-EVIDENCE {"id":"963fb582-4c90-4c66-aa28-8b8466b1032a","name":"Rapid-1","launchId":"4bfc4c53-4df1-45fe-8095-7e2917ae2d17","childPid":12178,"browserPid":12178,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":null,"signal":"SIGKILL","exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"unknown","chosen":"error"}
+PASS rapid 1 taskkill is Error despite old Normal (Browser exited unexpectedly (signal SIGKILL))
+PASS rapid 1 kill cleaned up once
+  [srv] PROCESS-CORRELATION {"id":"963fb582-4c90-4c66-aa28-8b8466b1032a","launchId":"060616ca-16ff-4bb9-a5d6-c3ba16edf68f","childPid":12318,"browserPid":12318,"correlation":"same-pid-owned","owned":true}
+PASS rapid 1 recovery clears error
+  [srv] CLASSIFIER-EVIDENCE {"id":"963fb582-4c90-4c66-aa28-8b8466b1032a","name":"Rapid-1","launchId":"060616ca-16ff-4bb9-a5d6-c3ba16edf68f","childPid":12318,"browserPid":12318,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"012a43d2-163b-47b2-a260-ebad8f0cbe2d","launchId":"42601e4b-5d08-4336-bb15-acec0523bcc7","childPid":12479,"browserPid":12479,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"012a43d2-163b-47b2-a260-ebad8f0cbe2d","name":"Rapid-2","launchId":"42601e4b-5d08-4336-bb15-acec0523bcc7","childPid":12479,"browserPid":12479,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"stopped","chosen":"stopped"}
+PASS rapid 2 clean close: Stopped with no last_error (null)
+PASS rapid 2 clean close: browser process is gone
+PASS rapid 2 clean close: lockfile released
+PASS rapid 2 clean close: no running row
+PASS rapid 2 has prior-launch Normal
+  [srv] PROCESS-CORRELATION {"id":"012a43d2-163b-47b2-a260-ebad8f0cbe2d","launchId":"f074af63-deb3-4f63-b397-bd7a8e4bb6de","childPid":12629,"browserPid":12629,"correlation":"same-pid-owned","owned":true}
+PASS rapid 2 immediately relaunched
+  [srv] CLASSIFIER-EVIDENCE {"id":"012a43d2-163b-47b2-a260-ebad8f0cbe2d","name":"Rapid-2","launchId":"f074af63-deb3-4f63-b397-bd7a8e4bb6de","childPid":12629,"browserPid":12629,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":null,"signal":"SIGKILL","exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"unknown","chosen":"error"}
+PASS rapid 2 taskkill is Error despite old Normal (Browser exited unexpectedly (signal SIGKILL))
+PASS rapid 2 kill cleaned up once
+  [srv] PROCESS-CORRELATION {"id":"012a43d2-163b-47b2-a260-ebad8f0cbe2d","launchId":"13864a2c-c1f8-41a4-8018-7ee16469ec87","childPid":12768,"browserPid":12768,"correlation":"same-pid-owned","owned":true}
+PASS rapid 2 recovery clears error
+  [srv] CLASSIFIER-EVIDENCE {"id":"012a43d2-163b-47b2-a260-ebad8f0cbe2d","name":"Rapid-2","launchId":"13864a2c-c1f8-41a4-8018-7ee16469ec87","childPid":12768,"browserPid":12768,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"f7d9f1c8-54f0-4092-a509-e73641f78937","launchId":"033948d2-948d-4798-a97d-dc87cd5ea927","childPid":12914,"browserPid":12914,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"f7d9f1c8-54f0-4092-a509-e73641f78937","name":"Crash","launchId":"033948d2-948d-4798-a97d-dc87cd5ea927","childPid":12914,"browserPid":12914,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":null,"signal":"SIGKILL","exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"unknown","chosen":"error"}
+PASS SIGKILL marks Error (Browser exited unexpectedly (signal SIGKILL, exit_type missing))
+PASS SIGKILL: profile:stopped 1 time(s), want 1
+PASS SIGKILL: profile:crashed 1 time(s), want 1
+PASS kill releases the process and the lockfile
+PASS kill leaves no running row
+  [srv] PROCESS-CORRELATION {"id":"f7d9f1c8-54f0-4092-a509-e73641f78937","launchId":"556af6d7-7a1e-48fc-b977-8cf4f4cb4b4b","childPid":13059,"browserPid":13059,"correlation":"same-pid-owned","owned":true}
+PASS successful relaunch clears last_error
+  [srv] CLASSIFIER-EVIDENCE {"id":"f7d9f1c8-54f0-4092-a509-e73641f78937","name":"Crash","launchId":"556af6d7-7a1e-48fc-b977-8cf4f4cb4b4b","childPid":13059,"browserPid":13059,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"a8e1b803-6a43-4525-bb92-d9d19d28e21f","launchId":"f028301b-7d8d-4c2f-937c-5066d602758e","childPid":13126,"browserPid":13126,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"a8e1b803-6a43-4525-bb92-d9d19d28e21f","name":"Logoff","launchId":"f028301b-7d8d-4c2f-937c-5066d602758e","childPid":13126,"browserPid":13126,"processCorrelation":"same-pid-owned","childExitCode":null,"childExitSignal":"SIGKILL","exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":true,"exitCode":null,"signal":"SIGKILL","exitType":"SessionEnded","exitTypeState":"ok","procMissing":false,"stopping":false,"stillAlive":false,"exitCodeApproach":"error","prefsApproach":"stopped","chosen":"stopped"}
+PASS SessionEnded: Stopped with no last_error (null)
+PASS SessionEnded: browser process is gone
+PASS SessionEnded: lockfile released
+PASS SessionEnded: no running row
+PASS SessionEnded: profile:stopped 1 time(s), want 1
+PASS SessionEnded: profile:crashed 0 time(s), want 0
+  [srv] PROCESS-CORRELATION {"id":"965c8f3c-aeba-494c-978f-6588b464991d","launchId":"7fe9c39c-6e2e-4f73-b325-8483136118bc","childPid":13271,"browserPid":13271,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"965c8f3c-aeba-494c-978f-6588b464991d","name":"Race","launchId":"7fe9c39c-6e2e-4f73-b325-8483136118bc","childPid":13271,"browserPid":13271,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS relaunch during close does not start a second browser
+PASS old browser is gone when the race settles
+PASS close and Stop together: Stopped with no last_error (null)
+PASS close and Stop together: browser process is gone
+PASS close and Stop together: lockfile released
+PASS close and Stop together: no running row
+PASS close and Stop together: profile:stopped 1 time(s), want 1
+PASS close and Stop together: profile:crashed 0 time(s), want 0
+  [srv] PROCESS-CORRELATION {"id":"965c8f3c-aeba-494c-978f-6588b464991d","launchId":"4c4191b3-0e73-4620-b1a3-8217bbc571b3","childPid":13451,"browserPid":13451,"correlation":"same-pid-owned","owned":true}
+PASS launch after cleanup starts one new browser
+PASS cookie and localStorage survived the close/Stop race
+  [srv] CLASSIFIER-EVIDENCE {"id":"965c8f3c-aeba-494c-978f-6588b464991d","name":"Race","launchId":"4c4191b3-0e73-4620-b1a3-8217bbc571b3","childPid":13451,"browserPid":13451,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+  [srv] PROCESS-CORRELATION {"id":"3c2db6aa-edf6-4aeb-a7e0-4c89cb6153eb","launchId":"33dfbedd-f34f-4be4-8fe6-207df5451bbb","childPid":13526,"browserPid":13526,"correlation":"same-pid-owned","owned":true}
+  [srv] CLASSIFIER-EVIDENCE {"id":"3c2db6aa-edf6-4aeb-a7e0-4c89cb6153eb","name":"Persist","launchId":"33dfbedd-f34f-4be4-8fe6-207df5451bbb","childPid":13526,"browserPid":13526,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":null,"exitTypeState":"missing","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+PASS IPC shutdown stops the browser
+PASS IPC shutdown leaves no running row and no lock
+  [srv] Profile manager on http://127.0.0.1:40609
+API token: (from PM_API_TOKEN)
+  [srv] PROCESS-CORRELATION {"id":"3c2db6aa-edf6-4aeb-a7e0-4c89cb6153eb","launchId":"b61e29bf-7033-4408-b7c2-281dfa18e31b","childPid":13713,"browserPid":13713,"correlation":"same-pid-owned","owned":true}
+PASS profile launches after IPC shutdown
+PASS cookie and localStorage survived IPC shutdown
+  [srv] CLASSIFIER-EVIDENCE {"id":"3c2db6aa-edf6-4aeb-a7e0-4c89cb6153eb","name":"Persist","launchId":"b61e29bf-7033-4408-b7c2-281dfa18e31b","childPid":13713,"browserPid":13713,"processCorrelation":"same-pid-owned","childExitCode":0,"childExitSignal":null,"exitEventSeen":true,"exitEvidenceSource":"exit","exitEvidenceTimedOut":false,"exitTypeFresh":false,"exitCode":0,"signal":null,"exitType":"Normal","exitTypeState":"ok","procMissing":false,"stopping":true,"stillAlive":false,"exitCodeApproach":"stopped","prefsApproach":"unknown","chosen":"stopped"}
+
+79 passed, 0 failed
+ENGINE_EXIT:0
+BROWSER_DONE 2026-10-28T09:19:46Z

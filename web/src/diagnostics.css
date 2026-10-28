@@ -54,6 +54,7 @@
 .pd-hint{font-size:11.5px;color:var(--text-2)}
 .pd-unavail{color:var(--text-2)}.pd-unavail .pill{margin-right:4px}
 .pd-reason{font-size:12.5px}
+.pd .pill{text-transform:none}
 .pd-consistency{font-weight:500;align-self:flex-start}
 .pd-detail{font-weight:400}
 .pd-proxy{display:inline-flex;flex-wrap:wrap;gap:6px;align-items:baseline}

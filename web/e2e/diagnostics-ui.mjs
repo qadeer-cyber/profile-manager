@@ -93,7 +93,9 @@ const gets = () => diagReqs().filter(x => x.method === 'GET'), posts = () => dia
 
 // ---------- browser ----------
 const errs = []; let pass = 0, fail = 0, consents = 0;
-const b = await chromium.launch();
+const launchOpts = { args: ['--no-sandbox', '--disable-dev-shm-usage'] };
+if (process.env.DIAG_UI_CHROME) launchOpts.executablePath = process.env.DIAG_UI_CHROME;
+const b = await chromium.launch(launchOpts);
 const closeAll = async () => { try { await b.close(); } catch {} try { for (const r of S.sse) r.destroy(); server.close(); } catch {} };
 process.on('uncaughtException', async e => { console.log('FAIL uncaught:', e.message); await closeAll(); process.exit(1); });
 process.on('unhandledRejection', async e => { console.log('FAIL unhandled:', e?.message || e); await closeAll(); process.exit(1); });

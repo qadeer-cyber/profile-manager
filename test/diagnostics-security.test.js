@@ -257,10 +257,7 @@ test('§5 static: M2 diagnostics sources must not reference /api/api-token or au
   }
 
   const patchPath = UI_PATCH;
-  if (UI_PATCH_SKIP) {
-    await t.test('diagnostics-ui.patch added lines', { skip: UI_PATCH_SKIP }, () => {});
-    return;
-  }
+  if (UI_PATCH_SKIP) return;
   await t.test('scan diagnostics-ui.patch added lines', () => {
     const added = fs.readFileSync(patchPath, 'utf8')
       .split(/\r?\n/)
@@ -378,24 +375,35 @@ function patchAddedByFile(patchPath) {
   return Object.fromEntries(Object.entries(files).map(([k, v]) => [k, v.join('\n')]));
 }
 
-test('§7 static: UI disclosure text equals the contract exactly', { skip: UI_PATCH_SKIP }, () => {
-  const all = Object.values(patchAddedByFile(UI_PATCH)).join('\n');
+const UI_SOURCE = [
+  'web/src/components/ProfileDiagnostics.jsx',
+  'web/src/hooks/useProfileDiagnostics.js',
+];
+function integratedUiSources() {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const files = Object.fromEntries(UI_SOURCE.map(rel => [rel, fs.readFileSync(path.join(root, rel), 'utf8')]));
+  if (!UI_PATCH_SKIP) Object.assign(files, patchAddedByFile(UI_PATCH));
+  return files;
+}
+
+test('§7 static: UI disclosure text equals the contract exactly', () => {
+  const all = Object.values(integratedUiSources()).join('\n');
   const consts = [...all.matchAll(/DISCLOSURE\s*=\s*(['"`])((?:\\.|(?!\1).)*)\1/g)].map((m) => m[2]);
-  assert.ok(consts.length >= 1, 'no DISCLOSURE constant in UI patch');
+  assert.ok(consts.length >= 1, 'no DISCLOSURE constant in the diagnostics UI');
   for (const c of consts) assert.equal(c, DISCLOSURE);
 });
 
-test('§7.1/§8 static: UI production code has no polling, storage, hidden probe or auto POST', { skip: UI_PATCH_SKIP }, () => {
-  const files = patchAddedByFile(UI_PATCH);
+test('§7.1/§8 static: UI production code has no polling, storage, hidden probe or auto POST', () => {
+  const files = integratedUiSources();
   const prod = Object.entries(files).filter(([f]) => f.startsWith('web/src/'));
-  assert.ok(prod.length >= 1, 'no web/src files in patch');
+  assert.ok(prod.length >= 1, 'no diagnostics UI sources');
   for (const [f, src] of prod) {
     assert.ok(!/\bsetInterval\s*\(/.test(src), `${f}: setInterval polling (§8 no polling)`);
     assert.ok(!/\b(localStorage|sessionStorage|indexedDB)\b|document\.cookie/.test(src), `${f}: persistent diagnostic cache (§8)`);
     assert.ok(!/\bwindow\.open\s*\(|<iframe/i.test(src), `${f}: renderer-side probe/hidden tab (§7.10)`);
   }
   const hook = Object.entries(files).find(([f]) => /useProfileDiagnostics/.test(f));
-  assert.ok(hook, 'hook file in patch');
+  assert.ok(hook, 'hook file missing');
   assert.ok(hook[1].includes(POST_CONSENT), 'hook sends exact consent value');
   assert.ok(/expectedLaunchId/.test(hook[1]), 'hook sends expectedLaunchId');
 });
@@ -433,16 +441,20 @@ test('§9: diagnostics GET/POST do not migrate the database (schema stays at cur
   assert.deepEqual(db.prepare('SELECT version, name FROM schema_version ORDER BY version').all(), beforeRows);
 });
 
-// Live source-sign-off cases (case 8, §7.1, §7.2/§7.10, §7.5, §7.6/§7.7, §9 payloads, §9 failures)
-// execute in test/diagnostics-live.test.js against a running pinned browser.
-const BLOCKED = 'Live pinned Chromium and backend integration acceptance pending on a supported host';
-for (const name of [
-  '§4: live 400/401/404/409/429/500 envelopes {error:{code,message,requestId}} + Cache-Control: no-store on every response',
-  '§5: auth runs before profile lookup on real M2 handler (unknown id + no token => 401, not 404)',
-  '§5: automation /api/v1 GET-only; POST environment via /api/v1 rejected; automation_enabled not required',
-  '§7.3: probe tab brought to foreground before observation',
-  '§7.4: only fixed allowlisted script runs in probe (no Runtime.evaluate with request-supplied code)',
-  '§7.8: navigation away / probe closed / launch changed during probe => invalidated (probe_navigated|probe_closed|launch_changed)',
-  '§7.9: probe tab still open after response (not auto-closed)',
-  '§7.11: browser permissions and persisted settings unchanged after POST',
-]) test(name, { todo: BLOCKED }, () => {});
+// Former scaffold todos now point at executing tests (see diagnostics-coverage-pointers.test.js):
+// S1 envelopes + no-store: test/diagnostics-recovery.test.js "HTTP auth before JSON..."
+//    and test/diagnostics-gate.live.test.js 429 / 409 rows
+// S2 auth before lookup: test/diagnostics-recovery.test.js "HTTP auth before JSON..."
+// S4 foreground: test/diagnostics-live.test.js "real Chromium 156: OS process identity..."
+// S5 allowlisted script: test/diagnostics-unit.test.js asserts evaluate receives readDiagnosticEnvironment
+// S6 §7.8: test/diagnostics-gate.live.test.js "§7.8 (row E13)"
+// S7 §7.9 open tab: test/diagnostics-gate.live.test.js "§7.9 tab stays open after success"
+// S8 §7.11: test/diagnostics-gate.live.test.js "§7.11 (row S8)"
+// S3 is not a DiagnosticsV1 rule. The assertion below records that, rather than a skipped todo.
+
+test('§5 does not impose an automation /api/v1 GET-only rule (row S3)', () => {
+  const contract = fs.readFileSync(new URL('../docs/handoff/m2/contracts/DiagnosticsV1.original.md', import.meta.url), 'utf8');
+  const section = contract.split('## 5. Authentication and transport')[1].split('## 6.')[0];
+  assert.ok(section && section.includes('X-UI-Token'));
+  assert.equal(/GET-only|only GET/.test(section), false);
+});

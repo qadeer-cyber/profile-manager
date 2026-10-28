@@ -1,0 +1,2402 @@
+=== 2026-10-28T09:16:17Z node v22.23.4 ===
+=== E4 static ===
+TAP version 13
+# Subtest: E4 static: profile diagnostics are not polled or written to disk
+ok 1 - E4 static: profile diagnostics are not polled or written to disk
+  ---
+  duration_ms: 0.875189
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 320.738273
+=== diagnostics security, contract, recovery, e2e, unit ===
+TAP version 13
+# Subtest: contract file is the verified full DiagnosticsV1 (SHA-256 pinned)
+ok 1 - contract file is the verified full DiagnosticsV1 (SHA-256 pinned)
+  ---
+  duration_ms: 1.133751
+  type: 'test'
+  ...
+# Subtest: contract has sections 1–12 and the END marker; no truncation
+ok 2 - contract has sections 1–12 and the END marker; no truncation
+  ---
+  duration_ms: 0.527303
+  type: 'test'
+  ...
+# Subtest: §7/§8 constants (no contract file needed)
+ok 3 - §7/§8 constants (no contract file needed)
+  ---
+  duration_ms: 0.083806
+  type: 'test'
+  ...
+# Subtest: §7/§8 constants match contract text
+ok 4 - §7/§8 constants match contract text
+  ---
+  duration_ms: 0.188904
+  type: 'test'
+  ...
+# Subtest: baseline still has no server/diagnostics.js and no M2 routes
+ok 5 - baseline still has no server/diagnostics.js and no M2 routes
+  ---
+  duration_ms: 4.79699
+  type: 'test'
+  ...
+# Subtest: validator ACCEPTS hand-built valid DiagnosticsV1 fixture
+ok 6 - validator ACCEPTS hand-built valid DiagnosticsV1 fixture
+  ---
+  duration_ms: 1.607734
+  type: 'test'
+  ...
+# Subtest: validator REJECTS extra root property
+ok 7 - validator REJECTS extra root property
+  ---
+  duration_ms: 0.932964
+  type: 'test'
+  ...
+# Subtest: validator REJECTS wrong schemaVersion
+ok 8 - validator REJECTS wrong schemaVersion
+  ---
+  duration_ms: 0.256911
+  type: 'test'
+  ...
+# Subtest: validator REJECTS Fact available without source / with value null inconsistency
+ok 9 - validator REJECTS Fact available without source / with value null inconsistency
+  ---
+  duration_ms: 0.319314
+  type: 'test'
+  ...
+# Subtest: validator REJECTS Fact unavailable with non-null value
+ok 10 - validator REJECTS Fact unavailable with non-null value
+  ---
+  duration_ms: 0.356046
+  type: 'test'
+  ...
+# Subtest: validator REJECTS unknown Reason / Source / observation state
+ok 11 - validator REJECTS unknown Reason / Source / observation state
+  ---
+  duration_ms: 0.337909
+  type: 'test'
+  ...
+# Subtest: validator REJECTS field limit violations
+ok 12 - validator REJECTS field limit violations
+  ---
+  duration_ms: 0.470409
+  type: 'test'
+  ...
+# Subtest: validator REJECTS bad proxy port / host / durationMs / timestamps / observation id
+ok 13 - validator REJECTS bad proxy port / host / durationMs / timestamps / observation id
+  ---
+  duration_ms: 0.455287
+  type: 'test'
+  ...
+# Subtest: validator ACCEPTS commandLinePolicy union + REJECTS bad iceCollection / consistency
+ok 14 - validator ACCEPTS commandLinePolicy union + REJECTS bad iceCollection / consistency
+  ---
+  duration_ms: 0.515941
+  type: 'test'
+  ...
+# Subtest: validator REJECTS error bodies with wrong shape or disallowed codes
+ok 15 - validator REJECTS error bodies with wrong shape or disallowed codes
+  ---
+  duration_ms: 0.248573
+  type: 'test'
+  ...
+# Subtest: validator enforces POST body exactly {expectedLaunchId, consent}
+ok 16 - validator enforces POST body exactly {expectedLaunchId, consent}
+  ---
+  duration_ms: 0.108715
+  type: 'test'
+  ...
+# Subtest: enum tables match contract section 2
+ok 17 - enum tables match contract section 2
+  ---
+  duration_ms: 0.53974
+  type: 'test'
+  ...
+# Subtest: webrtc commandLinePolicy present value: accepts each allowlisted policy
+ok 18 - webrtc commandLinePolicy present value: accepts each allowlisted policy
+  ---
+  duration_ms: 0.929082
+  type: 'test'
+  ...
+# Subtest: webrtc commandLinePolicy present value: rejects unrecognized / raw command-line strings
+ok 19 - webrtc commandLinePolicy present value: rejects unrecognized / raw command-line strings
+  ---
+  duration_ms: 0.319876
+  type: 'test'
+  ...
+# Subtest: webrtc §2 strict: absent/conflicting are AVAILABLE values {state, value:null}
+ok 20 - webrtc §2 strict: absent/conflicting are AVAILABLE values {state, value:null}
+  ---
+  duration_ms: 4.666054
+  type: 'test'
+  ...
+# Subtest: webrtc §2 strict: rejects removed unavailable-with-reason encodings of absent/conflicting
+ok 21 - webrtc §2 strict: rejects removed unavailable-with-reason encodings of absent/conflicting
+  ---
+  duration_ms: 0.883535
+  type: 'test'
+  ...
+# Subtest: webrtc §2: generic Fact<T> unavailable (missing evidence, Reason enum) remains valid per Fact union
+ok 22 - webrtc §2: generic Fact<T> unavailable (missing evidence, Reason enum) remains valid per Fact union
+  ---
+  duration_ms: 0.166223
+  type: 'test'
+  ...
+# Subtest: §8: validUntil must be after completedAt and within the 30 s freshness ceiling
+ok 23 - §8: validUntil must be after completedAt and within the 30 s freshness ceiling
+  ---
+  duration_ms: 0.597185
+  type: 'test'
+  ...
+# Subtest: §2: reason null iff complete; unavailable/invalidated require a reason
+ok 24 - §2: reason null iff complete; unavailable/invalidated require a reason
+  ---
+  duration_ms: 0.307642
+  type: 'test'
+  ...
+# Subtest: §3: stopped profile (unavailable/not_running) returns no cached launch facts
+ok 25 - §3: stopped profile (unavailable/not_running) returns no cached launch facts
+  ---
+  duration_ms: 0.239694
+  type: 'test'
+  ...
+# Subtest: §3/§8: invalidated observation carries no facts from the superseded launch
+ok 26 - §3/§8: invalidated observation carries no facts from the superseded launch
+  ---
+  duration_ms: 0.425617
+  type: 'test'
+  ...
+# Subtest: available launch facts require a launchId
+ok 27 - available launch facts require a launchId
+  ---
+  duration_ms: 0.13377
+  type: 'test'
+  ...
+# Subtest: §6: approved sources enforced per fact
+ok 28 - §6: approved sources enforced per fact
+  ---
+  duration_ms: 0.417982
+  type: 'test'
+  ...
+# Subtest: §3 never fabricated: consistency follows runtime vs expected version
+ok 29 - §3 never fabricated: consistency follows runtime vs expected version
+  ---
+  duration_ms: 3.183225
+  type: 'test'
+  ...
+# Subtest: §1: GET response keeps environment facts unavailable
+ok 30 - §1: GET response keeps environment facts unavailable
+  ---
+  duration_ms: 0.302666
+  type: 'test'
+  ...
+# Subtest: §8: snapshots combine only when launch identities match
+ok 31 - §8: snapshots combine only when launch identities match
+  ---
+  duration_ms: 0.105731
+  type: 'test'
+  ...
+# Subtest: §3: observation ids must be fresh per request
+ok 32 - §3: observation ids must be fresh per request
+  ---
+  duration_ms: 0.11841
+  type: 'test'
+  ...
+# Subtest: §9 hard: relay-shaped URLs (scheme://loopback:port) anywhere in a response fail validation
+ok 33 - §9 hard: relay-shaped URLs (scheme://loopback:port) anywhere in a response fail validation
+  ---
+  duration_ms: 0.471088
+  type: 'test'
+  ...
+# Subtest: §9 no false positives: proxy.host 127.0.0.1/localhost with separate port field is allowed
+ok 34 - §9 no false positives: proxy.host 127.0.0.1/localhost with separate port field is allowed
+  ---
+  duration_ms: 0.302633
+  type: 'test'
+  ...
+# Subtest: §9 live helper: findRelayValue fails on the actual relay value only
+ok 35 - §9 live helper: findRelayValue fails on the actual relay value only
+  ---
+  duration_ms: 0.178553
+  type: 'test'
+  ...
+# Subtest: §9 hard: raw command-line flags / user-data-dir / remote-debugging fail validation
+ok 36 - §9 hard: raw command-line flags / user-data-dir / remote-debugging fail validation
+  ---
+  duration_ms: 0.430846
+  type: 'test'
+  ...
+# Subtest: §6 hard: effective WebRTC policy is always unavailable in M2
+ok 37 - §6 hard: effective WebRTC policy is always unavailable in M2
+  ---
+  duration_ms: 0.370198
+  type: 'test'
+  ...
+# Subtest: lead default: durationMs ≤3000 clean, ≤3250 flagged as warning, >3250 fails
+ok 38 - lead default: durationMs ≤3000 clean, ≤3250 flagged as warning, >3250 fails
+  ---
+  duration_ms: 0.517333
+  type: 'test'
+  ...
+# Subtest: lead default: expectedLaunchId is opaque and exact-match
+ok 39 - lead default: expectedLaunchId is opaque and exact-match
+  ---
+  duration_ms: 0.104398
+  type: 'test'
+  ...
+# Subtest: PROVISIONAL: GET timezone/locale/languages unavailable with reason 'permission_required'
+ok 40 - PROVISIONAL: GET timezone/locale/languages unavailable with reason 'permission_required'
+  ---
+  duration_ms: 0.203825
+  type: 'test'
+  ...
+# Subtest: PROVISIONAL: effectivePolicy reason 'unsupported'; commandLinePolicy source 'process_command_line'
+ok 41 - PROVISIONAL: effectivePolicy reason 'unsupported'; commandLinePolicy source 'process_command_line'
+  ---
+  duration_ms: 4.73629
+  type: 'test'
+  ...
+# Subtest: owner: required fact sets per operation
+ok 42 - owner: required fact sets per operation
+  ---
+  duration_ms: 0.097721
+  type: 'test'
+  ...
+# Subtest: owner GET: complete with env unavailable(permission_required); effectivePolicy/iceCollection never block
+ok 43 - owner GET: complete with env unavailable(permission_required); effectivePolicy/iceCollection never block
+  ---
+  duration_ms: 0.286864
+  type: 'test'
+  ...
+# Subtest: owner NEG: GET marked complete with chromiumVersion unavailable is rejected
+ok 44 - owner NEG: GET marked complete with chromiumVersion unavailable is rejected
+  ---
+  duration_ms: 0.176394
+  type: 'test'
+  ...
+# Subtest: owner NEG: GET complete with any required GET fact failed is rejected
+ok 45 - owner NEG: GET complete with any required GET fact failed is rejected
+  ---
+  duration_ms: 1.015948
+  type: 'test'
+  ...
+# Subtest: owner POST: complete when timezone/locale/languages from visible_probe; out-of-scope facts do not block
+ok 46 - owner POST: complete when timezone/locale/languages from visible_probe; out-of-scope facts do not block
+  ---
+  duration_ms: 0.321065
+  type: 'test'
+  ...
+# Subtest: owner NEG: POST complete with timezone unavailable is rejected
+ok 47 - owner NEG: POST complete with timezone unavailable is rejected
+  ---
+  duration_ms: 0.289652
+  type: 'test'
+  ...
+# Subtest: owner NEG: POST complete without a verified launch identity is rejected
+ok 48 - owner NEG: POST complete without a verified launch identity is rejected
+  ---
+  duration_ms: 0.117968
+  type: 'test'
+  ...
+# Subtest: owner NEG: partial with zero required facts obtained is rejected (should be unavailable)
+ok 49 - owner NEG: partial with zero required facts obtained is rejected (should be unavailable)
+  ---
+  duration_ms: 3.215888
+  type: 'test'
+  ...
+# Subtest: owner NEG: unavailable with some required facts available is rejected
+ok 50 - owner NEG: unavailable with some required facts available is rejected
+  ---
+  duration_ms: 0.225104
+  type: 'test'
+  ...
+# Subtest: owner: partial = some required obtained, others failed; partial with all obtained is rejected
+ok 51 - owner: partial = some required obtained, others failed; partial with all obtained is rejected
+  ---
+  duration_ms: 0.376949
+  type: 'test'
+  ...
+# Subtest: owner: invalidated (launch changed / observation invalid) carries no launch facts
+ok 52 - owner: invalidated (launch changed / observation invalid) carries no launch facts
+  ---
+  duration_ms: 0.215687
+  type: 'test'
+  ...
+# Subtest: authorized amendment is separately versioned and changes only Source
+ok 53 - authorized amendment is separately versioned and changes only Source
+  ---
+  duration_ms: 0.287942
+  type: 'test'
+  ...
+# Subtest: owner F3: unavailable cannot advertise display freshness
+ok 54 - owner F3: unavailable cannot advertise display freshness
+  ---
+  duration_ms: 0.152307
+  type: 'test'
+  ...
+# Subtest: F3 independent: not_running, manifest retained without partial
+ok 55 - F3 independent: not_running, manifest retained without partial
+  ---
+  duration_ms: 397.8811
+  type: 'test'
+  ...
+# Subtest: F3 independent: launching, manifest retained without partial
+ok 56 - F3 independent: launching, manifest retained without partial
+  ---
+  duration_ms: 0.429433
+  type: 'test'
+  ...
+# Subtest: F3 independent: stopping, manifest retained without partial
+ok 57 - F3 independent: stopping, manifest retained without partial
+  ---
+  duration_ms: 0.37596
+  type: 'test'
+  ...
+# Subtest: F3 independent: disconnected, manifest retained without partial
+ok 58 - F3 independent: disconnected, manifest retained without partial
+  ---
+  duration_ms: 0.277227
+  type: 'test'
+  ...
+# Subtest: F3 independent: missing live facts and manifest
+ok 59 - F3 independent: missing live facts and manifest
+  ---
+  duration_ms: 0.428433
+  type: 'test'
+  ...
+# Subtest: F3 independent: deadline discards late facts without stale guard
+ok 60 - F3 independent: deadline discards late facts without stale guard
+  ---
+  duration_ms: 77.679525
+  type: 'test'
+  ...
+# Subtest: B1/source: allowlisted OS source, not browser protocol
+ok 61 - B1/source: allowlisted OS source, not browser protocol
+  ---
+  duration_ms: 0.626117
+  type: 'test'
+  ...
+# Subtest: launch mismatch rejects initially; mid-flight replacement has null launchId
+ok 62 - launch mismatch rejects initially; mid-flight replacement has null launchId
+  ---
+  duration_ms: 1.00155
+  type: 'test'
+  ...
+# Subtest: HTTP auth before JSON, trailing slash errors, desktop/API separation
+ok 63 - HTTP auth before JSON, trailing slash errors, desktop/API separation
+  ---
+  duration_ms: 49.128045
+  type: 'test'
+  ...
+# Subtest: UI/backend integration: actual stopped response and error requestId survive the API client
+ok 64 - UI/backend integration: actual stopped response and error requestId survive the API client
+  ---
+  duration_ms: 13.922628
+  type: 'test'
+  ...
+# Subtest: timeout guard waits for evaluation detach acknowledgement and route cleanup
+ok 65 - timeout guard waits for evaluation detach acknowledgement and route cleanup
+  ---
+  duration_ms: 26.050146
+  type: 'test'
+  ...
+# Subtest: headless cannot open a probe; navigation back to owned URL does not rescue invalid facts
+ok 66 - headless cannot open a probe; navigation back to owned URL does not rescue invalid facts
+  ---
+  duration_ms: 0.757035
+  type: 'test'
+  ...
+# Subtest: §5: missing X-UI-Token rejected before profile access
+ok 67 - §5: missing X-UI-Token rejected before profile access
+  ---
+  duration_ms: 389.48734
+  type: 'test'
+  ...
+# Subtest: §5: ?token= query string is not accepted for UI auth
+ok 68 - §5: ?token= query string is not accepted for UI auth
+  ---
+  duration_ms: 3.865072
+  type: 'test'
+  ...
+# Subtest: §5: global /api/diagnostics still works with UI token (unchanged M1 health)
+ok 69 - §5: global /api/diagnostics still works with UI token (unchanged M1 health)
+  ---
+  duration_ms: 3.733621
+  type: 'test'
+  ...
+# Subtest: §5: automation token via Authorization Bearer and X-API-Key both accepted on /api/v1
+ok 70 - §5: automation token via Authorization Bearer and X-API-Key both accepted on /api/v1
+  ---
+  duration_ms: 3.61366
+  type: 'test'
+  ...
+# Subtest: §1/§5 Blocked: GET /api/profiles/:id/diagnostics — backend absent (expect non-200 DiagnosticsV1)
+ok 71 - §1/§5 Blocked: GET /api/profiles/:id/diagnostics — backend absent (expect non-200 DiagnosticsV1)
+  ---
+  duration_ms: 13.902017
+  type: 'test'
+  ...
+# Subtest: §1/§5: unauthenticated GET planned diagnostics path is not 200
+ok 72 - §1/§5: unauthenticated GET planned diagnostics path is not 200
+  ---
+  duration_ms: 1.619698
+  type: 'test'
+  ...
+# Subtest: §1 POST body fixture rules (exact props + consent) — offline validator
+ok 73 - §1 POST body fixture rules (exact props + consent) — offline validator
+  ---
+  duration_ms: 0.22142
+  type: 'test'
+  ...
+# Subtest: §1/§7.1–2 Blocked: live POST /diagnostics/environment — backend absent
+ok 74 - §1/§7.1–2 Blocked: live POST /diagnostics/environment — backend absent
+  ---
+  duration_ms: 6.056458
+  type: 'test'
+  ...
+# Subtest: §4 error body shape validator + allowed codes only (fixture)
+ok 75 - §4 error body shape validator + allowed codes only (fixture)
+  ---
+  duration_ms: 3.79097
+  type: 'test'
+  ...
+# Subtest: §4/§5 Cache-Control no-store helper rejects missing header
+ok 76 - §4/§5 Cache-Control no-store helper rejects missing header
+  ---
+  duration_ms: 0.249611
+  type: 'test'
+  ...
+# Subtest: no TCP debugging listener on idle API server
+ok 77 - no TCP debugging listener on idle API server
+  ---
+  duration_ms: 2.448877
+  type: 'test'
+  ...
+# Subtest: valid DiagnosticsV1 fixture never embeds sentinel secrets
+ok 78 - valid DiagnosticsV1 fixture never embeds sentinel secrets
+  ---
+  duration_ms: 0.502956
+  type: 'test'
+  ...
+# Subtest: §5 static: M2 diagnostics sources must not reference /api/api-token or automation API_TOKEN
+    # Subtest: scan server/diagnostics.js
+    ok 1 - scan server/diagnostics.js
+      ---
+      duration_ms: 0.247575
+      type: 'test'
+      ...
+    # Subtest: scan web/src/pages/DiagnosticsPage.jsx
+    ok 2 - scan web/src/pages/DiagnosticsPage.jsx
+      ---
+      duration_ms: 0.176795
+      type: 'test'
+      ...
+    # Subtest: scan web/src/components/ProfileDiagnostics.jsx
+    ok 3 - scan web/src/components/ProfileDiagnostics.jsx
+      ---
+      duration_ms: 0.139044
+      type: 'test'
+      ...
+    # Subtest: scan web/src/hooks/useProfileDiagnostics.js
+    ok 4 - scan web/src/hooks/useProfileDiagnostics.js
+      ---
+      duration_ms: 0.043128
+      type: 'test'
+      ...
+    # Subtest: diagnostics-ui.patch added lines
+    ok 5 - diagnostics-ui.patch added lines # SKIP external artifact absent: UI patch not found at /workspace/m2ui-review/diagnostics-ui.patch (set PM_DIAG_UI_PATCH)
+      ---
+      duration_ms: 0.024546
+      type: 'test'
+      ...
+    1..5
+ok 79 - §5 static: M2 diagnostics sources must not reference /api/api-token or automation API_TOKEN
+  ---
+  duration_ms: 1.120216
+  type: 'test'
+  ...
+# Subtest: §5: no permissive CORS on /api/diagnostics, /api/profiles or planned M2 routes (incl. preflight)
+ok 80 - §5: no permissive CORS on /api/diagnostics, /api/profiles or planned M2 routes (incl. preflight)
+  ---
+  duration_ms: 22.048261
+  type: 'test'
+  ...
+# Subtest: §9 level 1: proxy credentials never in diagnostics payloads or server logs
+ok 81 - §9 level 1: proxy credentials never in diagnostics payloads or server logs
+  ---
+  duration_ms: 17.412045
+  type: 'test'
+  ...
+# Subtest: §9 level 1: running-row relay_url value never appears in diagnostics/profile responses
+ok 82 - §9 level 1: running-row relay_url value never appears in diagnostics/profile responses
+  ---
+  duration_ms: 10.768929
+  type: 'test'
+  ...
+# Subtest: §9 hard: relay-endpoint and command-line detectors catch sentinel material
+ok 83 - §9 hard: relay-endpoint and command-line detectors catch sentinel material
+  ---
+  duration_ms: 0.183259
+  type: 'test'
+  ...
+# Subtest: §7 static: UI disclosure text equals the contract exactly
+ok 84 - §7 static: UI disclosure text equals the contract exactly # SKIP external artifact absent: UI patch not found at /workspace/m2ui-review/diagnostics-ui.patch (set PM_DIAG_UI_PATCH)
+  ---
+  duration_ms: 0.02788
+  type: 'test'
+  ...
+# Subtest: §7.1/§8 static: UI production code has no polling, storage, hidden probe or auto POST
+ok 85 - §7.1/§8 static: UI production code has no polling, storage, hidden probe or auto POST # SKIP external artifact absent: UI patch not found at /workspace/m2ui-review/diagnostics-ui.patch (set PM_DIAG_UI_PATCH)
+  ---
+  duration_ms: 0.020358
+  type: 'test'
+  ...
+# Subtest: §9: diagnostics GET/POST do not migrate the database (schema stays at currentVersion / migration head)
+ok 86 - §9: diagnostics GET/POST do not migrate the database (schema stays at currentVersion / migration head)
+  ---
+  duration_ms: 6.093177
+  type: 'test'
+  ...
+# Subtest: §5 does not impose an automation /api/v1 GET-only rule (row S3)
+ok 87 - §5 does not impose an automation /api/v1 GET-only rule (row S3)
+  ---
+  duration_ms: 0.688231
+  type: 'test'
+  ...
+# Subtest: profile diagnostics
+    # Subtest: constants match the collection deadline and freshness ceiling
+    ok 1 - constants match the collection deadline and freshness ceiling
+      ---
+      duration_ms: 0.619995
+      type: 'test'
+      ...
+    # Subtest: decideObservationState: each state for GET and POST
+    ok 2 - decideObservationState: each state for GET and POST
+      ---
+      duration_ms: 0.76724
+      type: 'test'
+      ...
+    # Subtest: GET observation state complete
+    ok 3 - GET observation state complete
+      ---
+      duration_ms: 1.313278
+      type: 'test'
+      ...
+    # Subtest: GET complete accepts absent and present WebRTC observations and a configured-false proxy
+    ok 4 - GET complete accepts absent and present WebRTC observations and a configured-false proxy
+      ---
+      duration_ms: 0.651261
+      type: 'test'
+      ...
+    # Subtest: GET observation state partial
+    ok 5 - GET observation state partial
+      ---
+      duration_ms: 0.827447
+      type: 'test'
+      ...
+    # Subtest: F3: not_running plus manifest is unavailable
+    ok 6 - F3: not_running plus manifest is unavailable
+      ---
+      duration_ms: 0.310025
+      type: 'test'
+      ...
+    # Subtest: F3: launching plus manifest is unavailable
+    ok 7 - F3: launching plus manifest is unavailable
+      ---
+      duration_ms: 0.402016
+      type: 'test'
+      ...
+    # Subtest: F3: stopping plus manifest is unavailable
+    ok 8 - F3: stopping plus manifest is unavailable
+      ---
+      duration_ms: 0.270601
+      type: 'test'
+      ...
+    # Subtest: F3: disconnected plus manifest is unavailable
+    ok 9 - F3: disconnected plus manifest is unavailable
+      ---
+      duration_ms: 0.388936
+      type: 'test'
+      ...
+    # Subtest: F3: failed live required facts plus manifest are unavailable
+    ok 10 - F3: failed live required facts plus manifest are unavailable
+      ---
+      duration_ms: 0.308785
+      type: 'test'
+      ...
+    # Subtest: F3: deadline without a live fact is unavailable
+    ok 11 - F3: deadline without a live fact is unavailable
+      ---
+      duration_ms: 45.885239
+      type: 'test'
+      ...
+    # Subtest: GET observation state unavailable
+    ok 12 - GET observation state unavailable
+      ---
+      duration_ms: 0.372783
+      type: 'test'
+      ...
+    # Subtest: GET observation state invalidated
+    ok 13 - GET observation state invalidated
+      ---
+      duration_ms: 0.296415
+      type: 'test'
+      ...
+    # Subtest: GET timeout is unavailable with manifest-only metadata and drops late facts
+    ok 14 - GET timeout is unavailable with manifest-only metadata and drops late facts
+      ---
+      duration_ms: 51.773431
+      type: 'test'
+      ...
+    # Subtest: POST observation state complete
+    ok 15 - POST observation state complete
+      ---
+      duration_ms: 0.977028
+      type: 'test'
+      ...
+    # Subtest: POST observation state partial
+    ok 16 - POST observation state partial
+      ---
+      duration_ms: 0.266944
+      type: 'test'
+      ...
+    # Subtest: POST observation state unavailable
+    ok 17 - POST observation state unavailable
+      ---
+      duration_ms: 0.503673
+      type: 'test'
+      ...
+    # Subtest: POST does not open a tab unless the browser is connected, and timeout stays unavailable
+    ok 18 - POST does not open a tab unless the browser is connected, and timeout stays unavailable
+      ---
+      duration_ms: 52.499607
+      type: 'test'
+      ...
+    # Subtest: POST observation state invalidated
+    ok 19 - POST observation state invalidated
+      ---
+      duration_ms: 0.433581
+      type: 'test'
+      ...
+    # Subtest: headless consent never creates a diagnostic tab
+    ok 20 - headless consent never creates a diagnostic tab
+      ---
+      duration_ms: 0.294299
+      type: 'test'
+      ...
+    # Subtest: a non-visible probe provides no environment facts
+    ok 21 - a non-visible probe provides no environment facts
+      ---
+      duration_ms: 0.290294
+      type: 'test'
+      ...
+    # Subtest: timed-out evaluation detaches before guard release, cleans routes and permits retry
+    ok 22 - timed-out evaluation detaches before guard release, cleans routes and permits retry
+      ---
+      duration_ms: 25.326398
+      type: 'test'
+      ...
+    # Subtest: navigation away and back during evaluation rejects facts and removes listeners
+    ok 23 - navigation away and back during evaluation rejects facts and removes listeners
+      ---
+      duration_ms: 0.490182
+      type: 'test'
+      ...
+    # Subtest: initial launch mismatch is 409 and does not hold the guard or open a tab
+    ok 24 - initial launch mismatch is 409 and does not hold the guard or open a tab
+      ---
+      duration_ms: 0.181008
+      type: 'test'
+      ...
+    # Subtest: repeated observations get distinct ids
+    ok 25 - repeated observations get distinct ids
+      ---
+      duration_ms: 0.191764
+      type: 'test'
+      ...
+    # Subtest: WebRTC argument summary stays inside the allowlist
+    ok 26 - WebRTC argument summary stays inside the allowlist
+      ---
+      duration_ms: 0.285241
+      type: 'test'
+      ...
+    # Subtest: pipe read returns only version, UA, and an allowlisted WebRTC summary
+    ok 27 - pipe read returns only version, UA, and an allowlisted WebRTC summary
+      ---
+      duration_ms: 0.401738
+      type: 'test'
+      ...
+    # Subtest: proxy snapshot drops credentials and local relay endpoints
+    ok 28 - proxy snapshot drops credentials and local relay endpoints
+      ---
+      duration_ms: 0.290527
+      type: 'test'
+      ...
+    # Subtest: diagnostic entry view does not copy the relay, command line, or page list
+    ok 29 - diagnostic entry view does not copy the relay, command line, or page list
+      ---
+      duration_ms: 0.492947
+      type: 'test'
+      ...
+    # Subtest: launch snapshot fields do not change termination classification
+    ok 30 - launch snapshot fields do not change termination classification
+      ---
+      duration_ms: 0.214701
+      type: 'test'
+      ...
+    # Subtest: diagnostic module does not reach for protocol dumps, tabs, storage, or tokens
+    ok 31 - diagnostic module does not reach for protocol dumps, tabs, storage, or tokens
+      ---
+      duration_ms: 3.76663
+      type: 'test'
+      ...
+    # Subtest: desktop and automation HTTP auth, profile lookup, and the legacy diagnostics route
+    ok 32 - desktop and automation HTTP auth, profile lookup, and the legacy diagnostics route
+      ---
+      duration_ms: 62.808645
+      type: 'test'
+      ...
+    # Subtest: malformed JSON stays on the contract path only for diagnostic routes
+    ok 33 - malformed JSON stays on the contract path only for diagnostic routes
+      ---
+      duration_ms: 8.119576
+      type: 'test'
+      ...
+    # Subtest: HTTP 429, 500, and a completed POST keep the contract envelope
+    ok 34 - HTTP 429, 500, and a completed POST keep the contract envelope
+      ---
+      duration_ms: 15.650904
+      type: 'test'
+      ...
+    1..34
+ok 88 - profile diagnostics
+  ---
+  duration_ms: 306.236231
+  type: 'suite'
+  ...
+# Subtest: schema version unchanged by diagnostics GET/POST (equals migration head)
+ok 89 - schema version unchanged by diagnostics GET/POST (equals migration head)
+  ---
+  duration_ms: 392.480038
+  type: 'test'
+  ...
+# Subtest: launchId already exists in server/browsers.js (compatibility with observation.launchId)
+ok 90 - launchId already exists in server/browsers.js (compatibility with observation.launchId)
+  ---
+  duration_ms: 0.395734
+  type: 'test'
+  ...
+# Subtest: GET planned diagnostics path does not mutate profile directory (backend absent → 404)
+ok 91 - GET planned diagnostics path does not mutate profile directory (backend absent → 404)
+  ---
+  duration_ms: 5.117538
+  type: 'test'
+  ...
+# Subtest: offline: valid observation fixture validates; POST consent body validates
+ok 92 - offline: valid observation fixture validates; POST consent body validates
+  ---
+  duration_ms: 0.876085
+  type: 'test'
+  ...
+# Subtest: Blocked: live valid DiagnosticsV1 observation against real Chromium (backend absent)
+ok 93 - Blocked: live valid DiagnosticsV1 observation against real Chromium (backend absent)
+  ---
+  duration_ms: 4.209993
+  type: 'test'
+  ...
+# Subtest: PENDING case 5: forced taskkill /F still classifies Error (Windows 10/11 only)
+ok 94 - PENDING case 5: forced taskkill /F still classifies Error (Windows 10/11 only) # TODO Windows 10/11 release QA. Linux SIGKILL is not this case. Do not mark PASS from a Linux run.
+  ---
+  duration_ms: 0.117212
+  type: 'test'
+  ...
+# Subtest: PENDING §10 Windows: no extra debugging TCP port during GET/POST (Get-NetTCPConnection)
+ok 95 - PENDING §10 Windows: no extra debugging TCP port during GET/POST (Get-NetTCPConnection) # TODO Windows 10/11 release QA. Linux /proc + ss evidence is test/diagnostics-gate.live.test.js and does not close this half.
+  ---
+  duration_ms: 0.12804
+  type: 'test'
+  ...
+1..95
+# tests 133
+# suites 1
+# pass 128
+# fail 0
+# cancelled 0
+# skipped 3
+# todo 2
+# duration_ms 4101.878975
+=== npm run test:unit ===
+TAP version 13
+# (node:3470) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: UI token: accepted via X-UI-Token header
+ok 1 - UI token: accepted via X-UI-Token header
+  ---
+  duration_ms: 19.090588
+  type: 'test'
+  ...
+# Subtest: UI token: rejected via ?token= query string
+ok 2 - UI token: rejected via ?token= query string
+  ---
+  duration_ms: 2.925578
+  type: 'test'
+  ...
+# Subtest: UI token: rejected on the SSE stream via query too
+ok 3 - UI token: rejected on the SSE stream via query too
+  ---
+  duration_ms: 2.18018
+  type: 'test'
+  ...
+# Subtest: UI token: missing/wrong header rejected
+ok 4 - UI token: missing/wrong header rejected
+  ---
+  duration_ms: 3.16764
+  type: 'test'
+  ...
+# Subtest: startup scrub: legacy plaintext password is gone from the raw db file and WAL (secure_delete + VACUUM)
+ok 5 - startup scrub: legacy plaintext password is gone from the raw db file and WAL (secure_delete + VACUUM)
+  ---
+  duration_ms: 0.377274
+  type: 'test'
+  ...
+# Subtest: startup: migration v6 moved the inline proxy to the library and re-encrypted; it still decrypts
+ok 6 - startup: migration v6 moved the inline proxy to the library and re-encrypted; it still decrypts
+  ---
+  duration_ms: 2.864998
+  type: 'test'
+  ...
+# [secrets] rejected a stored secret without an enc:/ss: prefix (value not logged)
+# Subtest: after startup, an unprefixed secret written behind the app's back is rejected (not returned)
+ok 7 - after startup, an unprefixed secret written behind the app's back is rejected (not returned)
+  ---
+  duration_ms: 8.444792
+  type: 'test'
+  ...
+# Subtest: automation_enabled: defaults to false, exposed as automationEnabled, raw column hidden
+ok 8 - automation_enabled: defaults to false, exposed as automationEnabled, raw column hidden
+  ---
+  duration_ms: 5.753116
+  type: 'test'
+  ...
+# Subtest: automation_enabled: settable on create via /api/v1 and on update via UI PUT and v1 PATCH
+ok 9 - automation_enabled: settable on create via /api/v1 and on update via UI PUT and v1 PATCH
+  ---
+  duration_ms: 8.922117
+  type: 'test'
+  ...
+# Subtest: automation_enabled: non-boolean rejected
+ok 10 - automation_enabled: non-boolean rejected
+  ---
+  duration_ms: 1.68598
+  type: 'test'
+  ...
+# Subtest: launch passes `automation` to browsers.js: profile flag by default
+ok 11 - launch passes `automation` to browsers.js: profile flag by default
+  ---
+  duration_ms: 7.643006
+  type: 'test'
+  ...
+# Subtest: v1 launch: per-launch {automation:true} override wins over the profile flag
+ok 12 - v1 launch: per-launch {automation:true} override wins over the profile flag
+  ---
+  duration_ms: 7.420079
+  type: 'test'
+  ...
+# Subtest: v1 launch: non-boolean override rejected; UI launch ignores override
+ok 13 - v1 launch: non-boolean override rejected; UI launch ignores override
+  ---
+  duration_ms: 3.23744
+  type: 'test'
+  ...
+# Subtest: classifyProxyError maps errors to auth_failed/connect_refused/timeout/dns/protocol_unsupported/unknown
+ok 14 - classifyProxyError maps errors to auth_failed/connect_refused/timeout/dns/protocol_unsupported/unknown
+  ---
+  duration_ms: 2.966979
+  type: 'test'
+  ...
+# Subtest: parseProxyLine handles all accepted formats
+ok 15 - parseProxyLine handles all accepted formats
+  ---
+  duration_ms: 2.697986
+  type: 'test'
+  ...
+# Subtest: running entry WITHOUT a debugging port: top-level pid, no cdp (UI + v1 launch + v1 running)
+ok 16 - running entry WITHOUT a debugging port: top-level pid, no cdp (UI + v1 launch + v1 running)
+  ---
+  duration_ms: 4.722134
+  type: 'test'
+  ...
+# Subtest: running entry WITH a debugging port: cdp present (incl. cdp.pid for compatibility) and top-level pid
+ok 17 - running entry WITH a debugging port: cdp present (incl. cdp.pid for compatibility) and top-level pid
+  ---
+  duration_ms: 1.718642
+  type: 'test'
+  ...
+# Subtest: stopped profiles carry neither pid nor cdp
+ok 18 - stopped profiles carry neither pid nor cdp
+  ---
+  duration_ms: 1.240443
+  type: 'test'
+  ...
+# Subtest: CHROMIUM_MISSING -> HTTP 503 {error:"CHROMIUM_MISSING", message} in UI API, /api/v1 and bulk launch
+ok 19 - CHROMIUM_MISSING -> HTTP 503 {error:"CHROMIUM_MISSING", message} in UI API, /api/v1 and bulk launch
+  ---
+  duration_ms: 5.568655
+  type: 'test'
+  ...
+# Subtest: GET /api/browser includes chromiumStatus() (pinned revision, per-browser verified state)
+ok 20 - GET /api/browser includes chromiumStatus() (pinned revision, per-browser verified state)
+  ---
+  duration_ms: 2.006578
+  type: 'test'
+  ...
+# Subtest: installBrowser uses the verified installer (injected): success and failure states + events
+ok 21 - installBrowser uses the verified installer (injected): success and failure states + events
+  ---
+  duration_ms: 2.770275
+  type: 'test'
+  ...
+# Subtest: app.js no longer shells out to the Playwright CLI installer
+ok 22 - app.js no longer shells out to the Playwright CLI installer
+  ---
+  duration_ms: 0.276638
+  type: 'test'
+  ...
+# Subtest: Chromium syntax, allowlist, terminator and privacy (linux)
+ok 23 - Chromium syntax, allowlist, terminator and privacy (linux)
+  ---
+  duration_ms: 1.177644
+  type: 'test'
+  ...
+# Subtest: Chromium syntax, allowlist, terminator and privacy (win32)
+ok 24 - Chromium syntax, allowlist, terminator and privacy (win32)
+  ---
+  duration_ms: 0.322649
+  type: 'test'
+  ...
+# Subtest: OS observation rejects a wrong process start and obsolete launch
+ok 25 - OS observation rejects a wrong process start and obsolete launch
+  ---
+  duration_ms: 6.287142
+  type: 'test'
+  ...
+# Subtest: real host process identity and policy read
+ok 26 - real host process identity and policy read
+  ---
+  duration_ms: 3.334248
+  type: 'test'
+  ...
+# Subtest: profile diagnostics
+    # Subtest: constants match the collection deadline and freshness ceiling
+    ok 1 - constants match the collection deadline and freshness ceiling
+      ---
+      duration_ms: 0.65071
+      type: 'test'
+      ...
+    # Subtest: decideObservationState: each state for GET and POST
+    ok 2 - decideObservationState: each state for GET and POST
+      ---
+      duration_ms: 0.863059
+      type: 'test'
+      ...
+    # Subtest: GET observation state complete
+    ok 3 - GET observation state complete
+      ---
+      duration_ms: 1.256551
+      type: 'test'
+      ...
+    # Subtest: GET complete accepts absent and present WebRTC observations and a configured-false proxy
+    ok 4 - GET complete accepts absent and present WebRTC observations and a configured-false proxy
+      ---
+      duration_ms: 0.622397
+      type: 'test'
+      ...
+    # Subtest: GET observation state partial
+    ok 5 - GET observation state partial
+      ---
+      duration_ms: 0.780797
+      type: 'test'
+      ...
+    # Subtest: F3: not_running plus manifest is unavailable
+    ok 6 - F3: not_running plus manifest is unavailable
+      ---
+      duration_ms: 0.280521
+      type: 'test'
+      ...
+    # Subtest: F3: launching plus manifest is unavailable
+    ok 7 - F3: launching plus manifest is unavailable
+      ---
+      duration_ms: 0.370026
+      type: 'test'
+      ...
+    # Subtest: F3: stopping plus manifest is unavailable
+    ok 8 - F3: stopping plus manifest is unavailable
+      ---
+      duration_ms: 0.211431
+      type: 'test'
+      ...
+    # Subtest: F3: disconnected plus manifest is unavailable
+    ok 9 - F3: disconnected plus manifest is unavailable
+      ---
+      duration_ms: 0.372277
+      type: 'test'
+      ...
+    # Subtest: F3: failed live required facts plus manifest are unavailable
+    ok 10 - F3: failed live required facts plus manifest are unavailable
+      ---
+      duration_ms: 0.294677
+      type: 'test'
+      ...
+    # Subtest: F3: deadline without a live fact is unavailable
+    ok 11 - F3: deadline without a live fact is unavailable
+      ---
+      duration_ms: 45.100212
+      type: 'test'
+      ...
+    # Subtest: GET observation state unavailable
+    ok 12 - GET observation state unavailable
+      ---
+      duration_ms: 0.352693
+      type: 'test'
+      ...
+    # Subtest: GET observation state invalidated
+    ok 13 - GET observation state invalidated
+      ---
+      duration_ms: 0.256728
+      type: 'test'
+      ...
+    # Subtest: GET timeout is unavailable with manifest-only metadata and drops late facts
+    ok 14 - GET timeout is unavailable with manifest-only metadata and drops late facts
+      ---
+      duration_ms: 50.724778
+      type: 'test'
+      ...
+    # Subtest: POST observation state complete
+    ok 15 - POST observation state complete
+      ---
+      duration_ms: 0.97389
+      type: 'test'
+      ...
+    # Subtest: POST observation state partial
+    ok 16 - POST observation state partial
+      ---
+      duration_ms: 0.335131
+      type: 'test'
+      ...
+    # Subtest: POST observation state unavailable
+    ok 17 - POST observation state unavailable
+      ---
+      duration_ms: 0.560144
+      type: 'test'
+      ...
+    # Subtest: POST does not open a tab unless the browser is connected, and timeout stays unavailable
+    ok 18 - POST does not open a tab unless the browser is connected, and timeout stays unavailable
+      ---
+      duration_ms: 50.479818
+      type: 'test'
+      ...
+    # Subtest: POST observation state invalidated
+    ok 19 - POST observation state invalidated
+      ---
+      duration_ms: 0.497351
+      type: 'test'
+      ...
+    # Subtest: headless consent never creates a diagnostic tab
+    ok 20 - headless consent never creates a diagnostic tab
+      ---
+      duration_ms: 0.182238
+      type: 'test'
+      ...
+    # Subtest: a non-visible probe provides no environment facts
+    ok 21 - a non-visible probe provides no environment facts
+      ---
+      duration_ms: 0.297462
+      type: 'test'
+      ...
+    # Subtest: timed-out evaluation detaches before guard release, cleans routes and permits retry
+    ok 22 - timed-out evaluation detaches before guard release, cleans routes and permits retry
+      ---
+      duration_ms: 25.289338
+      type: 'test'
+      ...
+    # Subtest: navigation away and back during evaluation rejects facts and removes listeners
+    ok 23 - navigation away and back during evaluation rejects facts and removes listeners
+      ---
+      duration_ms: 0.498684
+      type: 'test'
+      ...
+    # Subtest: initial launch mismatch is 409 and does not hold the guard or open a tab
+    ok 24 - initial launch mismatch is 409 and does not hold the guard or open a tab
+      ---
+      duration_ms: 0.168357
+      type: 'test'
+      ...
+    # Subtest: repeated observations get distinct ids
+    ok 25 - repeated observations get distinct ids
+      ---
+      duration_ms: 0.186617
+      type: 'test'
+      ...
+    # Subtest: WebRTC argument summary stays inside the allowlist
+    ok 26 - WebRTC argument summary stays inside the allowlist
+      ---
+      duration_ms: 0.316172
+      type: 'test'
+      ...
+    # Subtest: pipe read returns only version, UA, and an allowlisted WebRTC summary
+    ok 27 - pipe read returns only version, UA, and an allowlisted WebRTC summary
+      ---
+      duration_ms: 0.476362
+      type: 'test'
+      ...
+    # Subtest: proxy snapshot drops credentials and local relay endpoints
+    ok 28 - proxy snapshot drops credentials and local relay endpoints
+      ---
+      duration_ms: 0.296788
+      type: 'test'
+      ...
+    # Subtest: diagnostic entry view does not copy the relay, command line, or page list
+    ok 29 - diagnostic entry view does not copy the relay, command line, or page list
+      ---
+      duration_ms: 0.465051
+      type: 'test'
+      ...
+    # Subtest: launch snapshot fields do not change termination classification
+    ok 30 - launch snapshot fields do not change termination classification
+      ---
+      duration_ms: 0.212917
+      type: 'test'
+      ...
+    # Subtest: diagnostic module does not reach for protocol dumps, tabs, storage, or tokens
+    ok 31 - diagnostic module does not reach for protocol dumps, tabs, storage, or tokens
+      ---
+      duration_ms: 0.454185
+      type: 'test'
+      ...
+    # Subtest: desktop and automation HTTP auth, profile lookup, and the legacy diagnostics route
+    ok 32 - desktop and automation HTTP auth, profile lookup, and the legacy diagnostics route
+      ---
+      duration_ms: 56.839135
+      type: 'test'
+      ...
+    # Subtest: malformed JSON stays on the contract path only for diagnostic routes
+    ok 33 - malformed JSON stays on the contract path only for diagnostic routes
+      ---
+      duration_ms: 7.768519
+      type: 'test'
+      ...
+    # Subtest: HTTP 429, 500, and a completed POST keep the contract envelope
+    ok 34 - HTTP 429, 500, and a completed POST keep the contract envelope
+      ---
+      duration_ms: 15.321849
+      type: 'test'
+      ...
+    1..34
+ok 27 - profile diagnostics
+  ---
+  duration_ms: 279.677442
+  type: 'suite'
+  ...
+# Subtest: selectSmokePhase accepts only the five phases and rejects everything else
+ok 28 - selectSmokePhase accepts only the five phases and rejects everything else
+  ---
+  duration_ms: 0.863521
+  type: 'test'
+  ...
+# Subtest: each phase dispatches to its own handler and keeps that handler result
+ok 29 - each phase dispatches to its own handler and keeps that handler result
+  ---
+  duration_ms: 0.927314
+  type: 'test'
+  ...
+# Subtest: clean returns the diagnostics shape the install acceptance reads
+ok 30 - clean returns the diagnostics shape the install acceptance reads
+  ---
+  duration_ms: 0.32889
+  type: 'test'
+  ...
+# Subtest: upgrade returns the acceptance shape and detaches the dead proxy before the local read
+ok 31 - upgrade returns the acceptance shape and detaches the dead proxy before the local read
+  ---
+  duration_ms: 7.122262
+  type: 'test'
+  ...
+# Subtest: lifecycle asks for CDP, closes that endpoint, and returns Stopped then Error then running
+ok 32 - lifecycle asks for CDP, closes that endpoint, and returns Stopped then Error then running
+  ---
+  duration_ms: 1.059513
+  type: 'test'
+  ...
+# Subtest: lifecycle CDP must be loopback and is not opened for a public address
+ok 33 - lifecycle CDP must be loopback and is not opened for a public address
+  ---
+  duration_ms: 0.183549
+  type: 'test'
+  ...
+# Subtest: lifecycle without a CDP endpoint fails instead of reporting a false Stopped
+ok 34 - lifecycle without a CDP endpoint fails instead of reporting a false Stopped
+  ---
+  duration_ms: 0.137827
+  type: 'test'
+  ...
+# Subtest: seed and check return the objects the acceptance script reads
+ok 35 - seed and check return the objects the acceptance script reads
+  ---
+  duration_ms: 4.599814
+  type: 'test'
+  ...
+# Subtest: the handler table is exactly the five phases
+ok 36 - the handler table is exactly the five phases
+  ---
+  duration_ms: 0.3774
+  type: 'test'
+  ...
+# Subtest: a missing phase is rejected only after both smoke gates are set
+ok 37 - a missing phase is rejected only after both smoke gates are set
+  ---
+  duration_ms: 0.412665
+  type: 'test'
+  ...
+# Subtest: a rejected phase writes a result file the harness can read
+ok 38 - a rejected phase writes a result file the harness can read
+  ---
+  duration_ms: 0.504436
+  type: 'test'
+  ...
+# Subtest: packaged entry rejects a bad offline phase before the backend starts
+ok 39 - packaged entry rejects a bad offline phase before the backend starts
+  ---
+  duration_ms: 0.207414
+  type: 'test'
+  ...
+# Subtest: workflow smoke steps that enter offline smoke set PM_SMOKE_PHASE explicitly
+ok 40 - workflow smoke steps that enter offline smoke set PM_SMOKE_PHASE explicitly
+  ---
+  duration_ms: 0.531323
+  type: 'test'
+  ...
+# Subtest: listening-port parsers keep only LISTEN sockets for the named pids
+ok 41 - listening-port parsers keep only LISTEN sockets for the named pids
+  ---
+  duration_ms: 0.293299
+  type: 'test'
+  ...
+# Subtest: common facts keep the native and bundled-browser fields
+ok 42 - common facts keep the native and bundled-browser fields
+  ---
+  duration_ms: 0.298204
+  type: 'test'
+  ...
+# Subtest: lifecycle diagnostics retain taskkill failure and the original 80-poll timeout
+ok 43 - lifecycle diagnostics retain taskkill failure and the original 80-poll timeout
+  ---
+  duration_ms: 2.056474
+  type: 'test'
+  ...
+# FAIL graceful shutdown: shutdown-done not received from pid 3513 within 8000ms
+# Subtest: shutdown ack requires a clean database close
+    # Subtest: failed db.close sends no shutdown-done and fails the harness
+    ok 1 - failed db.close sends no shutdown-done and fails the harness
+      ---
+      duration_ms: 976.351529
+      type: 'test'
+      ...
+# FAIL graceful shutdown: shutdown-done not received from pid 3551 within 8000ms
+    # Subtest: failed wal_checkpoint sends no shutdown-done and fails the harness
+    ok 2 - failed wal_checkpoint sends no shutdown-done and fails the harness
+      ---
+      duration_ms: 892.866981
+      type: 'test'
+      ...
+    1..2
+ok 44 - shutdown ack requires a clean database close
+  ---
+  duration_ms: 1870.163946
+  type: 'suite'
+  ...
+# Subtest: durable shutdown checkpoints and closes after the browsers stop
+ok 45 - durable shutdown checkpoints and closes after the browsers stop
+  ---
+  duration_ms: 1.136819
+  type: 'test'
+  ...
+# Subtest: a throwing checkpoint is logged and does not close the database
+ok 46 - a throwing checkpoint is logged and does not close the database
+  ---
+  duration_ms: 0.436008
+  type: 'test'
+  ...
+# Subtest: the shutdown cap logs and rejects when browser close does not finish
+ok 47 - the shutdown cap logs and rejects when browser close does not finish
+  ---
+  duration_ms: 30.131319
+  type: 'test'
+  ...
+# Subtest: electron before-quit is a one-shot literal-import shutdown
+ok 48 - electron before-quit is a one-shot literal-import shutdown
+  ---
+  duration_ms: 0.688018
+  type: 'test'
+  ...
+# Subtest: non-packaged honors the three test flags
+ok 49 - non-packaged honors the three test flags
+  ---
+  duration_ms: 0.567876
+  type: 'test'
+  ...
+# Subtest: packaged ignores all three flags
+ok 50 - packaged ignores all three flags
+  ---
+  duration_ms: 0.097953
+  type: 'test'
+  ...
+# Subtest: applyPackagedFlag overwrites an inherited PM_PACKAGED=0
+ok 51 - applyPackagedFlag overwrites an inherited PM_PACKAGED=0
+  ---
+  duration_ms: 0.119734
+  type: 'test'
+  ...
+# Subtest: main.js applies the packaged flag before the backend import
+ok 52 - main.js applies the packaged flag before the backend import
+  ---
+  duration_ms: 1.262663
+  type: 'test'
+  ...
+# Subtest: server/ reads the three flags only inside testflags.js
+ok 53 - server/ reads the three flags only inside testflags.js
+  ---
+  duration_ms: 1.06033
+  type: 'test'
+  ...
+# Subtest: Chromium install root is never resources/browsers
+ok 54 - Chromium install root is never resources/browsers
+  ---
+  duration_ms: 0.610208
+  type: 'test'
+  ...
+# Subtest: normal close: no running row and no error shows Stopped
+ok 55 - normal close: no running row and no error shows Stopped
+  ---
+  duration_ms: 0.960499
+  type: 'test'
+  ...
+# Subtest: real crash shows Error with the message
+ok 56 - real crash shows Error with the message
+  ---
+  duration_ms: 0.093411
+  type: 'test'
+  ...
+# Subtest: running wins over a stale error
+ok 57 - running wins over a stale error
+  ---
+  duration_ms: 0.122283
+  type: 'test'
+  ...
+# Subtest: relaunch in flight hides the previous error and shows Starting
+ok 58 - relaunch in flight hides the previous error and shows Starting
+  ---
+  duration_ms: 0.730732
+  type: 'test'
+  ...
+# Subtest: crash summaries are plain language and actionable
+ok 59 - crash summaries are plain language and actionable
+  ---
+  duration_ms: 0.429035
+  type: 'test'
+  ...
+# Subtest: identical notifications within the window show once
+ok 60 - identical notifications within the window show once
+  ---
+  duration_ms: 0.203918
+  type: 'test'
+  ...
+# Subtest: every profile lifecycle event refreshes the list immediately
+ok 61 - every profile lifecycle event refreshes the list immediately
+  ---
+  duration_ms: 0.096387
+  type: 'test'
+  ...
+# Subtest: dedupe never hides a separate real failure
+ok 62 - dedupe never hides a separate real failure
+  ---
+  duration_ms: 0.165896
+  type: 'test'
+  ...
+# Subtest: migrations: fresh database reaches latest version
+ok 63 - migrations: fresh database reaches latest version
+  ---
+  duration_ms: 2.924957
+  type: 'test'
+  ...
+# Subtest: migrations: idempotent (second run applies nothing)
+ok 64 - migrations: idempotent (second run applies nothing)
+  ---
+  duration_ms: 2.437371
+  type: 'test'
+  ...
+# Subtest: migrations: legacy unversioned DB is adopted and data kept
+ok 65 - migrations: legacy unversioned DB is adopted and data kept
+  ---
+  duration_ms: 2.116421
+  type: 'test'
+  ...
+# Subtest: migrations: failing migration rolls back and is not recorded
+ok 66 - migrations: failing migration rolls back and is not recorded
+  ---
+  duration_ms: 2.760685
+  type: 'test'
+  ...
+# Subtest: lock: acquire writes pid; second acquire by same owner is refused
+ok 67 - lock: acquire writes pid; second acquire by same owner is refused
+  ---
+  duration_ms: 0.719613
+  type: 'test'
+  ...
+# Subtest: lock: held by another live process -> LockedError (409)
+ok 68 - lock: held by another live process -> LockedError (409)
+  ---
+  duration_ms: 0.342695
+  type: 'test'
+  ...
+# Subtest: lock: stale lock (dead owner) is replaced
+ok 69 - lock: stale lock (dead owner) is replaced
+  ---
+  duration_ms: 0.348619
+  type: 'test'
+  ...
+# Subtest: lock: corrupt lock file is treated as stale
+ok 70 - lock: corrupt lock file is treated as stale
+  ---
+  duration_ms: 0.277807
+  type: 'test'
+  ...
+# Subtest: lock: release does not remove a lock owned by someone else
+ok 71 - lock: release does not remove a lock owned by someone else
+  ---
+  duration_ms: 0.366216
+  type: 'test'
+  ...
+# Subtest: lock: updateLock merges browserPid
+ok 72 - lock: updateLock merges browserPid
+  ---
+  duration_ms: 0.518764
+  type: 'test'
+  ...
+# Subtest: killTree (POSIX): terminates a running process
+ok 73 - killTree (POSIX): terminates a running process
+  ---
+  duration_ms: 202.608783
+  type: 'test'
+  ...
+# Subtest: killTree (POSIX): escalates to SIGKILL when SIGTERM is ignored
+ok 74 - killTree (POSIX): escalates to SIGKILL when SIGTERM is ignored
+  ---
+  duration_ms: 603.582976
+  type: 'test'
+  ...
+# Subtest: killTree (Windows path): calls taskkill /PID <pid> /T /F
+ok 75 - killTree (Windows path): calls taskkill /PID <pid> /T /F
+  ---
+  duration_ms: 0.3613
+  type: 'test'
+  ...
+# Subtest: isAlive: false for a dead pid
+ok 76 - isAlive: false for a dead pid
+  ---
+  duration_ms: 0.102103
+  type: 'test'
+  ...
+# Subtest: closeOutcome: known exit status decides, unknown is not a crash, SessionEnded is Stopped
+ok 77 - closeOutcome: known exit status decides, unknown is not a crash, SessionEnded is Stopped
+  ---
+  duration_ms: 0.206065
+  type: 'test'
+  ...
+# Subtest: missing playwright process handle is logged and is not a crash
+ok 78 - missing playwright process handle is logged and is not a crash
+  ---
+  duration_ms: 0.32749
+  type: 'test'
+  ...
+# Subtest: migrate copies a file database before changing it and keeps the rows
+ok 79 - migrate copies a file database before changing it and keeps the rows
+  ---
+  duration_ms: 13.102081
+  type: 'test'
+  ...
+# Subtest: 0.5.0-alpha.2 keeps the v0.4.0 install identity and uninstall keeps data
+ok 80 - 0.5.0-alpha.2 keeps the v0.4.0 install identity and uninstall keeps data
+  ---
+  duration_ms: 0.475731
+  type: 'test'
+  ...
+# Subtest: upgrade from 0.5.0-alpha.1 schema 10 keeps profiles, proxies, secrets, and Chrome user-data
+ok 81 - upgrade from 0.5.0-alpha.1 schema 10 keeps profiles, proxies, secrets, and Chrome user-data
+  ---
+  duration_ms: 9.529126
+  type: 'test'
+  ...
+# Subtest: v0.4.0 migrations stay the be575c7 list
+ok 82 - v0.4.0 migrations stay the be575c7 list
+  ---
+  duration_ms: 0.609432
+  type: 'test'
+  ...
+# Subtest: installed playwright-core 1.64.1 exposes the launched browser child
+not ok 83 - installed playwright-core 1.64.1 exposes the launched browser child
+  ---
+  duration_ms: 41.395495
+  type: 'test'
+  location: '/workspace/test/unit.test.js:245:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    browserType.launchPersistentContext: Executable doesn't exist at /home/ubuntu/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell
+    ╔════════════════════════════════════════════════════════════╗
+    ║ Looks like Playwright was just installed or updated.       ║
+    ║ Please run the following command to download new browsers: ║
+    ║                                                            ║
+    ║     npx playwright install                                 ║
+    ║                                                            ║
+    ║ <3 Playwright Team                                         ║
+    ╚════════════════════════════════════════════════════════════╝
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    async TestContext.<anonymous> (/workspace/test/unit.test.js:253:15)
+  ...
+# Subtest: secrets: AES-GCM round trip, key file created, ciphertext differs per call
+ok 84 - secrets: AES-GCM round trip, key file created, ciphertext differs per call
+  ---
+  duration_ms: 1.342043
+  type: 'test'
+  ...
+# Subtest: secrets: tampered ciphertext is rejected
+ok 85 - secrets: tampered ciphertext is rejected
+  ---
+  duration_ms: 0.200453
+  type: 'test'
+  ...
+# Subtest: secrets: external cipher (safeStorage-like) preferred; AES values still readable; migration detection
+ok 86 - secrets: external cipher (safeStorage-like) preferred; AES values still readable; migration detection
+  ---
+  duration_ms: 0.268035
+  type: 'test'
+  ...
+# Subtest: secrets: before strict mode, legacy plaintext is returned (for the startup migration)
+ok 87 - secrets: before strict mode, legacy plaintext is returned (for the startup migration)
+  ---
+  duration_ms: 0.054701
+  type: 'test'
+  ...
+# Subtest: secrets: in strict mode, unprefixed values are rejected and the value is never logged
+ok 88 - secrets: in strict mode, unprefixed values are rejected and the value is never logged
+  ---
+  duration_ms: 0.241791
+  type: 'test'
+  ...
+# Subtest: migrations: v5 adds automation_enabled NOT NULL DEFAULT 0
+ok 89 - migrations: v5 adds automation_enabled NOT NULL DEFAULT 0
+  ---
+  duration_ms: 1.882701
+  type: 'test'
+  ...
+# Subtest: migrations: v6 moves inline proxies into the library (dedupe identical, keep ciphertext, skip invalid) with FK SET NULL
+ok 90 - migrations: v6 moves inline proxies into the library (dedupe identical, keep ciphertext, skip invalid) with FK SET NULL
+  ---
+  duration_ms: 2.873263
+  type: 'test'
+  ...
+# Subtest: PID correlation distinguishes browser, legitimate launcher ancestry, mismatch and missing ownership
+ok 91 - PID correlation distinguishes browser, legitimate launcher ancestry, mismatch and missing ownership
+  ---
+  duration_ms: 0.128675
+  type: 'test'
+  ...
+# Subtest: inherited clean Preferences and unrelated file rewrites remain unknown
+ok 92 - inherited clean Preferences and unrelated file rewrites remain unknown
+  ---
+  duration_ms: 0.122984
+  type: 'test'
+  ...
+# Subtest: current-launch crash-to-clean transition establishes fresh Normal or SessionEnded
+ok 93 - current-launch crash-to-clean transition establishes fresh Normal or SessionEnded
+  ---
+  duration_ms: 0.070776
+  type: 'test'
+  ...
+# Subtest: known exit status wins over stale, missing or unreadable Preferences; Stop and fresh SessionEnded keep precedence
+ok 94 - known exit status wins over stale, missing or unreadable Preferences; Stop and fresh SessionEnded keep precedence
+  ---
+  duration_ms: 0.106511
+  type: 'test'
+  ...
+# Subtest: rapid close/relaunch/kill waits for delayed matching-child exit despite inherited Normal
+ok 95 - rapid close/relaunch/kill waits for delayed matching-child exit despite inherited Normal
+  ---
+  duration_ms: 50.928673
+  type: 'test'
+  ...
+# Subtest: missing or mismatched child and launcher-parent evidence never invent a browser exit
+ok 96 - missing or mismatched child and launcher-parent evidence never invent a browser exit
+  ---
+  duration_ms: 0.296238
+  type: 'test'
+  ...
+# Subtest: bounded missing-event timeout stays unknown; a late old event cannot affect a newer launch
+ok 97 - bounded missing-event timeout stays unknown; a late old event cannot affect a newer launch
+  ---
+  duration_ms: 10.665843
+  type: 'test'
+  ...
+# Subtest: already-delivered status, signals and duplicate exit/close events preserve the first terminal evidence
+ok 98 - already-delivered status, signals and duplicate exit/close events preserve the first terminal evidence
+  ---
+  duration_ms: 0.241626
+  type: 'test'
+  ...
+# Subtest: Preferences snapshots distinguish missing, unreadable and content changes without timestamps
+ok 99 - Preferences snapshots distinguish missing, unreadable and content changes without timestamps
+  ---
+  duration_ms: 1.451891
+  type: 'test'
+  ...
+# Subtest: production close-evidence wait does not stop at PID death or inherited Normal
+ok 100 - production close-evidence wait does not stop at PID death or inherited Normal
+  ---
+  duration_ms: 25.300002
+  type: 'test'
+  ...
+1..100
+# tests 134
+# suites 2
+# pass 133
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3634.427163
+=== m3 m4 m6 m7 m8 m9 ===
+TAP version 13
+# Subtest: create, read and settings-only clone preserve regional settings
+ok 1 - create, read and settings-only clone preserve regional settings
+  ---
+  duration_ms: 421.678107
+  type: 'test'
+  ...
+# Subtest: partial profile and regional updates preserve omitted settings
+ok 2 - partial profile and regional updates preserve omitted settings
+  ---
+  duration_ms: 5.848094
+  type: 'test'
+  ...
+# Subtest: invalid settings reject atomically and auth remains required
+ok 3 - invalid settings reject atomically and auth remains required
+  ---
+  duration_ms: 13.183277
+  type: 'test'
+  ...
+# Subtest: settings survive an actual server shutdown and restart
+ok 4 - settings survive an actual server shutdown and restart
+  ---
+  duration_ms: 371.72687
+  type: 'test'
+  ...
+# Subtest: host defaults and explicit reset persist; bulk validation rejects before insertion
+ok 5 - host defaults and explicit reset persist; bulk validation rejects before insertion
+  ---
+  duration_ms: 24.997489
+  type: 'test'
+  ...
+# Subtest: M1 database upgrade is additive, backed up, idempotent and preserves profile values
+ok 6 - M1 database upgrade is additive, backed up, idempotent and preserves profile values
+  ---
+  duration_ms: 17.716954
+  type: 'test'
+  ...
+# (node:3589) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: locale/timezone propagate; automation remains off and failed launch releases lock
+ok 7 - locale/timezone propagate; automation remains off and failed launch releases lock
+  ---
+  duration_ms: 16.620101
+  type: 'test'
+  ...
+# Subtest: ordered languages use native Chromium flags and avoid single-language override
+ok 8 - ordered languages use native Chromium flags and avoid single-language override
+  ---
+  duration_ms: 2.070533
+  type: 'test'
+  ...
+# Subtest: host defaults add no regional overrides; invalid settings never reach Chromium
+ok 9 - host defaults add no regional overrides; invalid settings never reach Chromium
+  ---
+  duration_ms: 1.334458
+  type: 'test'
+  ...
+# Subtest: defaults retain host/browser behavior without mutating defaults
+ok 10 - defaults retain host/browser behavior without mutating defaults
+  ---
+  duration_ms: 1.850108
+  type: 'test'
+  ...
+# Subtest: canonical tags, IANA timezone, ordered languages and partial update
+ok 11 - canonical tags, IANA timezone, ordered languages and partial update
+  ---
+  duration_ms: 12.139908
+  type: 'test'
+  ...
+# Subtest: reject invalid settings null
+ok 12 - reject invalid settings null
+  ---
+  duration_ms: 0.357209
+  type: 'test'
+  ...
+# Subtest: reject invalid settings []
+ok 13 - reject invalid settings []
+  ---
+  duration_ms: 0.07919
+  type: 'test'
+  ...
+# Subtest: reject invalid settings ""
+ok 14 - reject invalid settings ""
+  ---
+  duration_ms: 0.06788
+  type: 'test'
+  ...
+# Subtest: reject invalid settings 1
+ok 15 - reject invalid settings 1
+  ---
+  duration_ms: 0.062453
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"unknown":true}
+ok 16 - reject invalid settings {"unknown":true}
+  ---
+  duration_ms: 0.056899
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"locale":null}
+ok 17 - reject invalid settings {"locale":null}
+  ---
+  duration_ms: 0.059431
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"locale":"en_US"}
+ok 18 - reject invalid settings {"locale":"en_US"}
+  ---
+  duration_ms: 0.17766
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"locale":"x"}
+ok 19 - reject invalid settings {"locale":"x"}
+  ---
+  duration_ms: 0.258449
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"locale":"en-US\\r\\nX:1"}
+ok 20 - reject invalid settings {"locale":"en-US\\r\\nX:1"}
+  ---
+  duration_ms: 0.131119
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"languages":"en-US"}
+ok 21 - reject invalid settings {"languages":"en-US"}
+  ---
+  duration_ms: 0.06534
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"languages":[null]}
+ok 22 - reject invalid settings {"languages":[null]}
+  ---
+  duration_ms: 0.04431
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"languages":["en-us","en-US"]}
+ok 23 - reject invalid settings {"languages":["en-us","en-US"]}
+  ---
+  duration_ms: 0.06759
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"languages":["en","en","en","en","en","en","en","en","en","en","en"]}
+ok 24 - reject invalid settings {"languages":["en","en","en","en","en","en","en","en","en","en","en"]}
+  ---
+  duration_ms: 0.039967
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"locale":"en-US","languages":["ur-PK"]}
+ok 25 - reject invalid settings {"locale":"en-US","languages":["ur-PK"]}
+  ---
+  duration_ms: 0.048366
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"timezoneId":null}
+ok 26 - reject invalid settings {"timezoneId":null}
+  ---
+  duration_ms: 0.03727
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"timezoneId":"+05:00"}
+ok 27 - reject invalid settings {"timezoneId":"+05:00"}
+  ---
+  duration_ms: 0.036951
+  type: 'test'
+  ...
+# Subtest: reject invalid settings {"timezoneId":"Mars/Olympus"}
+ok 28 - reject invalid settings {"timezoneId":"Mars/Olympus"}
+  ---
+  duration_ms: 0.103239
+  type: 'test'
+  ...
+# Subtest: locale-only uses Playwright; ordered languages keep native Chromium language handling
+ok 29 - locale-only uses Playwright; ordered languages keep native Chromium language handling
+  ---
+  duration_ms: 1.171906
+  type: 'test'
+  ...
+# Subtest: missing pinned session adapter fails explicitly and detaches root
+ok 30 - missing pinned session adapter fails explicitly and detaches root
+  ---
+  duration_ms: 0.943276
+  type: 'test'
+  ...
+# Subtest: native setup failure is not resumed or silently marked configured
+ok 31 - native setup failure is not resumed or silently marked configured
+  ---
+  duration_ms: 1.440558
+  type: 'test'
+  ...
+# Subtest: shared-renderer override is accepted only after checking the native value
+ok 32 - shared-renderer override is accepted only after checking the native value
+  ---
+  duration_ms: 0.410616
+  type: 'test'
+  ...
+# Subtest: late target setup failure closes the context, reports once and resumes no invalid target
+ok 33 - late target setup failure closes the context, reports once and resumes no invalid target
+  ---
+  duration_ms: 0.367065
+  type: 'test'
+  ...
+# Subtest: page close resolves only after the surviving target is reclaimed post-teardown
+ok 34 - page close resolves only after the surviving target is reclaimed post-teardown
+  ---
+  duration_ms: 4.832626
+  type: 'test'
+  ...
+1..34
+# tests 34
+# suites 0
+# pass 34
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 919.055587
+TAP version 13
+# Subtest: library import lists version and permissions for more than one extension
+ok 1 - library import lists version and permissions for more than one extension
+  ---
+  duration_ms: 449.650283
+  type: 'test'
+  ...
+# Subtest: assignments are isolated per profile and survive restart
+ok 2 - assignments are isolated per profile and survive restart
+  ---
+  duration_ms: 434.001276
+  type: 'test'
+  ...
+# Subtest: cleanup removes assignments and copied files without deleting the other extension
+ok 3 - cleanup removes assignments and copied files without deleting the other extension
+  ---
+  duration_ms: 13.227439
+  type: 'test'
+  ...
+# (node:3655) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: enabled extensions are loaded together and disabled or foreign ones are not
+ok 4 - enabled extensions are loaded together and disabled or foreign ones are not
+  ---
+  duration_ms: 12.129747
+  type: 'test'
+  ...
+# Subtest: a missing extension directory blocks launch
+ok 5 - a missing extension directory blocks launch
+  ---
+  duration_ms: 1.354741
+  type: 'test'
+  ...
+# Subtest: import copies a valid unpacked extension and reports version and permissions
+ok 6 - import copies a valid unpacked extension and reports version and permissions
+  ---
+  duration_ms: 3.25378
+  type: 'test'
+  ...
+# Subtest: a second extension is listed separately
+ok 7 - a second extension is listed separately
+  ---
+  duration_ms: 0.889943
+  type: 'test'
+  ...
+# Subtest: command lines join enabled paths and reject commas
+ok 8 - command lines join enabled paths and reject commas
+  ---
+  duration_ms: 0.389635
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: relative path
+ok 9 - reject malformed extension import: relative path
+  ---
+  duration_ms: 0.373353
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: missing path
+ok 10 - reject malformed extension import: missing path
+  ---
+  duration_ms: 0.800472
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: file instead of directory
+ok 11 - reject malformed extension import: file instead of directory
+  ---
+  duration_ms: 0.401165
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: null byte
+ok 12 - reject malformed extension import: null byte
+  ---
+  duration_ms: 0.272138
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: url
+ok 13 - reject malformed extension import: url
+  ---
+  duration_ms: 0.20078
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: symlink root
+ok 14 - reject malformed extension import: symlink root
+  ---
+  duration_ms: 0.58761
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: missing manifest
+ok 15 - reject malformed extension import: missing manifest
+  ---
+  duration_ms: 0.598454
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: invalid json
+ok 16 - reject malformed extension import: invalid json
+  ---
+  duration_ms: 0.516385
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: manifest version 1
+ok 17 - reject malformed extension import: manifest version 1
+  ---
+  duration_ms: 0.470631
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: missing name
+ok 18 - reject malformed extension import: missing name
+  ---
+  duration_ms: 0.390516
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: bad version
+ok 19 - reject malformed extension import: bad version
+  ---
+  duration_ms: 0.380521
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: permissions not an array
+ok 20 - reject malformed extension import: permissions not an array
+  ---
+  duration_ms: 0.401469
+  type: 'test'
+  ...
+# Subtest: reject malformed extension import: symlink inside
+ok 21 - reject malformed extension import: symlink inside
+  ---
+  duration_ms: 0.504899
+  type: 'test'
+  ...
+# Subtest: removing an extension deletes the copied files
+ok 22 - removing an extension deletes the copied files
+  ---
+  duration_ms: 0.825579
+  type: 'test'
+  ...
+# Subtest: profiles keep independent WebRTC policies and M3 regional settings
+ok 23 - profiles keep independent WebRTC policies and M3 regional settings
+  ---
+  duration_ms: 432.755731
+  type: 'test'
+  ...
+# Subtest: unsupported WebRTC modes are rejected without changing the profile
+ok 24 - unsupported WebRTC modes are rejected without changing the profile
+  ---
+  duration_ms: 21.640705
+  type: 'test'
+  ...
+# Subtest: partial updates do not clobber the other profile or omitted settings
+ok 25 - partial updates do not clobber the other profile or omitted settings
+  ---
+  duration_ms: 10.055934
+  type: 'test'
+  ...
+# Subtest: WebRTC policy survives a server restart and clone
+ok 26 - WebRTC policy survives a server restart and clone
+  ---
+  duration_ms: 398.705408
+  type: 'test'
+  ...
+# Subtest: invalid WebRTC policy rejects a bulk create before any insert
+ok 27 - invalid WebRTC policy rejects a bulk create before any insert
+  ---
+  duration_ms: 6.068461
+  type: 'test'
+  ...
+# Subtest: v8 database gains WebRTC and extension tables without rewriting profile values
+ok 28 - v8 database gains WebRTC and extension tables without rewriting profile values
+  ---
+  duration_ms: 20.237341
+  type: 'test'
+  ...
+# (node:3700) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: browser default adds no flag and does not rewrite preferences
+ok 29 - browser default adds no flag and does not rewrite preferences
+  ---
+  duration_ms: 7.802153
+  type: 'test'
+  ...
+# Subtest: restrictive policy is one verified flag and a merged preference
+ok 30 - restrictive policy is one verified flag and a merged preference
+  ---
+  duration_ms: 11.506941
+  type: 'test'
+  ...
+# Subtest: explicit Chromium default is distinct from omitting the flag
+ok 31 - explicit Chromium default is distinct from omitting the flag
+  ---
+  duration_ms: 0.934981
+  type: 'test'
+  ...
+# Subtest: unsupported WebRTC settings never reach Chromium
+ok 32 - unsupported WebRTC settings never reach Chromium
+  ---
+  duration_ms: 0.236687
+  type: 'test'
+  ...
+# Subtest: browser default is stable and adds no Chromium flag
+ok 33 - browser default is stable and adds no Chromium flag
+  ---
+  duration_ms: 1.961602
+  type: 'test'
+  ...
+# Subtest: each supported Chromium policy is forced as exactly one flag
+ok 34 - each supported Chromium policy is forced as exactly one flag
+  ---
+  duration_ms: 0.343231
+  type: 'test'
+  ...
+# Subtest: partial update keeps the saved mode
+ok 35 - partial update keeps the saved mode
+  ---
+  duration_ms: 0.101745
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings null
+ok 36 - reject unsupported WebRTC settings null
+  ---
+  duration_ms: 0.284331
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings []
+ok 37 - reject unsupported WebRTC settings []
+  ---
+  duration_ms: 0.071718
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings ""
+ok 38 - reject unsupported WebRTC settings ""
+  ---
+  duration_ms: 0.056185
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings 1
+ok 39 - reject unsupported WebRTC settings 1
+  ---
+  duration_ms: 0.100206
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"disabled"}
+ok 40 - reject unsupported WebRTC settings {"mode":"disabled"}
+  ---
+  duration_ms: 0.063422
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"disable"}
+ok 41 - reject unsupported WebRTC settings {"mode":"disable"}
+  ---
+  duration_ms: 0.19051
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"off"}
+ok 42 - reject unsupported WebRTC settings {"mode":"off"}
+  ---
+  duration_ms: 0.228146
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"none"}
+ok 43 - reject unsupported WebRTC settings {"mode":"none"}
+  ---
+  duration_ms: 0.092176
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"spoof"}
+ok 44 - reject unsupported WebRTC settings {"mode":"spoof"}
+  ---
+  duration_ms: 0.104368
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"default "}
+ok 45 - reject unsupported WebRTC settings {"mode":"default "}
+  ---
+  duration_ms: 0.051359
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"--force-webrtc-ip-handling-policy=default"}
+ok 46 - reject unsupported WebRTC settings {"mode":"--force-webrtc-ip-handling-policy=default"}
+  ---
+  duration_ms: 0.038794
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"mode":"disable_non_proxied_udp","leakProof":true}
+ok 47 - reject unsupported WebRTC settings {"mode":"disable_non_proxied_udp","leakProof":true}
+  ---
+  duration_ms: 0.038865
+  type: 'test'
+  ...
+# Subtest: reject unsupported WebRTC settings {"anonymize":true}
+ok 48 - reject unsupported WebRTC settings {"anonymize":true}
+  ---
+  duration_ms: 0.035779
+  type: 'test'
+  ...
+1..48
+# tests 48
+# suites 0
+# pass 48
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1045.178975
+TAP version 13
+# Subtest: advanced settings persist across restart and reject invalid values without saving
+ok 1 - advanced settings persist across restart and reject invalid values without saving
+  ---
+  duration_ms: 810.568755
+  type: 'test'
+  ...
+# (node:3755) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: default advanced settings add no arguments and do not rewrite preferences
+ok 2 - default advanced settings add no arguments and do not rewrite preferences
+  ---
+  duration_ms: 7.779158
+  type: 'test'
+  ...
+# Subtest: a coherent full user agent and window preset reach Chromium with the real version
+ok 3 - a coherent full user agent and window preset reach Chromium with the real version
+  ---
+  duration_ms: 2.883766
+  type: 'test'
+  ...
+# Subtest: invalid advanced settings never reach Chromium
+ok 4 - invalid advanced settings never reach Chromium
+  ---
+  duration_ms: 0.699569
+  type: 'test'
+  ...
+# Subtest: defaults and partial updates keep omitted sections
+ok 5 - defaults and partial updates keep omitted sections
+  ---
+  duration_ms: 0.755852
+  type: 'test'
+  ...
+# Subtest: user agent presets cannot name another Chromium version
+ok 6 - user agent presets cannot name another Chromium version
+  ---
+  duration_ms: 0.679092
+  type: 'test'
+  ...
+# Subtest: geolocation, screen, and startup URLs reject incoherent values
+ok 7 - geolocation, screen, and startup URLs reject incoherent values
+  ---
+  duration_ms: 1.93948
+  type: 'test'
+  ...
+# Subtest: stopped profiles report host facts and do not invent browser hardware
+ok 8 - stopped profiles report host facts and do not invent browser hardware
+  ---
+  duration_ms: 446.854265
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 870.739704
+TAP version 13
+# Subtest: archives reject traversal, checksum mismatches, and trailing bytes
+ok 1 - archives reject traversal, checksum mismatches, and trailing bytes
+  ---
+  duration_ms: 115.604495
+  type: 'test'
+  ...
+# Subtest: restore validates collisions, rolls back a failed apply, and refuses symlinks
+ok 2 - restore validates collisions, rolls back a failed apply, and refuses symlinks
+  ---
+  duration_ms: 55.631898
+  type: 'test'
+  ...
+# Subtest: mapPool keeps at most the requested number of operations in flight
+ok 3 - mapPool keeps at most the requested number of operations in flight
+  ---
+  duration_ms: 486.950979
+  type: 'test'
+  ...
+# Subtest: csv and json imports report each row and assignments are bounded
+ok 4 - csv and json imports report each row and assignments are bounded
+  ---
+  duration_ms: 59.891203
+  type: 'test'
+  ...
+# Subtest: settings clone starts empty, data clone copies files, and symlinks are refused
+ok 5 - settings clone starts empty, data clone copies files, and symlinks are refused
+  ---
+  duration_ms: 515.64347
+  type: 'test'
+  ...
+# Subtest: import, export, and clear keep cookie flags and require confirmation
+ok 6 - import, export, and clear keep cookie flags and require confirmation
+  ---
+  duration_ms: 425.717916
+  type: 'test'
+  ...
+# Subtest: cookie encryption round-trips without logging the value
+ok 7 - cookie encryption round-trips without logging the value
+  ---
+  duration_ms: 14.146613
+  type: 'test'
+  ...
+# Subtest: malformed cookies are rejected without echoing the value
+ok 8 - malformed cookies are rejected without echoing the value
+  ---
+  duration_ms: 0.373881
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3523.445647
+TAP version 13
+# Subtest: encrypted envelope rejects a bad passphrase and a modified byte
+ok 1 - encrypted envelope rejects a bad passphrase and a modified byte
+  ---
+  duration_ms: 216.553439
+  type: 'test'
+  ...
+# Subtest: old plaintext backups restore, and encrypted backups hide the passphrase and profile bytes
+ok 2 - old plaintext backups restore, and encrypted backups hide the passphrase and profile bytes
+  ---
+  duration_ms: 198.995255
+  type: 'test'
+  ...
+# Subtest: bulk jobs report per-item errors and keep the concurrency cap
+ok 3 - bulk jobs report per-item errors and keep the concurrency cap
+  ---
+  duration_ms: 43.761434
+  type: 'test'
+  ...
+# Subtest: dashboard counts come from the database and the live running set
+ok 4 - dashboard counts come from the database and the live running set
+  ---
+  duration_ms: 40.642489
+  type: 'test'
+  ...
+# Subtest: profile table filters, sorts, pages, and persists a saved view
+ok 5 - profile table filters, sorts, pages, and persists a saved view
+  ---
+  duration_ms: 50.70887
+  type: 'test'
+  ...
+# Subtest: storage reports on-disk bytes and deletes cache only after confirmation
+ok 6 - storage reports on-disk bytes and deletes cache only after confirmation
+  ---
+  duration_ms: 38.724327
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6948.115042
+TAP version 13
+# Subtest: CDP examples accept loopback and refuse anything else
+ok 1 - CDP examples accept loopback and refuse anything else
+  ---
+  duration_ms: 0.751466
+  type: 'test'
+  ...
+# Subtest: node and python examples exit before connecting when credentials are absent
+ok 2 - node and python examples exit before connecting when credentials are absent
+  ---
+  duration_ms: 425.478477
+  type: 'test'
+  ...
+# Subtest: batch keeps going after a structured error and tracks status
+ok 3 - batch keeps going after a structured error and tracks status
+  ---
+  duration_ms: 39.573566
+  type: 'test'
+  ...
+# Subtest: documented provider adapters build endpoints, import lists, and do not return secrets
+ok 4 - documented provider adapters build endpoints, import lists, and do not return secrets
+  ---
+  duration_ms: 56.327357
+  type: 'test'
+  ...
+1..4
+# tests 4
+# suites 0
+# pass 4
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3497.122437
+=== TARGETED DONE 2026-10-28T09:16:43Z ===
