@@ -199,7 +199,7 @@ async function doLaunch(p, opts = {}) {
       launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
     const diagnosticStart = diagnosticProcessStart(Number(entry.childPid));
-    if (regional.languages.length) await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
+    if (regional.languages.length) entry.regional = await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
       onFailure: async error => {
         // Let normal close bookkeeping finish before recording the regional
         // failure; otherwise a clean process exit can clear its error message.
@@ -663,7 +663,7 @@ export function inspectDiagnosticEntry(entry, current = () => true) {
     },
     openDiagnosticPage: async hooks => {
       if (entry.diagnosticHeadless !== false) throw new Error('headless');
-      const page = await entry.ctx.newPage();
+      const page = entry.regional ? await openRegionalDiagnosticPage(entry, hooks) : await entry.ctx.newPage();
       // Dedicated page session: detaching cancels pending Runtime.evaluate without
       // closing the visible tab or touching the shared browser connection.
       page.diagnosticEvaluate = async fn => {
@@ -681,6 +681,43 @@ export function inspectDiagnosticEntry(entry, current = () => true) {
       return page;
     },
   };
+}
+
+// Pinned playwright-core 1.64.1 bridge (see browserProcess()): server page targetId.
+const pageTargetId = page => {
+  try { return page._connection?.toImpl?.(page)?.delegate?._targetId; } catch { return undefined; }
+};
+
+// M3 regional profiles: the diagnostic tab is created by the regional-locale
+// controller so its targetId is registered before any failure is judged.
+async function openRegionalDiagnosticPage(entry, hooks) {
+  const ctx = entry.ctx, signal = hooks.signal;
+  const before = new Set(ctx.pages());
+  let onAbort, onPage;
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(new Error('cancelled'));
+    if (signal?.aborted) onAbort(); else signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
+  aborted.catch(() => {});
+  try {
+    const { targetId, ready } = await Promise.race([entry.regional.createDiagnosticTarget(), aborted]);
+    await Promise.race([ready, aborted]);
+    const found = new Promise((resolve, reject) => {
+      const check = page => {
+        if (before.has(page)) return;
+        const id = pageTargetId(page);
+        if (!id) return reject(new Error('Diagnostic target bridge unavailable'));
+        if (id === targetId) resolve(page);
+      };
+      onPage = check;
+      ctx.on('page', onPage);
+      for (const page of ctx.pages()) check(page);
+    });
+    return await Promise.race([found, aborted]);
+  } finally {
+    if (onPage) ctx.off('page', onPage);
+    signal?.removeEventListener?.('abort', onAbort);
+  }
 }
 
 export function diagnosticObservation(id) {
