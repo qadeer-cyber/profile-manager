@@ -1,18 +1,17 @@
 # M2+M3 source acceptance. Source tests only: never builds installers, never
 # packages, never publishes. Tests the integrated tree exactly as checked out
 # (no assemble/overlay). Manual dispatch only; requires owner authorization.
+# t48u B2: no dispatch parameters. Execution is bound to the immutable commit
+# GitHub resolved for this run (github.sha) on the dedicated integration branch
+# only; there is no editable ref. Provenance (frozen ancestors, contract + addendum
+# hashes, installer-workflow blob) is verified before any test runs.
 name: M2 source acceptance (no installers)
 on:
   workflow_dispatch:
-    inputs:
-      ref:
-        description: Integrated M2+M3 commit SHA to test (full 40-char SHA)
-        required: true
-        type: string
 permissions:
   contents: read
 concurrency:
-  group: m2-source-acceptance-${{ inputs.ref }}
+  group: m2-source-acceptance-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   source-tests:
@@ -21,6 +20,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, windows-2022]
     runs-on: ${{ matrix.os }}
+    if: github.ref == 'refs/heads/integration/m2-m3-source-gate'
     timeout-minutes: 90
     env:
       # Blob of .github/workflows/windows-native-validation.yml on main 281b0b2.
@@ -29,15 +29,28 @@ jobs:
       - name: Checkout integrated tree with full history (contract baseline d7a000e)
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Verify exact SHA
+      - name: Verify exact SHA and provenance
         shell: bash
+        env:
+          RUN_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          [[ "${{ inputs.ref }}" =~ ^[0-9a-f]{40}$ ]] || { echo "ref must be a full SHA"; exit 1; }
-          test "$(git rev-parse HEAD)" = "${{ inputs.ref }}"
+          [[ "$RUN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "github.sha must be a full SHA"; exit 1; }
+          test "$(git rev-parse HEAD)" = "$RUN_SHA"
+          # Frozen ancestry: main M3 merge, M2 backend, M2 UI, QA acceptance tip.
+          for a in 281b0b2c5e1272994ab26d4111893ebdc6d2f7a9 d41eb1c6c5d65fa2f2a3ba861c1a8c509ac50838 14beab8ea27905c6a8fdd387babe6de83ad41c51 eb1b9c8d97332913067f641058fdc748ebbea280; do
+            git merge-base --is-ancestor "$a" HEAD || { echo "missing frozen ancestor $a"; exit 1; }
+          done
+          # Contracts and addendum A1 unchanged.
+          ( cd docs/handoff/m2/contracts && sha256sum -c SHA256SUMS && sha256sum -c SHA256SUMS.addendum-A1 )
+          grep -q '^cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8 ' docs/handoff/m2/contracts/SHA256SUMS
+          grep -q '^e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4 ' docs/handoff/m2/contracts/SHA256SUMS
+          grep -q '^6290869be994956f48c4576c63fe271e63fb63a3c4689d1b1659f9dae703add4 ' docs/handoff/m2/contracts/SHA256SUMS.addendum-A1
+          # Installer workflow byte-identical to main.
+          test "$(git hash-object .github/workflows/windows-native-validation.yml)" = "$PM_INSTALLER_WORKFLOW_BLOB"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

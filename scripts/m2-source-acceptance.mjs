@@ -46,7 +46,7 @@ const jobs = [
   ['m2-gate', t('test/diagnostics-gate.live.test.js'), false],
   ['m3-unit', tm('test/browser-settings.test.js', 'test/browser-settings-api.test.js', 'test/browser-settings-launch.test.js', 'test/regional-locale-adapter.test.js'), false],
   ['m3-browser', t('test/browser-settings-browser.test.js', 'test/regional-locale-browser.test.js'), true],
-  ['b1-fault', t('test/regional-locale-diagnostic-failure.test.js', 'test/regional-locale-diagnostic-negative.test.js'), true],
+  ['b1-fault', t('test/regional-locale-diagnostic-failure.test.js', 'test/regional-locale-diagnostic-negative.test.js', 'test/regional-locale-diagnostic-closefail.test.js'), true],
   ['ui-client', t('web/e2e/diagnostics-client.test.mjs'), false],
   ['ui-diagnostics', ['web/e2e/diagnostics-ui.mjs'], false],
   ['ui-smoke', ['test/ui-smoke.run.js'], false],
