@@ -88,7 +88,7 @@ test('v8 database gains WebRTC and extension tables without rewriting profile va
     db.prepare("INSERT INTO profiles (id,name,tags,folder,notes,browser_settings,created_at,updated_at) VALUES ('legacy','Legacy','[]','Folder','Notes','{\"locale\":\"de-DE\",\"timezoneId\":\"Europe/Berlin\",\"languages\":[\"de-DE\"]}','t','t')").run();
     const previous = db.prepare('SELECT id,name,folder,notes,browser_settings FROM profiles').get();
     const m = migrate(db);
-    assert.deepEqual(m.applied, [9, 10, 11]);
+    assert.deepEqual(m.applied, [9, 10, 11, 12]);
     assert.ok(fs.existsSync(m.backup));
     const row = db.prepare('SELECT id,name,folder,notes,browser_settings,webrtc_settings,advanced_settings FROM profiles').get();
     assert.equal(row.name, previous.name);

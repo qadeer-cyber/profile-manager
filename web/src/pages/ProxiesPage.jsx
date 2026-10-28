@@ -6,6 +6,7 @@ import { Icon } from '../components/Icon.jsx';
 import { ProxyTestResult, proxyErrorLabel } from '../components/ProxyTestResult.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { useSelection } from '../hooks/useSelection.js';
+import { ProviderPanel } from '../components/ProviderPanel.jsx';
 import { runAll, plural } from '../lib.js';
 
 // Proxy library manager (docs/proxy-api.md). Falls back to a read-only summary of
@@ -58,11 +59,14 @@ export function ProxiesPage() {
         <td className="small">{p.lastTest?.testedAt ? <>{st === 'ok' ? <span className="ok-text">{p.lastTest.ip} · {p.lastTest.latencyMs} ms</span> : <span className="err-text">{proxyErrorLabel(p.lastTest.error)}</span>}
           <div className="muted">{new Date(p.lastTest.testedAt).toLocaleString()}</div></> : <span className="muted">Never</span>}</td>
         <td className="actions"><button disabled={testing[p.id]} onClick={() => test([p.id])}><Icon name="bolt" /> Test</button>
+          <button className="icon-btn" aria-label={'History ' + p.name} title="Latency history" onClick={() => setDialog({ kind: 'history', data: p })}><Icon name="diagnostics" /></button>
           <button className="icon-btn" aria-label={'Edit ' + p.name} title="Edit" onClick={() => setDialog({ kind: 'edit', data: p })}><Icon name="edit" /></button>
           <button className="icon-btn danger" aria-label={'Delete ' + p.name} title="Delete" onClick={() => remove(p, false)}><Icon name="trash" /></button></td>
       </tr>; })}
       {lib.available && !lib.list.length && <tr><td colSpan="9" className="empty">{q || status || tag ? 'No proxies match these filters.' : 'No proxies yet. Add one or import a list.'}</td></tr>}
     </tbody></table></div>
+    <ProviderPanel onChanged={lib.reload} />
+    {dialog?.kind === 'history' && <LatencyHistory proxy={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'edit' && <ProxyEditor proxy={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); lib.reload(); }} />}
     {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={lib.reload} />}
     {dialog?.kind === 'force' && <Confirm title="Proxy is in use" danger confirmLabel="Unassign and delete" message={`${dialog.msg} Deleting it switches those profiles to a direct connection.`} onConfirm={() => remove(dialog.data, true)} onClose={() => setDialog(null)} />}
@@ -127,6 +131,20 @@ function ImportDialog({ onClose, onDone }) {
   </Dialog>;
 }
 
+function LatencyHistory({ proxy, onClose }) {
+  const [rows, setRows] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { api(`/api/proxies/${proxy.id}/checks`).then(setRows).catch(e => setError(e.message)); }, [proxy.id]);
+  return <Dialog title={`Latency · ${proxy.name}`} onClose={onClose} footer={<button onClick={onClose}>Close</button>}>
+    {error && <p className="err-text">{error}</p>}
+    {!rows && !error && <p className="muted">Loading recorded checks…</p>}
+    {rows && !rows.length && <p className="muted">No local health checks are stored for this proxy yet. Test it to record latency.</p>}
+    {!!rows?.length && <table className="grid"><thead><tr><th>When</th><th>Status</th><th>Latency</th><th>Error</th></tr></thead><tbody>
+      {rows.map((row, index) => <tr key={row.testedAt + index}><td className="muted">{new Date(row.testedAt).toLocaleString()}</td><td>{row.status}</td><td>{row.latencyMs} ms</td><td>{row.error || ''}</td></tr>)}
+    </tbody></table>}
+    {proxy.provider && <p className="muted">Provider: {proxy.provider}{proxy.providerMeta?.valid == null ? '' : ` · provider valid: ${proxy.providerMeta.valid}`}</p>}
+  </Dialog>;
+}
 function LegacySummary() {
   const [list, setList] = useState([]);
   useEffect(() => { api('/api/profiles').then(setList).catch(() => {}); }, []);

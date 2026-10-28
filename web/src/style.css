@@ -44,6 +44,7 @@ code{background:var(--surface-2);border:1px solid var(--border);padding:0 5px;bo
 .side-section{margin:18px 12px 6px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#5f6977}
 .side-empty{padding:4px 12px;font-size:12px;color:#5f6977}.muted-inline{font-style:italic}
 .side-foot{margin-top:auto;padding:12px 8px 4px;display:flex;flex-direction:column;gap:10px;font-size:12px;color:#5f6977}
+.side-foot .ghost{color:var(--side-text)}
 .content{flex:1;overflow:auto;padding:24px 32px;min-width:0}
 .page-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}.page-head h1{font-size:21px;margin:0 0 2px;font-weight:600;letter-spacing:-.01em}
 
@@ -117,6 +118,14 @@ label.check{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
 /* ---------- responsive ---------- */
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;display:flex;flex-direction:column;gap:4px;box-shadow:var(--shadow)}
+.stat b{font-size:22px;font-weight:650;letter-spacing:-.02em}
+.pager{display:flex;align-items:center;gap:10px;margin:12px 0}
+.error-list{margin:0;padding:0;list-style:none}.error-list li{padding:8px 0;border-bottom:1px solid var(--border)}
+.provider-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-bottom:12px}
+.provider-list article{border:1px solid var(--border);border-radius:var(--r);padding:10px 12px;background:var(--surface-2)}
+.app.compact .content{padding:12px 16px}.app.compact .grid th,.app.compact .grid td{padding:6px 8px}.app.compact .page-head{margin-bottom:8px}.app.compact .page-head h1{font-size:18px}
 @media (max-width:1100px){.col-updated,.grid th.col-updated{display:none}.content{padding:20px}}
 @media (max-width:900px){
   .side{width:64px;padding:12px 8px}.brand{padding:4px 8px 14px;font-size:0}.nav{justify-content:center;padding:10px;font-size:0}.nav .i{width:18px;height:18px}

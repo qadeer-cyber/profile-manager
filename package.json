@@ -29,6 +29,8 @@
     "test:m6:browser": "node --test test/m6-browser.test.js",
     "test:m7": "node --test --experimental-test-module-mocks test/cookies.test.js test/cookies-api.test.js test/backup.test.js test/bulk-ops.test.js test/clone-advanced.test.js",
     "test:m7:browser": "node --test test/m7-browser.test.js",
+    "test:m8": "node --test --experimental-test-module-mocks test/dashboard.test.js test/profile-table.test.js test/storage.test.js test/bulk-jobs.test.js test/backup-encrypted.test.js",
+    "test:m9": "node --test --experimental-test-module-mocks test/proxy-providers.test.js test/batch-api.test.js test/automation-examples.test.js",
     "test:m3:browser": "npm run build && node --test test/browser-settings-browser.test.js test/regional-locale-browser.test.js test/regional-locale-diagnostic-failure.test.js test/regional-locale-diagnostic-negative.test.js test/regional-locale-diagnostic-closefail.test.js"
   },
   "dependencies": {

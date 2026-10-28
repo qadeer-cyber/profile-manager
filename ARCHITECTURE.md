@@ -60,6 +60,10 @@ The pinned browser is Playwright core 1.64.1, revision 1248, Chrome for Testing 
 | 4 | `last_launched_at`, `last_error`, folder index |
 | 5 | `profiles.automation_enabled` default 0 |
 | 6 | `proxies` library, `profiles.proxy_id`, inline proxies copied into library rows |
+| 7–11 | profile indexes, regional settings, WebRTC policy, extensions, advanced settings |
+| 12 | saved views, proxy check history, provider accounts, bulk jobs, proxy provider columns |
+| 7–11 | profile indexes, regional settings, WebRTC policy, extensions, advanced settings |
+| 12 | saved views, proxy check history, provider accounts, bulk jobs, proxy provider columns |
 
 Node 22 loads the Node prebuild (modules ABI 127). The packaged app loads the Electron 44 rebuild (modules ABI 149) from `better_sqlite3.node`. electron-builder `asarUnpack` includes `**/*.node`. Electron may report the virtual `app.asar` path; the unpacked file is the sibling path with `app.asar` replaced by `app.asar.unpacked`. Prebuilds are excluded from the packaged `files` list.
 

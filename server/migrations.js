@@ -82,6 +82,46 @@ export const migrations = [
       const defaults = JSON.stringify(DEFAULT_ADVANCED_SETTINGS).replaceAll("'", "''");
       db.exec(`ALTER TABLE profiles ADD COLUMN advanced_settings TEXT NOT NULL DEFAULT '${defaults}'`);
     } },
+  { version: 12, name: 'saved views, proxy check history, provider accounts, bulk jobs', up: db => {
+      db.exec(`CREATE TABLE saved_views (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        surface TEXT NOT NULL DEFAULT 'profiles',
+        query_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE proxy_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proxy_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('ok','failed')),
+        latency_ms INTEGER,
+        error TEXT,
+        tested_at TEXT NOT NULL)`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_proxy_checks_proxy ON proxy_checks(proxy_id, tested_at)');
+      db.exec(`CREATE TABLE provider_accounts (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        label TEXT NOT NULL,
+        secret TEXT NOT NULL DEFAULT '',
+        api_token TEXT NOT NULL DEFAULT '',
+        config TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE bulk_jobs (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL,
+        total INTEGER NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        summary TEXT NOT NULL DEFAULT '[]',
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      const cols = db.prepare('PRAGMA table_info(proxies)').all().map(column => column.name);
+      if (!cols.includes('provider')) db.exec('ALTER TABLE proxies ADD COLUMN provider TEXT');
+      if (!cols.includes('provider_ref')) db.exec('ALTER TABLE proxies ADD COLUMN provider_ref TEXT');
+      if (!cols.includes('provider_meta')) db.exec("ALTER TABLE proxies ADD COLUMN provider_meta TEXT NOT NULL DEFAULT '{}'");
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

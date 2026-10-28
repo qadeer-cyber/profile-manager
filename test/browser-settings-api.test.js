@@ -62,7 +62,7 @@ test('M1 database upgrade is additive, backed up, idempotent and preserves profi
     migrate(db, migrations.filter(m => m.version <= 7));
     db.prepare("INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES ('legacy','Legacy','[]','Folder','Notes','t','t')").run();
     const previous = db.prepare('SELECT * FROM profiles').get();
-    const m = migrate(db); assert.deepEqual(m.applied, [8, 9, 10, 11]); assert.ok(fs.existsSync(m.backup));
+    const m = migrate(db); assert.deepEqual(m.applied, [8, 9, 10, 11, 12]); assert.ok(fs.existsSync(m.backup));
     const row = db.prepare('SELECT * FROM profiles').get();
     const { browser_settings, webrtc_settings, advanced_settings, ...original } = row;
     assert.deepEqual(original, previous);

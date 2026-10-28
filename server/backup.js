@@ -13,6 +13,7 @@ import { currentVersion } from './migrations.js';
 import { encrypt, decrypt } from './secrets.js';
 import { DEFAULT_ADVANCED_SETTINGS } from './advanced-settings.js';
 import { packArchive, unpackArchive } from './archive.js';
+import { decryptBackup, describeEncryptedBackup, encryptBackup, isEncryptedBackup } from './backup-crypto.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
@@ -78,6 +79,36 @@ export function createBackup({ ids = runningIds() } = {}) {
   return packArchive(files);
 }
 
+export function createEncryptedBackup(passphrase, options) {
+  return encryptBackup(createBackup(options), passphrase);
+}
+
+function plaintextArchive(buffer, passphrase) {
+  if (!isEncryptedBackup(buffer)) return { buffer, encrypted: false };
+  if (typeof passphrase !== 'string' || !passphrase) throw fail(400, 'This backup is encrypted. A passphrase is required.', 'PASSPHRASE_REQUIRED');
+  return { buffer: decryptBackup(buffer, passphrase), encrypted: true };
+}
+
+export function inspectBackup(buffer, { passphrase } = {}) {
+  if (isEncryptedBackup(buffer) && (typeof passphrase !== 'string' || !passphrase)) {
+    return { ...describeEncryptedBackup(), profiles: null, containsSecretKey: null };
+  }
+  const opened = plaintextArchive(buffer, passphrase);
+  const files = unpackArchive(opened.buffer);
+  const metaFile = files.find(file => file.path === 'meta.json');
+  if (!metaFile) throw fail(400, 'Backup is missing its manifest', 'CORRUPT_BACKUP');
+  let meta;
+  try { meta = JSON.parse(metaFile.data.toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
+  if (!meta || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  return {
+    encrypted: opened.encrypted,
+    ...(opened.encrypted ? describeEncryptedBackup() : { format: meta.format, version: meta.version, requiresPassphrase: false }),
+    createdAt: meta.createdAt || null,
+    profiles: meta.profiles.map(profile => ({ id: profile && profile.id, name: profile && profile.name })),
+    containsSecretKey: files.some(file => file.path === 'secret.key'),
+  };
+}
+
 function writeTree(root, files) {
   const base = path.resolve(root);
   for (const file of files) {
@@ -97,8 +128,10 @@ function columnSet(database, table) {
   return new Set(database.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
 }
 
-export function restoreBackup(buffer, { collision = 'abort', failPoint = null, running = runningIds() } = {}) {
+export function restoreBackup(buffer, { collision = 'abort', failPoint = null, running = runningIds(), passphrase } = {}) {
   if (!['abort', 'rename', 'replace'].includes(collision)) throw fail(400, 'collision must be abort, rename, or replace', 'INVALID_RESTORE');
+  const opened = plaintextArchive(buffer, passphrase);
+  buffer = opened.buffer;
   const files = unpackArchive(buffer);
   const byPath = new Map(files.map(file => [file.path, file.data]));
   if (!byPath.has('meta.json') || !byPath.has('profiles.db')) throw fail(400, 'Backup is missing its manifest or database', 'CORRUPT_BACKUP');

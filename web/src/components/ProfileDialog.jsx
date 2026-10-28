@@ -19,9 +19,12 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [f, setF] = useState(initial);
   const [tab, setTab] = useState('general');
   const [test, setTest] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const [languageText, setLanguageText] = useState((initial.browserSettings?.languages || []).join(', '));
   const [library, setLibrary] = useState([]);
   const [libraryError, setLibraryError] = useState('');
+  const [libraryLoading, setLibraryLoading] = useState(true);
   const regional = f.browserSettings || emptyForm.browserSettings;
   const policy = f.webrtcSettings || emptyForm.webrtcSettings;
   const advanced = f.advancedSettings || emptyForm.advancedSettings;
@@ -32,7 +35,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     const without = assignments.filter(entry => entry.extensionId !== extensionId);
     setF({ ...f, extensionAssignments: next ? [...without, next] : without });
   };
-  useEffect(() => { api('/api/extensions').then(setLibrary).catch(e => setLibraryError(e.message)); }, []);
+  useEffect(() => { api('/api/extensions').then(setLibrary).catch(e => setLibraryError(e.message)).finally(() => setLibraryLoading(false)); }, []);
   const lib = useProxyLibrary();
   const toast = useToast();
   const set = (k, v) => setF({ ...f, [k]: v });
@@ -46,20 +49,26 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       setTest(r);
     } catch (e) { setTest({ ok: false, error: e.message }); }
   };
-  const submit = () => {
-    if (!f.name.trim()) { setTab('general'); return toast('Name is required', 'error'); }
-    if (f.proxyMode === 'custom' && (!f.proxy.host || !f.proxy.port)) { setTab('proxy'); return toast('Proxy host and port are required', 'error'); }
-    if (f.proxyMode === 'library' && !f.proxyId) { setTab('proxy'); return toast('Pick a proxy from the library', 'error'); }
+  const submit = async () => {
+    if (!f.name.trim()) { setTab('general'); setFormError('Name is required'); return toast('Name is required', 'error'); }
+    if (f.name.trim().length > 200) { setTab('general'); setFormError('Name is too long'); return toast('Name is too long', 'error'); }
+    if (f.proxyMode === 'custom' && (!f.proxy.host || !f.proxy.port)) { setTab('proxy'); setFormError('Proxy host and port are required'); return toast('Proxy host and port are required', 'error'); }
+    if (f.proxyMode === 'library' && !f.proxyId) { setTab('proxy'); setFormError('Pick a proxy from the library'); return toast('Pick a proxy from the library', 'error'); }
+    let next;
     try {
       const browserSettings = validateBrowserSettings({ ...regional, languages: languageText.trim() ? languageText.split(',').map(s => s.trim()) : [] });
       const webrtcSettings = validateWebRtcSettings(policy);
       const advancedSettings = validateAdvancedSettings(advanced);
-      onSave({ ...f, browserSettings, webrtcSettings, advancedSettings });
-    } catch (e) { setTab(e.code === 'INVALID_WEBRTC_SETTINGS' ? 'webrtc' : e.code === 'INVALID_ADVANCED_SETTINGS' ? (e.tab || 'identity') : 'regional'); toast(e.message, 'error'); }
+      next = { ...f, browserSettings, webrtcSettings, advancedSettings };
+    } catch (e) { setTab(e.code === 'INVALID_WEBRTC_SETTINGS' ? 'webrtc' : e.code === 'INVALID_ADVANCED_SETTINGS' ? (e.tab || 'identity') : 'regional'); setFormError(e.message); return toast(e.message, 'error'); }
+    setSaving(true); setFormError('');
+    try { await onSave(next); }
+    catch (e) { setFormError(e.message || 'Could not save the profile'); }
+    finally { setSaving(false); }
   };
   const tagList = f.tags.split(',').map(t => t.trim()).filter(Boolean);
   return <Drawer title={initial.id ? 'Edit profile' : 'New profile'} subtitle={initial.id ? initial.name : 'Isolated browser profile with its own storage'} onClose={onClose}
-    footer={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={submit}>{initial.id ? 'Save changes' : 'Create profile'}</button></>}>
+    footer={<><button onClick={onClose} disabled={saving}>Cancel</button><button className="primary" onClick={submit} disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : initial.id ? 'Save changes' : 'Create profile'}</button></>}>
     <Tabs value={tab} onChange={setTab} tabs={[['general', 'General'], ['proxy', 'Proxy'], ['regional', 'Region & language'], ['identity', 'Identity'], ['location', 'Location'], ['window', 'Window'], ['preferences', 'Startup'], ['webrtc', 'WebRTC'], ['extensions', 'Extensions'], ...(initial.id ? [['cookies', 'Cookies'], ['hardware', 'Hardware']] : [['hardware', 'Hardware']]), ['notes', 'Notes']]} />
     {tab === 'general' && <div className="form">
       <label>Name<input autoFocus value={f.name} onChange={e => set('name', e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} placeholder="e.g. Shop account 1" /></label>
@@ -67,6 +76,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
         <datalist id="pm-folders">{folders.filter(Boolean).map(x => <option key={x} value={x} />)}</datalist></label>
       <label>Tags<input value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="comma, separated" /></label>
       {tagList.length > 0 && <div className="chips">{tagList.map(t => <span key={t} className="tag">{t}</span>)}</div>}
+      {formError && tab === 'general' && <p className="err-text" role="alert">{formError}</p>}
       <label className="check toggle"><input type="checkbox" role="switch" checked={!!f.automationEnabled} onChange={e => set('automationEnabled', e.target.checked)} /> Enable automation (CDP)</label>
       <p className="muted hint">When on, launching this profile opens a local debugging port that automation tools can connect to. Any program on this computer can then control the browser, so leave it off unless you need it.{initial.running ? ' Applies on the next launch.' : ''}</p>
     </div>}
@@ -100,6 +110,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     </div>}
     {tab === 'extensions' && <div className="form">
       <div className="notice warn">Assigned extensions are copied unpacked extensions from the library. Chromium loads the enabled ones with --load-extension and does not load the others. Headless launches use a shell that often ignores extensions; use a visible window when an extension must run. This app does not review extension code, and loading one does not sandbox it beyond Chromium.</div>
+      {libraryLoading && <p className="muted">Loading extensions…</p>}
       {libraryError && <p className="err-text">{libraryError}</p>}
       {!library.length && !libraryError && <p className="muted">No extensions in the library yet. Add an unpacked extension on the Extensions page, then assign it here.</p>}
       {library.map(ext => {

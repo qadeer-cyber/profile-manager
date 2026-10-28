@@ -22,8 +22,14 @@ import { buildUserAgent } from './advanced-launch.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
 import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection } from './cookies.js';
-import { createBackup, restoreBackup } from './backup.js';
+import { createBackup, createEncryptedBackup, inspectBackup, restoreBackup } from './backup.js';
 import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
+import { dashboardStats } from './dashboard.js';
+import { createView, deleteView, listViews, queryProfiles, updateView } from './profile-table.js';
+import { cleanupStorage, inspectStorage } from './storage.js';
+import { appendJobItem, createJob, finishJob, getJob, listJobs } from './jobs.js';
+import { runBatch } from './batch.js';
+import { buildEndpoint, createAccount, deleteAccount, listAccounts, listWebshareProxies, providerCatalog, providerUsage } from './proxy-providers.js';
 import { hostHardware, observeBrowser, UNSUPPORTED_OVERRIDES } from './hardware.js';
 import { copyProfileTree } from './profile-copy.js';
 import {
@@ -210,15 +216,7 @@ async function remove(id) {
   fs.rmSync(userDataDir(id), { recursive: true, force: true });
 }
 const headlessDefault = () => process.env.HEADLESS === '1' || getSetting('defaultHeadless', false);
-const updateHandler = (req, res) => {
-  const v = validate(req.body, must(req.params.id));
-  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,updated_at=? WHERE id=?')
-    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), new Date().toISOString(), req.params.id);
-  if (v.extensionAssignments) replaceProfileExtensions(req.params.id, v.extensionAssignments);
-  const result = publicP(get(req.params.id));
-  if (result.running && ('browserSettings' in req.body || 'webrtcSettings' in req.body || 'advancedSettings' in req.body || 'extensionAssignments' in req.body)) result.appliesOnNextLaunch = true;
-  res.json(result);
-};
+const updateHandler = (req, res) => { res.json(applyUpdate(req.params.id, req.body)); };
 // allowOverride: only the automation API (/api/v1) may override the profile's automation flag per launch.
 const doLaunch = async (id, b = {}, { allowOverride = false } = {}) => {
   const p = must(id);
@@ -275,25 +273,34 @@ function cookieMutation(id) {
   if (engine.isRunning(id)) throw Object.assign(err(409, 'Stop the profile before changing its cookies. A live cookie database cannot be edited safely.'), { code: 'PROFILE_RUNNING' });
   return profile;
 }
-function bulkLaunch(body, allowOverride) {
+function bulkLaunch(body, allowOverride, onItem) {
   const ids = body.ids;
   if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw err(400, 'ids must be an array of 1-50 ids');
   const concurrency = boundedConcurrency(body.concurrency, 2);
   return mapPool(ids, concurrency, async id => {
     try { return { id, ok: true, profile: await doLaunch(id, body, { allowOverride }) }; }
     catch (error) { return { id, ok: false, ...errorBody(error) }; }
-  });
+  }, onItem);
 }
-function bulkStop(body) {
+function bulkStop(body, onItem) {
   const ids = Array.isArray(body.ids) ? body.ids : engine.runningIds();
   if (ids.length > 50) throw err(400, 'ids must contain at most 50 ids');
   const concurrency = boundedConcurrency(body.concurrency, 4);
   return mapPool(ids, concurrency, async id => {
     try { await engine.stop(id); return { id, ok: true }; }
     catch (error) { return { id, ok: false, ...errorBody(error) }; }
-  }).then(results => ({ stopped: ids, results }));
+  }, onItem).then(results => ({ stopped: ids, results }));
 }
-function bulkAssign(body) {
+function bulkDelete(body, onItem) {
+  const ids = body.ids;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw err(400, 'ids must be an array of 1-50 ids');
+  const concurrency = boundedConcurrency(body.concurrency, 2);
+  return mapPool(ids, concurrency, async id => {
+    try { await remove(id); return { id, ok: true }; }
+    catch (error) { return { id, ok: false, ...errorBody(error) }; }
+  }, onItem);
+}
+function bulkAssign(body, onItem) {
   const ids = body.ids;
   if (!Array.isArray(ids) || !ids.length || ids.length > 100) throw err(400, 'ids must be an array of 1-100 ids');
   const hasFolder = 'folder' in body;
@@ -313,20 +320,97 @@ function bulkAssign(body) {
         db.prepare('UPDATE profiles SET tags=?, updated_at=? WHERE id=?').run(JSON.stringify(tags), new Date().toISOString(), id);
       }
       const assigned = hasProxy ? assignProxy(id, body.proxyId || null) : null;
-      return { id, ok: true, profile: assigned || publicP(get(id)) };
-    } catch (error) { return { id, ok: false, ...errorBody(error) }; }
+      const item = { id, ok: true, profile: assigned || publicP(get(id)) };
+      if (onItem) onItem(item);
+      return item;
+    } catch (error) {
+      const item = { id, ok: false, ...errorBody(error) };
+      if (onItem) onItem(item);
+      return item;
+    }
   });
 }
-function bulkImport(body) {
+function bulkImport(body, onItem) {
   const items = body.format === 'csv' ? profilesFromCsv(body.csv) : body.format === 'json' || Array.isArray(body.profiles) ? body.profiles : null;
   if (!Array.isArray(items)) throw err(400, 'format must be csv or json');
   if (!items.length || items.length > 100) throw err(400, 'profiles must contain 1 to 100 items');
   return items.map((item, index) => {
     try {
       const id = insert(validate(item || {}));
-      return { index, ok: true, profile: publicP(get(id)) };
-    } catch (error) { return { index, ok: false, error: error.message, code: error.code || null }; }
+      const result = { index, ok: true, profile: publicP(get(id)) };
+      if (onItem) onItem(result);
+      return result;
+    } catch (error) {
+      const result = { index, ok: false, error: error.message, code: error.code || null };
+      if (onItem) onItem(result);
+      return result;
+    }
   });
+}
+function bulkPlan(body) {
+  const action = body.action;
+  if (action === 'launch' || action === 'delete') {
+    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 50) throw err(400, 'ids must be an array of 1-50 ids');
+    boundedConcurrency(body.concurrency, 2);
+    return { action, total: body.ids.length };
+  }
+  if (action === 'stop') {
+    const ids = Array.isArray(body.ids) ? body.ids : engine.runningIds();
+    if (ids.length > 50) throw err(400, 'ids must contain at most 50 ids');
+    boundedConcurrency(body.concurrency, 4);
+    return { action, total: ids.length };
+  }
+  if (action === 'assign') {
+    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100) throw err(400, 'ids must be an array of 1-100 ids');
+    return { action, total: body.ids.length };
+  }
+  if (action === 'import') {
+    const items = body.format === 'csv' ? profilesFromCsv(body.csv) : body.format === 'json' || Array.isArray(body.profiles) ? body.profiles : null;
+    if (!Array.isArray(items) || !items.length || items.length > 100) throw err(400, 'profiles must contain 1 to 100 items');
+    return { action, total: items.length };
+  }
+  throw err(400, 'action must be launch, stop, assign, import, or delete');
+}
+function startBulkJob(body, allowOverride) {
+  const plan = bulkPlan(body);
+  const jobId = createJob(plan.action, plan.total);
+  const onItem = item => appendJobItem(jobId, item);
+  let run;
+  try {
+    run = plan.action === 'launch' ? bulkLaunch(body, allowOverride, onItem)
+      : plan.action === 'stop' ? bulkStop(body, onItem)
+      : plan.action === 'assign' ? bulkAssign(body, onItem)
+      : plan.action === 'import' ? bulkImport(body, onItem)
+      : bulkDelete(body, onItem);
+  } catch (error) {
+    finishJob(jobId, error.message || 'failed');
+    return getJob(jobId);
+  }
+  Promise.resolve(run).then(() => finishJob(jobId), error => finishJob(jobId, error.message || 'failed'));
+  return getJob(jobId);
+}
+function rejectPassphraseQuery(req) {
+  if (req.query && (Object.hasOwn(req.query, 'passphrase') || Object.hasOwn(req.query, 'password'))) throw err(400, 'Do not send a passphrase in the query string');
+}
+function applyUpdate(id, body) {
+  const v = validate(body, must(id));
+  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,updated_at=? WHERE id=?')
+    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), new Date().toISOString(), id);
+  if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
+  const result = publicP(get(id));
+  if (result.running && ('browserSettings' in body || 'webrtcSettings' in body || 'advancedSettings' in body || 'extensionAssignments' in body)) result.appliesOnNextLaunch = true;
+  return result;
+}
+function batchHandlers(allowOverride) {
+  return {
+    createProfile: op => { const id = insert(validate(op.body || {})); return { profile: publicP(get(id)) }; },
+    updateProfile: op => ({ profile: applyUpdate(op.id, op.body || {}) }),
+    deleteProfile: async op => { await remove(op.id); return { id: op.id, deleted: true }; },
+    launch: async op => ({ profile: await doLaunch(op.id, op.body || {}, { allowOverride }) }),
+    stop: async op => ({ profile: await doStop(op.id) }),
+    assignProxy: op => ({ profile: assignProxy(op.id, 'proxyId' in op ? op.proxyId : null) }),
+    clone: op => ({ profile: publicP(clone(op.id, op.body || {})) }),
+  };
 }
 function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
@@ -345,13 +429,36 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     throw err(400, 'confirm must be clear-all or clear-selected');
   }));
   router.post('/backup', wrap((req, res) => {
-    const body = createBackup();
-    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="profile-manager-backup.pmb"', 'Cache-Control': 'no-store', 'X-Backup-Contains': 'proxy-secrets' });
+    rejectPassphraseQuery(req);
+    const encrypting = req.body?.encrypt === true;
+    if (!encrypting && req.body?.passphrase) throw err(400, 'Passphrase was set without encrypt:true');
+    const body = encrypting ? createEncryptedBackup(req.body.passphrase) : createBackup();
+    const filename = encrypting ? 'profile-manager-backup.pmbe' : 'profile-manager-backup.pmb';
+    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename="${filename}"`, 'Cache-Control': 'no-store', 'X-Backup-Contains': 'proxy-secrets', 'X-Backup-Encrypted': encrypting ? 'aes-256-gcm' : 'none' });
     res.send(body);
   }));
-  router.post('/backup/restore', express.raw({ limit: '64mb', type: () => true }), wrap((req, res) => {
+  router.post('/backup/inspect', express.raw({ limit: '64mb', type: () => true }), wrap((req, res) => {
+    rejectPassphraseQuery(req);
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw err(400, 'backup body is required');
-    res.json(restoreBackup(req.body, { collision: String(req.query.collision || 'abort') }));
+    res.json(inspectBackup(req.body, { passphrase: req.get('x-backup-passphrase') || undefined }));
+  }));
+  router.post('/backup/restore', express.raw({ limit: '64mb', type: () => true }), wrap((req, res) => {
+    rejectPassphraseQuery(req);
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw err(400, 'backup body is required');
+    res.json(restoreBackup(req.body, { collision: String(req.query.collision || 'abort'), passphrase: req.get('x-backup-passphrase') || undefined }));
+  }));
+  router.post('/bulk/jobs', wrap((req, res) => res.status(202).json(startBulkJob(req.body, allowOverride))));
+  router.get('/bulk/jobs', wrap((req, res) => res.json(listJobs(req.query.limit))));
+  router.get('/bulk/jobs/:id', wrap((req, res) => res.json(getJob(req.params.id))));
+  router.post('/batch', wrap(async (req, res) => {
+    const outcome = await runBatch(req.body?.operations, batchHandlers(allowOverride));
+    if (req.body?.track === true) {
+      const jobId = createJob('batch', outcome.results.length);
+      for (const item of outcome.results) appendJobItem(jobId, item);
+      finishJob(jobId, outcome.ok ? null : 'one or more operations failed');
+      outcome.jobId = jobId;
+    }
+    res.status(outcome.ok ? 200 : 207).json(outcome);
   }));
   router.post('/bulk/import', wrap((req, res) => res.json(bulkImport(req.body))));
   router.post('/bulk/launch', wrap(async (req, res) => res.json(await bulkLaunch(req.body, allowOverride))));
@@ -370,20 +477,31 @@ function validHost(h) {
 }
 function validPort(p) { const n = Number(p); if (!Number.isInteger(n) || n < 1 || n > 65535) throw err(400, 'invalid proxy port (1-65535)'); return n; }
 function validType(t) { if (!PROXY_TYPES.includes(t)) throw err(400, 'proxy type must be http, https or socks5'); return t; }
-function createProxyRow({ name, type, host, port, username = '', password = '', tags = [] }) {
+function createProxyRow({ name, type, host, port, username = '', password = '', tags = [], provider = null, providerRef = null, providerMeta = {} }) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   type = validType(type); host = validHost(host); port = validPort(port);
   name = String(name || '').trim() || `${type}://${host}:${port}`;
   if (name.length > 200) throw err(400, 'name too long');
-  db.prepare('INSERT INTO proxies (id,name,type,host,port,username,password,tags,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
-    .run(id, name, type, host, port, String(username || ''), encrypt(String(password || '')), JSON.stringify(cleanTags(tags)), now, now);
+  db.prepare('INSERT INTO proxies (id,name,type,host,port,username,password,tags,provider,provider_ref,provider_meta,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, name, type, host, port, String(username || ''), encrypt(String(password || '')), JSON.stringify(cleanTags(tags)), provider, providerRef, JSON.stringify(providerMeta || {}), now, now);
   return id;
 }
 const proxyRow = id => db.prepare('SELECT * FROM proxies WHERE id=?').get(id);
 const mustProxy = id => { const r = proxyRow(id); if (!r) throw err(404, 'proxy not found'); return r; };
+function safeProviderMeta(raw) {
+  let parsed = {};
+  try { parsed = JSON.parse(raw || '{}'); } catch { parsed = {}; }
+  const out = {};
+  for (const [key, value] of Object.entries(parsed || {})) {
+    if (/password|passphrase|secret|token|authorization|api[-_]?key/i.test(key)) continue;
+    if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') out[key] = value;
+  }
+  return out;
+}
 function publicProxy(r) {
   if (!r) return r;
   return { id: r.id, name: r.name, type: r.type, host: r.host, port: r.port, username: r.username, hasPassword: !!r.password, tags: JSON.parse(r.tags),
+    provider: r.provider || null, providerRef: r.provider_ref || null, providerMeta: safeProviderMeta(r.provider_meta),
     lastTest: { status: r.last_test_status ?? null, ip: r.last_test_ip ?? null, latencyMs: r.last_test_latency_ms ?? null, error: r.last_test_error ?? null, testedAt: r.last_tested_at ?? null },
     assignedProfiles: db.prepare('SELECT COUNT(*) n FROM profiles WHERE proxy_id=?').get(r.id).n, createdAt: r.created_at, updatedAt: r.updated_at };
 }
@@ -523,8 +641,11 @@ async function testLibraryProxy(id) {
   let password;
   try { password = decrypt(r.password); } catch (e) { throw Object.assign(err(500, 'Cannot decrypt this proxy\'s password: ' + e.message + '. Re-enter it.'), { code: e.code }); }
   const res = await runProxyTest({ type: r.type, host: r.host, port: r.port, username: r.username, password });
+  const testedAt = new Date().toISOString();
   db.prepare('UPDATE proxies SET last_test_status=?, last_test_ip=?, last_test_latency_ms=?, last_test_error=?, last_tested_at=? WHERE id=?')
-    .run(res.ok ? 'ok' : 'failed', res.ip, res.latencyMs, res.error, new Date().toISOString(), id);
+    .run(res.ok ? 'ok' : 'failed', res.ip, res.latencyMs, res.error, testedAt, id);
+  db.prepare('INSERT INTO proxy_checks (proxy_id, status, latency_ms, error, tested_at) VALUES (?,?,?,?,?)').run(id, res.ok ? 'ok' : 'failed', res.latencyMs, res.error, testedAt);
+  db.prepare('DELETE FROM proxy_checks WHERE proxy_id=? AND id NOT IN (SELECT id FROM proxy_checks WHERE proxy_id=? ORDER BY id DESC LIMIT 50)').run(id, id);
   return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, proxy: publicProxy(proxyRow(id)) };
 }
 // Legacy ad-hoc test (inline proxy object, not saved)
@@ -577,9 +698,65 @@ function mountProxyRoutes(r) {
   r.patch('/proxies/:id', wrap((req, res) => res.json(patchProxy(req.params.id, req.body))));
   r.delete('/proxies/:id', wrap((req, res) => { deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true'); res.status(204).end(); }));
   r.post('/proxies/:id/test', wrap(async (req, res) => res.json(await testLibraryProxy(req.params.id))));
+  r.get('/proxies/:id/checks', wrap((req, res) => {
+    mustProxy(req.params.id);
+    res.json(db.prepare('SELECT status, latency_ms AS latencyMs, error, tested_at AS testedAt FROM proxy_checks WHERE proxy_id=? ORDER BY tested_at ASC, id ASC').all(req.params.id));
+  }));
   r.post('/profiles/:id/proxy', wrap((req, res) => {
     if (!('proxyId' in req.body)) throw err(400, 'proxyId is required (string or null)');
     res.json(assignProxy(req.params.id, req.body.proxyId));
+  }));
+}
+function mountWorkspace(router) {
+  router.get('/dashboard', wrap((req, res) => res.json(dashboardStats())));
+  router.get('/profile-table', wrap((req, res) => {
+    const query = { ...req.query };
+    if (!('folder' in req.query)) query.folder = '__all';
+    const rows = list({ q: query.q, tag: query.tag, folder: query.folder }).map(publicP);
+    res.json(queryProfiles(rows, query));
+  }));
+  router.get('/views', wrap((req, res) => res.json(listViews(req.query.surface || 'profiles'))));
+  router.post('/views', wrap((req, res) => res.status(201).json(createView(req.body))));
+  router.patch('/views/:id', wrap((req, res) => res.json(updateView(req.params.id, req.body))));
+  router.delete('/views/:id', wrap((req, res) => { deleteView(req.params.id); res.status(204).end(); }));
+  router.get('/profiles/:id/storage', wrap((req, res) => { must(req.params.id); res.json(inspectStorage(req.params.id)); }));
+  router.post('/profiles/:id/storage/cleanup', wrap((req, res) => { must(req.params.id); res.json(cleanupStorage(req.params.id, req.body)); }));
+}
+function mountProviderRoutes(router) {
+  router.get('/proxy-providers', wrap((req, res) => res.json(providerCatalog())));
+  router.get('/proxy-providers/accounts', wrap((req, res) => res.json(listAccounts())));
+  router.post('/proxy-providers/accounts', wrap((req, res) => res.status(201).json(createAccount(req.body || {}))));
+  router.delete('/proxy-providers/accounts/:id', wrap((req, res) => { deleteAccount(req.params.id); res.status(204).end(); }));
+  router.post('/proxy-providers/accounts/:id/materialize', wrap((req, res) => {
+    const built = buildEndpoint(req.params.id, req.body || {});
+    const id = createProxyRow(built);
+    res.status(201).json(publicProxy(proxyRow(id)));
+  }));
+  router.post('/proxy-providers/accounts/:id/rotate', wrap((req, res) => {
+    if (!req.body || typeof req.body.proxyId !== 'string') throw err(400, 'proxyId is required');
+    const built = buildEndpoint(req.params.id, req.body);
+    patchProxy(req.body.proxyId, { username: built.username });
+    db.prepare('UPDATE proxies SET provider=?, provider_ref=?, provider_meta=?, updated_at=? WHERE id=?')
+      .run(built.provider, built.providerRef, JSON.stringify(built.providerMeta), new Date().toISOString(), req.body.proxyId);
+    res.json(publicProxy(proxyRow(req.body.proxyId)));
+  }));
+  router.post('/proxy-providers/accounts/:id/usage', wrap(async (req, res) => res.json(await providerUsage(req.params.id))));
+  router.post('/proxy-providers/accounts/:id/import', wrap(async (req, res) => {
+    const items = await listWebshareProxies(req.params.id, { mode: req.body?.mode || 'direct', pages: req.body?.pages || 1 });
+    const results = items.map(item => {
+      try {
+        const existing = item.providerRef ? db.prepare('SELECT id FROM proxies WHERE provider=? AND provider_ref=?').get(item.provider, item.providerRef) : null;
+        if (existing) {
+          db.prepare('UPDATE proxies SET provider_meta=?, updated_at=? WHERE id=?').run(JSON.stringify(item.providerMeta), new Date().toISOString(), existing.id);
+          return { ok: true, id: existing.id, duplicate: true, host: item.host, port: item.port, valid: item.providerMeta.valid };
+        }
+        const id = createProxyRow({ ...item, tags: ['webshare'] });
+        return { ok: true, id, duplicate: false, host: item.host, port: item.port, valid: item.providerMeta.valid };
+      } catch (error) {
+        return { ok: false, host: item.host, port: item.port, error: error.message, code: error.code || null };
+      }
+    });
+    res.json({ created: results.filter(item => item.ok && !item.duplicate).length, duplicates: results.filter(item => item.duplicate).length, failed: results.filter(item => !item.ok).length, results });
   }));
 }
 function diagnostics() {
@@ -632,6 +809,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   mountProxyRoutes(ui);
   mountExtensionRoutes(ui);
   mountProfileOps(ui);
+  mountWorkspace(ui);
+  mountProviderRoutes(ui);
   ui.post('/proxy/test', wrap(async (req, res) => res.json(await testProxy(req.body.proxy || req.body))));
   ui.post('/profiles/:id/test-proxy', wrap(async (req, res) => {
     const p = must(req.params.id);
@@ -677,7 +856,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   v1.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(v1);
   mountExtensionRoutes(v1);
-  mountProfileOps(v1);
+  mountProfileOps(v1, { allowOverride: true });
+  mountWorkspace(v1);
+  mountProviderRoutes(v1);
   v1.get('/running', (req, res) => res.json(engine.runningIds().map(id => publicP(get(id)))));
   v1.post('/bulk/create', wrap((req, res) => {
     const items = req.body.profiles;

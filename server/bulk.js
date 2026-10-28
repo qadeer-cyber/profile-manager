@@ -7,7 +7,7 @@ export function boundedConcurrency(value, fallback) {
   return value;
 }
 
-export async function mapPool(items, limit, fn) {
+export async function mapPool(items, limit, fn, onItem) {
   const out = new Array(items.length);
   let cursor = 0;
   const worker = async () => {
@@ -16,6 +16,7 @@ export async function mapPool(items, limit, fn) {
       cursor += 1;
       try { out[index] = await fn(items[index], index); }
       catch (error) { out[index] = { ok: false, error: error.message, code: error.code || null }; }
+      if (onItem) onItem(out[index], index);
     }
   };
   const workers = Math.min(Math.max(1, limit), items.length || 1);
