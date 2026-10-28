@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
-import { api } from '../api.js';
+import { api, apiBinary } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 
 export function SettingsPage() {
@@ -25,6 +25,50 @@ export function SettingsPage() {
       {window.pm?.openDataDir && <button onClick={() => window.pm.openDataDir()}>Open data folder</button>}
       <p className="muted">Proxy passwords: {diag?.encryption.backend}{diag?.encryption.warning && <span className="err-text"> — {diag.encryption.warning}</span>}</p>
     </section>
+    <BackupPanel toast={toast} />
   </>;
+}
+
+function BackupPanel({ toast }) {
+  const [collision, setCollision] = useState('abort');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const download = async () => {
+    setBusy(true);
+    try {
+      const bytes = await apiBinary('/api/backup', { method: 'POST' });
+      const blob = new Blob([bytes], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'profile-manager-backup.pmb'; link.click();
+      URL.revokeObjectURL(url);
+      toast('Backup downloaded. It contains profile data and proxy passwords.', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  const restore = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setBusy(true);
+    try {
+      const body = await file.arrayBuffer();
+      const response = await fetch(`/api/backup/restore?collision=${encodeURIComponent(collision)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...(window.pm?.uiToken ? { 'X-UI-Token': window.pm.uiToken } : {}) }, body });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw Object.assign(new Error(payload.error || payload.message || `HTTP ${response.status}`), { code: payload.code });
+      setResult(payload);
+      toast(`Restored ${payload.added.length + payload.replaced.length + payload.renamed.length} profiles`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return <section className="panel"><h2>Backup and restore</h2>
+    <p className="muted">A backup includes profiles, browser data, extension files, and encrypted proxy passwords. It does not include the API token. Running profiles must be stopped first. Restore checks every path and checksum before it changes this data folder, and it rolls back if a file cannot be moved.</p>
+    <div className="row">
+      <button className="primary" disabled={busy} onClick={download}>Download backup</button>
+      <label>If a profile id already exists<select aria-label="Restore collision" value={collision} onChange={e => setCollision(e.target.value)}><option value="abort">Abort</option><option value="rename">Import as new profiles</option><option value="replace">Replace stopped profiles</option></select></label>
+      <label className="file-btn">Restore archive<input type="file" accept=".pmb,application/octet-stream" onChange={restore} disabled={busy} /></label>
+    </div>
+    {result && <p className="muted">Added {result.added.length}, replaced {result.replaced.length}, renamed {result.renamed.length}{result.proxyDetached.length ? `, proxy detached on ${result.proxyDetached.length}` : ''}.</p>}
+  </section>;
 }
 

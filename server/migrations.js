@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { DEFAULT_ADVANCED_SETTINGS } from './advanced-settings.js';
 // Versioned schema migrations. Each migration runs once, in order, inside a transaction.
 // Versions 1-6 are the v0.4.0 schema (be575c770a8b76596e6bbcb9f8dda1b12cc79be0).
 // Later versions are additive: they add objects and do not rewrite or delete profile rows.
@@ -76,6 +77,10 @@ export const migrations = [
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
         PRIMARY KEY (profile_id, extension_id))`);
       db.exec('CREATE INDEX IF NOT EXISTS idx_profile_extensions_extension ON profile_extensions(extension_id)');
+    } },
+  { version: 11, name: 'per-profile advanced browser settings', up: db => {
+      const defaults = JSON.stringify(DEFAULT_ADVANCED_SETTINGS).replaceAll("'", "''");
+      db.exec(`ALTER TABLE profiles ADD COLUMN advanced_settings TEXT NOT NULL DEFAULT '${defaults}'`);
     } },
 ];
 

@@ -22,6 +22,15 @@ export async function api(url, opts = {}) {
   }
   return j;
 }
+export async function apiBinary(url, opts = {}) {
+  const headers = { ...(token && { 'X-UI-Token': token }), ...opts.headers };
+  const response = await fetch(url, { method: opts.method || 'GET', headers, body: opts.body });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw Object.assign(new Error(payload.message || payload.error || `HTTP ${response.status}`), { status: response.status, code: payload.code });
+  }
+  return response.arrayBuffer();
+}
 // Server events (profile started/stopped/crashed, browser install)
 export function subscribe(cb) {
   if (window.pm?.onEvent) return window.pm.onEvent(cb);

@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { validateBrowserSettings } from '../../../server/browser-settings.js';
+import { DEFAULT_ADVANCED_SETTINGS, validateAdvancedSettings } from '../../../server/advanced-settings.js';
 import { validateWebRtcSettings, WEBRTC_CHOICES } from '../../../server/webrtc-policy.js';
 import { api } from '../api.js';
 import { useToast } from './Toasts.jsx';
 import { Drawer, Tabs } from './Drawer.jsx';
 import { ProxyTestResult } from './ProxyTestResult.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
+import { IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
+import { CookieManager } from './CookieManager.jsx';
+import { HardwarePanel } from './HardwarePanel.jsx';
 
-export const emptyForm = { name: '', tags: '', folder: '', notes: '', automationEnabled: false, browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
+export const emptyForm = { name: '', tags: '', folder: '', notes: '', automationEnabled: false, browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
 
 // Profile editor: General / Proxy / Notes tabs. Proxy can be "none", a library entry
 // (when the server has the proxy library), or a custom inline proxy (legacy API).
@@ -20,6 +24,8 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [libraryError, setLibraryError] = useState('');
   const regional = f.browserSettings || emptyForm.browserSettings;
   const policy = f.webrtcSettings || emptyForm.webrtcSettings;
+  const advanced = f.advancedSettings || emptyForm.advancedSettings;
+  const setAdvanced = next => setF({ ...f, advancedSettings: next });
   const assignments = f.extensionAssignments || [];
   const setRegional = (key, value) => setF({ ...f, browserSettings: { ...regional, [key]: value } });
   const setAssignment = (extensionId, next) => {
@@ -47,13 +53,14 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     try {
       const browserSettings = validateBrowserSettings({ ...regional, languages: languageText.trim() ? languageText.split(',').map(s => s.trim()) : [] });
       const webrtcSettings = validateWebRtcSettings(policy);
-      onSave({ ...f, browserSettings, webrtcSettings });
-    } catch (e) { setTab(e.code === 'INVALID_WEBRTC_SETTINGS' ? 'webrtc' : 'regional'); toast(e.message, 'error'); }
+      const advancedSettings = validateAdvancedSettings(advanced);
+      onSave({ ...f, browserSettings, webrtcSettings, advancedSettings });
+    } catch (e) { setTab(e.code === 'INVALID_WEBRTC_SETTINGS' ? 'webrtc' : e.code === 'INVALID_ADVANCED_SETTINGS' ? (e.tab || 'identity') : 'regional'); toast(e.message, 'error'); }
   };
   const tagList = f.tags.split(',').map(t => t.trim()).filter(Boolean);
   return <Drawer title={initial.id ? 'Edit profile' : 'New profile'} subtitle={initial.id ? initial.name : 'Isolated browser profile with its own storage'} onClose={onClose}
     footer={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={submit}>{initial.id ? 'Save changes' : 'Create profile'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['general', 'General'], ['proxy', 'Proxy'], ['regional', 'Region & language'], ['webrtc', 'WebRTC'], ['extensions', 'Extensions'], ['notes', 'Notes']]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['general', 'General'], ['proxy', 'Proxy'], ['regional', 'Region & language'], ['identity', 'Identity'], ['location', 'Location'], ['window', 'Window'], ['preferences', 'Startup'], ['webrtc', 'WebRTC'], ['extensions', 'Extensions'], ...(initial.id ? [['cookies', 'Cookies'], ['hardware', 'Hardware']] : [['hardware', 'Hardware']]), ['notes', 'Notes']]} />
     {tab === 'general' && <div className="form">
       <label>Name<input autoFocus value={f.name} onChange={e => set('name', e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} placeholder="e.g. Shop account 1" /></label>
       <label>Folder<input list="pm-folders" value={f.folder} onChange={e => set('folder', e.target.value)} placeholder="No folder" />
@@ -106,6 +113,12 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       })}
       <p className="muted hint">Disabled means the extension stays in the library but this profile does not pass it to Chromium. There is no supported launch flag that loads an unpacked extension and keeps it turned off.</p>
     </div>}
+    {tab === 'identity' && <IdentityFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'location' && <LocationFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'preferences' && <PreferenceFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'cookies' && (initial.id ? <CookieManager profileId={initial.id} /> : <p className="muted">Save the profile before managing its cookies.</p>)}
+    {tab === 'hardware' && <HardwarePanel profileId={initial.id} />}
     {tab === 'notes' && <div className="form"><label>Notes<textarea rows="8" value={f.notes} onChange={e => set('notes', e.target.value)} placeholder="Anything worth remembering about this profile" /></label></div>}
   </Drawer>;
 }

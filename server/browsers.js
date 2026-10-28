@@ -1,6 +1,8 @@
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
 import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
 import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
+import { advancedLaunchPlan, applyAdvancedPreferences, applyDocumentPermissions, installUserAgent } from './advanced-launch.js';
+import { chromiumIdentity } from './chromium-identity.js';
 import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
 // Browser engine: launch/stop with per-profile locks, persisted running state, startup recovery,
@@ -48,6 +50,7 @@ export function lifecycleSmokeSnapshot(id) {
 }
 export const isRunning = id => live.has(id) || settling.has(id);
 export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()])];
+export const liveContext = id => live.get(id)?.ctx || null;
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
 const emit = (type, id, extra = {}) => events.emit('event', { type, id, at: new Date().toISOString(), ...extra });
@@ -195,9 +198,18 @@ async function doLaunch(p, opts = {}) {
     if (!verifyWebRtcLaunchArgs(args, policy.mode)) {
       throw httpErr(500, 'Refusing to launch because the WebRTC arguments do not match the saved policy.', 'WEBRTC_LAUNCH_MISMATCH');
     }
+    const identity = chromiumIdentity(executablePath && fs.existsSync(executablePath) ? executablePath : '');
+    const plan = advancedLaunchPlan(p.advancedSettings || {}, { headless: !!headless, version: identity.version, platform: process.platform });
+    for (const flag of plan.args) args.push(flag);
+    if (plan.launch.userAgent) launchOpts.userAgent = plan.launch.userAgent;
+    if (plan.launch.viewport) launchOpts.viewport = plan.launch.viewport;
+    if (plan.launch.screen) launchOpts.screen = plan.launch.screen;
+    if (plan.launch.deviceScaleFactor) launchOpts.deviceScaleFactor = plan.launch.deviceScaleFactor;
+    if (plan.launch.geolocation) launchOpts.geolocation = plan.launch.geolocation;
     if (extensionPlan.ignoreDefaultArgs.length) launchOpts.ignoreDefaultArgs = extensionPlan.ignoreDefaultArgs;
     // Preference merge is best-effort. The force flag above is what verification checks.
     if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
+    applyAdvancedPreferences(dir, p.advancedSettings || {});
     const preferencesBaseline = readPreferences(dir);
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {
@@ -205,6 +217,12 @@ async function doLaunch(p, opts = {}) {
       const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
       throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
     }
+    if (plan.userAgent) await installUserAgent(ctx, plan.userAgent);
+    const watchPermissions = page => page.on('framenavigated', frame => {
+      if (frame === page.mainFrame()) applyDocumentPermissions(page, frame.url(), plan.permissions).catch(() => {});
+    });
+    for (const page of ctx.pages()) watchPermissions(page);
+    ctx.on('page', watchPermissions);
     entry = { ctx, relayUrl, launchId: randomUUID(), browserPid: null,
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
@@ -246,7 +264,17 @@ async function doLaunch(p, opts = {}) {
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
-    if (url) await (ctx.pages()[0] || await ctx.newPage()).goto(url).catch(() => {});
+    const openUrls = url ? [url] : plan.startupUrls;
+    if (openUrls.length) {
+      const first = ctx.pages()[0] || await ctx.newPage();
+      await first.goto(openUrls[0]).catch(() => {});
+      await applyDocumentPermissions(first, first.url(), plan.permissions).catch(() => {});
+      for (const extra of openUrls.slice(1)) {
+        const page = await ctx.newPage();
+        await page.goto(extra).catch(() => {});
+        await applyDocumentPermissions(page, page.url(), plan.permissions).catch(() => {});
+      }
+    }
     return runInfo(p.id);
   } catch (e) {
     entry?.detachTermination?.();

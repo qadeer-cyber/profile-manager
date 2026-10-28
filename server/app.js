@@ -17,7 +17,15 @@ import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpEr
 import { currentVersion } from './migrations.js';
 import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
+import { DEFAULT_ADVANCED_SETTINGS, validateAdvancedSettings } from './advanced-settings.js';
+import { buildUserAgent } from './advanced-launch.js';
+import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
+import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection } from './cookies.js';
+import { createBackup, restoreBackup } from './backup.js';
+import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
+import { hostHardware, observeBrowser, UNSUPPORTED_OVERRIDES } from './hardware.js';
+import { copyProfileTree } from './profile-copy.js';
 import {
   assertKnownAssignments, assignExtension, copyExtensionAssignments, deleteExtension, importUnpackedExtension,
   listExtensions, mustExtension, profileExtensions, publicExtension, replaceProfileExtensions,
@@ -97,7 +105,10 @@ const row2p = r => {
   const webrtcSettings = r.webrtc_settings ? JSON.parse(r.webrtc_settings) : { ...DEFAULT_WEBRTC_SETTINGS };
   delete r.webrtc_settings;
   const extensions = profileExtensions(r.id);
-  return { ...r, browserSettings, webrtcSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  let advancedSettings = { ...DEFAULT_ADVANCED_SETTINGS, userAgent: { ...DEFAULT_ADVANCED_SETTINGS.userAgent }, geolocation: { ...DEFAULT_ADVANCED_SETTINGS.geolocation }, screen: { ...DEFAULT_ADVANCED_SETTINGS.screen }, preferences: { startupUrls: [], permissions: { ...DEFAULT_ADVANCED_SETTINGS.preferences.permissions } } };
+  if (r.advanced_settings) { try { advancedSettings = JSON.parse(r.advanced_settings); } catch { /* keep defaults when the stored JSON is unreadable */ } }
+  delete r.advanced_settings;
+  return { ...r, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -133,11 +144,12 @@ function validate(b, prev) {
   if (name.length > 200) throw err(400, 'name too long');
   const browserSettings = validateBrowserSettings('browserSettings' in b ? b.browserSettings : {}, prev?.browserSettings);
   const webrtcSettings = validateWebRtcSettings('webrtcSettings' in b ? b.webrtcSettings : {}, prev?.webrtcSettings);
+  const advancedSettings = validateAdvancedSettings('advancedSettings' in b ? b.advancedSettings : {}, prev?.advancedSettings);
   const extensionAssignments = 'extensionAssignments' in b ? assertKnownAssignments(b.extensionAssignments) : null;
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
-  return { name, browserSettings, webrtcSettings, extensionAssignments, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
+  return { name, browserSettings, webrtcSettings, advancedSettings, extensionAssignments, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
     folder: String(b.folder ?? prev?.folder ?? '').trim(), notes: String(b.notes ?? prev?.notes ?? ''),
-    proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : prev?.proxy_id ?? null,
+    proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : 'proxyId' in b ? (b.proxyId == null || b.proxyId === '' ? null : mustProxy(b.proxyId).id) : prev?.proxy_id ?? null,
     automationEnabled: 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false };
 }
 // Back-compat: inline `proxy` on profile create/update -> find-or-create a library entry.
@@ -154,8 +166,8 @@ function insert(v) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   const dir = userDataDir(id);
   if (fs.existsSync(dir)) throw err(500, 'data directory collision'); // never share a data dir
-  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_settings,webrtc_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), now, now);
+  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_settings,webrtc_settings,advanced_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), now, now);
   if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   fs.mkdirSync(dir, { recursive: true });
   return id;
@@ -167,16 +179,28 @@ function list({ q = '', tag = '', folder } = {}) {
   if (folder !== undefined && folder !== '__all') l = l.filter(p => p.folder === folder);
   return l;
 }
+function cloneMode(body) {
+  if (body.mode !== undefined && body.mode !== 'settings' && body.mode !== 'data') throw err(400, 'mode must be "settings" or "data"');
+  if ('copyData' in body && typeof body.copyData !== 'boolean') throw err(400, 'copyData must be a boolean');
+  const copyData = body.mode ? body.mode === 'data' : body.copyData !== false;
+  if (body.mode && 'copyData' in body && copyData !== body.copyData) throw err(400, 'mode and copyData disagree');
+  return copyData;
+}
 function clone(id, body = {}) {
   const p = must(id);
-  const copyData = body.copyData !== false;
-  if (copyData && (engine.isRunning(id))) throw err(409, `Profile "${p.name}" is running. Stop it before cloning (browser data can't be copied consistently while in use), or pass {"copyData": false} to clone settings only.`);
+  const copyData = cloneMode(body);
+  if (copyData && engine.isRunning(id)) throw err(409, `Profile "${p.name}" is running. Stop it before cloning (browser data can't be copied consistently while in use), or pass {"copyData": false} to clone settings only.`);
   const nid = insert({ ...p, proxyId: p.proxy_id || null, name: body.name || p.name + ' (copy)' });
   copyExtensionAssignments(id, nid);
   if (copyData) {
     const src = userDataDir(id);
-    try { if (fs.existsSync(src)) fs.cpSync(src, userDataDir(nid), { recursive: true, filter: s => !engine.DATA_COPY_SKIP.has(path.basename(s)) }); }
-    catch (e) { db.prepare('DELETE FROM profiles WHERE id=?').run(nid); fs.rmSync(userDataDir(nid), { recursive: true, force: true }); throw err(500, 'Clone failed while copying data: ' + e.message); }
+    try { if (fs.existsSync(src)) copyProfileTree(src, userDataDir(nid)); }
+    catch (e) {
+      db.prepare('DELETE FROM profiles WHERE id=?').run(nid);
+      fs.rmSync(userDataDir(nid), { recursive: true, force: true });
+      if (e.status) throw e;
+      throw err(500, 'Clone failed while copying data: ' + e.message);
+    }
   }
   return get(nid);
 }
@@ -188,11 +212,11 @@ async function remove(id) {
 const headlessDefault = () => process.env.HEADLESS === '1' || getSetting('defaultHeadless', false);
 const updateHandler = (req, res) => {
   const v = validate(req.body, must(req.params.id));
-  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,webrtc_settings=?,updated_at=? WHERE id=?')
-    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), new Date().toISOString(), req.params.id);
+  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,updated_at=? WHERE id=?')
+    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), new Date().toISOString(), req.params.id);
   if (v.extensionAssignments) replaceProfileExtensions(req.params.id, v.extensionAssignments);
   const result = publicP(get(req.params.id));
-  if (result.running && ('browserSettings' in req.body || 'webrtcSettings' in req.body || 'extensionAssignments' in req.body)) result.appliesOnNextLaunch = true;
+  if (result.running && ('browserSettings' in req.body || 'webrtcSettings' in req.body || 'advancedSettings' in req.body || 'extensionAssignments' in req.body)) result.appliesOnNextLaunch = true;
   res.json(result);
 };
 // allowOverride: only the automation API (/api/v1) may override the profile's automation flag per launch.
@@ -205,6 +229,135 @@ const doLaunch = async (id, b = {}, { allowOverride = false } = {}) => {
   return publicP(get(id));
 };
 const doStop = async id => { must(id); await engine.stop(id); return publicP(get(id)); };
+
+function chromiumFacts() {
+  let executable = '';
+  try { executable = getSetting('executablePath', '') || chromium.executablePath(); } catch { executable = getSetting('executablePath', ''); }
+  const identity = chromiumIdentity(executable && fs.existsSync(executable) ? executable : '');
+  const presets = {};
+  if (identity.version) {
+    for (const mode of ['reduced', 'full']) {
+      try { presets[mode] = buildUserAgent({ version: identity.version, platform: process.platform, headless: false, mode }).userAgent; }
+      catch { /* this platform has no coherent preset */ }
+    }
+  }
+  return {
+    ...identity,
+    presets,
+    headlessNote: 'Headless launches use HeadlessChrome with the same Chromium version. Client hints keep that full version.',
+  };
+}
+async function hardwareReport(id) {
+  const profile = id ? must(id) : null;
+  const ctx = id && typeof engine.liveContext === 'function' ? engine.liveContext(id) : null;
+  const browser = id
+    ? (engine.isRunning(id) ? await observeBrowser(ctx) : { availability: 'unavailable', reason: 'not_running' })
+    : { availability: 'unavailable', reason: 'no_profile' };
+  return {
+    chromium: chromiumFacts(),
+    host: hostHardware(),
+    configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions } : null,
+    browser,
+    unsupported: UNSUPPORTED_OVERRIDES,
+  };
+}
+async function cookieList(id) {
+  const profile = must(id);
+  if (engine.isRunning(id)) {
+    const ctx = typeof engine.liveContext === 'function' ? engine.liveContext(id) : null;
+    if (!ctx) throw err(409, 'This profile is running without a local browser context, so its cookies cannot be listed safely');
+    return { cookies: cookiesFromContext(await ctx.cookies()) };
+  }
+  return { cookies: readProfileCookies(userDataDir(profile.id)) };
+}
+function cookieMutation(id) {
+  const profile = must(id);
+  if (engine.isRunning(id)) throw Object.assign(err(409, 'Stop the profile before changing its cookies. A live cookie database cannot be edited safely.'), { code: 'PROFILE_RUNNING' });
+  return profile;
+}
+function bulkLaunch(body, allowOverride) {
+  const ids = body.ids;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw err(400, 'ids must be an array of 1-50 ids');
+  const concurrency = boundedConcurrency(body.concurrency, 2);
+  return mapPool(ids, concurrency, async id => {
+    try { return { id, ok: true, profile: await doLaunch(id, body, { allowOverride }) }; }
+    catch (error) { return { id, ok: false, ...errorBody(error) }; }
+  });
+}
+function bulkStop(body) {
+  const ids = Array.isArray(body.ids) ? body.ids : engine.runningIds();
+  if (ids.length > 50) throw err(400, 'ids must contain at most 50 ids');
+  const concurrency = boundedConcurrency(body.concurrency, 4);
+  return mapPool(ids, concurrency, async id => {
+    try { await engine.stop(id); return { id, ok: true }; }
+    catch (error) { return { id, ok: false, ...errorBody(error) }; }
+  }).then(results => ({ stopped: ids, results }));
+}
+function bulkAssign(body) {
+  const ids = body.ids;
+  if (!Array.isArray(ids) || !ids.length || ids.length > 100) throw err(400, 'ids must be an array of 1-100 ids');
+  const hasFolder = 'folder' in body;
+  const hasTags = 'addTags' in body || 'removeTags' in body;
+  const hasProxy = 'proxyId' in body;
+  if (!hasFolder && !hasTags && !hasProxy) throw err(400, 'assign a folder, tags, or proxy');
+  if (hasFolder && body.folder != null && typeof body.folder !== 'string') throw err(400, 'folder must be a string');
+  if (hasProxy && body.proxyId != null && body.proxyId !== '') mustProxy(body.proxyId);
+  const add = cleanTags(body.addTags || []);
+  const remove = new Set(cleanTags(body.removeTags || []));
+  return ids.map(id => {
+    try {
+      const profile = must(id);
+      if (hasFolder) db.prepare('UPDATE profiles SET folder=?, updated_at=? WHERE id=?').run(String(body.folder || '').trim(), new Date().toISOString(), id);
+      if (hasTags) {
+        const tags = [...new Set([...profile.tags.filter(tag => !remove.has(tag)), ...add])];
+        db.prepare('UPDATE profiles SET tags=?, updated_at=? WHERE id=?').run(JSON.stringify(tags), new Date().toISOString(), id);
+      }
+      const assigned = hasProxy ? assignProxy(id, body.proxyId || null) : null;
+      return { id, ok: true, profile: assigned || publicP(get(id)) };
+    } catch (error) { return { id, ok: false, ...errorBody(error) }; }
+  });
+}
+function bulkImport(body) {
+  const items = body.format === 'csv' ? profilesFromCsv(body.csv) : body.format === 'json' || Array.isArray(body.profiles) ? body.profiles : null;
+  if (!Array.isArray(items)) throw err(400, 'format must be csv or json');
+  if (!items.length || items.length > 100) throw err(400, 'profiles must contain 1 to 100 items');
+  return items.map((item, index) => {
+    try {
+      const id = insert(validate(item || {}));
+      return { index, ok: true, profile: publicP(get(id)) };
+    } catch (error) { return { index, ok: false, error: error.message, code: error.code || null }; }
+  });
+}
+function mountProfileOps(router, { allowOverride = false } = {}) {
+  router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
+  router.get('/hardware', wrap(async (req, res) => res.json(await hardwareReport(null))));
+  router.get('/profiles/:id/hardware', wrap(async (req, res) => res.json(await hardwareReport(req.params.id))));
+  router.get('/profiles/:id/cookies', wrap(async (req, res) => res.json(await cookieList(req.params.id))));
+  router.post('/profiles/:id/cookies/import', wrap((req, res) => {
+    const profile = cookieMutation(req.params.id);
+    const cookies = Array.isArray(req.body) ? req.body : req.body.cookies;
+    res.json(importProfileCookies(userDataDir(profile.id), cookies));
+  }));
+  router.post('/profiles/:id/cookies/clear', wrap((req, res) => {
+    const profile = cookieMutation(req.params.id);
+    if (req.body.confirm === 'clear-all') return res.json(clearProfileCookies(userDataDir(profile.id), { all: true }));
+    if (req.body.confirm === 'clear-selected') return res.json(clearProfileCookies(userDataDir(profile.id), { selected: validateClearSelection(req.body.cookies) }));
+    throw err(400, 'confirm must be clear-all or clear-selected');
+  }));
+  router.post('/backup', wrap((req, res) => {
+    const body = createBackup();
+    res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename="profile-manager-backup.pmb"', 'Cache-Control': 'no-store', 'X-Backup-Contains': 'proxy-secrets' });
+    res.send(body);
+  }));
+  router.post('/backup/restore', express.raw({ limit: '64mb', type: () => true }), wrap((req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw err(400, 'backup body is required');
+    res.json(restoreBackup(req.body, { collision: String(req.query.collision || 'abort') }));
+  }));
+  router.post('/bulk/import', wrap((req, res) => res.json(bulkImport(req.body))));
+  router.post('/bulk/launch', wrap(async (req, res) => res.json(await bulkLaunch(req.body, allowOverride))));
+  router.post('/bulk/stop', wrap(async (req, res) => res.json(await bulkStop(req.body))));
+  router.post('/bulk/assign', wrap((req, res) => res.json(bulkAssign(req.body))));
+}
 
 // ---------------- Proxy library ----------------
 const PROXY_TYPES = ['http', 'https', 'socks5'];
@@ -478,6 +631,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(ui);
   mountExtensionRoutes(ui);
+  mountProfileOps(ui);
   ui.post('/proxy/test', wrap(async (req, res) => res.json(await testProxy(req.body.proxy || req.body))));
   ui.post('/profiles/:id/test-proxy', wrap(async (req, res) => {
     const p = must(req.params.id);
@@ -523,6 +677,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   v1.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(v1);
   mountExtensionRoutes(v1);
+  mountProfileOps(v1);
   v1.get('/running', (req, res) => res.json(engine.runningIds().map(id => publicP(get(id)))));
   v1.post('/bulk/create', wrap((req, res) => {
     const items = req.body.profiles;
@@ -530,18 +685,6 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const vals = items.map(i => validate(i || {}));
     const ids = db.transaction(() => vals.map(insert))();
     res.status(201).json(ids.map(id => publicP(get(id))));
-  }));
-  v1.post('/bulk/launch', wrap(async (req, res) => {
-    const ids = req.body.ids;
-    if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw err(400, 'ids must be an array of 1-50 ids');
-    const out = [];
-    for (const id of ids) { try { out.push({ id, ok: true, profile: await doLaunch(id, req.body) }); } catch (e) { out.push({ id, ok: false, ...errorBody(e) }); } }
-    res.json(out);
-  }));
-  v1.post('/bulk/stop', wrap(async (req, res) => {
-    const ids = Array.isArray(req.body.ids) ? req.body.ids : engine.runningIds();
-    for (const id of ids) await engine.stop(id);
-    res.json({ stopped: ids });
   }));
 
   mountProfileDiagnostics(app, {

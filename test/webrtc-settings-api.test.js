@@ -88,12 +88,13 @@ test('v8 database gains WebRTC and extension tables without rewriting profile va
     db.prepare("INSERT INTO profiles (id,name,tags,folder,notes,browser_settings,created_at,updated_at) VALUES ('legacy','Legacy','[]','Folder','Notes','{\"locale\":\"de-DE\",\"timezoneId\":\"Europe/Berlin\",\"languages\":[\"de-DE\"]}','t','t')").run();
     const previous = db.prepare('SELECT id,name,folder,notes,browser_settings FROM profiles').get();
     const m = migrate(db);
-    assert.deepEqual(m.applied, [9, 10]);
+    assert.deepEqual(m.applied, [9, 10, 11]);
     assert.ok(fs.existsSync(m.backup));
-    const row = db.prepare('SELECT id,name,folder,notes,browser_settings,webrtc_settings FROM profiles').get();
+    const row = db.prepare('SELECT id,name,folder,notes,browser_settings,webrtc_settings,advanced_settings FROM profiles').get();
     assert.equal(row.name, previous.name);
     assert.equal(row.browser_settings, previous.browser_settings);
     assert.deepEqual(JSON.parse(row.webrtc_settings), { mode: 'browser_default' });
+    assert.equal(JSON.parse(row.advanced_settings).userAgent.mode, 'default');
     assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='extensions'").get().name, 'extensions');
     assert.deepEqual(migrate(db).applied, []);
   } finally { db.close(); }
