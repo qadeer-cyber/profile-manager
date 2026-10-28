@@ -1,5 +1,7 @@
-// B1(b) closeout negatives (t46u): user actions on the quarantined (failed) M2
-// diagnostic tab, and an injected diagnostic timeout. Real Chromium + real app.
+// B1 option (ii) negatives (t47u, addendum A1): a failed app-owned M2 diagnostic
+// tab is closed by targetId before it can run script under the wrong locale, even
+// with concurrent reload / typed navigation; plus an injected diagnostic timeout.
+// Real Chromium + real app.
 // Faults are injected at the CDP command layer only; no product code is stubbed.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,8 +33,9 @@ const within = (p, ms) => Promise.race([Promise.resolve(p).then(v => ({ v }), e 
 const failed = []; engine.events.on('event', e => { if (e.type === 'profile:launch-failed') failed.push(e.id); });
 after(async () => { for (const id of engine.runningIds()) await engine.stop(id).catch(() => {}); server.close(); site.close(); if (db.open) db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
-// mode: null | 'reject' | { delayMs } (delay then reject)
+// mode: null | 'reject' (persistent) | { delayMs, once } (delay then reject)
 let mode = null, injected = 0, conn;
+const created = [], closedByApp = [], testSessions = [];
 async function launched(name) {
   const id = (await call('POST', '/profiles', { name, browserSettings: { locale: 'de-DE', languages: ['de-DE', 'en-US'] } })).json.id;
   assert.equal((await call('POST', `/profiles/${id}/launch`, { headless: false })).status, 200);
@@ -46,17 +49,20 @@ async function launched(name) {
   if (!proto.__b1neg) {
     const orig = proto.send; proto.__b1neg = true;
     proto.send = function (method, params) {
+      if (method === 'Target.createTarget') return orig.call(this, method, params).then(r => { created.push(r.targetId); return r; });
+      if (method === 'Target.closeTarget') closedByApp.push(params.targetId);
       if (mode && method === 'Emulation.setLocaleOverride') {
         injected++;
-        if (mode === 'reject') return Promise.reject(new Error('INJECTED locale failure'));
-        return sleep(mode.delayMs).then(() => { throw new Error('INJECTED slow locale failure'); });
+        const m = mode; if (m.once) mode = null; // per-target fault: only the next setup call
+        if (m.delayMs) return sleep(m.delayMs).then(() => { throw new Error('INJECTED slow locale failure'); });
+        return Promise.reject(new Error('INJECTED locale failure'));
       }
       return orig.call(this, method, params);
     };
   }
   const user = await ctx.newPage();
   await user.goto(`${origin}/user`);
-  await user.evaluate(() => { sessionStorage.setItem('k', 'v'); });
+  await user.evaluate(() => { sessionStorage.setItem('k', 'v'); document.cookie = 'c=1; path=/'; });
   return { id, ctx, user };
 }
 const launchIdOf = async id => (await call('GET', `/profiles/${id}/diagnostics`)).json.observation.launchId;
@@ -81,73 +87,78 @@ const assertRecovered = async (id, launchId, label) => {
   assert.equal(diagnosticsActiveCount(), 0);
 };
 
-test('quarantined diagnostic tab: address-bar navigation, reload, manual close -> no bypass/leak/lock', { timeout: 90000 }, async () => {
+test('failed diagnostic tab: concurrent reload + typed navigation cannot escape before close-by-targetId; profile untouched', { timeout: 90000 }, async () => {
   const { id, ctx, user } = await launched('b1neg-user-actions');
   const launchId = await launchIdOf(id);
   const snap = engine.lifecycleSmokeSnapshot(id), row = engine.runInfo(id);
+  const cookies = await ctx.cookies();
   const sessionsBefore = new Set(conn._sessions.keys());
-  const quarantinedIds = [];
   const ROUNDS = Number(process.env.B1NEG_ROUNDS || 3);
   for (let round = 0; round < ROUNDS; round++) {
     const before = new Set((await pageTargets(ctx)).map(t => t.targetId));
-    mode = 'reject'; injected = 0;
-    const r = await post(id, launchId);
-    mode = null;
-    assert.equal(r.status, 200); assert.ok(injected >= 1);
-    for (const k of ['timezone', 'locale', 'languages']) assert.equal(r.json.environment[k].availability, 'unavailable');
-    const q = (await pageTargets(ctx)).filter(t => !before.has(t.targetId));
-    assert.equal(q.length, 1, 'one quarantined target kept open (§7.9)');
-    const qid = q[0].targetId; quarantinedIds.push(qid);
-    // Independent browser-level session = the browser UI's own navigation path
-    // (NavigationController via Page.navigate typed / Page.reload). It never resumes the target.
+    const createdBefore = created.length, closedBefore = closedByApp.length, beaconsBefore = beacons.length, hitsBefore = hits.length;
+    // Slow failure: the target exists (paused) for ~1.2 s before setup fails,
+    // giving the user-action path a real window to try to escape.
+    mode = { delayMs: 1200, once: true }; injected = 0;
+    const pending = post(id, launchId); pending.catch(() => {});
+    let qid, actions = { reload: 0, nav: 0, evalRan: [] };
     const b = await ctx.browser().newBrowserCDPSession();
+    for (let i = 0; i < 100 && !qid; i++) { qid = (await pageTargets(ctx)).map(t => t.targetId).find(t => !before.has(t)); if (!qid) await sleep(10); }
+    assert.ok(qid, 'diagnostic target appeared');
+    // Independent browser-level session = browser UI navigation path (typed / reload).
     const { sessionId } = await b.send('Target.attachToTarget', { targetId: qid, flatten: true });
-    const qs = b._connection.toImpl(b)._session.createChildSession(sessionId);
-    const beaconsBefore = beacons.length;
-    const evalNow = async () => { const x = await within(qs.send('Runtime.evaluate', { expression: 'Intl.DateTimeFormat().resolvedOptions().locale', returnByValue: true }), 1500); return x === 'timeout' ? 'timeout' : x.e ? 'error' : x.v?.result?.value; };
-    const nav = await within(qs.send('Page.navigate', { url: `${origin}/addressbar${round}`, transitionType: 'typed' }), 2500);
-    await sleep(500);
-    const evalAfterNav = await evalNow();
-    const reload = await within(qs.send('Page.reload', { ignoreCache: true }), 2500);
-    await sleep(1000);
-    const evalAfterReload = await evalNow();
-    const nav2 = await within(qs.send('Page.navigate', { url: `${origin}/after-reload${round}`, transitionType: 'typed' }), 2500);
-    await sleep(1200);
-    const evalAfterNav2 = await evalNow();
-    const qinfo = (await pageTargets(ctx)).find(t => t.targetId === qid);
-    const tag = x => x === 'timeout' ? 'timeout' : x.e ? 'error' : 'returned';
-    const ev = { round, nav: tag(nav), evalAfterNav, reload: tag(reload), evalAfterReload, nav2: tag(nav2), evalAfterNav2, url: qinfo?.url, newBeacons: beacons.slice(beaconsBefore) };
-    console.log('# B1NEG-USER-ACTIONS', JSON.stringify(ev));
-    await b.send('Target.detachFromTarget', { sessionId }).catch(() => {});
-    await b.detach();
-    // No locale bypass: no script ran in the quarantined tab with a non-native locale.
-    for (const e of [evalAfterNav, evalAfterReload, evalAfterNav2]) assert.ok(e === 'timeout' || e === 'error' || e === 'de-DE', `round ${round}: quarantined tab executed script with locale ${e}`);
-    for (const bc of beacons) assert.match(bc, /\|de-DE\|de-DE$/, 'every executed page ran with native locale: ' + bc);
-    assert.ok(qinfo, '§7.9: navigation/reload did not auto-close the tab');
+    const bImpl = b._connection.toImpl(b)._session;
+    const qs = bImpl.createChildSession(sessionId); testSessions.push(sessionId);
+    const deadline = Date.now() + 2500;
+    while (Date.now() < deadline && (await pageTargets(ctx)).some(t => t.targetId === qid)) {
+      void within(qs.send('Page.reload', { ignoreCache: true }), 300).then(x => { if (x !== 'timeout' && !x.e) actions.reload++; });
+      void within(qs.send('Page.navigate', { url: `${origin}/escape${round}`, transitionType: 'typed' }), 300).then(x => { if (x !== 'timeout' && !x.e) actions.nav++; });
+      const ev = await within(qs.send('Runtime.evaluate', { expression: 'Intl.DateTimeFormat().resolvedOptions().locale', returnByValue: true }), 150);
+      if (ev !== 'timeout' && !ev.e) actions.evalRan.push(ev.v?.result?.value);
+      await sleep(50);
+    }
+    const r = await pending; mode = null;
+    await sleep(800);
+    const after = await pageTargets(ctx);
+    const ev = { round, status: r.status, injected, env: Object.fromEntries(['timezone', 'locale', 'languages'].map(k => [k, r.json?.environment?.[k]?.availability + ':' + r.json?.environment?.[k]?.reason])),
+      createdId: created.slice(createdBefore), appClosed: closedByApp.slice(closedBefore), stillOpen: after.some(t => t.targetId === qid), actions, newBeacons: beacons.slice(beaconsBefore), newHits: hits.slice(hitsBefore) };
+    console.log('# B1NEG-CLOSE-ON-FAIL', JSON.stringify(ev));
+    bImpl.disposeChildSession(sessionId); // the test's own probe session
+    await b.detach().catch(() => {});
+    assert.equal(r.status, 200); assert.ok(injected >= 1, 'fault injected');
+    for (const k of ['timezone', 'locale', 'languages']) {
+      assert.equal(r.json.environment[k].availability, 'unavailable', k);
+      assert.equal(r.json.environment[k].reason, 'collection_failed', k);
+    }
+    assert.deepEqual(validateDiagnosticsV1(r.json, { route: 'POST' }).errors, []);
+    // Identity: the app closed exactly the target its own Target.createTarget returned.
+    assert.deepEqual(created.slice(createdBefore), [qid], 'diagnostic target identity = createTarget targetId');
+    assert.deepEqual(closedByApp.slice(closedBefore), [qid], 'app closed only that targetId');
+    assert.equal(ev.stillOpen, false, 'failed diagnostic tab closed');
+    for (const t of before) assert.ok(after.some(x => x.targetId === t), 'pre-existing tab still open: ' + t);
+    // No escape: no script ran with a non-native locale, no page beacon / page load from the diagnostic tab.
+    for (const l of actions.evalRan) assert.equal(l, 'de-DE', `round ${round}: diagnostic tab executed script with ${l}`);
+    assert.deepEqual(ev.newBeacons, [], 'no page script ran in failed diagnostic tab');
+    assert.deepEqual(ev.newHits.filter(h => h.startsWith('/escape')), [], 'no navigation escaped before close');
+    await unchanged(id, snap, row, launchId, 'round' + round);
   }
-  // No unrestricted target: every non-quarantined page still runs de-DE.
-  for (const p of ctx.pages()) {
-    if (quarantinedIds.includes(p._connection.toImpl(p).delegate._targetId)) continue;
-    const v = await within(p.evaluate(() => Intl.DateTimeFormat().resolvedOptions().locale), 2000);
-    if (v !== 'timeout' && !v.e) assert.equal(v.v, 'de-DE');
-  }
-  assert.deepEqual(await user.evaluate(() => [Intl.DateTimeFormat().resolvedOptions().locale, sessionStorage.getItem('k')]), ['de-DE', 'v']);
-  await unchanged(id, snap, row, launchId, 'after-nav-reload');
-  const quarantineSessions = [...conn._sessions.keys()].filter(k => !sessionsBefore.has(k));
-
-  // Manual close (tab X == Target.closeTarget). Profile survives; sessions released.
-  const b = await ctx.browser().newBrowserCDPSession();
-  for (const qid of quarantinedIds) assert.equal((await b.send('Target.closeTarget', { targetId: qid })).success, true);
-  await b.detach();
-  for (let i = 0; i < 30 && (await pageTargets(ctx)).some(t => quarantinedIds.includes(t.targetId)); i++) await sleep(100);
-  await sleep(500);
-  assert.equal((await pageTargets(ctx)).some(t => quarantinedIds.includes(t.targetId)), false, 'tabs closed by user');
-  const leaked = quarantineSessions.filter(k => conn._sessions.has(k));
-  console.log('# B1NEG-MANUAL-CLOSE', JSON.stringify({ running: engine.isRunning(id), leakedSessions: leaked.length, active: diagnosticsActiveCount() }));
-  assert.deepEqual(leaked, [], 'no leaked CDP session for the closed quarantined target');
-  await unchanged(id, snap, row, launchId, 'after-manual-close');
-  assert.deepEqual(await user.evaluate(() => [Intl.DateTimeFormat().resolvedOptions().locale, sessionStorage.getItem('k')]), ['de-DE', 'v']);
+  for (const bc of beacons) assert.match(bc, /\|de-DE\|de-DE$/, 'every executed page ran with native locale: ' + bc);
+  assert.deepEqual(await user.evaluate(() => [Intl.DateTimeFormat().resolvedOptions().locale, sessionStorage.getItem('k'), document.cookie]), ['de-DE', 'v', 'c=1']);
+  assert.deepEqual(await ctx.cookies(), cookies, 'cookies unchanged');
+  await sleep(300);
+  const leaked = [...conn._sessions.keys()].filter(k => !sessionsBefore.has(k));
+  console.log('# B1NEG-LEAKS', JSON.stringify({ running: engine.isRunning(id), leakedSessions: leaked.length, leakedAreTestProbes: leaked.filter(k => testSessions.includes(k)).length, active: diagnosticsActiveCount() }));
+  assert.deepEqual(leaked, [], 'no leaked CDP session');
+  await unchanged(id, snap, row, launchId, 'after-rounds');
+  // Subsequent diagnostic works and a successful diagnostic tab stays open (§7.9 unchanged).
+  const beforeOk = new Set((await pageTargets(ctx)).map(t => t.targetId)), closedBeforeOk = closedByApp.length;
   await assertRecovered(id, launchId, 'B1NEG-RECOVER-AFTER-CLOSE');
+  await sleep(500);
+  const okTabs = (await pageTargets(ctx)).filter(t => !beforeOk.has(t.targetId));
+  console.log('# B1NEG-SUCCESS-TAB', JSON.stringify({ newTabsOpen: okTabs.length, appClosed: closedByApp.length - closedBeforeOk }));
+  assert.equal(okTabs.length, 1, 'successful diagnostic tab remains open');
+  assert.equal(closedByApp.length, closedBeforeOk, 'app closed nothing on success');
+  await unchanged(id, snap, row, launchId, 'after-success');
   // Ordinary-tab protection still armed after all of this (M3 fail-closed).
   mode = 'reject';
   void within(ctx.newPage(), 5000);
@@ -163,7 +174,7 @@ test('injected diagnostic timeout: 3s deadline, unavailable/timeout, lifecycle u
   const launchId = await launchIdOf(id);
   const snap = engine.lifecycleSmokeSnapshot(id), row = engine.runInfo(id);
   const before = new Set((await pageTargets(ctx)).map(t => t.targetId));
-  mode = { delayMs: 4500 }; injected = 0;
+  mode = { delayMs: 4500, once: true }; injected = 0;
   const t0 = Date.now(); const r = await post(id, launchId); const ms = Date.now() - t0;
   const env = r.json?.environment || {};
   console.log('# B1NEG-TIMEOUT', JSON.stringify({ status: r.status, ms, injected, env: Object.fromEntries(Object.entries(env).map(([k, v]) => [k, v.availability + ':' + v.reason])) }));
@@ -179,11 +190,15 @@ test('injected diagnostic timeout: 3s deadline, unavailable/timeout, lifecycle u
   assert.deepEqual(v.errors, [], 'timeout body validates against DiagnosticsV1');
   assert.equal(diagnosticsActiveCount(), 0, 'lock released at deadline');
   await unchanged(id, snap, row, launchId, 'at-deadline');
-  // Let the late (post-deadline) native failure land: it must quarantine, not stop.
+  // Let the late (post-deadline) native failure land: it must close only that
+  // diagnostic target (addendum A1), not stop the profile.
   await sleep(2500); mode = null;
   await unchanged(id, snap, row, launchId, 'after-late-failure');
-  const q = (await pageTargets(ctx)).filter(t => !before.has(t.targetId));
-  assert.equal(q.length, 1, '§7.9: timed-out diagnostic tab not auto-closed');
+  const nowOpen = await pageTargets(ctx);
+  const q = nowOpen.filter(t => !before.has(t.targetId));
+  console.log('# B1NEG-TIMEOUT-LATE', JSON.stringify({ newTabsOpen: q.length, preexistingOpen: [...before].filter(t => nowOpen.some(x => x.targetId === t)).length, preexisting: before.size }));
+  assert.equal(q.length, 0, 'late-failed diagnostic tab closed (A1), never released');
+  for (const t of before) assert.ok((await pageTargets(ctx)).some(x => x.targetId === t), 'pre-existing tab kept');
   assert.deepEqual(await user.evaluate(() => [Intl.DateTimeFormat().resolvedOptions().locale, sessionStorage.getItem('k')]), ['de-DE', 'v']);
   await assertRecovered(id, launchId, 'B1NEG-RECOVER-AFTER-TIMEOUT');
   await call('POST', `/profiles/${id}/stop`);

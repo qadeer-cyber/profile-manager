@@ -44,6 +44,8 @@ const ERROR_TEXT = {
 };
 const LIFECYCLE_TEXT = { 'profile:started': 'launched', 'profile:stopped': 'stopped', 'profile:crashed': 'closed unexpectedly', launch_changed: 'relaunched' };
 export const DISCLOSURE = 'Opens a visible diagnostic tab in the selected browser profile to read its timezone and language settings. Your existing pages will not be inspected. The tab will remain open until you close it.';
+// DiagnosticsV1 addendum A1 (owner-approved §7.9 exception); DISCLOSURE above is unchanged contract text.
+export const LOCALE_FAILURE_CLOSE_NOTE = 'If the profile\'s language settings cannot be applied to the diagnostic tab, the app closes only that tab. Your other tabs are not affected.';
 export const DESKTOP_ONLY = 'Profile diagnostics are available in the Profile Manager desktop app.';
 const FRESH_CEILING_MS = 30000;
 
@@ -104,6 +106,7 @@ function Disclosure({ profileName, onConfirm, onCancel }) {
       <div className="card-head"><h3 id={titleId}>Observe timezone and language</h3></div>
       <div className="card-body">
         <p id={descId} className="pd-disclosure" data-disclosure>{DISCLOSURE}</p>
+        <p className="muted" data-disclosure-addendum>{LOCALE_FAILURE_CLOSE_NOTE}</p>
         <p className="muted">Profile: <strong className="pd-name">{profileName}</strong>. You’ll be asked again for every observation.</p>
       </div>
       <div className="card-foot">

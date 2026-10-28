@@ -2,6 +2,7 @@
 // M2 diagnostic target vs an ordinary tab. Real Chromium + real app; the fault is
 // injected at the CDP command layer (Emulation.setLocaleOverride rejected).
 import { test, after } from 'node:test';
+import * as cryptoMod from 'node:crypto'; const require_crypto = () => cryptoMod;
 import assert from 'node:assert/strict';
 import http from 'node:http'; import fs from 'node:fs'; import os from 'node:os'; import path from 'node:path';
 
@@ -22,7 +23,9 @@ const within = (p, ms) => Promise.race([p.then(v => ({ v }), e => ({ e })), slee
 const failed = []; engine.events.on('event', e => { if (e.type === 'profile:launch-failed') failed.push(e.id); });
 after(async () => { for (const id of engine.runningIds()) await engine.stop(id).catch(() => {}); server.close(); site.close(); if (db.open) db.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
-let armed = false, injected = 0;
+// armed = number of next setLocaleOverride calls to fail (Infinity = persistent fault).
+let armed = 0, injected = 0;
+const created = [], closedByApp = [];
 async function launched(name) {
   const id = (await call('POST', '/profiles', { name, browserSettings: { locale: 'de-DE', languages: ['de-DE', 'en-US'] } })).json.id;
   assert.equal((await call('POST', `/profiles/${id}/launch`, { headless: false })).status, 200);
@@ -35,7 +38,9 @@ async function launched(name) {
   if (!proto.__b1) {
     const orig = proto.send; proto.__b1 = true;
     proto.send = function (method, params) {
-      if (armed && method === 'Emulation.setLocaleOverride') { injected++; return Promise.reject(new Error('INJECTED locale failure')); }
+      if (method === 'Target.createTarget') return orig.call(this, method, params).then(r => { created.push(r.targetId); return r; });
+      if (method === 'Target.closeTarget') closedByApp.push(params.targetId);
+      if (armed && method === 'Emulation.setLocaleOverride') { injected++; if (armed !== Infinity) armed--; return Promise.reject(new Error('INJECTED locale failure')); }
       return orig.call(this, method, params);
     };
   }
@@ -48,16 +53,17 @@ const launchIdOf = async id => (await call('GET', `/profiles/${id}/diagnostics`)
 const post = (id, launchId) => call('POST', `/profiles/${id}/diagnostics/environment`, { expectedLaunchId: launchId, consent: POST_CONSENT });
 const envSummary = j => Object.fromEntries(Object.entries(j?.environment || {}).map(([k, v]) => [k, v.availability + ':' + (v.availability === 'available' ? JSON.stringify(v.value) : v.reason)]));
 
-test('diagnostic-target locale failure: profile survives, nothing mutated, tab kept paused, no lock', { timeout: 60000 }, async () => {
+test('diagnostic-target locale failure: profile survives, nothing mutated, only that tab closed by targetId, no lock', { timeout: 60000 }, async () => {
   const { id, ctx, user } = await launched('b1-diag');
   const launchId = await launchIdOf(id);
   const snap = engine.lifecycleSmokeSnapshot(id), row = engine.runInfo(id);
   const probe = await ctx.browser().newBrowserCDPSession();
   const targetsBefore = new Set((await probe.send('Target.getTargets')).targetInfos.filter(t => t.type === 'page').map(t => t.targetId));
   await probe.detach();
-  armed = true; injected = 0;
+  armed = 1; injected = 0;
+  const createdBefore = created.length, closedBefore = closedByApp.length;
   const t0 = Date.now(); const r = await post(id, launchId); const ms = Date.now() - t0;
-  armed = false;
+  armed = 0;
   console.log('# B1-DIAG-FAIL', JSON.stringify({ status: r.status, ms, injected, env: envSummary(r.json) }));
   assert.equal(r.status, 200); assert.ok(injected >= 1, 'fault actually injected');
   assert.ok(ms < 3000, 'within 3s deadline: ' + ms);
@@ -75,24 +81,16 @@ test('diagnostic-target locale failure: profile survives, nothing mutated, tab k
   // User tab and its storage preserved, still on the native locale.
   assert.equal(user.isClosed(), false);
   assert.deepEqual(await user.evaluate(() => [Intl.DateTimeFormat().resolvedOptions().locale, sessionStorage.getItem('k')]), ['de-DE', 'v']);
-  // §7.9: the failed diagnostic tab is not closed automatically; it stays paused (cannot run scripts).
+  // Addendum A1: the failed diagnostic tab is closed by its own createTarget targetId; nothing else is closed.
   const cdp = await ctx.browser().newBrowserCDPSession();
-  const { targetInfos } = await cdp.send('Target.getTargets');
-  const pageTargets = targetInfos.filter(t => t.type === 'page');
-  assert.equal(pageTargets.length, targetsBefore.size + 1, 'diagnostic tab kept open');
-  const quarantined = pageTargets.filter(t => !targetsBefore.has(t.targetId));
-  assert.equal(quarantined.length, 1, 'exactly one quarantined diagnostic target');
-  const qpage = ctx.pages().find(p => p._connection.toImpl(p).delegate._targetId === quarantined[0].targetId);
-  assert.ok(qpage, 'quarantined tab still present in the profile');
-  const qs = await ctx.newCDPSession(qpage);
-  const nav = await within(qpage.goto(`http://127.0.0.1:${site.address().port}/q`, { timeout: 2000 }), 2500);
-  const ran = await within(qs.send('Runtime.evaluate', { expression: 'window.ran', returnByValue: true }), 1500);
-  assert.equal(qpage.isClosed(), false, '§7.9: not auto-closed');
-  assert.notEqual(nav, 'timeout'); assert.ok(nav.e, 'navigation in quarantined tab must not complete');
-  assert.equal(ran, 'timeout', 'no page script ran in the quarantined tab');
-  console.log('# B1-QUARANTINE', JSON.stringify({ closed: qpage.isClosed(), nav: nav === 'timeout' ? 'timeout' : nav.e ? 'error:' + nav.e.message.split('\n')[0] : 'loaded', ran: ran === 'timeout' ? 'timeout' : ran.v?.result?.value ?? null }));
-  await within(qs.detach(), 1000);
+  const pageTargets = (await cdp.send('Target.getTargets')).targetInfos.filter(t => t.type === 'page');
   await cdp.detach();
+  const diagIds = created.slice(createdBefore);
+  console.log('# B1-CLOSE-ON-FAIL', JSON.stringify({ created: diagIds, appClosed: closedByApp.slice(closedBefore), openNow: pageTargets.length, openBefore: targetsBefore.size }));
+  assert.equal(diagIds.length, 1, 'one app-owned diagnostic target created');
+  assert.deepEqual(closedByApp.slice(closedBefore), diagIds, 'app closed exactly that targetId');
+  assert.equal(pageTargets.some(t => t.targetId === diagIds[0]), false, 'failed diagnostic tab closed');
+  assert.deepEqual(new Set(pageTargets.map(t => t.targetId)), targetsBefore, 'every pre-existing tab still open');
   assert.equal(diagnosticsActiveCount?.(id) ?? 0, 0, 'no permanent diagnostic lock');
   // Normal diagnostic observation still correct afterwards (no stuck lock, correct facts).
   const ok = await post(id, launchId);
@@ -102,15 +100,15 @@ test('diagnostic-target locale failure: profile survives, nothing mutated, tab k
   assert.deepEqual(ok.json.environment.languages.value, ['de-DE', 'en-US']);
   assert.equal(engine.isRunning(id), true);
   await call('POST', `/profiles/${id}/stop`);
-  assert.equal(engine.isRunning(id), false, 'stop not hung by quarantined target');
+  assert.equal(engine.isRunning(id), false, 'stop not hung');
 });
 
 test('ordinary-tab locale failure: M3 fail-closed unchanged (profile stopped + last_error)', { timeout: 60000 }, async () => {
   const { id, ctx } = await launched('b1-ordinary');
-  armed = true; injected = 0;
+  armed = 1; injected = 0;
   void within(ctx.newPage(), 5000);
   for (let i = 0; i < 50 && engine.isRunning(id); i++) await sleep(100);
-  armed = false; await sleep(500);
+  armed = 0; await sleep(500);
   const le = db.prepare('SELECT last_error FROM profiles WHERE id=?').get(id).last_error;
   console.log('# B1-ORDINARY-FAIL', JSON.stringify({ injected, running: engine.isRunning(id), last_error: le, launchFailedEvent: failed.includes(id) }));
   assert.ok(injected >= 1); assert.equal(engine.isRunning(id), false);
@@ -121,10 +119,10 @@ test('ordinary-tab locale failure: M3 fail-closed unchanged (profile stopped + l
 test('concurrent diagnostic + ordinary-tab failure: no bypass, fail-closed wins', { timeout: 60000 }, async () => {
   const { id, ctx } = await launched('b1-race');
   const launchId = await launchIdOf(id);
-  armed = true; injected = 0;
+  armed = Infinity; injected = 0;
   const [r] = await Promise.all([post(id, launchId), within(ctx.newPage(), 5000)]);
   for (let i = 0; i < 50 && engine.isRunning(id); i++) await sleep(100);
-  armed = false; await sleep(500);
+  armed = 0; await sleep(500);
   const le = db.prepare('SELECT last_error FROM profiles WHERE id=?').get(id).last_error;
   console.log('# B1-RACE', JSON.stringify({ injected, status: r.status, env: envSummary(r.json), running: engine.isRunning(id), last_error: le }));
   assert.equal(engine.isRunning(id), false);
@@ -133,3 +131,17 @@ test('concurrent diagnostic + ordinary-tab failure: no bypass, fail-closed wins'
 });
 
 test('no unhandled rejections', () => { assert.deepEqual(unhandled, []); });
+
+test('addendum A1: hash recorded, base contract hashes unchanged, UI note matches addendum text', () => {
+  const crypto = require_crypto();
+  const dir = new URL('../docs/handoff/m2/contracts/', import.meta.url);
+  const sha = f => crypto.createHash('sha256').update(fs.readFileSync(new URL(f, dir))).digest('hex');
+  assert.equal(sha('DiagnosticsV1.original.md'), 'cd1ce49f379566efa0fa65ed81f5402f21259191cbdb6aa6088eb8413b8059d8');
+  assert.equal(sha('DiagnosticsV1.process-command-line.md'), 'e80ce2d513e610a18c703b775fb0fd5520e3eb1ca5dce6f4ad43a1eecf08bdf4');
+  const sums = fs.readFileSync(new URL('SHA256SUMS.addendum-A1', dir), 'utf8').trim().split(/\s+/);
+  assert.equal(sha(sums[1]), sums[0], 'addendum A1 hash');
+  const addendum = fs.readFileSync(new URL(sums[1], dir), 'utf8');
+  const ui = fs.readFileSync(new URL('../web/src/components/ProfileDiagnostics.jsx', import.meta.url), 'utf8');
+  const note = ui.match(/LOCALE_FAILURE_CLOSE_NOTE = '((?:\\.|[^'])*)'/)[1].replace(/\\'/g, "'");
+  assert.ok(addendum.includes('"' + note + '"'), 'UI note equals addendum text');
+});

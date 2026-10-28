@@ -17,9 +17,10 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
   let startup = true, failure = null, closed = false;
   // M2 diagnostic exemption. Ownership is the exact targetId returned by this
   // module's own Target.createTarget call (never a URL match). Only a top-level
-  // page's initial regional setup may fail without closing the profile; the
-  // target is then left paused (never resumed) so it cannot run with the wrong
-  // locale, and it is not closed (DiagnosticsV1 §7.9).
+  // page's initial regional setup may fail without closing the profile; that
+  // failed target is never resumed and is closed at once by targetId
+  // (owner-approved DiagnosticsV1 §7.9 addendum A1). If the close cannot be
+  // confirmed, M3 fail-closed applies to the whole profile.
   const diagnosticCreates = new Set(), diagnosticTargets = new Map(), quarantined = new Set();
   const isDiagnostic = async targetId => {
     if (!targetId) return false;
@@ -63,11 +64,14 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
         // A page closed during setup is no longer a target to configure.
         if (closed || !children.has(sessionId)) return;
         const cause = new Error('Failed to apply native browser regional locale', { cause: error });
-        if (!startup && await isDiagnostic(targetId)) {
+        if (!startup && (diagnosticTargets.has(targetId) || await isDiagnostic(targetId))) {
           if (closed || !children.has(sessionId)) return;
-          quarantined.add(sessionId);
-          settleDiagnostic(targetId, cause);
-          return; // Keep paused: never resumed, never closed automatically.
+          quarantined.add(sessionId); // Never resumed / never re-applied.
+          let closedOk = false;
+          try { closedOk = (await root.send('Target.closeTarget', { targetId }))?.success !== false; } catch { closedOk = !children.has(sessionId); }
+          if (closed) return;
+          if (closedOk) { settleDiagnostic(targetId, cause); return; }
+          settleDiagnostic(targetId, cause); // Could not close: fall through to fail-closed.
         }
         failure ||= cause;
         if (!startup) {
