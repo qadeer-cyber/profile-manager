@@ -78,7 +78,7 @@ const server = http.createServer(async (req, res) => {
   if ((m = p.match(/^\/api\/profiles\/([^/]+)$/)) && req.method === 'GET') { const x = S.profiles.find(q => q.id === decodeURIComponent(m[1])); return x ? json(res, 200, x) : json(res, 404, { error: 'not found' }); }
   if (p === '/api/meta') return json(res, 200, { tags: ['shop'], folders: ['', 'Personal', 'Work'], running: S.profiles.filter(x => x.running).map(x => x.id) });
   if (p === '/api/browser') return json(res, 200, { path: '/opt/pm/chromium/chrome', installed: false, custom: false, browsersPath: 'default', install: { state: 'idle', error: null, log: '' }, chromium: null });
-  if (p === '/api/diagnostics') return json(res, 200, { app: { version: '0.5.0-alpha.1', mode: 'node' }, versions: { node: '22.12.0', electron: null, chrome: null }, platform: 'linux test x64', dataDir: '/tmp/pm-mock-data', schemaVersion: 6, migration: null, encryption: { backend: 'mock', warning: null }, browser: {}, profiles: S.profiles.length, proxies: 0, running: 2, pid: 1 });
+  if (p === '/api/diagnostics') return json(res, 200, { app: { version: '0.5.0-alpha.2', mode: 'node' }, versions: { node: '22.12.0', electron: null, chrome: null }, platform: 'linux test x64', dataDir: '/tmp/pm-mock-data', schemaVersion: 6, migration: null, encryption: { backend: 'mock', warning: null }, browser: {}, profiles: S.profiles.length, proxies: 0, running: 2, pid: 1 });
   if (p === '/api/settings') return json(res, 200, { defaultHeadless: false, executablePath: '', startUrl: '' });
   if (p.startsWith('/api/')) return json(res, 404, { error: 'not found' });
   let f = path.join(DIST, path.normalize(p).replace(/^([/\\])+/, ''));
