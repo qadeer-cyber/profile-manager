@@ -1,0 +1,75 @@
+# M2+M3 source acceptance. Source tests only: never builds installers, never
+# packages, never publishes. Tests the integrated tree exactly as checked out
+# (no assemble/overlay). Manual dispatch only; requires owner authorization.
+name: M2 source acceptance (no installers)
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Integrated M2+M3 commit SHA to test (full 40-char SHA)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: m2-source-acceptance-${{ inputs.ref }}
+  cancel-in-progress: false
+jobs:
+  source-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      # Blob of .github/workflows/windows-native-validation.yml on main 281b0b2.
+      PM_INSTALLER_WORKFLOW_BLOB: c9a8e5259a811ba9e99342185ec153850cb278cc
+    steps:
+      - name: Checkout integrated tree with full history (contract baseline d7a000e)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.ref }}" =~ ^[0-9a-f]{40}$ ]] || { echo "ref must be a full SHA"; exit 1; }
+          test "$(git rev-parse HEAD)" = "${{ inputs.ref }}"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          architecture: x64
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install pinned Chromium (checksummed)
+        run: node scripts/m3-install-runtime.mjs --source=google
+      - name: Install Linux runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb && npx playwright install-deps chromium
+      - name: Source acceptance (Linux, Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1200x24" node scripts/m2-source-acceptance.mjs
+      - name: Source acceptance (Windows)
+        if: runner.os == 'Windows'
+        run: node scripts/m2-source-acceptance.mjs
+      - name: Confirm no installer output was produced
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G "release/*" > /dev/null || compgen -G "dist/*.exe" > /dev/null; then echo "installer output present"; exit 1; fi
+      # Evidence upload: a storage/quota failure fails this step and the job
+      # (no continue-on-error). results.json is also printed to the log above and
+      # the job summary, so verdicts survive an artifact-storage failure.
+      - name: Upload source-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m2-source-evidence-${{ matrix.os }}-${{ github.run_attempt }}
+          path: .m2/evidence/**
+          if-no-files-found: error
+          retention-days: 14
