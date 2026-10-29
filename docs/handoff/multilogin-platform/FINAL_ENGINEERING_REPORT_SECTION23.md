@@ -1,38 +1,39 @@
-# §23 Final engineering report (checkpoint — update rollback + WebDriver + providers)
+# §23 Final engineering report (checkpoint — workspaces + CookieRobot + geckodriver)
 
 **Model:** Composer 2.5 Fast  
 **Branch:** `feature/dedicated-browser-engine`  
-**Baseline:** Alpha.3 `2d65207` frozen · prior tip `11aab86` (templates @ `4e9f730`)
+**Baseline:** Alpha.3 `2d65207` frozen · prior tip `ecbdb10` (rollback/WebDriver @ `dc60291`)
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** `dc60291` (feature `0ee8028`; prior `11aab86` / `4e9f730`)
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** _(after push)_
 
 ## 2. Multilogin technology audit
-M41 CfT dual-slot rollback **IMPLEMENTED**; M37 WebDriver **PARTIAL** (host chromedriver, automation CDP only); M18 provider adapters extended (Bright zone status, Webshare subscription, Oxylabs Public API stats when JWT+userId).
+M38 workspaces **PARTIAL→local IMPLEMENTED**; M32 CookieRobot **PARTIAL** (job runner); M37 WebDriver **PARTIAL** (+ geckodriver Firefox path); M3 Firefox automation **PARTIAL** (-marionette + geckodriver bridge).
 
-## 3. Browser architecture A–I
-Layer F update-manager now reports real backup slots wired to `installVerifiedChromiumWithBackup` + Diagnostics rollback buttons.
-
-## 4. Independent manual browser proof
-**VERIFIED** Chromium native. Firefox: **Windows CI installs Mozilla Firefox via Chocolatey** + `firefox-spawn-smoke.test.js`; Linux dev runners skip when Firefox absent.
-
-## 5–8. Privacy / custom Chromium / Firefox / config
-Unchanged honest status; no custom EXE.
+## 3–8. Architecture / privacy / custom EXE
+Unchanged honest status; no custom Chromium EXE.
 
 ## 9. Profile management
-Templates + quick/trash from prior increment (unchanged).
+Workspaces assign profiles locally; vault lock when `electron-safeStorage` available.
 
-## 11. Proxy / network
-Provider usage calls documented endpoints only; no invented pools.
+## 10. CookieRobot-local
+Queued jobs with task log, cancel/retry; blocks Google account/CAPTCHA URL patterns; Chromium automation only.
 
-## 13. Local automation
-**PARTIAL** — CDP attach + **WebDriver bridge API** (`POST /webdriver/start`); chromedriver not bundled.
+## 13. Automation
+ChromeDriver + Geckodriver bridges (not bundled); Firefox `automation:true` uses native `-marionette`.
+
+## 14. Workspaces
+**Local-only** — no SaaS sync.
+
+## 16. Performance / Latitude
+Documented soft caps in `LATITUDE_RESOURCE_GUARDS.md`; no invented HD 620 metrics.
 
 ## 19. Windows testing
-`npm run test:browser-runtime` — **51 pass / 0 fail** on `dedicated-browser-engine-win.yml` (https://github.com/qadeer-cyber/profile-manager/actions/runs/40931194317 @ `dc60291`).  
+`npm run test:browser-runtime` — **60 pass / 0 fail** target on `dedicated-browser-engine-win.yml`.  
+Migration test covers schema **v13–v16** (Alpha.3 upgrade path fields). Full Electron EXE upgrade smoke remains **BLOCKED** without release artifacts on CI.  
 **Preview installer §19: NO-GO.**
 
 ## 20. Next milestone
-Latitude benchmarks; bundled chromedriver optional pack; custom Chromium compile **BLOCKED**.
+Bundled drivers optional pack; Latitude physical smoke; custom Chromium **BLOCKED**.
 
 **No Multilogin equivalence percentage claimed.**
