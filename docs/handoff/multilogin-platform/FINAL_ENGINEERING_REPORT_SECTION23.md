@@ -1,9 +1,9 @@
 # §23 Final engineering report — Phase G–H handoff
 
 **Branch:** `feature/dedicated-browser-engine`  
-**Final candidate SHA:** `09eeefd` (after green `engine-windows` run 40944392766)  
-**Alpha.3 frozen:** `v0.5.0-alpha.3-m1-m17` @ `2d65207` — not retagged  
-**Preview publish:** **NO-GO** until owner §19 sign-off  
+**Final candidate SHA:** `b3349af` (Phase F — green `engine-windows` + `installer-smoke-offline` run **40950595111**)  
+**Alpha.3 frozen:** `v0.5.0-alpha.3-m1-m17` — not retagged  
+**Preview publish:** **NO-GO** until owner §19 gate **7** sign-off  
 
 ---
 
@@ -53,7 +53,7 @@
 15. **Backup / import (M8 PARTIAL)** — Checksum manifest; inspect UI shows checksum count.  
 16. **Phase C blockers** — `CUSTOM_ENGINE_BLOCKER_INVENTORY.md`; no fake compile.  
 17. **Phase E** — `SECURITY_RELIABILITY_CHECKLIST.md`, `LATITUDE_BENCHMARK_PACKAGE.md` (owner-run).  
-18. **§19 gates** — Preview **NO-GO**; installer-smoke only on **final candidate SHA** (see `FINAL_CANDIDATE_SHA.md` after CI).
+18. **§19 gates** — Automated **1–6, 8 green** @ `b3349af`; preview **NO-GO** until owner sign-off (`RELEASE_GATES_SECTION19.md`).
 
 ---
 
@@ -62,9 +62,9 @@
 | Job | Purpose |
 |-----|---------|
 | `engine-windows` | `npm run test:browser-runtime` + Firefox spawn on `windows-2022` |
-| `installer-smoke-offline` | Only when commit message contains `[ci:installer-smoke]` |
+| `installer-smoke-offline` | `[ci:installer-smoke]` or `workflow_dispatch` |
 
-Prior green installer-smoke: Actions **40934718409** @ `98dbc0c` (superseded by final candidate re-run when triggered).
+**Phase F:** run **40950595111** @ **`b3349af`** — both jobs success; upgrade **7/7**, offline smoke **45/0**.
 
 ---
 

@@ -20,20 +20,23 @@ Workflow: `.github/workflows/dedicated-browser-engine-win.yml`
 | `engine-windows` | every push | 65 unit/runtime tests + Firefox spawn |
 | `installer-smoke-offline` | `[ci:installer-smoke]` or `workflow_dispatch` | Offline EXE build + preservation + installed smoke; **step summary only** |
 
-### Verified run (windows-2022)
+### §19 gate table (Phase F final candidate)
 
-| Field | Value |
-|-------|--------|
-| **Actions** | https://github.com/qadeer-cyber/profile-manager/actions/runs/40934718409 |
-| **SHA** | `98dbc0c` (loopback bypass fix; feature stack from `cd72dfb`) |
-| **engine-windows** | success |
-| **installer-smoke-offline** | success — offline build, Alpha.3→branch upgrade **8/8**, `electron-smoke-offline.js` **45/0** |
-| **Release publish** | not run |
+| # | Gate | Result @ `b3349af` | Evidence |
+|---|------|-------------------|----------|
+| 1 | `test:browser-runtime` + Firefox spawn | **Pass** | run 40950595111 `engine-windows` |
+| 2 | Offline EXE build | **Pass** | same job, SHA-256 step summary |
+| 3 | Alpha.3 → branch data preservation | **Pass** | upgrade smoke **7/7** (schema v16, workspaces, Persist row) |
+| 4 | Installed offline smoke | **Pass** | `electron-smoke-offline.js` **45/0** |
+| 5 | Native manual / loopback proxy argv | **Pass** | offline smoke asserts (incl. `--proxy-bypass-list=<-loopback>`) |
+| 6 | No Alpha.3 retag | **Pass** | workflow summary; no `gh release create` |
+| 7 | Owner preview sign-off | **Pending** | **NO-GO publish** until human approval |
+| 8 | No automated publish | **Pass** | branch-only CI |
 
-Prior failed run **40933139496** (`cd72dfb`): `electron-smoke-offline.js` failed **1** assert — packaged native launch missing `--proxy-bypass-list=<-loopback>` (fixed in `98dbc0c`).
+**Actions (authoritative):** https://github.com/qadeer-cyber/profile-manager/actions/runs/40950595111
+
+Prior green @ `98dbc0c` (run 40934718409). Failed attempts: `4a39ccb` (40944906478, asar path), `2a01c2e` (40948956865, migration-not-run until first launch — fixed in smoke test @ `b3349af`).
 
 ## Current status
 
-**NO-GO preview publish** — automated gates **1–4** and **6** have green CI evidence at `98dbc0c`; **gate 7 (owner sign-off)** remains. ChromeDriver/geckodriver: **opt-in cache** under data dir (`AUTOMATION_DRIVERS.md`), not bundled in the offline EXE. Custom Chromium **BLOCKED**.
-
-**§19 movement:** installer path was **proven on GHA** @ `98dbc0c` (run 40934718409). Branch final candidate `09eeefd` has green `engine-windows`; one `[ci:installer-smoke]` attempt @ `4a39ccb` **failed** (run 40944906478) — see `FINAL_CANDIDATE_SHA.md`. Preview tag still requires human approval and a green installer-smoke on the owner-chosen SHA, not CI alone.
+**NO-GO preview publish** — automated gates **1–6** and **8** are green on final candidate **`b3349af`**; **gate 7 (owner sign-off)** remains. ChromeDriver/geckodriver: **opt-in cache** under data dir (`AUTOMATION_DRIVERS.md`), not bundled in the offline EXE. Custom Chromium **BLOCKED**.

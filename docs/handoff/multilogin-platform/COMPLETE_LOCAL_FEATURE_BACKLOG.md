@@ -19,7 +19,7 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P2 | Optional local ADB | List user devices when adb on PATH | PARTIAL |
 | P2 | Performance benchmarks | `npm run benchmark:latitude-scaffold` (owner-run; no invented scores) | PARTIAL |
 | P2 | Side-by-side browser rollback | CfT backup slot + rollback | VERIFIED |
-| P2 | §19 installer CI smoke | Non-publishing windows-2022 job | VERIFIED (run 40934718409 @ `98dbc0c`) |
+| P2 | §19 installer CI smoke | Non-publishing windows-2022 job | VERIFIED (run 40950595111 @ `b3349af`; prior 40934718409 @ `98dbc0c`) |
 | P3 | Custom Chromium compile | Recipe only until approved infra | BLOCKED |
 | P3 | Canvas/WebGL noise | Requires fork | UNSUPPORTED |
 | N/A | Cloud sync/teams/billing | — | NOT_APPLICABLE_CLOUD |
@@ -35,6 +35,7 @@ Stock-implementable items are largely **done** or **read-only** (Firefox gecko c
 - **This increment:** gecko `moz_cookies` read/export + examples + §23 final draft (**85** tests)
 - **A6 + B + C (latest):** GeckoDriver navigate stub, Firefox observables, tab-restore title evidence, Phase C blocker doc (**107** `test:browser-runtime`)
 - **D–E + G–H (UI integration):** Workspaces/ADB/proxy template UI, security checklist, Latitude package, §23 handoff (**108** `test:browser-runtime`)
+- **Phase F:** Final candidate installer-smoke green @ `b3349af` (run 40950595111); asar server path + CDP/lifecycle CI fixes; upgrade smoke starts branch server for migrations
 
 ## Still open (honest)
 
