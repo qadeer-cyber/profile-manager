@@ -22,7 +22,7 @@
 | M14 | Extension manager (Firefox) | UNSUPPORTED | Chromium-only extension loader |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
-| M17 | Proxy templates / traffic saver | PARTIAL | Saved proxies + duplicate-as-template (`POST /proxies/:id/duplicate`); no traffic saver |
+| M17 | Proxy templates / traffic saver | PARTIAL | Duplicate-as-template API + Proxies UI; no traffic saver |
 | M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Mock fetch CI in `test/proxy-providers.test.js` (Bright/Oxy/Webshare); no live subscription required |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
 | M20 | Fingerprint: timezone/locale/lang | PARTIAL | CDP observable `fingerprint-observable-api.test.js`; Firefox `firefox-regional-observable.test.js` |
@@ -43,9 +43,9 @@
 | M35 | CLI / Script runner | PARTIAL | `pm-cli` list/launch/stop/config/bridges/proxies + examples |
 | M36 | Playwright/Puppeteer attach | PARTIAL | CDP reconnect without killing browser (`playwright-cdp-reconnect.test.js`) |
 | M37 | Selenium/WebDriver | PARTIAL | ChromeDriver + GeckoDriver stub session/navigate tests; opt-in driver cache |
-| M38 | Workspaces / team sync | PARTIAL | `workspaces-api.test.js` CRUD + assignment; optional vault lock; no team cloud |
+| M38 | Workspaces / team sync | PARTIAL | Workspaces UI (edit, view profiles filter); profile editor assignment; `workspaces-api.test.js`; no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
-| M40 | Android cloud phones / ADB farms | PARTIAL | `parseAdbDevicesListing` + `adb-devices-parse.test.js`; live list when `adb` on PATH; **NOT farm-equivalent** |
+| M40 | Android cloud phones / ADB farms | PARTIAL | Settings → ADB panel + `GET /api/adb/devices`; parse tests; **NOT farm-equivalent** |
 | M41 | Core browser update / rollback | VERIFIED | Backup slot + rollback API + Diagnostics UI + update-manager report |
 | M42 | Google Search CAPTCHA-free | UNSUPPORTED | P1 findings; no bypass |
 | M43 | Manual browse without automation pipe | VERIFIED | Native Chromium spawn |

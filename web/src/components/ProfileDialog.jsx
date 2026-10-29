@@ -11,7 +11,7 @@ import { FingerprintFields, IdentityFields, LocationFields, PreferenceFields, Wi
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
 
-export const emptyForm = { name: '', tags: '', folder: '', notes: '', automationEnabled: false, browserEngine: 'chromium', browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
+export const emptyForm = { name: '', tags: '', folder: '', notes: '', workspaceId: '', automationEnabled: false, browserEngine: 'chromium', browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
 
 // Profile editor: General / Proxy / Notes tabs. Proxy can be "none", a library entry
 // (when the server has the proxy library), or a custom inline proxy (legacy API).
@@ -26,6 +26,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [libraryError, setLibraryError] = useState('');
   const [libraryLoading, setLibraryLoading] = useState(true);
   const [configWarnings, setConfigWarnings] = useState([]);
+  const [workspaces, setWorkspaces] = useState([]);
   const regional = f.browserSettings || emptyForm.browserSettings;
   const policy = f.webrtcSettings || emptyForm.webrtcSettings;
   const advanced = f.advancedSettings || emptyForm.advancedSettings;
@@ -37,6 +38,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     setF({ ...f, extensionAssignments: next ? [...without, next] : without });
   };
   useEffect(() => { api('/api/extensions').then(setLibrary).catch(e => setLibraryError(e.message)).finally(() => setLibraryLoading(false)); }, []);
+  useEffect(() => { api('/api/workspaces').then(setWorkspaces).catch(() => setWorkspaces([])); }, []);
   useEffect(() => {
     const body = { browserEngine: f.browserEngine || 'chromium', browserSettings: f.browserSettings, webrtcSettings: f.webrtcSettings, advancedSettings: f.advancedSettings };
     api('/api/profile-config/validate', { method: 'POST', body }).then(r => setConfigWarnings(r.warnings || [])).catch(() => setConfigWarnings([]));
@@ -82,11 +84,19 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       <label>Tags<input value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="comma, separated" /></label>
       {tagList.length > 0 && <div className="chips">{tagList.map(t => <span key={t} className="tag">{t}</span>)}</div>}
       {formError && tab === 'general' && <p className="err-text" role="alert">{formError}</p>}
+      <label>Workspace<select value={f.workspaceId || ''} onChange={e => set('workspaceId', e.target.value)}>
+        <option value="">No workspace</option>
+        {workspaces.map(w => <option key={w.id} value={w.id}>{w.name}{w.vaultLocked ? ' (vault)' : ''}</option>)}
+      </select></label>
+      <p className="muted hint">Workspaces are local folders only — no cloud sync. Vault-locked workspaces require desktop secure storage.</p>
       <label>Browser engine<select value={f.browserEngine || 'chromium'} onChange={e => set('browserEngine', e.target.value)}>
         <option value="chromium">Chromium (native manual launch)</option>
         <option value="firefox">Firefox / Gecko (separate profile tree)</option>
       </select></label>
       <p className="muted hint">Manual launches use an independent browser process (no Playwright pipe). Firefox uses Settings → Firefox executable. Chromium extensions are not loaded on Firefox profiles.</p>
+      {f.browserEngine === 'firefox' && <div className="notice warn" role="note">
+        <strong>Firefox limits (honest):</strong> CookieRobot-local, Chromium extensions, and ChromeDriver bridges do not apply. Use geckodriver + marionette when automation is enabled. Antidetect patches are not included — stock Mozilla Firefox only.
+      </div>}
       {configWarnings.length > 0 && <ul className="muted">{configWarnings.map(w => <li key={w.code}>{w.message}</li>)}</ul>}
       <label className="check toggle"><input type="checkbox" role="switch" checked={!!f.automationEnabled} onChange={e => set('automationEnabled', e.target.checked)} /> Enable automation (CDP)</label>
       <p className="muted hint">When on, launching this profile opens a local debugging port that automation tools can connect to. Any program on this computer can then control the browser, so leave it off unless you need it.{initial.running ? ' Applies on the next launch.' : ''}</p>

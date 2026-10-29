@@ -21,6 +21,7 @@ export function SettingsPage() {
       <p className="muted">Latitude 5480 / 8 GiB defaults: 4 running profiles, 1 GiB free-memory guard, 2 parallel launches.</p>
     </section>
     <AutomationDriversPanel toast={toast} settings={s} onSettingsChange={setS} />
+    <AdbDevicesPanel toast={toast} />
     <section className="panel"><h2>Automation API</h2>
       {token ? <><p className="muted">Use this token with <code>/api/v1</code> (header <code>Authorization: Bearer …</code>). Base URL changes each launch in the desktop app; see Diagnostics.</p>
         <div className="row"><input readOnly className="mono-input" value={show ? token : '•'.repeat(24)} /><button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button><button onClick={() => { navigator.clipboard.writeText(token); toast('Token copied', 'success'); }}>Copy</button></div></>
@@ -33,6 +34,21 @@ export function SettingsPage() {
     </section>
     <BackupPanel toast={toast} />
   </>;
+}
+
+function AdbDevicesPanel({ toast }) {
+  const [report, setReport] = useState(null);
+  const load = useCallback(() => { api('/api/adb/devices').then(setReport).catch(e => toast(e.message, 'error')); }, [toast]);
+  useEffect(load, [load]);
+  return <section className="panel"><h2>Local Android devices (ADB)</h2>
+    <p className="muted">{report?.note || 'Lists USB devices when the host adb tool is on PATH. This is not a cloud phone farm and cannot replace Multilogin Android farms.'}</p>
+    {!report?.available && <p className="muted">Status: {report?.reason || 'unavailable'} — install Android platform tools and ensure <code>adb</code> is on PATH to list your own devices.</p>}
+    {report?.available && <>
+      <button type="button" onClick={load}>Refresh</button>
+      {report.devices?.length ? <ul>{report.devices.map(d => <li key={d.serial}><code>{d.serial}</code> — {d.state}{d.model ? ` · ${d.model}` : ''}</li>)}</ul>
+        : <p className="muted">No devices attached.</p>}
+    </>}
+  </section>;
 }
 
 function AutomationDriversPanel({ toast, settings, onSettingsChange }) {
@@ -133,7 +149,7 @@ function BackupPanel({ toast }) {
       <label className="file-btn">Inspect archive<input type="file" accept=".pmb,.pmbe,application/octet-stream" onChange={inspect} disabled={busy} /></label>
       <label className="file-btn">Restore archive<input type="file" accept=".pmb,.pmbe,application/octet-stream" onChange={restore} disabled={busy} /></label>
     </div>
-    {listing && <p className="muted">{listing.encrypted ? 'Encrypted' : 'Unencrypted'} backup{listing.requiresPassphrase && !listing.profiles ? '. A passphrase is required before profile names can be listed.' : ''}{listing.profiles ? `: ${listing.profiles.map(profile => profile.name).join(', ') || 'no profiles'}` : ''}. {listing.containsSecretKey ? 'The file contains a secret key; this list does not show it.' : ''}</p>}
+    {listing && <p className="muted">{listing.encrypted ? 'Encrypted' : 'Unencrypted'} backup{listing.requiresPassphrase && !listing.profiles ? '. A passphrase is required before profile names can be listed.' : ''}{listing.profiles ? `: ${listing.profiles.map(profile => profile.name).join(', ') || 'no profiles'}` : ''}{listing.fileChecksumCount ? ` · ${listing.fileChecksumCount} manifest checksums` : ''}. {listing.containsSecretKey ? 'The file contains a secret key; this list does not show it.' : ''}</p>}
     {result && <p className="muted">Added {result.added.length}, replaced {result.replaced.length}, renamed {result.renamed.length}{result.proxyDetached.length ? `, proxy detached on ${result.proxyDetached.length}` : ''}.</p>}
   </section>;
 }

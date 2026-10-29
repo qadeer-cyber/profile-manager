@@ -5,7 +5,7 @@ import { db } from './db.js';
 
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
 const SORTS = new Set(['name', 'folder', 'updated_at', 'created_at', 'status', 'last_launched_at', 'tags', 'proxy']);
-const QUERY_KEYS = ['q', 'tag', 'folder', 'status', 'proxy', 'sort', 'dir', 'page', 'pageSize'];
+const QUERY_KEYS = ['q', 'tag', 'folder', 'status', 'proxy', 'workspaceId', 'sort', 'dir', 'page', 'pageSize'];
 
 function statusRank(profile) {
   if (profile.running) return 0;
@@ -19,6 +19,7 @@ export function queryProfiles(rows, query = {}) {
   const folder = query.folder;
   const status = String(query.status || '');
   const proxy = query.proxy == null ? '' : String(query.proxy);
+  const workspaceId = String(query.workspaceId || '');
   const sort = String(query.sort || 'updated_at');
   const dir = String(query.dir || 'desc') === 'asc' ? 1 : -1;
   const pageSize = Math.min(100, Math.max(1, Number(query.pageSize || 50) || 50));
@@ -35,6 +36,7 @@ export function queryProfiles(rows, query = {}) {
   if (status === 'error') items = items.filter(profile => !profile.running && profile.last_error);
   if (proxy === 'none') items = items.filter(profile => !profile.proxyId && !profile.proxy_id);
   else if (proxy && proxy !== 'any') items = items.filter(profile => (profile.proxyId || profile.proxy_id) === proxy);
+  if (workspaceId) items = items.filter(profile => profile.workspaceId === workspaceId);
   const value = profile => {
     if (sort === 'status') return statusRank(profile);
     if (sort === 'tags') return profile.tags.join(',').toLowerCase();

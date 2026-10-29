@@ -1035,7 +1035,7 @@ function mountWorkspace(router) {
   router.get('/profile-table', wrap((req, res) => {
     const query = { ...req.query };
     if (!('folder' in req.query)) query.folder = '__all';
-    const rows = list({ q: query.q, tag: query.tag, folder: query.folder }).map(publicP);
+    const rows = list({ q: query.q, tag: query.tag, folder: query.folder, workspaceId: query.workspaceId }).map(publicP);
     res.json(queryProfiles(rows, query));
   }));
   router.get('/views', wrap((req, res) => res.json(listViews(req.query.surface || 'profiles'))));

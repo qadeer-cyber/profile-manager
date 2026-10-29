@@ -21,6 +21,7 @@ export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
   const [folder, setFolder] = useState('__all');
+  const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [theme, setTheme] = useTheme();
   const [compact, setCompact] = useState(() => localStorage.getItem('pm-density') === 'compact');
   useEffect(() => { localStorage.setItem('pm-density', compact ? 'compact' : 'comfortable'); }, [compact]);
@@ -41,7 +42,8 @@ export function App() {
     addEventListener('keydown', onKey);
     return () => removeEventListener('keydown', onKey);
   }, [page]);
-  const openFolder = f => { setFolder(f); setPage('profiles'); };
+  const openFolder = f => { setFolder(f); setWorkspaceFilter(''); setPage('profiles'); };
+  const openWorkspaceProfiles = id => { setWorkspaceFilter(id); setFolder('__all'); setPage('profiles'); };
   const [meta, setMeta] = useState({ tags: [], folders: [], running: [] });
   const [eventsLog, setEventsLog] = useState([]);
   const [browserMissing, setBrowserMissing] = useState(false);
@@ -85,10 +87,10 @@ export function App() {
     <main className="content">
       {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
       {page === 'dashboard' && <DashboardPage onOpenProfiles={() => openFolder('__all')} />}
-      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
+      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} />}
       {page === 'trash' && <TrashPage />}
       {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}
-      {page === 'workspaces' && <WorkspacesPage />}
+      {page === 'workspaces' && <WorkspacesPage onOpenProfiles={openWorkspaceProfiles} />}
       {page === 'cookie-robot' && <CookieRobotPage />}
       {page === 'proxies' && <ProxiesPage />}
       {page === 'extensions' && <ExtensionsPage />}

@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { Dialog } from '../components/Dialog.jsx';
 
-export function WorkspacesPage() {
+export function WorkspacesPage({ onOpenProfiles }) {
   const toast = useToast();
   const [items, setItems] = useState([]);
   const [vault, setVault] = useState(null);
@@ -21,10 +21,14 @@ export function WorkspacesPage() {
     <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Profiles</th><th>Vault</th><th></th></tr></thead><tbody>
       {items.map(w => <tr key={w.id}><td>{w.name}{w.notes && <div className="muted small">{w.notes}</div>}</td><td>{w.profileCount}</td>
         <td>{w.vaultLocked ? 'Locked' : '—'}</td>
-        <td className="actions"><button className="ghost-danger" onClick={async () => { try { await api(`/api/workspaces/${w.id}`, { method: 'DELETE' }); toast('Deleted', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Delete</button></td></tr>)}
+        <td className="actions">
+          {w.profileCount > 0 && onOpenProfiles && <button onClick={() => onOpenProfiles(w.id)}>View profiles</button>}
+          <button onClick={() => setDialog({ kind: 'edit', data: w })}>Edit</button>
+          <button className="ghost-danger" onClick={async () => { try { await api(`/api/workspaces/${w.id}`, { method: 'DELETE' }); toast('Deleted', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Delete</button></td></tr>)}
       {!items.length && <tr><td colSpan="4" className="empty">No workspaces yet.</td></tr>}
     </tbody></table></div>
     {dialog?.kind === 'new' && <NewWorkspace vault={vault} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} toast={toast} />}
+    {dialog?.kind === 'edit' && <EditWorkspace vault={vault} workspace={dialog.data} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} toast={toast} />}
   </>;
 }
 
@@ -42,5 +46,21 @@ function NewWorkspace({ vault, onClose, onDone, toast }) {
     <label>Notes<textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label>
     <label className="check"><input type="checkbox" disabled={!vault?.vaultStorageAvailable} checked={vaultLocked} onChange={e => setVaultLocked(e.target.checked)} /> Vault lock (requires desktop secure storage)</label>
     {!vault?.vaultStorageAvailable && <p className="muted small">Vault lock is unavailable in web-only mode without OS secure storage.</p>}
+  </Dialog>;
+}
+
+function EditWorkspace({ vault, workspace, onClose, onDone, toast }) {
+  const [name, setName] = useState(workspace.name);
+  const [notes, setNotes] = useState(workspace.notes || '');
+  const [vaultLocked, setVaultLocked] = useState(!!workspace.vaultLocked);
+  return <Dialog title="Edit workspace" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!name.trim()} onClick={async () => {
+    try {
+      await api(`/api/workspaces/${workspace.id}`, { method: 'PATCH', body: { name: name.trim(), notes, vaultLocked: vaultLocked && vault?.vaultStorageAvailable } });
+      toast('Workspace updated', 'success'); onDone();
+    } catch (e) { toast(e.message, 'error'); }
+  }}>Save</button></>}>
+    <label>Name<input autoFocus value={name} onChange={e => setName(e.target.value)} /></label>
+    <label>Notes<textarea rows={2} value={notes} onChange={e => setNotes(e.target.value)} /></label>
+    <label className="check"><input type="checkbox" disabled={!vault?.vaultStorageAvailable} checked={vaultLocked} onChange={e => setVaultLocked(e.target.checked)} /> Vault lock</label>
   </Dialog>;
 }

@@ -60,6 +60,12 @@ export function ProxiesPage() {
           <div className="muted">{new Date(p.lastTest.testedAt).toLocaleString()}</div></> : <span className="muted">Never</span>}</td>
         <td className="actions"><button disabled={testing[p.id]} onClick={() => test([p.id])}><Icon name="bolt" /> Test</button>
           <button className="icon-btn" aria-label={'History ' + p.name} title="Latency history" onClick={() => setDialog({ kind: 'history', data: p })}><Icon name="diagnostics" /></button>
+          <button className="icon-btn" aria-label={'Duplicate ' + p.name} title="Duplicate as template preset" onClick={async () => {
+            try {
+              await api(`/api/proxies/${p.id}/duplicate`, { method: 'POST', body: { name: `${p.name} template`, asTemplate: true } });
+              toast('Template preset created', 'success'); lib.reload();
+            } catch (e) { toast(e.message, 'error'); }
+          }}><Icon name="copy" /></button>
           <button className="icon-btn" aria-label={'Edit ' + p.name} title="Edit" onClick={() => setDialog({ kind: 'edit', data: p })}><Icon name="edit" /></button>
           <button className="icon-btn danger" aria-label={'Delete ' + p.name} title="Delete" onClick={() => remove(p, false)}><Icon name="trash" /></button></td>
       </tr>; })}

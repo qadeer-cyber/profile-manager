@@ -33,6 +33,7 @@ Stock-implementable items are largely **done** or **read-only** (Firefox gecko c
 - Audit matrix + §22 doc set through CookieRobot/tab restore/Firefox prefs (**77** tests)
 - Firefox gecko WebRTC/timezone + pm-cli bridges (**82** tests)
 - **This increment:** gecko `moz_cookies` read/export + examples + §23 final draft (**85** tests)
+- **A6 + B + C (latest):** GeckoDriver navigate stub, Firefox observables, tab-restore title evidence, Phase C blocker doc (**107** `test:browser-runtime`)
 
 ## Still open (honest)
 
