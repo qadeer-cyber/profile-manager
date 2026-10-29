@@ -34,6 +34,6 @@ Prior failed run **40933139496** (`cd72dfb`): `electron-smoke-offline.js` failed
 
 ## Current status
 
-**NO-GO preview publish** — automated gates **1–4** and **6** have green CI evidence at `98dbc0c`; **gate 7 (owner sign-off)** and product blockers (bundled chromedriver/geckodriver **MISSING**, custom Chromium **BLOCKED**) remain.
+**NO-GO preview publish** — automated gates **1–4** and **6** have green CI evidence at `98dbc0c`; **gate 7 (owner sign-off)** remains. ChromeDriver/geckodriver: **opt-in cache** under data dir (`AUTOMATION_DRIVERS.md`), not bundled in the offline EXE. Custom Chromium **BLOCKED**.
 
 **§19 movement:** installer path is **proven on GHA** without publishing; preview tag still requires human approval, not CI alone.

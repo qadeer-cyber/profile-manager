@@ -42,7 +42,7 @@
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
 | M35 | CLI / Script runner | PARTIAL | `npm run pm-cli` + cookie-robot example |
 | M36 | Playwright/Puppeteer attach | PARTIAL | CDP when `automation: true`; see puppeteer-cdp-attach.md |
-| M37 | Selenium/WebDriver | PARTIAL | Local ChromeDriver bridge API; host chromedriver required; automation CDP only |
+| M37 | Selenium/WebDriver | PARTIAL | Local bridge API; opt-in CfT/Mozilla cache or PATH (`AUTOMATION_DRIVERS.md`); not in offline EXE |
 | M38 | Workspaces / team sync | PARTIAL | Local workspaces + optional vault lock; no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
 | M40 | Android cloud phones / ADB farms | PARTIAL | `GET /api/adb/devices` lists **user-owned** USB devices when host `adb` is on PATH; **NOT farm-equivalent** |

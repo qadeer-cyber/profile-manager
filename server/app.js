@@ -33,7 +33,7 @@ import {
   assertWorkspaceAccess, vaultStorageAvailable,
 } from './workspaces.js';
 import {
-  configureCookieRobot, createCookieRobotJob, getCookieRobotJob, listCookieRobotJobs, cancelCookieRobotJob, retryCookieRobotJob,
+  configureCookieRobot, createCookieRobotJob, getCookieRobotJob, listCookieRobotJobs, cancelCookieRobotJob, retryCookieRobotJob, cookieRobotReport,
 } from './cookie-robot-jobs.js';
 import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
 import {
@@ -960,6 +960,10 @@ function mountWorkspace(router) {
     assignProfileWorkspace(req.params.id, req.body?.workspaceId ?? null);
     res.json(publicP(get(req.params.id)));
   }));
+  router.get('/cookie-robot', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(cookieRobotReport());
+  }));
   router.post('/cookie-robot/jobs', wrap((req, res) => {
     const profileId = req.body?.profileId;
     if (!profileId) throw err(400, 'profileId is required');
@@ -969,7 +973,7 @@ function mountWorkspace(router) {
   router.get('/cookie-robot/jobs', wrap((req, res) => res.json(listCookieRobotJobs(req.query.limit))));
   router.get('/cookie-robot/jobs/:id', wrap((req, res) => res.json(getCookieRobotJob(req.params.id))));
   router.post('/cookie-robot/jobs/:id/cancel', wrap((req, res) => res.json(cancelCookieRobotJob(req.params.id))));
-  router.post('/cookie-robot/jobs/:id/retry', wrap((req, res) => res.json(retryCookieRobotJob(req.params.id))));
+  router.post('/cookie-robot/jobs/:id/retry', wrap((req, res) => res.json(retryCookieRobotJob(req.params.id, { failedOnly: !!req.body?.failedOnly }))));
   router.get('/dashboard', wrap((req, res) => res.json(dashboardStats())));
   router.get('/profile-table', wrap((req, res) => {
     const query = { ...req.query };

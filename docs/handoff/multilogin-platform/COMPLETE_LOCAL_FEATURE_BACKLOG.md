@@ -13,11 +13,11 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P1 | Profile templates | Reusable preset rows + UI + bulk create | VERIFIED |
 | P1 | CookieRobot-local | Job runner API + UI + URL guards | PARTIAL |
 | P1 | Automation examples | Playwright/CDP samples in repo | PARTIAL |
-| P1 | WebDriver localhost | ChromeDriver bridge API (automation CDP only) | PARTIAL |
+| P1 | WebDriver localhost | Bridge + opt-in driver cache (CfT/geckodriver) | PARTIAL |
 | P2 | Bookmarks/history export | Stopped Chromium profile read API | VERIFIED |
 | P2 | Running profile focus | Dashboard + profiles Focus button | PARTIAL (Win32/CDP) |
 | P2 | Optional local ADB | List user devices when adb on PATH | PARTIAL |
-| P2 | Performance benchmarks | Latitude-oriented metrics script | MISSING |
+| P2 | Performance benchmarks | `npm run benchmark:latitude-scaffold` (owner-run; no invented scores) | PARTIAL |
 | P2 | Side-by-side browser rollback | CfT backup slot + rollback | VERIFIED |
 | P2 | §19 installer CI smoke | Non-publishing windows-2022 job | VERIFIED (run 40934718409 @ `98dbc0c`) |
 | P3 | Custom Chromium compile | Recipe only until approved infra | BLOCKED |
@@ -33,10 +33,11 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 - Rollback/WebDriver/provider increment (`dc60291` / docs `ecbdb10`)  
 - Workspaces + CookieRobot + geckodriver (`e4214aa` / **60** runtime tests)  
 - **This increment:** installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests in `test:browser-runtime`
+- **Driver cache package:** opt-in CfT chromedriver + MPL geckodriver under data dir; Settings UI; `AUTOMATION_DRIVERS.md`; latitude benchmark scaffold; **68** tests
 
 ## Still open (honest)
 
-- Bundled chromedriver / geckodriver (**MISSING**)  
+- Drivers **in offline EXE** (**MISSING** by design — opt-in cache only)  
 - Custom Chromium compile (**BLOCKED**)  
 - §19 preview publish (**NO-GO** until installer job green + owner)  
 - Full Firefox CI without host Firefox (**BLOCKED** on GHA)  

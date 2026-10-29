@@ -1,17 +1,31 @@
-# WebDriver bridge (automation launches only)
+# WebDriver bridge (Chromium automation + optional driver cache)
 
-Manual **native** profile starts do **not** open CDP. WebDriver attach works only when the profile is running on the **Playwright automation path** (`automation: true` on launch or automation enabled on the profile).
+Manual **native** profile starts do **not** open CDP. WebDriver attach works only when the profile runs on the **automation path** (`automation: true` on launch or automation enabled on the profile).
 
-1. Launch with automation and read CDP from the profile JSON:
+## ChromeDriver sources (pick one)
+
+| Source | Notes |
+|--------|--------|
+| **Opt-in cache** (recommended) | Settings → enable automation driver cache → **Download ChromeDriver**. Verified CfT build matching pinned Chromium. |
+| `PM_CHROMEDRIVER_PATH` | Point at your own chromedriver executable. |
+| PATH | Stock chromedriver on PATH (you must match Chromium version). |
+
+ChromeDriver is **not** bundled in the offline NSIS installer.
+
+## Steps
+
+1. Launch with automation:
    - `POST /api/v1/profiles/:id/launch` with `{ "automation": true }`
    - `GET /api/v1/profiles/:id` → `cdp.debuggerAddress`
 
-2. Start the local ChromeDriver bridge (requires `chromedriver` on PATH or `PM_CHROMEDRIVER_PATH`):
+2. Start the local bridge:
    - `POST /api/v1/profiles/:id/webdriver/start`
-   - Response includes `webdriverUrl` and `sessionHint.goog:chromeOptions.debuggerAddress`
+   - Response: `webdriverUrl`, `sessionHint.goog:chromeOptions.debuggerAddress`
 
-3. Point Selenium at `webdriverUrl` and pass `debuggerAddress` in capabilities (see `examples/selenium_attach.py`).
+3. Selenium: point at `webdriverUrl` and pass `debuggerAddress` (see `examples/selenium_attach.py`).
 
-4. `POST /api/v1/profiles/:id/webdriver/stop` when finished; stop the profile via the API when done.
+4. Cleanup: `POST /api/v1/profiles/:id/webdriver/stop`, then stop the profile.
 
-No CAPTCHA bypass. ChromeDriver is **not** bundled; install a build matching pinned CfT Chromium.
+See also: `docs/handoff/multilogin-platform/AUTOMATION_DRIVERS.md`, `examples/local-automation/geckodriver-firefox-bridge.md` (Firefox).
+
+No CAPTCHA bypass.

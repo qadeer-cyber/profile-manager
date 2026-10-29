@@ -4,7 +4,7 @@
 **Baseline:** Alpha.3 frozen · installer smoke green [40934718409](https://github.com/qadeer-cyber/profile-manager/actions/runs/40934718409) @ `98dbc0c`
 
 ## 1. Commit
-**Tip:** _(this push)_ — opt-in ChromeDriver/geckodriver cache + Settings UI + latitude benchmark scaffold.
+**Tip:** `1daa79d` — opt-in ChromeDriver/geckodriver cache + Settings UI + latitude benchmark scaffold.
 
 ## 2. Package summary
 | Item | Status |
