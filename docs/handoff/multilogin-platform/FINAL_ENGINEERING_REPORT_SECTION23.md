@@ -4,7 +4,7 @@
 **Prior tip:** `743d94b` (CookieRobot polish) · docs `f924e5b`
 
 ## 1. Commit
-**Tip:** _(this package)_ — native tab restore discoverability, Firefox proxy/locale prefs, CookieRobot CDP integration test.
+**Tip:** `20c8df7` — native tab restore discoverability, Firefox proxy/locale prefs, CookieRobot CDP integration test.
 
 ## 2. Package
 - **Tab restore UX:** `tabRestore` on public profile API (enabled + saved count); Profiles list badge; General → Startup nudge in profile editor; Startup tab notice; opt-in launch plan tests (`test/native-tab-restore-launch.test.js`).
