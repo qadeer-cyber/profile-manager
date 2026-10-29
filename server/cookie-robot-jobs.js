@@ -133,6 +133,21 @@ async function waitForCdpPort(profileId, timeoutMs, control) {
   throw fail(409, 'Timed out waiting for automation CDP on the profile. Enable automation on the profile or retry.', 'NO_CDP');
 }
 
+async function gotoCookieRobotUrl(page, url) {
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (!String(e.message || e).includes('ERR_ABORTED') || attempt === 2) throw e;
+      await new Promise(r => setTimeout(r, 250 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 /** Testable CDP task runner (real Chromium CDP when port is live). */
 export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500, signal = {}, validateFinalUrl = true } = {}) {
   const browser = await connectCdpWithRetry(cdpPort, signal);
@@ -143,22 +158,29 @@ export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500
       if (signal.cancel) break;
       if (tasks[i].status === 'ok') { out.push(tasks[i]); continue; }
       let page;
+      let openedNewPage = false;
       try {
-        page = await context.newPage();
+        const live = context.pages().filter(p => !p.isClosed());
+        if (live.length) {
+          page = live.find(p => p.url() === 'about:blank' || p.url() === 'chrome://newtab/') || live[0];
+        } else {
+          page = await context.newPage();
+          openedNewPage = true;
+        }
         let redirectBlocked = null;
         page.on('framenavigated', frame => {
           if (frame !== page.mainFrame()) return;
           try { validateCookieRobotUrl(frame.url(), { afterRedirect: true }); }
           catch (e) { redirectBlocked = e.message; }
         });
-        await page.goto(tasks[i].url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        await gotoCookieRobotUrl(page, tasks[i].url);
         if (redirectBlocked) throw fail(400, redirectBlocked, 'URL_NOT_ALLOWED');
         if (validateFinalUrl) validateCookieRobotUrl(page.url(), { afterRedirect: true });
         out.push({ ...tasks[i], status: 'ok', error: null, at: new Date().toISOString() });
       } catch (error) {
         out.push({ ...tasks[i], status: 'failed', error: error.message, at: new Date().toISOString() });
       } finally {
-        try { await page?.close(); } catch {}
+        if (openedNewPage) try { await page?.close(); } catch {}
       }
       if (i < tasks.length - 1 && !signal.cancel) await new Promise(r => setTimeout(r, delayMs));
     }

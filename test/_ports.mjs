@@ -76,7 +76,14 @@ export function resolveInstalledServerScript(installDir) {
     installDir && path.join(installDir, 'resources', 'app', 'server', 'index.js'),
     installDir && path.join(installDir, 'resources', 'app.asar', 'server', 'index.js'),
   ].filter(Boolean);
-  return candidates.find(p => fs.existsSync(p)) || null;
+  const found = candidates.find(p => fs.existsSync(p));
+  if (found) return found;
+  // Published Alpha.3+ packs server only inside app.asar; plain fs.existsSync cannot see in-archive paths.
+  const asar = installDir && path.join(installDir, 'resources', 'app.asar');
+  if (asar && fs.existsSync(asar)) {
+    return path.join(installDir, 'resources', 'app.asar', 'server', 'index.js');
+  }
+  return null;
 }
 
 export function spawnServerEntry(entryScript, env, { envName = 'PM_TEST_PORT', port, echo = false, timeoutMs = 20000, execPath = process.execPath, electronRunAsNode = false } = {}) {
