@@ -50,6 +50,11 @@ export function launchShapeReport(profileId = null) {
     playwrightInjectedSwitches: PLAYWRIGHT_INJECTED,
     appExtensionPlan: { args: ext.args, ignoreDefaultArgs: ext.ignoreDefaultArgs },
     mitigations,
+    browserRuntime: {
+      manualDefault: 'native-chromium-spawn',
+      automationAdapter: 'playwright-persistent-context',
+      manualBrowsingRequiresPlaywright: false,
+    },
     classification: {
       unavailableOnHostedCi: ['Physical Latitude 5480', 'Owner direct IPv6 path', 'Google reputation score'],
       unsupportedOnStockChromium: ['Multilogin canvas/WebGL mask', 'Hiding navigator.webdriver', 'Chrome-branded binary unless user installs Chrome separately'],

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m5-launch-'));
 process.env.PM_DATA_DIR = dir;
+process.env.PM_MANUAL_LAUNCH_RUNTIME = 'playwright';
 const calls = [];
 mock.module(new URL('../node_modules/playwright/index.mjs', import.meta.url).href, { namedExports: { chromium: {
   launchPersistentContext: async (userDir, opts) => { calls.push({ userDir, opts }); throw new Error('intentional launch boundary'); },

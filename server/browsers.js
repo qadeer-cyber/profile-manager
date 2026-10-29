@@ -34,6 +34,8 @@ import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
+import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
+import { launchNativeChromium } from './browser-runtime/native-chromium.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -253,68 +255,57 @@ async function doLaunch(p, opts = {}) {
   const metricsHandle = beginLaunchMetrics(p.id);
   assertLaunchNotCancelled(p.id);
   const { headless, url } = opts, automation = automationEnabled(opts);
-  const regional = validateBrowserSettings(p.browserSettings || {});
-  const contextSettings = browserContextSettings(regional);
-  const policy = validateWebRtcSettings(p.webrtcSettings || {});
-  const extensionPlan = extensionLaunchPlan(p.id);
   const dir = userDataDir(p.id);
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
   await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null, entry = null;
+  let launchPlan = null;
   try {
-    const cdpPort = automation ? await freePort() : null;
-    const args = automation ? [`--remote-debugging-port=${cdpPort}`, '--remote-debugging-address=127.0.0.1'] : [];
-    const executablePath = getSetting('executablePath', '') || undefined;
-    if (executablePath) {
-      const compat = executableCompatibility(executablePath);
-      if (!compat.launchAllowed) throw httpErr(503, compat.warning, 'CHROMIUM_VERSION_MISMATCH');
-    }
-    if (!executablePath) { const miss = chromiumMissingError(!!headless); if (miss) throw miss; }
-    // We own shutdown: Playwright's own signal handlers would kill browsers before cookies/storage are flushed.
-    const launchOpts = { ...contextSettings, headless, viewport: null, args, executablePath, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false };
-    if (p.proxy) {
-      if (p.proxy.username) {
-        // Chromium can't authenticate to SOCKS proxies (and prompts for HTTP); use a local no-auth relay.
-        const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
-        relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
-        launchOpts.proxy = { server: relayUrl };
-      } else launchOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
-      if (proxyLoopback()) args.push('--proxy-bypass-list=<-loopback>'); // dev/test only; packaged builds ignore it
-    }
-    // Preserve native ordered languages: Playwright's locale option otherwise replaces
-    // Accept-Language and navigator.languages with a single locale.
-    if (regional.languages.length) {
-      args.push('--accept-lang=' + regional.languages.join(','));
-      args.push('--lang=' + (regional.locale || regional.languages[0]));
-    }
-    for (const flag of chromiumPolicyArgs(policy)) args.push(flag);
-    for (const flag of extensionPlan.args) args.push(flag);
-    if (!verifyWebRtcLaunchArgs(args, policy.mode)) {
-      throw httpErr(500, 'Refusing to launch because the WebRTC arguments do not match the saved policy.', 'WEBRTC_LAUNCH_MISMATCH');
-    }
-    const identity = chromiumIdentity(executablePath && fs.existsSync(executablePath) ? executablePath : '');
-    const plan = advancedLaunchPlan(p.advancedSettings || {}, { headless: !!headless, version: identity.version, platform: process.platform });
-    for (const flag of plan.args) args.push(flag);
-    if (!verifyFingerprintLaunchArgs(args, plan.settings.fingerprint)) {
-      throw httpErr(500, 'Refusing to launch because the WebGL restriction does not match the saved fingerprint settings.', 'FINGERPRINT_LAUNCH_MISMATCH');
-    }
-    if (plan.launch.userAgent) launchOpts.userAgent = plan.launch.userAgent;
-    if (plan.launch.viewport) launchOpts.viewport = plan.launch.viewport;
-    if (plan.launch.screen) launchOpts.screen = plan.launch.screen;
-    if (plan.launch.deviceScaleFactor) launchOpts.deviceScaleFactor = plan.launch.deviceScaleFactor;
-    if (plan.launch.geolocation) launchOpts.geolocation = plan.launch.geolocation;
-    if (extensionPlan.ignoreDefaultArgs.length) launchOpts.ignoreDefaultArgs = [...extensionPlan.ignoreDefaultArgs];
-    if (process.platform === 'win32' && isPackaged()) launchOpts.chromiumSandbox = true;
-    // Preference merge is best-effort. The force flag above is what verification checks.
-    if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
-    applyAdvancedPreferences(dir, p.advancedSettings || {});
+    launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
+    relayUrl = launchPlan.relayUrl;
+    const { args, plan, regional, cdpPort } = launchPlan;
     const preferencesBaseline = readPreferences(dir);
     assertLaunchNotCancelled(p.id);
+
+    if (launchPlan.runtime === 'native') {
+      const native = await launchNativeChromium(launchPlan);
+      markContextReady(metricsHandle);
+      entry = {
+        ctx: null, runtime: 'native', relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
+        stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
+        exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
+        launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
+        requestedArgs: native.argv, restoreTabs: launchPlan.restoreTabs, tabUrls: [],
+      };
+      captureTermination(entry, native.proc);
+      const owned = await browserOwnedByProfile(native.browserPid, dir);
+      entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, []);
+      readExit(entry);
+      applyProfileExit(entry, dir);
+      markBrowserReady(metricsHandle);
+      native.proc.on('exit', () => onClosed(p.id, null));
+      updateLock(dir, { browserPid: native.browserPid, cdpPort: null });
+      live.set(p.id, entry);
+      try {
+        db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, null, null, relayUrl, new Date().toISOString());
+      } catch (e) {
+        live.delete(p.id);
+        throw e;
+      }
+      setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
+      emit('profile:started', p.id, { runtime: 'native' });
+      console.log('NATIVE-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid, spawnPid: native.spawnPid }));
+      finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native' });
+      return runInfo(p.id);
+    }
+
+    const launchOpts = { ...launchPlan.playwrightOpts };
+    if (process.platform === 'win32' && isPackaged()) launchOpts.chromiumSandbox = true;
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {
-      if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !executablePath) throw chromiumMissingError(!!headless, true);
+      if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !launchPlan.executablePath) throw chromiumMissingError(!!headless, true);
       const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
       throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
     }
@@ -326,7 +317,7 @@ async function doLaunch(p, opts = {}) {
     });
     for (const page of ctx.pages()) watchPermissions(page);
     ctx.on('page', watchPermissions);
-    entry = { ctx, relayUrl, launchId: randomUUID(), browserPid: null,
+    entry = { ctx, runtime: 'playwright', relayUrl, launchId: randomUUID(), browserPid: null,
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
       // Sanitized launch-time proxy only. The classifier never reads this field.
@@ -369,15 +360,9 @@ async function doLaunch(p, opts = {}) {
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
-    const restoreTabs = plan.settings.preferences.restoreTabs === true;
-    entry.restoreTabs = restoreTabs;
+    entry.restoreTabs = launchPlan.restoreTabs;
     entry.tabUrls = [];
-    const saved = restoreTabs ? readSavedTabs(dir) : { urls: [], corrupt: false };
-    const openUrls = chooseLaunchUrls({
-      explicitUrl: url,
-      startupUrls: plan.startupUrls,
-      savedUrls: saved.urls,
-    });
+    const openUrls = launchPlan.openUrls;
     if (openUrls.length) {
       const first = ctx.pages()[0] || await ctx.newPage();
       await first.goto(openUrls[0]).catch(() => {});
@@ -388,7 +373,7 @@ async function doLaunch(p, opts = {}) {
         await applyDocumentPermissions(page, page.url(), plan.permissions).catch(() => {});
       }
     }
-    if (restoreTabs) {
+    if (launchPlan.restoreTabs) {
       const note = () => {
         const next = snapshotTabUrls(ctx.pages());
         if (next) entry.tabUrls = next;
@@ -442,7 +427,8 @@ export function browserProcess(ctx) {
 // (https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/profiles/profile_impl.cc).
 // The service writes Crashed as the profile opens, and Normal only when it shuts down cleanly.
 export function trackExit(entry) {
-  captureTermination(entry, browserProcess(entry.ctx));
+  const proc = entry.runtime === 'native' ? entry.proc : browserProcess(entry.ctx);
+  captureTermination(entry, proc);
   if (!entry.proc) console.warn('CLASSIFIER-FALLBACK playwright browser process handle is missing; not treating that as a crash');
 }
 function readExit(entry) { entry.readTermination?.(); }
@@ -701,7 +687,7 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   }
   if (!live.has(id)) { if (e.done) await e.done; return; }
   // 1) graceful: close the context  2) force: kill the process tree
-  await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
+  if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
   if (e.browserPid && isAlive(e.browserPid)) await killTree(e.browserPid, { expect: userDataDir(id) });
   if (e.done) await e.done;
   else await onClosed(id, e.ctx);

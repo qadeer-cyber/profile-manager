@@ -24,6 +24,7 @@ import { buildMonitoringReport } from './monitoring-report.js';
 import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
+import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
@@ -467,6 +468,24 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     res.json(await buildGoogleCompatReport({ profileId: body.profileId || null, probe: !!body.probe }));
+  }));
+  router.get('/browser-engine/architecture', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(browserEngineArchitectureReport());
+  }));
+  router.get('/browser-engine/capability-matrix', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(browserEngineCapabilityMatrix());
+  }));
+  router.get('/browser-engine/update-manager', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(browserUpdateManagerReport());
+  }));
+  router.get('/profiles/:id/browser-config', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const profile = get(req.params.id);
+    if (!profile) throw err(404, 'Profile not found');
+    res.json(buildProfileConfigModel(profile));
   }));
   router.get('/parity-scorecard', wrap((req, res) => res.json(computeParityCoverage())));
   router.get('/hardware', wrap(async (req, res) => res.json(await hardwareReport(null))));

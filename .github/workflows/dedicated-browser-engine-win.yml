@@ -1,0 +1,21 @@
+name: Dedicated browser engine (Windows)
+on:
+  push:
+    branches:
+      - feature/dedicated-browser-engine
+
+jobs:
+  engine-windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - name: Browser runtime + P1 regression
+        run: npm run test:browser-runtime
