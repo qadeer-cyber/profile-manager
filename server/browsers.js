@@ -37,7 +37,7 @@ import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
-import { harvestNativeTabUrls } from './session-harvest.js';
+import { harvestNativeTabUrls, resolveNativeTabUrlsForSave } from './session-harvest.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -673,14 +673,14 @@ async function finishClose(id, e) {
       try { setStatus(id, { last_error: null }); } catch {}
       if (e.restoreTabs && dir) {
         try {
-          let tabs = e.tabUrls || [];
-          if (!tabs.length && e.runtime === 'native') {
-            tabs = harvestNativeTabUrls({
+          const tabs = e.runtime === 'native'
+            ? resolveNativeTabUrlsForSave({
               engine: e.engine || 'chromium',
               chromiumDir: dir,
               geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
-            });
-          }
+              existing: e.tabUrls || [],
+            })
+            : (e.tabUrls || []);
           writeSavedTabs(dir, tabs);
         } catch { /* a tab list must not change the stop result */ }
       }
@@ -707,7 +707,24 @@ export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INT
     healthTicks += 1;
     for (const [id, e] of live) {
       if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
-      else if (!e.stopping) applyProfileExit(e, userDataDir(id));
+      else if (!e.stopping) {
+        applyProfileExit(e, userDataDir(id));
+        if (e.restoreTabs && e.runtime === 'native' && healthTicks % 10 === 0) {
+          try {
+            const dir = userDataDir(id);
+            const tabs = resolveNativeTabUrlsForSave({
+              engine: e.engine || 'chromium',
+              chromiumDir: dir,
+              geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+              existing: e.tabUrls || [],
+            });
+            if (tabs.length) {
+              e.tabUrls = tabs;
+              writeSavedTabs(dir, tabs);
+            }
+          } catch { /* periodic snapshot only */ }
+        }
+      }
     }
     if (healthTicks % 10 === 0) reconcileOrphanRunningRows().catch(() => {});
   }, intervalMs);
@@ -725,15 +742,19 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
       const next = snapshotTabUrls(e.ctx.pages());
       if (next) e.tabUrls = next;
     } catch { /* keep the last navigation snapshot */ }
-  } else if (e.restoreTabs && e.runtime === 'native' && !e.tabUrls?.length) {
+  } else if (e.restoreTabs && e.runtime === 'native') {
     try {
       const dir = userDataDir(id);
-      const harvested = harvestNativeTabUrls({
+      const tabs = resolveNativeTabUrlsForSave({
         engine: e.engine || 'chromium',
         chromiumDir: dir,
         geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+        existing: e.tabUrls || [],
       });
-      if (harvested.length) e.tabUrls = harvested;
+      if (tabs.length) {
+        e.tabUrls = tabs;
+        writeSavedTabs(dir, tabs);
+      }
     } catch { /* best effort */ }
   }
   if (!live.has(id)) { if (e.done) await e.done; return; }

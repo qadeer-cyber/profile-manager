@@ -129,7 +129,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
       {rows.map(p => { const st = rowStatus(p, busy[p.id]); return <tr key={p.id} className={S.sel.has(p.id) ? 'selected' : ''}>
         <td className="cb"><input type="checkbox" aria-label={'Select ' + p.name} checked={S.sel.has(p.id)} onChange={() => S.toggle(p.id)} /></td>
         <td className="col-status"><span className={'status ' + st.key}><i />{st.label}</span></td>
-        <td className="col-name"><div className="name">{p.name}</div>{p.notes && <div className="muted clamp">{p.notes}</div>}
+        <td className="col-name"><div className="name">{p.name}{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>{p.notes && <div className="muted clamp">{p.notes}</div>}
           {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
           {p.cdp && <div className="mono" title="Automation (CDP) endpoint">{p.cdp.wsEndpoint}</div>}</td>
@@ -143,6 +143,8 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
           <button className="icon-btn" title="Storage" aria-label={'Storage ' + p.name} onClick={() => setDialog({ kind: 'storage', data: p })}><Icon name="storage" /></button>
           <button className="icon-btn" title="Edit" aria-label={'Edit ' + p.name} onClick={() => setDialog({ kind: 'edit', data: toForm(p) })}><Icon name="edit" /></button>
           <button className="icon-btn" title="Clone" aria-label={'Clone ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `Cloned ${p.name}`, () => api(`/api/profiles/${p.id}/clone`, { method: 'POST' }))}><Icon name="copy" /></button>
+          {p.isQuick && <button className="icon-btn" title="Save as regular profile" aria-label={'Save as regular ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `${p.name} saved as regular`, () => api(`/api/profiles/${p.id}/save-regular`, { method: 'POST' }))}><Icon name="check" /></button>}
+          <button className="icon-btn" title="Save as template" aria-label={'Template from ' + p.name} disabled={busy[p.id]} onClick={() => setDialog({ kind: 'template', data: p })}><Icon name="templates" size={14} /></button>
           <button className="icon-btn danger" title="Delete" aria-label={'Delete ' + p.name} onClick={() => setDialog({ kind: 'delete', data: p })}><Icon name="trash" /></button>
         </td></tr>; })}
       {!loaded && !rows.length && <tr><td colSpan="8" className="empty">Loading profiles…</td></tr>}
@@ -163,7 +165,25 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
     {dialog?.kind === 'bulk-proxy' && <BulkProxy count={selected.length} onClose={() => setDialog(null)}
       onApply={proxyId => serverBulk('Assigned proxy on', { action: 'assign', ids: selected.map(p => p.id), proxyId })} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
+    {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}
   </>;
+}
+
+function SaveTemplateDialog({ profile, onClose, toast }) {
+  const [name, setName] = useState(`${profile.name} template`);
+  const [busy, setBusy] = useState(false);
+  return <Dialog title="Save as template" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={async () => {
+    setBusy(true);
+    try {
+      await api('/api/templates', { method: 'POST', body: { profileId: profile.id, name: name.trim() } });
+      toast('Template saved', 'success');
+      onClose();
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  }}>Save</button></>}>
+    <p className="muted">Copies engine, proxy, folder, tags (except quick), and browser settings. Does not copy cookies or extensions.</p>
+    <label>Template name<input autoFocus value={name} onChange={e => setName(e.target.value)} /></label>
+  </Dialog>;
 }
 
 function BulkMove({ count, folders, onApply, onClose }) {

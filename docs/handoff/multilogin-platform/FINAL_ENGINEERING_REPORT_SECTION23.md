@@ -1,14 +1,14 @@
-# §23 Final engineering report (checkpoint — P0 continuation)
+# §23 Final engineering report (checkpoint — template UI + tab harvest)
 
 **Model:** Composer 2.5 Fast  
 **Branch:** `feature/dedicated-browser-engine`  
-**Baseline:** Alpha.3 `2d65207` frozen; includes P1 `90f0d40` + prior engine work
+**Baseline:** Alpha.3 `2d65207` frozen; includes P1 `90f0d40` + engine platform + P0 `61a1bae`
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** `61a1bae32237ad06789d75eca7e5e9a8e47ec7a3` (P0 continuation on `38658ee` engine platform)
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** _(see git push SHA below)_
 
 ## 2. Multilogin technology audit
-Matrix updated: M4/M5/M6/M11/M35/M36 reflect this increment.
+Matrix/backlog updated: M5 templates **PARTIAL→UI VERIFIED** (API+Templates page+bulk job); M11 tab harvest hardened; M37 WebDriver still **MISSING**.
 
 ## 3. Browser architecture A–I
 Unchanged layers; native Chromium + Firefox gecko paths; Playwright automation adapter.
@@ -29,7 +29,7 @@ Stock-supported controls unchanged; UI exposes **browserEngine** selection.
 **VERIFIED** — schema/validate APIs + UI engine field.
 
 ## 9. Profile management
-**VERIFIED/PARTIAL** — quick profiles, trash, templates API; template UI **MISSING**.
+**VERIFIED/PARTIAL** — quick profiles + save-as-regular in profile row; trash; **templates UI** (create from profile, apply, bulk `fromTemplate` job).
 
 ## 10. Cookies / CookieRobot-local
 **PARTIAL** — example script + CLI; no bundled robot UI.
@@ -47,22 +47,22 @@ Chromium **VERIFIED**; Firefox **UNSUPPORTED**.
 **NOT_APPLICABLE_CLOUD**.
 
 ## 15. Premium UX
-Trash page + quick profile + engine/proxy settings; template UI **MISSING**.
+Templates nav page; quick badge + save regular; trash page.
 
 ## 16. Performance
 **MISSING** Latitude benchmarks.
 
 ## 17. Security
-Soft-delete preserves data until confirmed purge; settings path validation for Firefox exe.
+Soft-delete + confirmed purge; template delete is metadata-only (no profile cookies).
 
 ## 18. Google compatibility
 **PARTIAL** — no CAPTCHA promises.
 
 ## 19. Windows testing
-`npm run test:browser-runtime` — target **39 pass / 0 fail** on windows-2022 workflow.  
+`npm run test:browser-runtime` — **44 pass / 0 fail** target on `dedicated-browser-engine-win.yml`.  
 **Preview installer §19: NO-GO.**
 
 ## 20. Next milestone
-Template UI + save-quick-as-regular in profile row; WebDriver localhost bridge; Latitude dual-engine smoke.
+WebDriver localhost bridge (automation profiles only); Latitude dual-engine smoke; custom Chromium compile remains **BLOCKED**.
 
 **No Multilogin equivalence percentage claimed.**

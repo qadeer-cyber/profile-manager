@@ -28,7 +28,7 @@ import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEng
 import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
 import {
   createQuickProfile, softDeleteProfile, listTrash, restoreFromTrash, purgeFromTrash, convertQuickToRegular,
-  createTemplateFromProfile, listTemplates, applyTemplate,
+  createTemplateFromProfile, listTemplates, applyTemplate, deleteTemplate,
 } from './profile-lifecycle.js';
 import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
@@ -394,6 +394,29 @@ function bulkAssign(body, onItem) {
     }
   });
 }
+function bulkFromTemplate(body, onItem) {
+  const templateId = body.templateId;
+  const count = Number(body.count);
+  const prefix = String(body.namePrefix || 'From template').slice(0, 80);
+  const folderOverride = 'folder' in body ? String(body.folder || '').trim() : null;
+  const getSnap = row => JSON.parse(row.snapshot_json);
+  return Array.from({ length: count }, (_, index) => {
+    try {
+      const id = applyTemplate(templateId, {
+        name: `${prefix} ${index + 1}`.slice(0, 200),
+        insertFn: v => insert(validate(folderOverride != null ? { ...v, folder: folderOverride } : v)),
+        getTemplateSnapshot: getSnap,
+      });
+      const item = { index, ok: true, profile: publicP(get(id)) };
+      if (onItem) onItem(item);
+      return item;
+    } catch (error) {
+      const item = { index, ok: false, ...errorBody(error) };
+      if (onItem) onItem(item);
+      return item;
+    }
+  });
+}
 function bulkImport(body, onItem) {
   const items = body.format === 'csv' ? profilesFromCsv(body.csv) : body.format === 'json' || Array.isArray(body.profiles) ? body.profiles : null;
   if (!Array.isArray(items)) throw err(400, 'format must be csv or json');
@@ -433,7 +456,13 @@ function bulkPlan(body) {
     if (!Array.isArray(items) || !items.length || items.length > 100) throw err(400, 'profiles must contain 1 to 100 items');
     return { action, total: items.length };
   }
-  throw err(400, 'action must be launch, stop, assign, import, or delete');
+  if (action === 'fromTemplate') {
+    const count = Number(body.count);
+    if (!body.templateId || typeof body.templateId !== 'string') throw err(400, 'templateId is required');
+    if (!Number.isInteger(count) || count < 1 || count > 50) throw err(400, 'count must be an integer from 1 to 50');
+    return { action, total: count };
+  }
+  throw err(400, 'action must be launch, stop, assign, import, delete, or fromTemplate');
 }
 function startBulkJob(body, allowOverride) {
   const plan = bulkPlan(body);
@@ -445,6 +474,7 @@ function startBulkJob(body, allowOverride) {
       : plan.action === 'stop' ? bulkStop(body, onItem)
       : plan.action === 'assign' ? bulkAssign(body, onItem)
       : plan.action === 'import' ? bulkImport(body, onItem)
+      : plan.action === 'fromTemplate' ? bulkFromTemplate(body, onItem)
       : bulkDelete(body, onItem);
   } catch (error) {
     finishJob(jobId, error.message || 'failed');
@@ -934,6 +964,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     });
     res.status(201).json(publicP(get(id)));
   }));
+  ui.delete('/templates/:id', wrap((req, res) => { deleteTemplate(req.params.id); res.status(204).end(); }));
   ui.get('/profiles/:id', wrap((req, res) => res.json(publicP(must(req.params.id)))));
   ui.post('/profiles', wrap((req, res) => res.status(201).json(publicP(get(insert(validate(req.body)))))));
   ui.put('/profiles/:id', wrap(updateHandler));

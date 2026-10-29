@@ -1,7 +1,7 @@
 // Harvest open tab URLs from on-disk browser session files (native manual path).
 import fs from 'fs';
 import path from 'path';
-import { eligibleTabUrl, MAX_RESTORED_TABS } from './tab-restore.js';
+import { eligibleTabUrl, MAX_RESTORED_TABS, readSavedTabs } from './tab-restore.js';
 
 function collectFromText(text, urls) {
   if (typeof text !== 'string') return urls;
@@ -74,7 +74,26 @@ export function harvestFirefoxTabUrls(geckoProfileDir) {
   return urls;
 }
 
+export function mergeTabUrlLists(...lists) {
+  const out = [];
+  for (const list of lists) {
+    for (const item of list || []) {
+      const u = eligibleTabUrl(item);
+      if (u && !out.includes(u)) out.push(u);
+      if (out.length >= MAX_RESTORED_TABS) return out;
+    }
+  }
+  return out;
+}
+
 export function harvestNativeTabUrls({ engine, chromiumDir, geckoDir }) {
-  if (engine === 'firefox') return harvestFirefoxTabUrls(geckoDir);
+  if (engine === 'firefox') return mergeTabUrlLists(harvestFirefoxTabUrls(geckoDir), harvestChromiumTabUrls(chromiumDir));
   return harvestChromiumTabUrls(chromiumDir);
+}
+
+/** Prefer live/harvested URLs, fall back to last .pm-tabs.json snapshot. */
+export function resolveNativeTabUrlsForSave({ engine, chromiumDir, geckoDir, existing = [] }) {
+  const harvested = harvestNativeTabUrls({ engine, chromiumDir, geckoDir });
+  const prior = readSavedTabs(chromiumDir).urls || [];
+  return mergeTabUrlLists(existing, harvested, prior);
 }

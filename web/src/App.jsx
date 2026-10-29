@@ -7,13 +7,14 @@ import { ExtensionsPage } from './pages/ExtensionsPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
 import { DiagnosticsPage } from './pages/DiagnosticsPage.jsx';
 import { TrashPage } from './pages/TrashPage.jsx';
+import { TemplatesPage } from './pages/TemplatesPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
 import { MonitoringPage } from './pages/MonitoringPage.jsx';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
+const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['templates', 'Templates'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
@@ -84,6 +85,7 @@ export function App() {
       {page === 'dashboard' && <DashboardPage onOpenProfiles={() => openFolder('__all')} />}
       {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
       {page === 'trash' && <TrashPage />}
+      {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}
       {page === 'proxies' && <ProxiesPage />}
       {page === 'extensions' && <ExtensionsPage />}
       {page === 'monitoring' && <MonitoringPage />}

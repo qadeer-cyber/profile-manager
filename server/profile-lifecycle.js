@@ -111,3 +111,9 @@ export function applyTemplate(templateId, { name, insertFn, getTemplateSnapshot 
   });
   return id;
 }
+
+export function deleteTemplate(templateId) {
+  const result = db.prepare('DELETE FROM profile_templates WHERE id=?').run(templateId);
+  if (!result.changes) throw fail(404, 'Template not found', 'NOT_FOUND');
+  return { id: templateId, deleted: true };
+}

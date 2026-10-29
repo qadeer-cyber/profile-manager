@@ -21,14 +21,18 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P3 | Canvas/WebGL noise | Requires fork | UNSUPPORTED |
 | N/A | Cloud sync/teams/billing | — | NOT_APPLICABLE_CLOUD |
 
-## This run (committed increments)
+## Completed increments (cumulative on branch)
 
-1. `MULTILOGIN_COMPLETE_TECHNOLOGY_MATRIX.md` + this backlog  
-2. `profile-config-engine.js` + API `/api/profile-config/schema`  
-3. Migration `browser_engine` + Firefox launch plan + tests  
-4. §22 doc index + stubs linked to code  
-5. `examples/local-automation/` + cookie-robot template  
-6. Windows CI: config + firefox plan tests  
+- Audit matrix + §22 doc set  
+- Native Chromium + Firefox gecko scaffold + config engine v2  
+- **P0 continuation:** UI `browserEngine` + `firefoxExecutablePath`; native tab harvest + `--restore-last-session`; quick profiles; trash + Trash page; templates API; `pm-cli` + puppeteer doc; session/trash/cli tests (39 in `test:browser-runtime`)
+
+## Still open (honest)
+
+- Template UI + bulk-from-template UX  
+- WebDriver server  
+- Custom Chromium compile (**BLOCKED**)  
+- Latitude / preview EXE §19 (**BLOCKED** without owner)  
 
 ## Definition of done (VERIFIED)
 
