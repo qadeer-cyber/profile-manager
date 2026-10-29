@@ -80,11 +80,12 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
 
   const args = ['-no-remote', '-profile', profileDir];
   if (regional.languages.length) args.push('-lang', regional.locale || regional.languages[0]);
-  const openUrls = [];
-  if (opts.url) openUrls.push(opts.url);
-  for (const u of openUrls) args.push(u);
+  const openUrls = Array.isArray(opts.openUrls) ? opts.openUrls.slice(0, 20) : (opts.url ? [opts.url] : []);
+  for (const u of openUrls) {
+    if (typeof u === 'string' && u.trim()) args.push(u.trim());
+  }
 
-  return { runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls };
+  return { runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls, restoreTabs: !!opts.restoreTabs };
 }
 
 export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs = 15000) {

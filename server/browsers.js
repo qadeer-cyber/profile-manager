@@ -36,7 +36,8 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
-import { buildFirefoxLaunchPlan, launchFirefoxNative } from './browser-runtime/firefox-launch.js';
+import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
+import { harvestNativeTabUrls } from './session-harvest.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -265,7 +266,11 @@ async function doLaunch(p, opts = {}) {
   let launchPlan = null;
   try {
     if ((p.browserEngine || 'chromium') === 'firefox') {
-      const fxPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, userDataDirFn: userDataDir, opts: { ...opts, url: opts.url } });
+      const adv = (await import('./advanced-settings.js')).validateAdvancedSettings(p.advancedSettings || {});
+      const restoreTabs = adv.preferences.restoreTabs === true;
+      const saved = restoreTabs ? readSavedTabs(dir) : { urls: [] };
+      const ffOpenUrls = chooseLaunchUrls({ explicitUrl: opts.url, startupUrls: adv.preferences.startupUrls, savedUrls: saved.urls });
+      const fxPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, userDataDirFn: userDataDir, opts: { ...opts, openUrls: ffOpenUrls, restoreTabs } });
       const native = await launchFirefoxNative(fxPlan);
       markContextReady(metricsHandle);
       entry = {
@@ -273,7 +278,7 @@ async function doLaunch(p, opts = {}) {
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline: readPreferences(dir), closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
-        requestedArgs: native.argv, restoreTabs: false, tabUrls: [],
+        requestedArgs: native.argv, restoreTabs: fxPlan.restoreTabs, tabUrls: [], geckoDir: fxPlan.profileDir,
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, fxPlan.profileDir);
@@ -299,7 +304,7 @@ async function doLaunch(p, opts = {}) {
       const native = await launchNativeChromium(launchPlan);
       markContextReady(metricsHandle);
       entry = {
-        ctx: null, runtime: 'native', relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
+        ctx: null, runtime: 'native', engine: 'chromium', relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
@@ -667,7 +672,17 @@ async function finishClose(id, e) {
     } else if (outcome === 'stopped') {
       try { setStatus(id, { last_error: null }); } catch {}
       if (e.restoreTabs && dir) {
-        try { writeSavedTabs(dir, e.tabUrls || []); } catch { /* a tab list must not change the stop result */ }
+        try {
+          let tabs = e.tabUrls || [];
+          if (!tabs.length && e.runtime === 'native') {
+            tabs = harvestNativeTabUrls({
+              engine: e.engine || 'chromium',
+              chromiumDir: dir,
+              geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+            });
+          }
+          writeSavedTabs(dir, tabs);
+        } catch { /* a tab list must not change the stop result */ }
       }
       emit('profile:stopped', id, { error: null });
     } else {
@@ -710,6 +725,16 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
       const next = snapshotTabUrls(e.ctx.pages());
       if (next) e.tabUrls = next;
     } catch { /* keep the last navigation snapshot */ }
+  } else if (e.restoreTabs && e.runtime === 'native' && !e.tabUrls?.length) {
+    try {
+      const dir = userDataDir(id);
+      const harvested = harvestNativeTabUrls({
+        engine: e.engine || 'chromium',
+        chromiumDir: dir,
+        geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+      });
+      if (harvested.length) e.tabUrls = harvested;
+    } catch { /* best effort */ }
   }
   if (!live.has(id)) { if (e.done) await e.done; return; }
   // 1) graceful: close the context  2) force: kill the process tree

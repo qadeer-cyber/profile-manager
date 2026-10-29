@@ -128,6 +128,20 @@ export const migrations = [
         db.exec(`ALTER TABLE profiles ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium' CHECK (browser_engine IN ('chromium','firefox'))`);
       }
     } },
+  { version: 14, name: 'profiles quick flag and trash', up: db => {
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('is_quick')) db.exec('ALTER TABLE profiles ADD COLUMN is_quick INTEGER NOT NULL DEFAULT 0');
+      if (!cols.includes('deleted_at')) db.exec('ALTER TABLE profiles ADD COLUMN deleted_at TEXT');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_deleted_at ON profiles(deleted_at)');
+    } },
+  { version: 15, name: 'profile_templates library', up: db => {
+      db.exec(`CREATE TABLE IF NOT EXISTS profile_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

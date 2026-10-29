@@ -68,7 +68,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
   const save = async f => {
     setBusy(b => ({ ...b, dlg: true }));
     try { await (async () => {
-    const body = { name: f.name, tags: f.tags, folder: f.folder, notes: f.notes, automationEnabled: !!f.automationEnabled, browserSettings: f.browserSettings, webrtcSettings: f.webrtcSettings, advancedSettings: f.advancedSettings, extensionAssignments: f.extensionAssignments || [] };
+    const body = { name: f.name, tags: f.tags, folder: f.folder, notes: f.notes, automationEnabled: !!f.automationEnabled, browserEngine: f.browserEngine || 'chromium', browserSettings: f.browserSettings, webrtcSettings: f.webrtcSettings, advancedSettings: f.advancedSettings, extensionAssignments: f.extensionAssignments || [] };
     if (f.proxyMode !== 'library') body.proxy = f.proxyMode === 'custom' ? { ...f.proxy, port: Number(f.proxy.port) } : null;
     const p = await api(f.id ? `/api/profiles/${f.id}` : '/api/profiles', { method: f.id ? 'PUT' : 'POST', body });
     if (f.proxyMode === 'library' && f.proxyId !== (f.id ? initialProxyId(f) : null)) {
@@ -81,7 +81,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
     catch (e) { toast(e.message, 'error'); throw e; }
     finally { setBusy(b => ({ ...b, dlg: false })); load(); reloadMeta(); }
   };
-  const toForm = p => ({ ...emptyForm, ...p, _orig: p.proxyId || null, tags: p.tags.join(', '), proxyId: p.proxyId || '',
+  const toForm = p => ({ ...emptyForm, ...p, browserEngine: p.browserEngine || 'chromium', _orig: p.proxyId || null, tags: p.tags.join(', '), proxyId: p.proxyId || '',
     webrtcSettings: p.webrtcSettings || emptyForm.webrtcSettings,
     extensionAssignments: (p.extensions || []).map(e => ({ extensionId: e.id, enabled: !!e.enabled })),
     proxyMode: p.proxyId ? 'library' : p.proxy ? 'custom' : 'none', proxy: p.proxy ? { username: '', password: '', ...p.proxy } : emptyForm.proxy });
@@ -93,6 +93,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
       <div><h1>{folder === '__all' ? 'All profiles' : folder || 'No folder'}</h1>
         <div className="muted">{plural(total, 'profile')} · {meta.running.length} running</div></div>
       <div className="row"><button onClick={() => setDialog({ kind: 'import' })}>Import</button>
+      <button onClick={async () => { try { await api('/api/profiles/quick', { method: 'POST', body: { folder: folder === '__all' ? '' : folder } }); toast('Quick profile created', 'success'); load(); reloadMeta(); } catch (e) { toast(e.message, 'error'); } }}>Quick profile</button>
       <button className="primary" data-action="new-profile" onClick={() => setDialog({ kind: 'edit', data: { ...emptyForm, folder: folder === '__all' ? '' : folder } })}><Icon name="plus" /> New profile</button></div>
     </header>
     <div className="toolbar">
@@ -149,10 +150,10 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
     </tbody></table></div>
     <div className="pager"><button disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous</button><span className="muted">Page {page} · {total} total</span><button disabled={page * pageSize >= total} onClick={() => setPage(value => value + 1)}>Next</button></div>
     {dialog?.kind === 'edit' && <ProfileDialog initial={dialog.data} folders={meta.folders} onSave={save} onClose={() => setDialog(null)} />}
-    {dialog?.kind === 'delete' && <Confirm title="Delete profile" danger confirmLabel="Delete" message={`Delete “${dialog.data.name}” and all of its browser data (cookies, storage, cache)? This can't be undone.`}
+    {dialog?.kind === 'delete' && <Confirm title="Move to trash" danger confirmLabel="Move to trash" message={`Move “${dialog.data.name}” to trash? You can restore it from the Trash page or delete it permanently later.`}
       onConfirm={() => act(dialog.data.id, `Deleted ${dialog.data.name}`, () => api(`/api/profiles/${dialog.data.id}`, { method: 'DELETE' }))} onClose={() => setDialog(null)} />}
-    {dialog?.kind === 'bulk-delete' && <Confirm title={`Delete ${plural(selected.length, 'profile')}`} danger confirmLabel="Delete all"
-      message={`Delete ${plural(selected.length, 'profile')} and all of their browser data? Running profiles are stopped first. This can't be undone.`}
+    {dialog?.kind === 'bulk-delete' && <Confirm title={`Trash ${plural(selected.length, 'profile')}`} danger confirmLabel="Move to trash"
+      message={`Move ${plural(selected.length, 'profile')} to trash? Running profiles are stopped first.`}
       onConfirm={() => serverBulk('Deleted', { action: 'delete', ids: selected.map(p => p.id), concurrency: 2 })} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'storage' && <StorageDialog profile={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'bulk-move' && <BulkMove count={selected.length} folders={meta.folders} onClose={() => setDialog(null)}

@@ -28,6 +28,13 @@ test('native argv excludes Playwright automation switches', () => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('native argv uses restore-last-session when restoreTabs and no URLs', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-native-'));
+  const argv = nativeArgv({ dir, args: [], openUrls: [], restoreTabs: true });
+  assert.ok(argv.includes('--restore-last-session'));
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('architecture report documents native manual path', () => {
   const r = browserEngineArchitectureReport();
   assert.equal(r.manualBrowsingRequiresPlaywright, false);

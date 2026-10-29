@@ -11,7 +11,7 @@ import { FingerprintFields, IdentityFields, LocationFields, PreferenceFields, Wi
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
 
-export const emptyForm = { name: '', tags: '', folder: '', notes: '', automationEnabled: false, browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
+export const emptyForm = { name: '', tags: '', folder: '', notes: '', automationEnabled: false, browserEngine: 'chromium', browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
 
 // Profile editor: General / Proxy / Notes tabs. Proxy can be "none", a library entry
 // (when the server has the proxy library), or a custom inline proxy (legacy API).
@@ -77,6 +77,11 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       <label>Tags<input value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="comma, separated" /></label>
       {tagList.length > 0 && <div className="chips">{tagList.map(t => <span key={t} className="tag">{t}</span>)}</div>}
       {formError && tab === 'general' && <p className="err-text" role="alert">{formError}</p>}
+      <label>Browser engine<select value={f.browserEngine || 'chromium'} onChange={e => set('browserEngine', e.target.value)}>
+        <option value="chromium">Chromium (native manual launch)</option>
+        <option value="firefox">Firefox / Gecko (separate profile tree)</option>
+      </select></label>
+      <p className="muted hint">Manual launches use an independent browser process (no Playwright pipe). Firefox uses Settings → Firefox executable. Chromium extensions are not loaded on Firefox profiles.</p>
       <label className="check toggle"><input type="checkbox" role="switch" checked={!!f.automationEnabled} onChange={e => set('automationEnabled', e.target.checked)} /> Enable automation (CDP)</label>
       <p className="muted hint">When on, launching this profile opens a local debugging port that automation tools can connect to. Any program on this computer can then control the browser, so leave it off unless you need it.{initial.running ? ' Applies on the next launch.' : ''}</p>
     </div>}

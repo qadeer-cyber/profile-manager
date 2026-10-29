@@ -26,6 +26,10 @@ import { privacyEngineReport } from './privacy-engine-report.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
+import {
+  createQuickProfile, softDeleteProfile, listTrash, restoreFromTrash, purgeFromTrash, convertQuickToRegular,
+  createTemplateFromProfile, listTemplates, applyTemplate,
+} from './profile-lifecycle.js';
 import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
@@ -97,6 +101,7 @@ const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catc
 const SETTINGS_DEFAULTS = {
   defaultHeadless: false,
   executablePath: '',
+  firefoxExecutablePath: '',
   startUrl: '',
   maxRunningProfiles: 4,
   minFreeMemoryGiB: 1,
@@ -139,7 +144,11 @@ const row2p = r => {
   delete r.advanced_settings;
   const browserEngine = r.browser_engine === 'firefox' ? 'firefox' : 'chromium';
   delete r.browser_engine;
-  return { ...r, browserEngine, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const isQuick = !!r.is_quick;
+  delete r.is_quick;
+  const deletedAt = r.deleted_at || null;
+  delete r.deleted_at;
+  return { ...r, browserEngine, isQuick, deletedAt, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -154,7 +163,8 @@ const publicP = p => {
   }
   return out;
 };
-const get = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=?').get(id));
+const get = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=? AND deleted_at IS NULL').get(id));
+const getAny = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=?').get(id));
 const must = id => { const p = get(id); if (!p) throw err(404, 'not found'); return p; };
 
 function cleanProxy(px, prev) {
@@ -202,14 +212,14 @@ function insert(v) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   const dir = userDataDir(id);
   if (fs.existsSync(dir)) throw err(500, 'data directory collision'); // never share a data dir
-  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_engine,browser_settings,webrtc_settings,advanced_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), now, now);
+  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_engine,browser_settings,webrtc_settings,advanced_settings,is_quick,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), v.isQuick ? 1 : 0, now, now);
   if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   fs.mkdirSync(dir, { recursive: true });
   return id;
 }
 function list({ q = '', tag = '', folder } = {}) {
-  let l = db.prepare('SELECT * FROM profiles ORDER BY created_at DESC').all().map(row2p);
+  let l = db.prepare('SELECT * FROM profiles WHERE deleted_at IS NULL ORDER BY created_at DESC').all().map(row2p);
   if (q) { const s = String(q).toLowerCase(); l = l.filter(p => (p.name + ' ' + p.notes + ' ' + p.tags.join(' ') + ' ' + p.folder).toLowerCase().includes(s)); }
   if (tag) l = l.filter(p => p.tags.includes(tag));
   if (folder !== undefined && folder !== '__all') l = l.filter(p => p.folder === folder);
@@ -241,9 +251,12 @@ function clone(id, body = {}) {
   return get(nid);
 }
 async function remove(id) {
-  must(id); await engine.stop(id);
-  db.prepare('DELETE FROM profiles WHERE id=?').run(id);
-  fs.rmSync(userDataDir(id), { recursive: true, force: true });
+  must(id);
+  await softDeleteProfile(id, { stopFn: async i => engine.stop(i) });
+}
+async function purgeProfile(id, confirmName) {
+  await engine.stop(id).catch(() => {});
+  return purgeFromTrash(id, { confirmName });
 }
 const headlessDefault = () => process.env.HEADLESS === '1' || getSetting('defaultHeadless', false);
 const updateHandler = (req, res) => { res.json(applyUpdate(req.params.id, req.body)); };
@@ -893,9 +906,34 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   if (uiToken) ui.use((req, res, next) => tokenOk(req.get('x-ui-token'), uiToken) ? next() : res.status(401).json({ error: 'unauthorized' }));
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
-    const all = db.prepare('SELECT tags, folder FROM profiles').all();
+    const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
     res.json({ tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(), folders: [...new Set(all.map(r => r.folder))].sort(), running: engine.runningIds() });
   });
+  ui.post('/profiles/quick', wrap((req, res) => {
+    const id = createQuickProfile({ name: req.body?.name, folder: req.body?.folder, insertFn: v => insert({ ...validate(v), isQuick: true }) });
+    res.status(201).json(publicP(get(id)));
+  }));
+  ui.post('/profiles/:id/save-regular', wrap((req, res) => { must(req.params.id); convertQuickToRegular(req.params.id); res.json(publicP(get(req.params.id))); }));
+  ui.get('/trash', wrap((req, res) => res.json(listTrash(row2p).map(publicP))));
+  ui.post('/trash/:id/restore', wrap((req, res) => { restoreFromTrash(req.params.id); res.json(publicP(get(req.params.id))); }));
+  ui.delete('/trash/:id', wrap(async (req, res) => {
+    const confirmName = req.query.confirmName || req.body?.confirmName;
+    res.json(await purgeProfile(req.params.id, confirmName));
+  }));
+  ui.get('/templates', wrap((req, res) => res.json(listTemplates())));
+  ui.post('/templates', wrap((req, res) => {
+    const profileId = req.body?.profileId;
+    if (!profileId) throw err(400, 'profileId is required');
+    res.status(201).json(createTemplateFromProfile(profileId, { name: req.body?.name, getProfile: id => get(id) }));
+  }));
+  ui.post('/profiles/from-template/:templateId', wrap((req, res) => {
+    const id = applyTemplate(req.params.templateId, {
+      name: req.body?.name,
+      insertFn: v => insert(validate(v)),
+      getTemplateSnapshot: row => JSON.parse(row.snapshot_json),
+    });
+    res.status(201).json(publicP(get(id)));
+  }));
   ui.get('/profiles/:id', wrap((req, res) => res.json(publicP(must(req.params.id)))));
   ui.post('/profiles', wrap((req, res) => res.status(201).json(publicP(get(insert(validate(req.body)))))));
   ui.put('/profiles/:id', wrap(updateHandler));
@@ -932,6 +970,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const b = req.body;
     if ('defaultHeadless' in b) setSetting('defaultHeadless', !!b.defaultHeadless);
     if ('executablePath' in b) { const p = String(b.executablePath || '').trim(); if (p && !fs.existsSync(p)) throw err(400, `Browser executable not found: ${p}`); setSetting('executablePath', p); }
+    if ('firefoxExecutablePath' in b) { const p = String(b.firefoxExecutablePath || '').trim(); if (p && !fs.existsSync(p)) throw err(400, `Firefox executable not found: ${p}`); setSetting('firefoxExecutablePath', p); }
     if ('startUrl' in b) { const u = String(b.startUrl || '').trim(); if (u && !/^https?:\/\//.test(u)) throw err(400, 'startUrl must start with http:// or https://'); setSetting('startUrl', u); }
     if ('maxRunningProfiles' in b) {
       const n = Number(b.maxRunningProfiles);

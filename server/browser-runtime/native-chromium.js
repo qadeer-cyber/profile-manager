@@ -17,8 +17,11 @@ export function assertNativeLaunchArgs(args) {
 export function nativeArgv(plan) {
   assertNativeLaunchArgs(plan.args);
   const argv = [...plan.args, `--user-data-dir=${plan.dir}`];
-  for (const u of plan.openUrls || []) {
-    if (typeof u === 'string' && u.trim()) argv.push(u.trim());
+  const urls = (plan.openUrls || []).filter(u => typeof u === 'string' && u.trim());
+  if (urls.length) {
+    for (const u of urls) argv.push(u.trim());
+  } else if (plan.restoreTabs) {
+    argv.push('--restore-last-session');
   }
   return argv;
 }

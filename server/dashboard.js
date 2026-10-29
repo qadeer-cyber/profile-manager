@@ -5,7 +5,7 @@ import { runningIds, runInfo, resourceSnapshot } from './browsers.js';
 import { currentVersion } from './migrations.js';
 
 export function dashboardStats() {
-  const profiles = db.prepare('SELECT id, name, last_error, automation_enabled, proxy_id, updated_at FROM profiles').all();
+  const profiles = db.prepare('SELECT id, name, last_error, automation_enabled, proxy_id, updated_at FROM profiles WHERE deleted_at IS NULL').all();
   const live = new Set(runningIds());
   const proxies = db.prepare('SELECT id, last_test_status FROM proxies').all();
   const assigned = new Set(profiles.map(profile => profile.proxy_id).filter(Boolean));
