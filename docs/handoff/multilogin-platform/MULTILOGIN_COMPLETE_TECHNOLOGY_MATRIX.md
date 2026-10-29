@@ -13,16 +13,16 @@
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
 | M7 | Clone profile | VERIFIED | `POST /profiles/:id/clone` + tests |
-| M8 | Import/export profile | PARTIAL | Backup/restore encrypted; stopped-profile bookmarks/history export API; not Multilogin format |
+| M8 | Import/export profile | PARTIAL | Backup manifest `fileChecksums` + archive SHA256; encrypted restore; bookmarks/history export API; not Multilogin format |
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
 | M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; native launch plan tests; UI Startup/General; Playwright automation path still uses ctx pages |
-| M12 | Window state / maximized | PARTIAL | Chromium window flags; Firefox PARTIAL |
+| M12 | Window state / maximized | PARTIAL | Chromium `--window-size` / `--window-position` / maximized; `1366x768` preset; Firefox PARTIAL |
 | M13 | Extension manager (Chromium) | VERIFIED | Unpacked MV2/MV3 library |
 | M14 | Extension manager (Firefox) | UNSUPPORTED | Chromium-only extension loader |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
-| M17 | Proxy templates / traffic saver | PARTIAL | Saved proxies; no traffic saver |
+| M17 | Proxy templates / traffic saver | PARTIAL | Saved proxies + duplicate-as-template (`POST /proxies/:id/duplicate`); no traffic saver |
 | M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Bright balance+zone status; Webshare list+subscription; Oxylabs Public API stats when JWT configured |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
 | M20 | Fingerprint: timezone/locale/lang | PARTIAL | Chromium: CLI/CDP; Firefox: `-lang` + `user.js` + `TZ` env |
@@ -40,7 +40,7 @@
 | M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
 | M33 | Human typing emulation | MISSING | Not implemented |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
-| M35 | CLI / Script runner | PARTIAL | `pm-cli` + cookie-robot, profile-config, gecko-cookies-export examples |
+| M35 | CLI / Script runner | PARTIAL | `pm-cli` list/launch/stop/config/bridges/proxies + examples |
 | M36 | Playwright/Puppeteer attach | PARTIAL | CDP when `automation: true`; see puppeteer-cdp-attach.md |
 | M37 | Selenium/WebDriver | PARTIAL | Engine-specific bridge start + `test/webdriver-api.test.js`; opt-in driver cache; not in offline EXE |
 | M38 | Workspaces / team sync | PARTIAL | Local workspaces + optional vault lock; no team cloud |

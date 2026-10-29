@@ -2,8 +2,8 @@
 
 **Branch:** `feature/dedicated-browser-engine`  
 **Alpha.3 frozen:** tag `v0.5.0-alpha.3-m1-m17` @ `2d65207` — **not retagged**  
-**Checkpoint tip:** `72803fe` · docs `b3a8d99`  
-**Prior checkpoint:** `be2b419` · docs `957d2ef`
+**Checkpoint tip:** `278c5a3` (Phase A P0/P1 remediation)  
+**Prior checkpoint:** `72803fe` · docs `b3a8d99`
 
 This document is the expanded **20-point local delivery report**. It does **not** claim Multilogin-complete parity, a percentage score, Stealthfox/Mimic equivalence, or CAPTCHA-free Google.
 
@@ -15,7 +15,7 @@ Profile Manager on `feature/dedicated-browser-engine` delivers **stock Chromium 
 
 | Gate | Status |
 |------|--------|
-| `test:browser-runtime` | **85** pass @ gecko cookies package |
+| `test:browser-runtime` | **94** pass @ Phase A (`278c5a3`) |
 | §19 installer-smoke (Actions **40934718409** @ `98dbc0c`) | **Green** on branch (upgrade + electron smoke); **no release published** |
 | §19 preview / `gh release create` | **NO-GO** — owner gate |
 | PR → `main` | **Not in scope** for this track |

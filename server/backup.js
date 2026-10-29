@@ -39,43 +39,65 @@ function recoverPassword(stored, archivedKey) {
   throw errors.at(-1) || new Error('secret');
 }
 
-function walkFiles(root, prefix, files) {
-  if (!fs.existsSync(root)) return;
-  const visit = (dir, rel) => {
-    for (const name of fs.readdirSync(dir)) {
-      if (DATA_COPY_SKIP.has(name)) continue;
-      const abs = path.join(dir, name);
-      const stat = fs.lstatSync(abs);
-      if (stat.isSymbolicLink()) throw fail(400, 'Refusing to back up a profile that contains a symlink', 'UNSAFE_PROFILE_LINK');
-      const child = rel ? `${rel}/${name}` : name;
-      if (stat.isDirectory()) visit(abs, child);
-      else if (stat.isFile()) files.push({ path: `${prefix}/${child}`, data: fs.readFileSync(abs) });
-    }
-  };
-  visit(root, '');
+function sha256Hex(data) {
+  return crypto.createHash('sha256').update(data).digest('hex');
 }
 
 export function createBackup({ ids = runningIds() } = {}) {
   if (ids.length) throw fail(409, 'Stop every running profile before creating a backup. A live browser can leave its databases half-written.', 'PROFILES_RUNNING');
   try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* the main database file is still copied */ }
   const profiles = db.prepare('SELECT id, name FROM profiles ORDER BY created_at, rowid').all();
-  const meta = { format: 'profile-manager-backup', version: 1, createdAt: new Date().toISOString(), schemaVersion: currentVersion(db), profiles };
-  const files = [
-    { path: 'meta.json', data: Buffer.from(JSON.stringify(meta)) },
-    { path: 'profiles.db', data: fs.readFileSync(path.join(DATA_DIR, 'profiles.db')) },
-  ];
+  const fileEntries = [];
+  const pushFile = (relPath, data) => {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    fileEntries.push({ path: relPath, data: buf, sha256: sha256Hex(buf) });
+  };
+  const files = [];
+  const stageMeta = () => {
+    const meta = {
+      format: 'profile-manager-backup',
+      version: 1,
+      createdAt: new Date().toISOString(),
+      schemaVersion: currentVersion(db),
+      profiles,
+      fileChecksums: Object.fromEntries(fileEntries.map(entry => [entry.path, entry.sha256])),
+    };
+    const metaBuf = Buffer.from(JSON.stringify(meta));
+    const metaEntry = { path: 'meta.json', data: metaBuf, sha256: sha256Hex(metaBuf) };
+    return [
+      metaEntry,
+      ...fileEntries.filter(entry => entry.path !== 'meta.json'),
+    ];
+  };
+  pushFile('profiles.db', fs.readFileSync(path.join(DATA_DIR, 'profiles.db')));
   const keyFile = path.join(DATA_DIR, 'secret.key');
-  if (fs.existsSync(keyFile)) files.push({ path: 'secret.key', data: fs.readFileSync(keyFile) });
-  for (const profile of profiles) walkFiles(userDataDir(profile.id), `profiles/${profile.id}`, files);
+  if (fs.existsSync(keyFile)) pushFile('secret.key', fs.readFileSync(keyFile));
+  const walkInto = (root, prefix) => {
+    if (!fs.existsSync(root)) return;
+    const visit = (dir, rel) => {
+      for (const name of fs.readdirSync(dir)) {
+        if (DATA_COPY_SKIP.has(name)) continue;
+        const abs = path.join(dir, name);
+        const stat = fs.lstatSync(abs);
+        if (stat.isSymbolicLink()) throw fail(400, 'Refusing to back up a profile that contains a symlink', 'UNSAFE_PROFILE_LINK');
+        const child = rel ? `${rel}/${name}` : name;
+        if (stat.isDirectory()) visit(abs, child);
+        else if (stat.isFile()) pushFile(`${prefix}/${child}`, fs.readFileSync(abs));
+      }
+    };
+    visit(root, '');
+  };
+  for (const profile of profiles) walkInto(userDataDir(profile.id), `profiles/${profile.id}`);
   const extensions = path.join(DATA_DIR, 'extensions');
   if (fs.existsSync(extensions)) {
     for (const name of fs.readdirSync(extensions)) {
       if (!UUID.test(name)) continue;
       const abs = path.join(extensions, name);
       if (fs.lstatSync(abs).isSymbolicLink()) throw fail(400, 'Refusing to back up an extension symlink', 'UNSAFE_PROFILE_LINK');
-      walkFiles(abs, `extensions/${name}`, files);
+      walkInto(abs, `extensions/${name}`);
     }
   }
+  for (const entry of stageMeta()) files.push({ path: entry.path, data: entry.data });
   return packArchive(files);
 }
 
@@ -104,9 +126,22 @@ export function inspectBackup(buffer, { passphrase } = {}) {
     encrypted: opened.encrypted,
     ...(opened.encrypted ? describeEncryptedBackup() : { format: meta.format, version: meta.version, requiresPassphrase: false }),
     createdAt: meta.createdAt || null,
+    schemaVersion: meta.schemaVersion ?? null,
+    fileChecksumCount: meta.fileChecksums && typeof meta.fileChecksums === 'object' ? Object.keys(meta.fileChecksums).length : 0,
     profiles: meta.profiles.map(profile => ({ id: profile && profile.id, name: profile && profile.name })),
     containsSecretKey: files.some(file => file.path === 'secret.key'),
   };
+}
+
+function assertManifestChecksums(meta, files) {
+  if (!meta?.fileChecksums || typeof meta.fileChecksums !== 'object') return;
+  const byPath = new Map(files.map(file => [file.path, file.data]));
+  for (const [rel, expected] of Object.entries(meta.fileChecksums)) {
+    if (rel === 'meta.json') continue;
+    const data = byPath.get(rel);
+    if (!data) throw fail(400, `Backup manifest lists missing file ${rel}`, 'CORRUPT_BACKUP');
+    if (sha256Hex(data) !== expected) throw fail(400, `Backup manifest checksum mismatch for ${rel}`, 'CORRUPT_BACKUP');
+  }
 }
 
 function writeTree(root, files) {
@@ -138,6 +173,7 @@ export function restoreBackup(buffer, { collision = 'abort', failPoint = null, r
   let meta;
   try { meta = JSON.parse(byPath.get('meta.json').toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
   if (!meta || meta.format !== 'profile-manager-backup' || meta.version !== 1 || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  assertManifestChecksums(meta, files);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-restore-'));
   let source;
   try {

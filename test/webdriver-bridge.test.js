@@ -20,11 +20,24 @@ if (process.platform === 'win32') {
 }
 
 fs.writeFileSync(script, `
-import net from 'node:net';
+import http from 'node:http';
 const portArg = process.argv.find(a => a.startsWith('--port='));
 const port = Number(portArg?.slice(7) || 0);
-const s = net.createServer(() => {}).listen(port, '127.0.0.1', () => {});
-process.on('SIGTERM', () => { s.close(() => process.exit(0)); });
+const server = http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ value: { ready: true, message: 'stub ready' } }));
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/session') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ value: { sessionId: 'stub-session', capabilities: {} } }));
+    return;
+  }
+  res.writeHead(404); res.end();
+});
+server.listen(port, '127.0.0.1');
+process.on('SIGTERM', () => { server.close(() => process.exit(0)); });
 `);
 
 test('webDriverBridgeReport is honest about chromedriver requirement', () => {
@@ -44,6 +57,16 @@ test('startWebDriverBridge listens when chromedriver stub is configured', async 
     const c = net.connect(port, '127.0.0.1', () => { c.destroy(); res(); });
     c.on('error', rej);
   });
+  const status = await fetch(`${info.webdriverUrl}/status`);
+  assert.equal(status.status, 200);
+  const session = await fetch(`${info.webdriverUrl}/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ capabilities: { alwaysMatch: { browserName: 'chrome' } } }),
+  });
+  assert.equal(session.status, 200);
+  const body = await session.json();
+  assert.equal(body.value.sessionId, 'stub-session');
   stopWebDriverBridge(id);
   delete process.env.PM_CHROMEDRIVER_PATH;
 });

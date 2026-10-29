@@ -72,6 +72,9 @@ test('restore validates collisions, rolls back a failed apply, and refuses symli
   assert.equal(fs.readFileSync(path.join(dir, 'profiles', first.id, 'Default', 'marker.txt'), 'utf8'), 'First');
   const downloaded = await call('POST', '/api/v1/backup', null);
   assert.equal(downloaded.status, 200);
+  const { inspectBackup } = await import('../server/backup.js');
+  const inspected = inspectBackup(createBackup({ ids: [] }));
+  assert.ok(inspected.fileChecksumCount >= 2);
   const corrupt = await call('POST', '/api/v1/backup/restore?collision=abort', Buffer.from('not-a-backup'), { 'Content-Type': 'application/octet-stream' });
   assert.equal(corrupt.status, 400);
   assert.equal(corrupt.body.code, 'UNSAFE_ARCHIVE');

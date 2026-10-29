@@ -4,7 +4,7 @@
 **Prior tip:** `72803fe` · docs `b3a8d99`
 
 ## 1. Commit
-**Tip:** _(this package)_ — Phase A: trash await, gecko user.js, CookieRobot races/URL validation, upgrade seed via installed server.
+**Tip:** `278c5a3` — Phase A: trash await, gecko user.js, CookieRobot races/URL validation, upgrade seed via installed server.
 
 ## 2. Phase A (complete in this package)
 - **A1:** `softDeleteProfile` / `purgeFromTrash` await `stopFn`; refuse trash/purge when still running; trash busy lock.

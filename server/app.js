@@ -810,6 +810,27 @@ function deleteProxy(id, force) {
   if (assigned.length && !force) throw Object.assign(err(409, `Proxy is assigned to ${assigned.length} profile(s). Unassign it first or pass ?force=1.`), { code: 'PROXY_IN_USE', extra: { assignedProfiles: assigned } });
   db.transaction(() => { db.prepare('UPDATE profiles SET proxy_id=NULL WHERE proxy_id=?').run(id); db.prepare('DELETE FROM proxies WHERE id=?').run(id); })();
 }
+function duplicateProxy(id, { name, asTemplate = false } = {}) {
+  const r = mustProxy(id);
+  let password = '';
+  try { password = decrypt(r.password); } catch { password = ''; }
+  const tags = [...JSON.parse(r.tags || '[]')];
+  if (asTemplate && !tags.includes('template')) tags.push('template');
+  const label = String(name || `${r.name} (copy)`).trim().slice(0, 200) || `${r.type}://${r.host}:${r.port}`;
+  const newId = createProxyRow({
+    name: label,
+    type: r.type,
+    host: r.host,
+    port: r.port,
+    username: r.username,
+    password,
+    tags,
+    provider: r.provider,
+    providerRef: null,
+    providerMeta: JSON.parse(r.provider_meta || '{}'),
+  });
+  return publicProxy(proxyRow(newId));
+}
 function assignProxy(profileId, proxyId) {
   const p = must(profileId);
   if (proxyId !== null && typeof proxyId !== 'string') throw err(400, 'proxyId must be a string or null');
@@ -974,6 +995,7 @@ function mountProxyRoutes(r) {
   r.get('/proxies/:id', wrap((req, res) => res.json(publicProxy(mustProxy(req.params.id)))));
   r.patch('/proxies/:id', wrap((req, res) => res.json(patchProxy(req.params.id, req.body))));
   r.delete('/proxies/:id', wrap((req, res) => { deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true'); res.status(204).end(); }));
+  r.post('/proxies/:id/duplicate', wrap((req, res) => res.status(201).json(duplicateProxy(req.params.id, req.body || {}))));
   r.post('/proxies/:id/test', wrap(async (req, res) => res.json(await testLibraryProxy(req.params.id))));
   r.get('/proxies/:id/checks', wrap((req, res) => {
     mustProxy(req.params.id);

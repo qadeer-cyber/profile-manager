@@ -28,6 +28,7 @@ Commands:
   schema                  GET /profile-config/schema
   config <id>             GET /profiles/:id/browser-config (warnings + schema v2)
   bridges                 GET /webdriver and /geckodriver bridge reports
+  proxies [tag]           List saved proxies (optional tag filter, e.g. template)
 Env: PM_API_BASE (default ${base}), PM_API_TOKEN (required)`);
     process.exit(0);
   }
@@ -46,6 +47,10 @@ Env: PM_API_BASE (default ${base}), PM_API_TOKEN (required)`);
   } else if (cmd === 'bridges') {
     const [webdriver, geckodriver] = await Promise.all([api('GET', '/webdriver'), api('GET', '/geckodriver')]);
     console.log(JSON.stringify({ webdriver, geckodriver }, null, 2));
+  } else if (cmd === 'proxies') {
+    const q = arg ? `?tag=${encodeURIComponent(arg)}` : '';
+    const rows = await api('GET', `/proxies${q}`);
+    for (const p of rows) console.log(`${p.id}\t${p.type}\t${p.host}:${p.port}\t${p.name}`);
   } else {
     throw new Error(`Unknown command: ${cmd}`);
   }
