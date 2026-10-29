@@ -13,25 +13,30 @@ export function adbAvailability() {
   }
 }
 
+/** @param {string} text output of `adb devices -l` */
+export function parseAdbDevicesListing(text) {
+  const devices = [];
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = line.match(/^([^\s]+)\s+(device|offline|unauthorized)\s*(.*)$/);
+    if (!m) continue;
+    const [, serial, state, rest] = m;
+    if (serial === 'List') continue;
+    const props = {};
+    for (const token of rest.trim().split(/\s+/)) {
+      const kv = token.match(/^([^:]+):(.+)$/);
+      if (kv) props[kv[1]] = kv[2];
+    }
+    devices.push({ serial, state, ...props });
+  }
+  return devices;
+}
+
 export function listAdbDevices() {
   const base = adbAvailability();
   if (!base.available) return { ...base, devices: [] };
   try {
     const out = execFileSync('adb', ['devices', '-l'], { encoding: 'utf8', timeout: 8000, windowsHide: true });
-    const devices = [];
-    for (const line of out.split(/\r?\n/)) {
-      const m = line.match(/^([^\s]+)\s+(device|offline|unauthorized)\s*(.*)$/);
-      if (!m) continue;
-      const [, serial, state, rest] = m;
-      if (serial === 'List') continue;
-      const props = {};
-      for (const token of rest.trim().split(/\s+/)) {
-        const kv = token.match(/^([^:]+):(.+)$/);
-        if (kv) props[kv[1]] = kv[2];
-      }
-      devices.push({ serial, state, ...props });
-    }
-    return { ...base, devices };
+    return { ...base, devices: parseAdbDevicesListing(out) };
   } catch (e) {
     return { ...base, available: false, reason: 'adb_devices_failed', message: String(e.message || e), devices: [] };
   }

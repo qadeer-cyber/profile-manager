@@ -1,3 +1,5 @@
+// Real Chromium CDP evidence for tab restore (not plan-only). Matrix M1 tab restore is
+// VERIFIED only when these tests pass on a host with Playwright Chromium available.
 // Opt-in tab restore against the real Chromium build. Default stays off.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,6 +81,16 @@ function httpUrls(context) {
   return context.pages().map(page => page.url()).filter(url => url.startsWith('http'));
 }
 
+async function assertExampleDomainPages(context, expectedCount) {
+  const pages = context.pages().filter(page => page.url().startsWith('http'));
+  assert.equal(pages.length, expectedCount, `expected ${expectedCount} http tabs, got ${pages.length}`);
+  for (const page of pages) {
+    await page.waitForFunction(() => document.title && document.title.length > 0, { timeout: 20000 });
+    const title = await page.title();
+    assert.match(title, /Example Domain/i, `unexpected title "${title}" for ${page.url()}`);
+  }
+}
+
 test('default off does not save or reopen tabs', { timeout: 120000 }, async () => {
   const profile = await makeProfile('off', false);
   const first = await launch(profile.id);
@@ -110,6 +122,7 @@ test('opt-in restore reopens multiple tabs after stop and keeps profiles apart',
   await withBrowser(again, async context => {
     const urls = httpUrls(context).sort();
     assert.deepEqual(urls, ['https://example.com/', 'https://example.org/']);
+    await assertExampleDomainPages(context, 2);
   });
   await stop(a.id);
 });
