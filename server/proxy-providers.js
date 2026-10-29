@@ -11,23 +11,28 @@
 //   https://docs.brightdata.com/api-reference/proxy/rotate_ips
 //   https://docs.brightdata.com/general/faqs  (port 44445; 22225 and 33335 expired 2026-09-25)
 //   https://docs.brightdata.com/api-reference/account-management-api/Get_total_balance_through_API
+//   https://docs.brightdata.com/api-reference/account-management-api/Get_Zone_status
 //   Host brd.superproxy.io:44445. Username brd-customer-<id>-zone-<zone>
 //   with optional -country-<cc>, -session-<id>, and -const (only with -session).
 //   Balance: GET https://api.brightdata.com/customer/balance
+//   Zone status: GET https://api.brightdata.com/zone/status?zone=<zone>
 //   Authorization: Bearer <account API key>  (this is not the zone password).
 //
 // Oxylabs residential:
 //   https://developers.oxylabs.io/products/proxies/residential-proxies
 //   https://developers.oxylabs.io/products/proxies/residential-proxies/session-control
+//   https://developers.oxylabs.io/products/proxies/residential-proxies/public-api
 //   Host pr.oxylabs.io:7777. Username customer-<user> with optional -cc-<country>,
 //   -sessid-<id> or -sessid_oneip-<id>, and -sesstime-<minutes 1..1440>.
-//   Oxylabs does not document an account-usage endpoint that this adapter calls.
+//   Optional traffic stats: GET https://residential-api.oxylabs.io/v2/users/{userId}/client-stats
+//   Authorization: Bearer <JWT from POST /login> — store JWT in apiToken and userId in config.
 //
 // Webshare:
 //   https://apidocs.webshare.io/
 //   https://apidocs.webshare.io/proxy-list/list
 //   GET https://proxy.webshare.io/api/v2/proxy/list/?mode=direct|backbone
 //   GET https://proxy.webshare.io/api/v2/profile/
+//   GET https://proxy.webshare.io/api/v2/subscription/
 //   Authorization: Token <api key>
 //   Direct proxies are fixed endpoints. This adapter does not invent a session-rotation parameter.
 import crypto from 'crypto';
@@ -58,9 +63,9 @@ export function providerCatalog() {
       name: 'Oxylabs Residential',
       docs: 'https://developers.oxylabs.io/products/proxies/residential-proxies/session-control',
       sessionControl: true,
-      usageSupported: false,
+      usageSupported: true,
       manualFallback: true,
-      notes: 'Builds pr.oxylabs.io:7777 usernames. sessid keeps an IP for 10 minutes; sesstime extends it up to 1440 minutes; sessid_oneip fails instead of rotating when the exit leaves. No documented usage API is called.',
+      notes: 'Builds pr.oxylabs.io:7777 usernames. Optional Public API stats when apiToken (JWT) and config.userId are set. Dashboard stats API requires a separate key from Oxylabs support.',
     },
     {
       id: 'webshare',
@@ -85,7 +90,9 @@ function cleanConfig(provider, config) {
   if (provider === 'oxylabs') {
     const username = String(config.username || '').trim();
     if (!ID.test(username)) throw fail(400, 'Oxylabs username must be 1-64 letters, digits, hyphen, or underscore', 'INVALID_PROVIDER');
-    return { username };
+    const userId = String(config.userId || '').trim();
+    if (userId && !/^[0-9a-f-]{36}$/i.test(userId)) throw fail(400, 'Oxylabs userId must be a UUID when set', 'INVALID_PROVIDER');
+    return userId ? { username, userId } : { username };
   }
   if (provider === 'webshare') return {};
   throw fail(400, 'provider must be brightdata, oxylabs, or webshare', 'INVALID_PROVIDER');
@@ -228,27 +235,82 @@ async function providerFetch(url, { headers, secret, timeoutMs = 15000 }) {
   }
 }
 
+function redactBrightZone(body) {
+  if (!body || typeof body !== 'object') return body;
+  const out = { ...body };
+  if ('password' in out) out.password = '[redacted]';
+  return out;
+}
+
 export async function providerUsage(id) {
   const account = mustAccount(id);
   if (account.provider === 'oxylabs') {
-    return { supported: false, provider: 'oxylabs', reason: 'Oxylabs does not document an account-usage endpoint that this adapter calls. Use the local proxy test for health and latency.' };
+    const userId = account.config?.userId;
+    if (!account.apiToken || !userId) {
+      return {
+        supported: true,
+        available: false,
+        provider: 'oxylabs',
+        reason: 'Traffic stats need the Residential Public API JWT in apiToken and your userId in config (see developers.oxylabs.io Public API). Proxy password alone is not sent to that API.',
+      };
+    }
+    const body = await providerFetch(`https://residential-api.oxylabs.io/v2/users/${encodeURIComponent(userId)}/client-stats`, {
+      headers: { Authorization: `Bearer ${account.apiToken}`, accept: 'application/json' },
+      secret: account.apiToken,
+    });
+    return { supported: true, available: true, provider: 'oxylabs', source: 'https://residential-api.oxylabs.io/v2/users/{userId}/client-stats', stats: body };
   }
   if (account.provider === 'brightdata') {
     if (!account.apiToken) return { supported: true, available: false, provider: 'brightdata', reason: 'Balance requires the Bright Data account API key. The zone password is a different credential and is not sent to this endpoint.' };
     const body = await providerFetch('https://api.brightdata.com/customer/balance', { headers: { Authorization: `Bearer ${account.apiToken}` }, secret: account.apiToken });
     const numeric = {};
     for (const key of ['balance', 'credit', 'prepayment', 'pending_costs']) if (typeof body?.[key] === 'number') numeric[key] = body[key];
-    return { supported: true, available: true, provider: 'brightdata', source: 'https://api.brightdata.com/customer/balance', usage: numeric };
+    let zoneStatus = null;
+    try {
+      const zone = account.config?.zone;
+      if (zone) {
+        const zs = await providerFetch(`https://api.brightdata.com/zone/status?zone=${encodeURIComponent(zone)}`, {
+          headers: { Authorization: `Bearer ${account.apiToken}` },
+          secret: account.apiToken,
+        });
+        zoneStatus = redactBrightZone(zs);
+      }
+    } catch { zoneStatus = null; }
+    return {
+      supported: true,
+      available: true,
+      provider: 'brightdata',
+      source: 'https://api.brightdata.com/customer/balance',
+      usage: numeric,
+      ...(zoneStatus && { zoneStatus, zoneStatusSource: 'https://api.brightdata.com/zone/status' }),
+    };
   }
-  const body = await providerFetch('https://proxy.webshare.io/api/v2/profile/', { headers: { Authorization: `Token ${account.secret}` }, secret: account.secret });
+  const profileBody = await providerFetch('https://proxy.webshare.io/api/v2/profile/', { headers: { Authorization: `Token ${account.secret}` }, secret: account.secret });
   const allow = new Set(['id', 'email', 'username', 'first_name', 'last_name']);
   const fields = {};
   const omittedKeys = [];
-  for (const [key, value] of Object.entries(body || {})) {
+  for (const [key, value] of Object.entries(profileBody || {})) {
     if (allow.has(key) && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) fields[key] = value;
     else omittedKeys.push(key);
   }
-  return { supported: true, available: true, provider: 'webshare', source: 'https://proxy.webshare.io/api/v2/profile/', fields, omittedKeys };
+  let subscription = null;
+  try {
+    const sub = await providerFetch('https://proxy.webshare.io/api/v2/subscription/', { headers: { Authorization: `Token ${account.secret}` }, secret: account.secret });
+    const subAllow = new Set(['plan', 'plan_type', 'status', 'start_date', 'end_date', 'proxy_limit', 'bandwidth_limit']);
+    subscription = {};
+    for (const [key, value] of Object.entries(sub || {})) {
+      if (subAllow.has(key) && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value == null)) subscription[key] = value;
+    }
+  } catch { subscription = null; }
+  return {
+    supported: true,
+    available: true,
+    provider: 'webshare',
+    source: 'https://proxy.webshare.io/api/v2/profile/',
+    fields,
+    omittedKeys,
+    ...(subscription && { subscription, subscriptionSource: 'https://proxy.webshare.io/api/v2/subscription/' }),
+  };
 }
 
 function webshareItem(item) {

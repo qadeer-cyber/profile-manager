@@ -13,9 +13,9 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P1 | Profile templates | Reusable preset rows + UI + bulk create | VERIFIED |
 | P1 | CookieRobot-local | Documented API script + safety guards | PARTIAL |
 | P1 | Automation examples | Playwright/CDP samples in repo | PARTIAL |
-| P1 | WebDriver localhost | Optional chromedriver/geckodriver bridge | MISSING |
+| P1 | WebDriver localhost | ChromeDriver bridge API (automation CDP only) | PARTIAL |
 | P2 | Performance benchmarks | Latitude-oriented metrics script | MISSING |
-| P2 | Side-by-side browser rollback | Two CfT slots | PARTIAL |
+| P2 | Side-by-side browser rollback | CfT backup slot + rollback | VERIFIED |
 | P3 | Custom Chromium compile | Recipe only until approved infra | BLOCKED |
 | P3 | Canvas/WebGL noise | Requires fork | UNSUPPORTED |
 | N/A | Cloud sync/teams/billing | — | NOT_APPLICABLE_CLOUD |
@@ -25,11 +25,12 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 - Audit matrix + §22 doc set  
 - Native Chromium + Firefox gecko scaffold + config engine v2  
 - P0 continuation: UI engine/trash/quick/templates API/tab harvest/pm-cli  
-- **This increment:** Templates page (create/apply/bulk); profile row save-as-regular + save-as-template; native tab merge on stop/health; **44** tests in `test:browser-runtime`
+- Template UI increment (`4e9f730` / docs `11aab86`)  
+- **This increment:** update-manager dual-slot report; Diagnostics rollback; WebDriver bridge; provider API usage; Firefox CI smoke; **51** tests in `test:browser-runtime`
 
 ## Still open (honest)
 
-- WebDriver server (**MISSING**)  
+- Bundled chromedriver / geckodriver (**MISSING**)  
 - Custom Chromium compile (**BLOCKED**)  
 - Latitude / preview EXE §19 (**BLOCKED** without owner)  
 - Full Firefox CI without host Firefox (**BLOCKED** on GHA)

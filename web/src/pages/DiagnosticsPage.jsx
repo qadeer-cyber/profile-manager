@@ -5,8 +5,13 @@ import { ProfileDiagnostics } from '../components/ProfileDiagnostics.jsx';
 
 export function DiagnosticsPage({ eventsLog }) {
   const toast = useToast();
-  const [d, setD] = useState(null), [b, setB] = useState(null);
-  const load = useCallback(() => { api('/api/diagnostics').then(setD); api('/api/browser').then(setB); }, []);
+  const [d, setD] = useState(null), [b, setB] = useState(null), [upd, setUpd] = useState(null), [backups, setBackups] = useState(null);
+  const load = useCallback(() => {
+    api('/api/diagnostics').then(setD);
+    api('/api/browser').then(setB);
+    api('/api/browser-engine/update-manager').then(setUpd).catch(() => {});
+    api('/api/browser/backups').then(setBackups).catch(() => {});
+  }, []);
   useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t); }, [load]);
   if (!d || !b) return null;
   const install = async () => { try { await api('/api/browser/install', { method: 'POST' }); toast('Downloading Chromium…'); load(); } catch (e) { toast(e.message, 'error'); } };
@@ -44,6 +49,15 @@ export function DiagnosticsPage({ eventsLog }) {
       </tbody></table>
         {!b.installed && !b.custom && <button className="primary" disabled={b.install.state === 'running'} onClick={install}>{b.install.state === 'running' ? 'Downloading…' : 'Download Chromium'}</button>}
         {b.install.log && <pre className="log">{b.install.log.slice(-1200)}</pre>}
+        {upd?.rollback?.supported && <>
+          <h3 className="muted">CfT rollback slots</h3>
+          <p className="muted small">Reinstall moves the current tree to a timestamped backup. Roll back swaps the active slot with the latest backup.</p>
+          {upd.slots?.map(slot => <div key={slot.name} className="muted small">{slot.name}: {slot.active?.present ? 'installed' : 'missing'} · backups {slot.backups?.length || 0}</div>)}
+          {upd.rollback.available && backups && <div className="row" style={{ marginTop: 8 }}>
+            <button disabled={!backups.chromium?.length} onClick={async () => { try { await api('/api/browser/rollback', { method: 'POST', body: { name: 'chromium' } }); toast('Chromium rolled back', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Rollback Chromium</button>
+            <button disabled={!backups['chromium-headless-shell']?.length} onClick={async () => { try { await api('/api/browser/rollback', { method: 'POST', body: { name: 'chromium-headless-shell' } }); toast('Headless shell rolled back', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Rollback headless shell</button>
+          </div>}
+        </>}
       </section>
     </div>
     <section className="panel"><h2>Recent events</h2>

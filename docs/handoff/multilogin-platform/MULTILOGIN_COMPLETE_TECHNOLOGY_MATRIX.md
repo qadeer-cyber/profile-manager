@@ -8,7 +8,7 @@
 |----|-----------------------------------|--------------|------------------|
 | M1 | Isolated browser profiles (cookies/sessions) | VERIFIED | Per-profile `userDataDir`, locks, M1–M17 |
 | M2 | Mimic (Chromium antidetect engine) | PARTIAL | Stock CfT + native spawn; **no custom Mimic compile** |
-| M3 | Stealthfox (Firefox engine) | PARTIAL | Gecko native spawn scaffold; not full Stealthfox patches |
+| M3 | Stealthfox (Firefox engine) | PARTIAL | Gecko spawn + Windows CI Firefox install smoke; not Stealthfox patches |
 | M4 | Quick profiles | VERIFIED | `POST /api/profiles/quick` + UI button |
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
@@ -23,7 +23,7 @@
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
 | M17 | Proxy templates / traffic saver | PARTIAL | Saved proxies; no traffic saver |
-| M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Webshare list API; others catalog stubs |
+| M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Bright balance+zone status; Webshare list+subscription; Oxylabs Public API stats when JWT configured |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
 | M20 | Fingerprint: timezone/locale/lang | PARTIAL | Native: CLI; CDP locale Playwright-only |
 | M21 | Fingerprint: geolocation | PARTIAL | Prefs + Playwright geolocation option |
@@ -42,11 +42,11 @@
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
 | M35 | CLI / Script runner | PARTIAL | `npm run pm-cli` + cookie-robot example |
 | M36 | Playwright/Puppeteer attach | PARTIAL | CDP when `automation: true`; see puppeteer-cdp-attach.md |
-| M37 | Selenium/WebDriver | MISSING | No local WebDriver server |
+| M37 | Selenium/WebDriver | PARTIAL | Local ChromeDriver bridge API; host chromedriver required; automation CDP only |
 | M38 | Workspaces / team sync | NOT_APPLICABLE_CLOUD | Single-user local |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
 | M40 | Android cloud phones / ADB farms | NOT_APPLICABLE_CLOUD | Optional future ADB user-device only |
-| M41 | Core browser update / rollback | PARTIAL | Manifest-pinned CfT; rollback scaffold |
+| M41 | Core browser update / rollback | VERIFIED | Backup slot + rollback API + Diagnostics UI + update-manager report |
 | M42 | Google Search CAPTCHA-free | UNSUPPORTED | P1 findings; no bypass |
 | M43 | Manual browse without automation pipe | VERIFIED | Native Chromium spawn |
 | M44 | DPAPI / secret encryption | VERIFIED | Existing crypto backend |

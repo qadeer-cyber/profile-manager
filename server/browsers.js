@@ -38,6 +38,7 @@ import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import { harvestNativeTabUrls, resolveNativeTabUrlsForSave } from './session-harvest.js';
+import { stopWebDriverBridge } from './webdriver-bridge.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -733,6 +734,7 @@ export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INT
 export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTimer); healthTimer = null; };
 
 export async function stop(id, { timeoutMs = 5000 } = {}) {
+  stopWebDriverBridge(id);
   if (launching.has(id)) await launching.get(id).catch(() => {});
   const e = live.get(id) || settling.get(id);
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
@@ -766,6 +768,8 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
 }
 export async function shutdown() {
   stopHealthMonitor();
+  const { stopAllWebDriverBridges } = await import('./webdriver-bridge.js');
+  stopAllWebDriverBridges();
   // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
   await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
 }

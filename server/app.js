@@ -16,7 +16,7 @@ import * as engine from './browsers.js';
 import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpError, diagnosticsAuthorized } from './diagnostics.js';
 import { currentVersion } from './migrations.js';
 import { chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
-import { executableCompatibility, installVerifiedChromiumWithBackup, interruptedInstallState, listInstallBackups, rollbackLatest } from './chromium-lifecycle.js';
+import { executableCompatibility, installVerifiedChromiumWithBackup, interruptedInstallState, listInstallBackups } from './chromium-lifecycle.js';
 import { fingerprintCapabilityReport } from './fingerprint-capabilities.js';
 import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
 import { summarizeConsistency } from './fingerprint-summary.js';
@@ -25,6 +25,8 @@ import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
+import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
+import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
 import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
 import {
   createQuickProfile, softDeleteProfile, listTrash, restoreFromTrash, purgeFromTrash, convertQuickToRegular,
@@ -532,6 +534,20 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     res.json(browserUpdateManagerReport());
   }));
+  router.get('/webdriver', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(webDriverBridgeReport());
+  }));
+  router.post('/profiles/:id/webdriver/start', wrap(async (req, res) => {
+    must(req.params.id);
+    const row = engine.runInfo(req.params.id);
+    if (!row?.cdp_port) throw err(409, 'WebDriver bridge requires a running automation session (CDP port). Manual native launches cannot attach.');
+    res.json(await startWebDriverBridge(req.params.id, `127.0.0.1:${row.cdp_port}`));
+  }));
+  router.post('/profiles/:id/webdriver/stop', wrap((req, res) => {
+    must(req.params.id);
+    res.json(stopWebDriverBridge(req.params.id));
+  }));
   router.get('/profiles/:id/browser-config', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     const profile = get(req.params.id);
@@ -1034,8 +1050,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   }));
   ui.get('/browser/backups', wrap((req, res) => res.json({ chromium: listInstallBackups('chromium'), 'chromium-headless-shell': listInstallBackups('chromium-headless-shell') })));
   ui.post('/browser/rollback', wrap((req, res) => {
-    const name = req.body?.name === 'chromium-headless-shell' ? 'chromium-headless-shell' : 'chromium';
-    res.json({ name, restored: rollbackLatest(name) });
+    res.json(rollbackBrowserSlot(req.body?.name));
   }));
   ui.post('/browser/install', (req, res) => { installBrowser(); res.status(202).json(browserStatus()); });
   ui.get('/api-token', (req, res) => uiToken ? res.json({ token: API_TOKEN }) : res.status(403).json({ error: 'only available in the desktop app' }));

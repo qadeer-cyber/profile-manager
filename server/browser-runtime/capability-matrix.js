@@ -19,6 +19,8 @@ export function browserEngineCapabilityMatrix() {
       { id: 'quick_profiles', title: 'Quick temporary profiles', state: 'IMPLEMENTED', evidence: 'POST /api/profiles/quick' },
       { id: 'trash_bin', title: 'Trash restore / purge', state: 'IMPLEMENTED', evidence: 'test/profile-lifecycle.test.js' },
       { id: 'profile_templates', title: 'Template library + UI', state: 'IMPLEMENTED', evidence: 'TemplatesPage + bulk fromTemplate job + test/profile-lifecycle.test.js' },
+      { id: 'browser_update_rollback', title: 'Dual-slot CfT backup + rollback', state: 'IMPLEMENTED', evidence: 'chromium-lifecycle + test/update-manager.test.js + Diagnostics rollback' },
+      { id: 'webdriver_localhost', title: 'Localhost WebDriver bridge', state: 'PARTIAL', evidence: 'webdriver-bridge.js + POST /webdriver/start', note: 'Requires host chromedriver; automation CDP sessions only' },
       { id: 'advanced_monitoring_pipe', title: 'Advanced Monitoring CDP pipe facts', state: 'PARTIAL', note: 'Requires Playwright-connected session' },
       { id: 'custom_chromium_build', title: 'Dedicated compiled browser binary', state: 'BLOCKED', evidence: 'CHROMIUM-DERIVED-FEASIBILITY.md' },
       { id: 'google_sorry_loop', title: 'Google Search CAPTCHA-free guarantee', state: 'UNSUPPORTED', note: 'Environmental + Google policy; see P1 findings' },

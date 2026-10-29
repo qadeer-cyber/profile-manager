@@ -54,7 +54,8 @@ test('documented provider adapters build endpoints, import lists, and do not ret
   calls.length = 0;
   setProviderFetch(() => { throw new Error('oxylabs usage must not call the network'); });
   const oxyUsage = await call('POST', `/api/v1/proxy-providers/accounts/${oxy.body.id}/usage`, {});
-  assert.equal(oxyUsage.body.supported, false);
+  assert.equal(oxyUsage.body.supported, true);
+  assert.equal(oxyUsage.body.available, false);
   const oxyProxy = await call('POST', `/api/v1/proxy-providers/accounts/${oxy.body.id}/materialize`, { country: 'de', session: 'abc', sesstime: 30, oneIp: true, type: 'socks5' });
   assert.equal(oxyProxy.body.username, 'customer-alice-cc-de-sessid_oneip-abc-sesstime-30');
   assert.equal(oxyProxy.body.host, 'pr.oxylabs.io');

@@ -16,6 +16,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install chromium
+      - name: Install Firefox (official Mozilla package via Chocolatey)
+        shell: pwsh
+        run: choco install firefox -y --no-progress
       - run: npm run build
       - name: Browser runtime + P1 regression
         run: npm run test:browser-runtime
+      - name: Firefox host spawn smoke
+        run: node --test test/firefox-spawn-smoke.test.js
