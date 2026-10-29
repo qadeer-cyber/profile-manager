@@ -84,10 +84,10 @@ let pass = 0;
 let fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); };
 
-const cache = path.join(os.tmpdir(), 'Profile.Manager-offline-Setup-0.5.0-alpha.2-x64.exe');
+const cache = process.env.PM_ALPHA2_SETUP
+  || path.join(os.tmpdir(), 'Profile.Manager-offline-Setup-0.5.0-alpha.2-x64.exe');
 if (!fs.existsSync(cache)) {
-  console.log('Downloading alpha.2 installer…');
-  await download(ALPHA2_URL, cache);
+  throw new Error(`alpha.2 installer not found at ${cache}; set PM_ALPHA2_SETUP or download via gh release download`);
 }
 const hash = execFileSync('certutil', ['-hashfile', cache, 'SHA256'], { encoding: 'utf8' })
   .split('\n').find(l => /^[0-9a-f]{64}$/i.test(l.trim()))?.trim().toLowerCase();
