@@ -75,6 +75,10 @@ A normal launch does not add `--remote-debugging-port`. Playwright may still add
 
 An explicit `automationEnabled` profile, or `POST /api/v1/profiles/:id/launch` with `{"automation": true}`, binds CDP to `127.0.0.1` and returns `cdp.debuggerAddress`. The UI launch route does not accept an override.
 
+## Fingerprint controls
+
+`server/fingerprint-settings.js` stores a per-profile `advancedSettings.fingerprint` object. The accepted modes are Chromium's own: WebGL default or `--disable-webgl`, local-fonts and camera/microphone left alone or denied, and canvas, audio, and port-scan results left real. Client hints for a user-agent preset always carry the installed Chromium version. Vendor strings, font lists, device lists, canvas noise, audio noise, WebRTC addresses, and port-scan masks are rejected. `server/fingerprint-consistency.js` grades saved settings against a live page and the process command line as pass, warning, unsupported, or unavailable. A pass requires both sides of the comparison. The matrix is `FINGERPRINT_PARITY_MATRIX.md`.
+
 ## Proxies and loopback
 
 HTTP, HTTPS, and SOCKS5. A proxy with a username is wrapped by a local no-auth relay (`proxy-chain`) because Chromium will not authenticate SOCKS itself. Passwords are stored as `ss:v1:` (Electron `safeStorage`) or `enc:v1:` (AES-256-GCM from `PM_SECRET` or `secret.key`). After startup re-encryption, `decrypt()` rejects a value with neither prefix.

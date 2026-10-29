@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { validateAdvancedSettings } from './advanced-settings.js';
+import { fingerprintLaunchArgs } from './fingerprint-settings.js';
 
 const PLATFORMS = {
   linux: { token: 'X11; Linux x86_64', hint: 'Linux', navigatorPlatform: 'Linux x86_64' },
@@ -89,6 +90,13 @@ export function advancedLaunchPlan(settings, { headless = false, version = null,
     const state = advanced.preferences.permissions[key];
     if (state && state !== 'default') permissions[key] = CDP_SETTING[state];
   }
+  const fingerprint = advanced.fingerprint;
+  if (fingerprint.fonts === 'restricted') permissions['local-fonts'] = 'denied';
+  if (fingerprint.mediaDevices === 'restricted') {
+    permissions.camera = 'denied';
+    permissions.microphone = 'denied';
+  }
+  for (const flag of fingerprintLaunchArgs(fingerprint)) args.push(flag);
   return { args, launch, userAgent, startupUrls: [...advanced.preferences.startupUrls], permissions, settings: advanced };
 }
 
@@ -148,10 +156,15 @@ export async function applyDocumentPermissions(page, url, permissions) {
   // that session puts the permission back, so the session is kept with the page.
   if (!page.__pmPermissionSession) page.__pmPermissionSession = await page.context().newCDPSession(page);
   const session = page.__pmPermissionSession;
+  const failed = [];
   for (const [name, setting] of entries) {
-    await session.send('Browser.setPermission', { origin: parsed.origin, permission: { name }, setting });
+    try {
+      await session.send('Browser.setPermission', { origin: parsed.origin, permission: { name }, setting });
+    } catch {
+      failed.push(name);
+    }
   }
-  return true;
+  return failed.length === 0;
 }
 
 export async function installUserAgent(ctx, userAgent) {

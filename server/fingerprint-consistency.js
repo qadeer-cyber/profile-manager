@@ -1,0 +1,235 @@
+// Compare saved fingerprint settings with what Chromium actually exposed.
+// A finding is "pass" only when the compared values were both present.
+import { privateNetworkWeakening, WEBGL_DISABLE_ARG } from './fingerprint-settings.js';
+import { chromiumPolicyArgs } from './webrtc-policy.js';
+
+const STATUSES = new Set(['pass', 'warning', 'unsupported', 'unavailable']);
+const HOST_PLATFORM = {
+  linux: 'Linux x86_64',
+  win32: 'Win32',
+  darwin: 'MacIntel',
+};
+
+function finding(id, status, summary) {
+  if (!STATUSES.has(status)) throw new Error(`bad consistency status ${status}`);
+  return { id, status, summary };
+}
+
+function counts(findings) {
+  const tally = { pass: 0, warning: 0, unsupported: 0, unavailable: 0 };
+  for (const item of findings) tally[item.status] += 1;
+  return tally;
+}
+
+function hasFlag(commandLine, flag) {
+  return typeof commandLine === 'string' && commandLine.includes(flag);
+}
+
+export function fingerprintFindings({
+  advanced = {},
+  browserSettings = {},
+  webrtc = { mode: 'browser_default' },
+  observation = null,
+  commandLine = null,
+  chromiumVersion = null,
+  hostPlatform = process.platform,
+  hostTimezone = null,
+  previous = null,
+} = {}) {
+  const fingerprint = advanced.fingerprint || {};
+  const userAgent = advanced.userAgent || { mode: 'default' };
+  const screen = advanced.screen || { preset: 'native' };
+  const geo = advanced.geolocation || { permission: 'default' };
+  const seen = observation && observation.availability === 'observed' ? observation : null;
+  const findings = [];
+
+  const hints = seen?.clientHints;
+  if (!seen || !chromiumVersion) {
+    findings.push(finding('ua_version', 'unavailable', seen ? 'The installed Chromium version was not available to compare.' : 'Launch the profile before comparing the user agent.'));
+    findings.push(finding('ua_client_hints', 'unavailable', 'Client hints were not collected.'));
+  } else if (!hints || hints.availability !== 'observed' || !hints.uaFullVersion) {
+    findings.push(finding('ua_version', 'unavailable', 'The page did not expose a full client-hint version.'));
+    findings.push(finding('ua_client_hints', 'unavailable', 'The page did not expose client hints.'));
+  } else if (hints.uaFullVersion !== chromiumVersion || (hints.chromiumVersion && hints.chromiumVersion !== chromiumVersion)) {
+    findings.push(finding('ua_version', 'warning', `Client hints report ${hints.uaFullVersion}, which is not the installed Chromium ${chromiumVersion}.`));
+    findings.push(finding('ua_client_hints', 'warning', 'The client-hint version does not match the installed Chromium.'));
+  } else if (userAgent.mode === 'reduced') {
+    const major = `${chromiumVersion.split('.')[0]}.0.0.0`;
+    const ua = seen.userAgent || '';
+    const reduced = ua.includes(major) && !ua.includes(chromiumVersion);
+    findings.push(finding('ua_version', reduced ? 'pass' : 'warning', reduced
+      ? `The user agent uses ${major} and the client hint keeps the full version ${chromiumVersion}.`
+      : 'Reduced mode did not produce a major-only user agent, or the full version leaked into that string.'));
+    findings.push(finding('ua_client_hints', 'pass', `Client hints report the installed Chromium ${chromiumVersion}.`));
+  } else if (userAgent.mode === 'full') {
+    const ua = seen.userAgent || '';
+    const full = ua.includes(chromiumVersion);
+    findings.push(finding('ua_version', full ? 'pass' : 'warning', full
+      ? `The user agent and client hints both carry ${chromiumVersion}.`
+      : `Client hints carry ${chromiumVersion}, but the user agent string does not.`));
+    findings.push(finding('ua_client_hints', 'pass', `Client hints report the installed Chromium ${chromiumVersion}.`));
+  } else {
+    findings.push(finding('ua_version', 'pass', `No user-agent override is configured. Client hints report the installed Chromium ${chromiumVersion}.`));
+    findings.push(finding('ua_client_hints', 'pass', `Client hints report the installed Chromium ${chromiumVersion}. No other browser version was written.`));
+  }
+
+  const expectedPlatform = HOST_PLATFORM[hostPlatform];
+  if (!seen?.platform) findings.push(finding('host_platform', 'unavailable', 'navigator.platform was not collected.'));
+  else if (!expectedPlatform) findings.push(finding('host_platform', 'unavailable', 'This operating system has no platform token to compare.'));
+  else if (seen.platform === expectedPlatform) findings.push(finding('host_platform', 'pass', `navigator.platform is ${seen.platform}, which is this computer.`));
+  else findings.push(finding('host_platform', 'warning', `navigator.platform is ${seen.platform}. This computer expects ${expectedPlatform}.`));
+
+  findings.push(finding('navigator_custom', 'unsupported', 'hardwareConcurrency, deviceMemory, and OSCPU are not per-profile settings. Observed numbers are this computer’s, not a chosen device.'));
+
+  const timezone = browserSettings.timezoneId || '';
+  if (!seen?.timezone) findings.push(finding('timezone', 'unavailable', 'The page timezone was not collected.'));
+  else if (timezone) findings.push(finding('timezone', seen.timezone === timezone ? 'pass' : 'warning', seen.timezone === timezone
+    ? `The page timezone is the configured zone ${timezone}.`
+    : `The page timezone is ${seen.timezone}. The profile is set to ${timezone}.`));
+  else if (!hostTimezone) findings.push(finding('timezone', 'unavailable', 'No timezone is configured, and the computer timezone was not available to compare.'));
+  else findings.push(finding('timezone', seen.timezone === hostTimezone ? 'pass' : 'warning', seen.timezone === hostTimezone
+    ? `No timezone override is set. The page matches this computer (${hostTimezone}).`
+    : `No timezone override is set, but the page reports ${seen.timezone} instead of this computer’s ${hostTimezone}.`));
+
+  const languages = Array.isArray(browserSettings.languages) ? browserSettings.languages : [];
+  if (!seen?.languages) findings.push(finding('languages', 'unavailable', 'navigator.languages was not collected.'));
+  else if (!languages.length) findings.push(finding('languages', 'unavailable', 'No language list is configured, so there is no expected order to compare.'));
+  else {
+    const same = seen.languages.length === languages.length && seen.languages.every((tag, index) => tag === languages[index]);
+    findings.push(finding('languages', same ? 'pass' : 'warning', same
+      ? `navigator.languages matches the configured list (${languages.join(', ')}).`
+      : `navigator.languages is ${(seen.languages || []).join(', ') || 'empty'}. The profile lists ${languages.join(', ')}.`));
+  }
+
+  const locale = browserSettings.locale || '';
+  if (!seen?.locale) findings.push(finding('locale', 'unavailable', 'navigator.language was not collected.'));
+  else if (!locale) findings.push(finding('locale', 'unavailable', 'No locale is configured, so the host value is not graded.'));
+  else findings.push(finding('locale', seen.locale === locale ? 'pass' : 'warning', seen.locale === locale
+    ? `navigator.language is the configured locale ${locale}.`
+    : `navigator.language is ${seen.locale}. The profile locale is ${locale}.`));
+
+  const configuredScreen = screen.preset && screen.preset !== 'native';
+  const expectScale = screen.deviceScaleFactor != null;
+  if (!seen?.screen) findings.push(finding('screen', 'unavailable', 'Screen and viewport were not collected.'));
+  else if (!configuredScreen && !expectScale) findings.push(finding('screen', 'unavailable', 'No screen size or scale is configured, so the host display is not graded.'));
+  else {
+    const mismatches = [];
+    if (screen.viewportWidth != null && seen.screen.innerWidth !== screen.viewportWidth) mismatches.push('viewport width');
+    if (screen.viewportHeight != null && seen.screen.innerHeight !== screen.viewportHeight) mismatches.push('viewport height');
+    if (screen.width != null && seen.screen.width !== screen.width) mismatches.push('screen width');
+    if (screen.height != null && seen.screen.height !== screen.height) mismatches.push('screen height');
+    if (expectScale && seen.screen.devicePixelRatio !== screen.deviceScaleFactor) mismatches.push('device scale');
+    findings.push(finding('screen', mismatches.length ? 'warning' : 'pass', mismatches.length
+      ? `The page does not match the configured ${mismatches.join(', ')}.`
+      : 'Viewport, screen, and device scale match the configured values.'));
+  }
+
+  if (geo.permission === 'default') findings.push(finding('geolocation', 'unavailable', 'Geolocation is left to the browser prompt. No allow or deny result is claimed.'));
+  else if (!seen?.permissions?.geolocation || seen.permissions.geolocation.availability !== 'observed') findings.push(finding('geolocation', 'unavailable', 'The geolocation permission was not collected.'));
+  else if (geo.permission === 'deny' || geo.permission === 'ask') {
+    const expected = geo.permission === 'deny' ? 'denied' : 'prompt';
+    findings.push(finding('geolocation', seen.permissions.geolocation.state === expected ? 'pass' : 'warning', seen.permissions.geolocation.state === expected
+      ? `Geolocation permission is ${expected}, as configured.`
+      : `Geolocation permission is ${seen.permissions.geolocation.state}. The profile asked for ${expected}.`));
+  } else if (geo.permission === 'allow' && geo.latitude != null) {
+    const position = seen.geolocation;
+    const close = position && Math.abs(position.latitude - geo.latitude) < 0.000001 && Math.abs(position.longitude - geo.longitude) < 0.000001;
+    findings.push(finding('geolocation', close ? 'pass' : 'warning', close
+      ? 'The page received the coordinates saved on this profile.'
+      : 'Geolocation is Allow, but the page did not return the saved coordinates.'));
+  } else findings.push(finding('geolocation', 'unavailable', 'Geolocation is Allow without coordinates, so no position was expected.'));
+
+  const policyFlag = chromiumPolicyArgs(webrtc)[0] || null;
+  if (typeof commandLine !== 'string' || !commandLine.trim()) findings.push(finding('webrtc_flag', 'unavailable', 'The browser command line was not available, so the WebRTC policy was not checked.'));
+  else if (!policyFlag) findings.push(finding('webrtc_flag', commandLine.includes('--force-webrtc-ip-handling-policy=') ? 'warning' : 'pass', commandLine.includes('--force-webrtc-ip-handling-policy=')
+    ? 'A WebRTC policy flag is present even though this profile did not set one.'
+    : 'No WebRTC policy flag is present. This is Chromium’s own behavior, not a proxy-matched address.'));
+  else findings.push(finding('webrtc_flag', commandLine.includes(policyFlag) ? 'pass' : 'warning', commandLine.includes(policyFlag)
+    ? `The process has ${policyFlag}. That restricts candidate paths. It does not copy the proxy IP into WebRTC.`
+    : `The saved WebRTC policy ${policyFlag} is not on the process command line.`));
+  findings.push(finding('webrtc_ice', 'unavailable', 'ICE candidates are not collected. No claim is made that WebRTC matches the proxy.'));
+
+  if (fingerprint.webgl === 'restricted') {
+    if (!seen || typeof commandLine !== 'string') findings.push(finding('webgl_restriction', 'unavailable', 'WebGL restriction needs both a running page and the process command line.'));
+    else if (!hasFlag(commandLine, WEBGL_DISABLE_ARG)) findings.push(finding('webgl_restriction', 'warning', '--disable-webgl is not on the process command line.'));
+    else if (seen.webgl?.availability === 'unavailable') findings.push(finding('webgl_restriction', 'pass', 'WebGL is off: --disable-webgl is on the process and the page has no WebGL context. No replacement renderer was applied.'));
+    else findings.push(finding('webgl_restriction', 'warning', 'WebGL still created a context even though --disable-webgl is on the process.'));
+  } else findings.push(finding('webgl_restriction', 'unavailable', 'WebGL is Default. Nothing is being turned off, and the renderer is not being replaced.'));
+
+  if (seen?.webgl?.availability === 'observed') findings.push(finding('webgl_metadata', 'unsupported', `WebGL reports ${seen.webgl.vendor || 'an empty vendor'} / ${seen.webgl.renderer || 'an empty renderer'}. Those are the machine’s strings. This app cannot substitute another GPU.`));
+  else findings.push(finding('webgl_metadata', 'unsupported', 'WebGL vendor and renderer are not replaced. No alternate GPU string is stored.'));
+
+  const gpu = seen?.webgpu;
+  if (gpu?.availability === 'observed') findings.push(finding('webgpu_metadata', 'unsupported', `WebGPU adapter info was visible (vendor ${gpu.vendor || 'empty'}, device ${gpu.device || 'empty'}). It is not replaced.`));
+  else if (gpu?.apiPresent) findings.push(finding('webgpu_metadata', 'unsupported', `navigator.gpu is present and the adapter is ${gpu.reason || 'unavailable'}. No vendor or device id is invented, and a disable switch is not offered because it did not remove the API in testing.`));
+  else findings.push(finding('webgpu_metadata', 'unsupported', 'WebGPU metadata is not replaced. The API was not available to read, so no adapter values are filled in.'));
+
+  findings.push(finding('canvas_noise', 'unsupported', 'Canvas noise is not applied. Stock Chromium has no persistent canvas-noise control.'));
+  if (seen?.canvas?.sha256) findings.push(finding('canvas_readback', 'pass', `Canvas mode is real. SHA-256 ${seen.canvas.sha256} is this browser’s own readback, not a stored mask.`));
+  else findings.push(finding('canvas_readback', 'unavailable', 'A canvas readback was not collected.'));
+
+  findings.push(finding('audio_noise', 'unsupported', 'AudioContext noise is not applied. Stock Chromium has no persistent audio-noise control.'));
+  if (seen?.audio?.sha256) findings.push(finding('audio_readback', 'pass', `Audio mode is real. SHA-256 ${seen.audio.sha256} is this browser’s own render at ${seen.audio.sampleRate} Hz.`));
+  else findings.push(finding('audio_readback', 'unavailable', 'An AudioContext render was not collected.'));
+
+  findings.push(finding('fonts_mask', 'unsupported', 'The installed font list is not replaced. Canvas font measurement still sees this computer. Restricted only denies the local-fonts permission.'));
+  if (fingerprint.fonts !== 'restricted') findings.push(finding('fonts_permission', 'unavailable', 'Local font access is not restricted on this profile.'));
+  else if (seen?.permissions?.['local-fonts']?.availability !== 'observed') findings.push(finding('fonts_permission', 'unavailable', 'The local-fonts permission was not collected.'));
+  else findings.push(finding('fonts_permission', seen.permissions['local-fonts'].state === 'denied' ? 'pass' : 'warning', seen.permissions['local-fonts'].state === 'denied'
+    ? 'The local-fonts permission is denied. Font measurement through canvas is still possible.'
+    : `The local-fonts permission is ${seen.permissions['local-fonts'].state}, not denied.`));
+
+  findings.push(finding('media_mask', 'unsupported', 'Cameras and microphones are not replaced with generated devices.'));
+  if (fingerprint.mediaDevices !== 'restricted') findings.push(finding('media_permission', 'unavailable', 'Media devices are Real. Camera and microphone follow their own permission settings.'));
+  else if (seen?.permissions?.camera?.availability !== 'observed' || seen?.permissions?.microphone?.availability !== 'observed') findings.push(finding('media_permission', 'unavailable', 'Camera or microphone permission was not collected.'));
+  else {
+    const denied = seen.permissions.camera.state === 'denied' && seen.permissions.microphone.state === 'denied';
+    findings.push(finding('media_permission', denied ? 'pass' : 'warning', denied
+      ? 'Camera and microphone are denied. The device list is still this computer’s list.'
+      : `Camera is ${seen.permissions.camera.state} and microphone is ${seen.permissions.microphone.state}. Restricted expected both to be denied.`));
+  }
+
+  findings.push(finding('port_scan_mask', 'unsupported', 'Port-scan results are not masked, and there is no whitelist of local ports.'));
+  const network = privateNetworkWeakening(commandLine);
+  if (network.availability !== 'observed') findings.push(finding('port_scan_policy', 'unavailable', 'The process command line was not available, so private-network features were not checked.'));
+  else if (network.features.length) findings.push(finding('port_scan_policy', 'warning', `The process disables ${network.features.join(', ')}. This app does not add those switches itself.`));
+  else findings.push(finding('port_scan_policy', 'pass', 'The process command line does not disable Chromium’s private-network checks. That is not proof that every local port probe fails, and no masked result is substituted.'));
+
+  const restart = (id, key, label) => {
+    if (!previous || previous[key] == null || previous[key] === '') return finding(id, 'unavailable', `No previous ${label} was supplied.`);
+    if (!seen) return finding(id, 'unavailable', `The profile is not running, so ${label} cannot be compared.`);
+    const current = key === 'webglRenderer' ? seen.webgl?.renderer : key === 'canvasSha256' ? seen.canvas?.sha256 : seen.audio?.sha256;
+    if (!current) return finding(id, 'unavailable', `The current ${label} was not collected.`);
+    return finding(id, current === previous[key] ? 'pass' : 'warning', current === previous[key]
+      ? `${label} matches the previous observation from this profile.`
+      : `${label} changed since the previous observation.`);
+  };
+  findings.push(restart('restart_canvas', 'canvasSha256', 'canvas readback'));
+  findings.push(restart('restart_audio', 'audioSha256', 'audio render'));
+  findings.push(restart('restart_webgl', 'webglRenderer', 'WebGL renderer'));
+
+  return { findings, counts: counts(findings) };
+}
+
+const PREVIOUS_KEYS = new Set(['canvasSha256', 'audioSha256', 'webglRenderer']);
+
+export function readPreviousObservation(body) {
+  if (!body || body.previous == null) return null;
+  const previous = body.previous;
+  if (!previous || typeof previous !== 'object' || Array.isArray(previous)) {
+    throw Object.assign(new Error('previous must be an object'), { status: 400, code: 'INVALID_FINGERPRINT_COMPARISON' });
+  }
+  for (const key of Object.keys(previous)) {
+    if (!PREVIOUS_KEYS.has(key)) {
+      throw Object.assign(new Error('previous may only include canvasSha256, audioSha256, and webglRenderer'), { status: 400, code: 'INVALID_FINGERPRINT_COMPARISON' });
+    }
+    if (previous[key] != null && (typeof previous[key] !== 'string' || previous[key].length > 300)) {
+      throw Object.assign(new Error(`${key} must be a short string`), { status: 400, code: 'INVALID_FINGERPRINT_COMPARISON' });
+    }
+  }
+  return {
+    canvasSha256: previous.canvasSha256 || null,
+    audioSha256: previous.audioSha256 || null,
+    webglRenderer: previous.webglRenderer || null,
+  };
+}

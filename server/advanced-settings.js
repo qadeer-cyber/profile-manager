@@ -1,6 +1,8 @@
 // Per-profile advanced browser settings. Values are either applied through a
 // Chromium feature that exists (user agent, geolocation, window, content
-// settings) or rejected. Nothing here claims a different Chromium version.
+// settings, fingerprint restrictions) or rejected. Nothing here claims a
+// different Chromium version or a substitute GPU, font list, or device.
+import { DEFAULT_FINGERPRINT, validateFingerprint } from './fingerprint-settings.js';
 export const SCREEN_PRESETS = Object.freeze({
   '1280x800': Object.freeze({ width: 1280, height: 800 }),
   '1366x768': Object.freeze({ width: 1366, height: 768 }),
@@ -25,6 +27,7 @@ export const DEFAULT_ADVANCED_SETTINGS = Object.freeze({
     restoreTabs: false,
     permissions: Object.freeze({ notifications: 'default', microphone: 'default', camera: 'default', clipboard: 'default', midi: 'default' }),
   }),
+  fingerprint: DEFAULT_FINGERPRINT,
 });
 
 const invalid = (message, tab = 'identity') => {
@@ -138,17 +141,32 @@ function validatePreferences(value, previous) {
   return out;
 }
 
+function finishAdvanced(settings) {
+  const out = clone(settings);
+  out.fingerprint = validateFingerprint(out.fingerprint || DEFAULT_FINGERPRINT, out.preferences);
+  return out;
+}
+
 export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETTINGS) {
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
-  if (!keysOf(value).length) return clone(base);
-  if (keysOf(value).some(key => !['userAgent', 'geolocation', 'screen', 'preferences'].includes(key))) invalid('Unknown advancedSettings field');
+  if (!keysOf(value).length) return finishAdvanced(base);
+  if (keysOf(value).some(key => !['userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
   if ('geolocation' in value) out.geolocation = validateGeolocation(value.geolocation);
   if ('screen' in value) out.screen = validateScreen(value.screen);
   if ('preferences' in value) out.preferences = validatePreferences(value.preferences, out.preferences);
-  return out;
+  if ('fingerprint' in value) out.fingerprint = value.fingerprint;
+  return finishAdvanced(out);
+}
+
+export function normalizeAdvancedSettings(value) {
+  try {
+    return validateAdvancedSettings(value && typeof value === 'object' && !Array.isArray(value) ? value : {});
+  } catch {
+    return clone(DEFAULT_ADVANCED_SETTINGS);
+  }
 }
 
 export function startupUrlsForLaunch(settings, explicitUrl) {

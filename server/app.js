@@ -17,7 +17,7 @@ import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpEr
 import { currentVersion } from './migrations.js';
 import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
-import { DEFAULT_ADVANCED_SETTINGS, validateAdvancedSettings } from './advanced-settings.js';
+import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
 import { buildUserAgent } from './advanced-launch.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
@@ -31,6 +31,10 @@ import { appendJobItem, createJob, finishJob, getJob, listJobs } from './jobs.js
 import { runBatch } from './batch.js';
 import { buildEndpoint, createAccount, deleteAccount, listAccounts, listWebshareProxies, providerCatalog, providerUsage } from './proxy-providers.js';
 import { hostHardware, observeBrowser, UNSUPPORTED_OVERRIDES } from './hardware.js';
+import { advancedLaunchPlan } from './advanced-launch.js';
+import { fingerprintFindings, readPreviousObservation } from './fingerprint-consistency.js';
+import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED, FINGERPRINT_REJECTED } from './fingerprint-settings.js';
+import { processCommandLine } from './proc.js';
 import { copyProfileTree } from './profile-copy.js';
 import {
   assertKnownAssignments, assignExtension, copyExtensionAssignments, deleteExtension, importUnpackedExtension,
@@ -111,8 +115,8 @@ const row2p = r => {
   const webrtcSettings = r.webrtc_settings ? JSON.parse(r.webrtc_settings) : { ...DEFAULT_WEBRTC_SETTINGS };
   delete r.webrtc_settings;
   const extensions = profileExtensions(r.id);
-  let advancedSettings = { ...DEFAULT_ADVANCED_SETTINGS, userAgent: { ...DEFAULT_ADVANCED_SETTINGS.userAgent }, geolocation: { ...DEFAULT_ADVANCED_SETTINGS.geolocation }, screen: { ...DEFAULT_ADVANCED_SETTINGS.screen }, preferences: { startupUrls: [], restoreTabs: false, permissions: { ...DEFAULT_ADVANCED_SETTINGS.preferences.permissions } } };
-  if (r.advanced_settings) { try { advancedSettings = JSON.parse(r.advanced_settings); } catch { /* keep defaults when the stored JSON is unreadable */ } }
+  let advancedSettings = normalizeAdvancedSettings({});
+  if (r.advanced_settings) { try { advancedSettings = normalizeAdvancedSettings(JSON.parse(r.advanced_settings)); } catch { /* keep defaults when the stored JSON is unreadable */ } }
   delete r.advanced_settings;
   return { ...r, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
@@ -245,18 +249,39 @@ function chromiumFacts() {
     headlessNote: 'Headless launches use HeadlessChrome with the same Chromium version. Client hints keep that full version.',
   };
 }
-async function hardwareReport(id) {
+async function hardwareReport(id, { previous = null } = {}) {
   const profile = id ? must(id) : null;
   const ctx = id && typeof engine.liveContext === 'function' ? engine.liveContext(id) : null;
+  const chromium = chromiumFacts();
+  let permissions = null;
+  if (profile) {
+    try { permissions = advancedLaunchPlan(profile.advancedSettings, { headless: false, version: chromium.version, platform: process.platform }).permissions; }
+    catch { permissions = null; }
+  }
   const browser = id
-    ? (engine.isRunning(id) ? await observeBrowser(ctx) : { availability: 'unavailable', reason: 'not_running' })
+    ? (engine.isRunning(id) ? await observeBrowser(ctx, { permissions }) : { availability: 'unavailable', reason: 'not_running' })
     : { availability: 'unavailable', reason: 'no_profile' };
+  const evidence = id && typeof engine.launchEvidence === 'function' ? engine.launchEvidence(id) : null;
+  const commandLine = evidence?.browserPid ? await processCommandLine(evidence.browserPid) : null;
+  const host = hostHardware();
+  const consistency = fingerprintFindings({
+    advanced: profile?.advancedSettings || {},
+    browserSettings: profile?.browserSettings || {},
+    webrtc: profile?.webrtcSettings || { mode: 'browser_default' },
+    observation: browser.availability === 'observed' ? browser : null,
+    commandLine,
+    chromiumVersion: chromium.version,
+    hostPlatform: process.platform,
+    hostTimezone: host.timezone?.value || null,
+    previous,
+  });
   return {
-    chromium: chromiumFacts(),
-    host: hostHardware(),
-    configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions } : null,
+    chromium,
+    host,
+    configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions, fingerprint: profile.advancedSettings.fingerprint } : null,
     browser,
     unsupported: UNSUPPORTED_OVERRIDES,
+    consistency,
   };
 }
 async function cookieList(id) {
@@ -414,8 +439,11 @@ function batchHandlers(allowOverride) {
 }
 function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
+  router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
   router.get('/hardware', wrap(async (req, res) => res.json(await hardwareReport(null))));
   router.get('/profiles/:id/hardware', wrap(async (req, res) => res.json(await hardwareReport(req.params.id))));
+  router.get('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id)).consistency)));
+  router.post('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id, { previous: readPreviousObservation(req.body) })).consistency)));
   router.get('/profiles/:id/cookies', wrap(async (req, res) => res.json(await cookieList(req.params.id))));
   router.post('/profiles/:id/cookies/import', wrap((req, res) => {
     const profile = cookieMutation(req.params.id);

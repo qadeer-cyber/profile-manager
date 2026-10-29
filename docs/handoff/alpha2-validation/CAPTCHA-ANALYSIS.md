@@ -61,3 +61,16 @@ These are optional and do not change the app:
 - Expect Google to keep challenging Chromium that is under Playwright control. That is a property of this architecture, not a Search outage.
 
 No launch flag, WebRTC policy, or extension was changed for this finding.
+
+## Troubleshooting workflow
+
+This is a comparison procedure. It does not solve a challenge, patch the browser, or promise a CAPTCHA-free session. Google’s reputation score is not visible to this app, so a challenge after one of these steps is not proof of a single cause.
+
+Use the same Windows machine for all four checks. A Linux result, including the SwiftShader WebGL string from the M10 fingerprint test, is not evidence for that machine.
+
+1. **Normal Google Chrome, no proxy.** Open a fresh Chrome profile, not Profile Manager. Search on Google and open Bing. Record whether a challenge appeared, the Chrome version from `chrome://version`, and that `navigator.webdriver` is false in that window.
+2. **Normal Google Chrome, the same proxy.** Configure that proxy only in Chrome. Repeat the same two sites. If the challenge appears here and did not appear in step 1, the exit address is enough to explain it. The proxy’s reputation is still unknown: a pass does not mean the address is “clean,” and a challenge does not name which signal Google used.
+3. **Profile Manager, no proxy.** Launch one profile with automation off, WebRTC at browser default, no custom user agent, and no extension. Open the same two sites. Record the pinned Chromium version, whether the window is Chrome for Testing, and any error the app actually shows. Expect differences from step 1 even when the IP is the same: Playwright’s debugging pipe, `navigator.webdriver`, `--disable-extensions` when no extension is assigned, and `--no-sandbox` on the Linux launches that have been measured.
+4. **Profile Manager, the same proxy.** Repeat step 3 with that proxy. Compare it with step 2 before blaming the profile. If Chrome-with-proxy is challenged and Profile Manager-with-proxy is challenged, the shared address is the common factor and the client differences in step 3 are extra, not a substitute explanation. If Chrome-with-proxy is not challenged and Profile Manager is, the client differences are the part this app can describe. They are not a defect to close by hiding `navigator.webdriver` or swapping the user agent.
+
+Record failures as the text on screen or the app error. Do not translate a challenge into a claim that a fingerprint setting was detected. Fingerprint controls in this tree do not exist to get past this page.

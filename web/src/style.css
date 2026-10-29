@@ -136,7 +136,8 @@ label.check{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:
 .hint{margin:-8px 0 14px 23px}
 .fact{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)}
 .pill{font-size:11px;border-radius:99px;padding:2px 8px;border:1px solid var(--border);text-transform:lowercase}
-.pill.observed{background:var(--ok-soft);color:var(--ok)}.pill.configured{background:var(--accent-soft);color:var(--accent-text)}
+.pill.observed,.pill.pass{background:var(--ok-soft);color:var(--ok)}.pill.configured{background:var(--accent-soft);color:var(--accent-text)}
+.pill.warning{background:var(--warn-soft);color:var(--warn)}
 .pill.unsupported,.pill.unavailable{background:var(--surface-2);color:var(--text-2)}
 label.file-btn{position:relative;display:inline-flex;align-items:center;padding:6px 12px;border:1px solid var(--border-strong);border-radius:var(--r);cursor:pointer;font-weight:500}
 label.file-btn input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}

@@ -2,6 +2,7 @@ import { browserContextSettings, validateBrowserSettings } from './browser-setti
 import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
 import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences, applyDocumentPermissions, installUserAgent } from './advanced-launch.js';
+import { verifyFingerprintLaunchArgs } from './fingerprint-settings.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
@@ -52,6 +53,10 @@ export function lifecycleSmokeSnapshot(id) {
 export const isRunning = id => live.has(id) || settling.has(id);
 export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()])];
 export const liveContext = id => live.get(id)?.ctx || null;
+export const launchEvidence = id => {
+  const entry = live.get(id);
+  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null };
+};
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
 const emit = (type, id, extra = {}) => events.emit('event', { type, id, at: new Date().toISOString(), ...extra });
@@ -202,6 +207,9 @@ async function doLaunch(p, opts = {}) {
     const identity = chromiumIdentity(executablePath && fs.existsSync(executablePath) ? executablePath : '');
     const plan = advancedLaunchPlan(p.advancedSettings || {}, { headless: !!headless, version: identity.version, platform: process.platform });
     for (const flag of plan.args) args.push(flag);
+    if (!verifyFingerprintLaunchArgs(args, plan.settings.fingerprint)) {
+      throw httpErr(500, 'Refusing to launch because the WebGL restriction does not match the saved fingerprint settings.', 'FINGERPRINT_LAUNCH_MISMATCH');
+    }
     if (plan.launch.userAgent) launchOpts.userAgent = plan.launch.userAgent;
     if (plan.launch.viewport) launchOpts.viewport = plan.launch.viewport;
     if (plan.launch.screen) launchOpts.screen = plan.launch.screen;
@@ -228,7 +236,8 @@ async function doLaunch(p, opts = {}) {
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
       // Sanitized launch-time proxy only. The classifier never reads this field.
-      launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null };
+      launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null,
+      requestedArgs: [...args] };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
     const diagnosticStart = diagnosticProcessStart(Number(entry.childPid));
     if (regional.languages.length) entry.regional = await installRegionalLocale(ctx, regional.locale || regional.languages[0], {

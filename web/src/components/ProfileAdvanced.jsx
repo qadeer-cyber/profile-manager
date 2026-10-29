@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { SCREEN_PRESETS } from '../../../server/advanced-settings.js';
+import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED } from '../../../server/fingerprint-settings.js';
 import { api } from '../api.js';
 
 const PERMISSIONS = [['notifications', 'Notifications'], ['microphone', 'Microphone'], ['camera', 'Camera'], ['clipboard', 'Clipboard'], ['midi', 'MIDI']];
@@ -75,6 +76,18 @@ export function WindowFields({ settings, onChange }) {
       <label>Window Y<input inputMode="numeric" disabled={!!screen.startMaximized} value={screen.windowY ?? ''} onChange={e => set({ windowY: e.target.value })} placeholder="Default" /></label>
     </div>
     <p className="muted hint">Invalid sizes, a viewport larger than the screen, an unknown scale, or a window position together with maximized are rejected and not saved.</p>
+  </div>;
+}
+
+export function FingerprintFields({ settings, onChange }) {
+  const fingerprint = settings.fingerprint || { webgl: 'default', fonts: 'real', mediaDevices: 'real', canvas: 'real', audio: 'real', portScan: 'real' };
+  const set = (key, value) => onChange({ ...settings, fingerprint: { ...fingerprint, [key]: value } });
+  return <div className="form">
+    <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Custom values are accepted only when you type a real setting, such as a timezone or a screen size, elsewhere in this editor. Nothing here invents a GPU, font list, device, or browser version, and nothing here makes a profile undetectable.</div>
+    {FINGERPRINT_CONTROLS.map(control => <label key={control.id}>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)}>
+      {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
+    </select><span className="muted hint">{control.note}</span></label>)}
+    {FINGERPRINT_FIXED.map(item => <p key={item.id}><span className="label">{item.label}</span><br />{item.reason}</p>)}
   </div>;
 }
 

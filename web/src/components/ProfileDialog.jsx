@@ -7,7 +7,7 @@ import { useToast } from './Toasts.jsx';
 import { Drawer, Tabs } from './Drawer.jsx';
 import { ProxyTestResult } from './ProxyTestResult.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
-import { IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
+import { FingerprintFields, IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
 
@@ -69,7 +69,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const tagList = f.tags.split(',').map(t => t.trim()).filter(Boolean);
   return <Drawer title={initial.id ? 'Edit profile' : 'New profile'} subtitle={initial.id ? initial.name : 'Isolated browser profile with its own storage'} onClose={onClose}
     footer={<><button onClick={onClose} disabled={saving}>Cancel</button><button className="primary" onClick={submit} disabled={saving} aria-busy={saving}>{saving ? 'Saving…' : initial.id ? 'Save changes' : 'Create profile'}</button></>}>
-    <Tabs value={tab} onChange={setTab} tabs={[['general', 'General'], ['proxy', 'Proxy'], ['regional', 'Region & language'], ['identity', 'Identity'], ['location', 'Location'], ['window', 'Window'], ['preferences', 'Startup'], ['webrtc', 'WebRTC'], ['extensions', 'Extensions'], ...(initial.id ? [['cookies', 'Cookies'], ['hardware', 'Hardware']] : [['hardware', 'Hardware']]), ['notes', 'Notes']]} />
+    <Tabs value={tab} onChange={setTab} tabs={[['general', 'General'], ['proxy', 'Proxy'], ['regional', 'Region & language'], ['identity', 'Identity'], ['fingerprint', 'Fingerprint'], ['location', 'Location'], ['window', 'Window'], ['preferences', 'Startup'], ['webrtc', 'WebRTC'], ['extensions', 'Extensions'], ...(initial.id ? [['cookies', 'Cookies'], ['hardware', 'Hardware']] : [['hardware', 'Hardware']]), ['notes', 'Notes']]} />
     {tab === 'general' && <div className="form">
       <label>Name<input autoFocus value={f.name} onChange={e => set('name', e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} placeholder="e.g. Shop account 1" /></label>
       <label>Folder<input list="pm-folders" value={f.folder} onChange={e => set('folder', e.target.value)} placeholder="No folder" />
@@ -125,6 +125,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       <p className="muted hint">Disabled means the extension stays in the library but this profile does not pass it to Chromium. There is no supported launch flag that loads an unpacked extension and keeps it turned off.</p>
     </div>}
     {tab === 'identity' && <IdentityFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'fingerprint' && <FingerprintFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'location' && <LocationFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'preferences' && <PreferenceFields settings={advanced} onChange={setAdvanced} />}
