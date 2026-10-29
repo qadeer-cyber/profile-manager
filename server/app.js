@@ -111,7 +111,7 @@ const row2p = r => {
   const webrtcSettings = r.webrtc_settings ? JSON.parse(r.webrtc_settings) : { ...DEFAULT_WEBRTC_SETTINGS };
   delete r.webrtc_settings;
   const extensions = profileExtensions(r.id);
-  let advancedSettings = { ...DEFAULT_ADVANCED_SETTINGS, userAgent: { ...DEFAULT_ADVANCED_SETTINGS.userAgent }, geolocation: { ...DEFAULT_ADVANCED_SETTINGS.geolocation }, screen: { ...DEFAULT_ADVANCED_SETTINGS.screen }, preferences: { startupUrls: [], permissions: { ...DEFAULT_ADVANCED_SETTINGS.preferences.permissions } } };
+  let advancedSettings = { ...DEFAULT_ADVANCED_SETTINGS, userAgent: { ...DEFAULT_ADVANCED_SETTINGS.userAgent }, geolocation: { ...DEFAULT_ADVANCED_SETTINGS.geolocation }, screen: { ...DEFAULT_ADVANCED_SETTINGS.screen }, preferences: { startupUrls: [], restoreTabs: false, permissions: { ...DEFAULT_ADVANCED_SETTINGS.preferences.permissions } } };
   if (r.advanced_settings) { try { advancedSettings = JSON.parse(r.advanced_settings); } catch { /* keep defaults when the stored JSON is unreadable */ } }
   delete r.advanced_settings;
   return { ...r, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };

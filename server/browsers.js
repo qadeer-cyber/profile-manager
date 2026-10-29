@@ -24,6 +24,7 @@ import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } fr
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
 import { automationDefault, proxyLoopback } from './testflags.js';
+import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -264,7 +265,15 @@ async function doLaunch(p, opts = {}) {
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
-    const openUrls = url ? [url] : plan.startupUrls;
+    const restoreTabs = plan.settings.preferences.restoreTabs === true;
+    entry.restoreTabs = restoreTabs;
+    entry.tabUrls = [];
+    const saved = restoreTabs ? readSavedTabs(dir) : { urls: [], corrupt: false };
+    const openUrls = chooseLaunchUrls({
+      explicitUrl: url,
+      startupUrls: plan.startupUrls,
+      savedUrls: saved.urls,
+    });
     if (openUrls.length) {
       const first = ctx.pages()[0] || await ctx.newPage();
       await first.goto(openUrls[0]).catch(() => {});
@@ -274,6 +283,18 @@ async function doLaunch(p, opts = {}) {
         await page.goto(extra).catch(() => {});
         await applyDocumentPermissions(page, page.url(), plan.permissions).catch(() => {});
       }
+    }
+    if (restoreTabs) {
+      const note = () => {
+        const next = snapshotTabUrls(ctx.pages());
+        if (next) entry.tabUrls = next;
+      };
+      const watch = page => page.on?.('framenavigated', frame => {
+        try { if (!page.mainFrame || frame === page.mainFrame()) note(); } catch { note(); }
+      });
+      for (const page of ctx.pages()) watch(page);
+      ctx.on('page', page => { watch(page); note(); });
+      note();
     }
     return runInfo(p.id);
   } catch (e) {
@@ -524,6 +545,9 @@ async function finishClose(id, e) {
       emit('profile:stopped', id, { error: message });
     } else if (outcome === 'stopped') {
       try { setStatus(id, { last_error: null }); } catch {}
+      if (e.restoreTabs && dir) {
+        try { writeSavedTabs(dir, e.tabUrls || []); } catch { /* a tab list must not change the stop result */ }
+      }
       emit('profile:stopped', id, { error: null });
     } else {
       // No new persisted/UI status. Release dead-process resources, preserve the
@@ -558,6 +582,12 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   const e = live.get(id) || settling.get(id);
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
   e.stopping = true;
+  if (e.restoreTabs && e.ctx) {
+    try {
+      const next = snapshotTabUrls(e.ctx.pages());
+      if (next) e.tabUrls = next;
+    } catch { /* keep the last navigation snapshot */ }
+  }
   if (!live.has(id)) { if (e.done) await e.done; return; }
   // 1) graceful: close the context  2) force: kill the process tree
   await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
