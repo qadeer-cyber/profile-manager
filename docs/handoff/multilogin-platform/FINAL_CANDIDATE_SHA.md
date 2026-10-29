@@ -7,7 +7,7 @@
 | `engine-windows` | **Green** — https://github.com/qadeer-cyber/profile-manager/actions/runs/40944392766 |
 | `test:browser-runtime` | **108 pass** @ `09eeefd` (Linux agent + fixed Windows cleanup @ `09eeefd`) |
 | `installer-smoke-offline` (one trigger @ `4a39ccb`) | **Failed** — https://github.com/qadeer-cyber/profile-manager/actions/runs/40944906478 — Alpha.3 installed server path + parallel `engine-windows` flake on CookieRobot lifecycle mock |
-| Post-fix (no re-trigger) | `resolveInstalledServerScript` expanded; CookieRobot lifecycle skipped on `CI`+`win32` (CDP tests remain) |
+| Post-fix (no re-trigger) | `1187400`+ — lifecycle skip on `CI`+`win32`; CDP reuse existing tab + `ERR_ABORTED` retry; `app.asar` server path when archive exists |
 | Preview publish | **NO-GO** until owner §19 sign-off and green installer-smoke on a chosen SHA |
 
 Prior green installer-smoke: Actions **40934718409** @ `98dbc0c` (older branch tip).
