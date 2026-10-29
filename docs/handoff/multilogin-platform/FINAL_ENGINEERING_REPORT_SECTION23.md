@@ -4,7 +4,7 @@
 **Prior tip:** `a2c15f0` · docs `c4a5266`
 
 ## 1. Commit
-**Tip:** _(this package)_ — Firefox WebRTC/timezone gecko prefs, cookie API honesty, pm-cli bridges, profile UX.
+**Tip:** `be2b419` — Firefox WebRTC/timezone gecko prefs, cookie API honesty, pm-cli bridges, profile UX.
 
 ## 2. Package
 - **Firefox P1 (stock):** `firefox-gecko-prefs.js` maps WebRTC modes → ICE `user.js` lines; timezone via `privacy.timezone.override` + `TZ` env; tests `firefox-gecko-prefs.test.js`.
