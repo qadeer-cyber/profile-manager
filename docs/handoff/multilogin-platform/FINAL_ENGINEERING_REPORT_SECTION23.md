@@ -5,7 +5,7 @@
 **Baseline:** Alpha.3 `2d65207` frozen · prior tip `e4214aa` (workspaces/CookieRobot/geckodriver)
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** _(see git push; message includes `[ci:installer-smoke]`)_
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** `a773079` (feature `[ci:installer-smoke]`)
 
 ## 2. Multilogin technology audit
 M8 export **PARTIAL** (+ bookmarks/history read API); M10 running manager **VERIFIED** (+ Focus); M40 ADB **PARTIAL** (optional host `adb`, not farm-equivalent).
