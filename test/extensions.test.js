@@ -45,7 +45,7 @@ test('a second extension is listed separately', () => {
 });
 
 test('command lines join enabled paths and reject commas', () => {
-  assert.deepEqual(ext.extensionCommandArgs([]), { args: [], ignoreDefaultArgs: [] });
+  assert.deepEqual(ext.extensionCommandArgs([]), { args: [], ignoreDefaultArgs: ['--disable-extensions'] });
   const plan = ext.extensionCommandArgs(['/opt/ext/a', '/opt/ext/b']);
   assert.deepEqual(plan.ignoreDefaultArgs, ['--disable-extensions']);
   assert.equal(plan.args[0], '--disable-extensions-except=/opt/ext/a,/opt/ext/b');

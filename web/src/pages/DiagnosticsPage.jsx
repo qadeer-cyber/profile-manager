@@ -10,9 +10,24 @@ export function DiagnosticsPage({ eventsLog }) {
   useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t); }, [load]);
   if (!d || !b) return null;
   const install = async () => { try { await api('/api/browser/install', { method: 'POST' }); toast('Downloading Chromium…'); load(); } catch (e) { toast(e.message, 'error'); } };
+  const exportGoogleCompat = async () => {
+    try {
+      const report = await api('/api/google-compat/report', { method: 'POST', body: JSON.stringify({ probe: true }) });
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `profile-manager-google-compat-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Google compatibility report downloaded (local only).');
+    } catch (e) { toast(e.message, 'error'); }
+  };
   const Row = ({ k, v }) => <tr><th>{k}</th><td>{v}</td></tr>;
   return <>
-    <header className="page-head"><h1>Diagnostics</h1><button onClick={load} aria-label="Refresh app information">Refresh</button></header>
+    <header className="page-head"><h1>Diagnostics</h1>
+      <button type="button" onClick={exportGoogleCompat} aria-label="Export Google compatibility diagnostic">Export Google compatibility (local JSON)</button>
+      <button onClick={load} aria-label="Refresh app information">Refresh</button></header>
+    <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Profile Manager servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
     <ProfileDiagnostics />
     <div className="cols">
       <section className="panel"><h2>App</h2><table className="kv"><tbody>

@@ -260,7 +260,9 @@ export function unassignExtension(profileId, extensionId) {
 }
 
 export function extensionCommandArgs(paths) {
-  if (!Array.isArray(paths) || !paths.length) return { args: [], ignoreDefaultArgs: [] };
+  // Playwright always injects --disable-extensions; ignore it when we are not loading
+  // extensions so the profile behaves like ordinary Chrome (Google reCAPTCHA compatibility).
+  if (!Array.isArray(paths) || !paths.length) return { args: [], ignoreDefaultArgs: ['--disable-extensions'] };
   if (paths.some(item => typeof item !== 'string' || !item || item.includes(',') || item.includes('\0'))) {
     invalid('An extension path cannot contain a comma, so Chromium would split --load-extension incorrectly', 500, 'EXTENSION_PATH');
   }

@@ -32,7 +32,7 @@ import { db, userDataDir, getSetting } from './db.js';
 import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
-import { automationDefault, proxyLoopback } from './testflags.js';
+import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 
 export const events = new EventEmitter();
@@ -305,7 +305,8 @@ async function doLaunch(p, opts = {}) {
     if (plan.launch.screen) launchOpts.screen = plan.launch.screen;
     if (plan.launch.deviceScaleFactor) launchOpts.deviceScaleFactor = plan.launch.deviceScaleFactor;
     if (plan.launch.geolocation) launchOpts.geolocation = plan.launch.geolocation;
-    if (extensionPlan.ignoreDefaultArgs.length) launchOpts.ignoreDefaultArgs = extensionPlan.ignoreDefaultArgs;
+    if (extensionPlan.ignoreDefaultArgs.length) launchOpts.ignoreDefaultArgs = [...extensionPlan.ignoreDefaultArgs];
+    if (process.platform === 'win32' && isPackaged()) launchOpts.chromiumSandbox = true;
     // Preference merge is best-effort. The force flag above is what verification checks.
     if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
     applyAdvancedPreferences(dir, p.advancedSettings || {});

@@ -1,0 +1,21 @@
+name: P1 Google compat (Windows)
+on:
+  push:
+    branches:
+      - feature/p1-captcha-rootcause
+
+jobs:
+  p1-windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - name: P1 + extension regression
+        run: npm run test:p1-google-compat

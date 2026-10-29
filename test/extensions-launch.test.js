@@ -54,7 +54,7 @@ test('enabled extensions are loaded together and disabled or foreign ones are no
   assert.ok(loadArg(bravoOpts).includes(adsDir));
   assert.equal(loadArg(bravoOpts).includes(notesDir), false);
   assert.equal(loadArg(cleanOpts), undefined);
-  assert.equal(cleanOpts.ignoreDefaultArgs, undefined);
+  assert.deepEqual(cleanOpts.ignoreDefaultArgs, ['--disable-extensions']);
   assert.deepEqual(cleanOpts.args, []);
 });
 

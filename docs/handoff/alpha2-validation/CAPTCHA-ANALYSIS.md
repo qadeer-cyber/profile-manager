@@ -62,6 +62,16 @@ These are optional and do not change the app:
 
 No launch flag, WebRTC policy, or extension was changed for this finding.
 
+## P1 update (Alpha.3 baseline, branch `feature/p1-captcha-rootcause`)
+
+Owner confirmed **direct (no proxy)** still hits `google.com/sorry` with IPv6 hints — not proxy-only.
+
+**Fixed app defect:** extension-free profiles no longer keep Playwright’s `--disable-extensions` (see `extensionCommandArgs([])`).
+
+**Not changed (still architectural):** Playwright pipe / `navigator.webdriver`, CfT binary, Google reputation. No CAPTCHA bypass.
+
+**Local diagnostic:** Diagnostics page → export Google compatibility JSON (`POST /api/google-compat/report`).
+
 ## Troubleshooting workflow
 
 This is a comparison procedure. It does not solve a challenge, patch the browser, or promise a CAPTCHA-free session. Google’s reputation score is not visible to this app, so a challenge after one of these steps is not proof of a single cause.

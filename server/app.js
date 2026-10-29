@@ -23,6 +23,7 @@ import { summarizeConsistency } from './fingerprint-summary.js';
 import { buildMonitoringReport } from './monitoring-report.js';
 import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
+import { buildGoogleCompatReport } from './google-compat-report.js';
 import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
@@ -458,6 +459,15 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/privacy-engine', wrap((req, res) => res.json(privacyEngineReport({ platform: process.platform }))));
+  router.get('/google-compat/report', wrap(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await buildGoogleCompatReport({ profileId: req.query.profileId || null, probe: req.query.probe === '1' }));
+  }));
+  router.post('/google-compat/report', express.json(), wrap(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    res.json(await buildGoogleCompatReport({ profileId: body.profileId || null, probe: !!body.probe }));
+  }));
   router.get('/parity-scorecard', wrap((req, res) => res.json(computeParityCoverage())));
   router.get('/hardware', wrap(async (req, res) => res.json(await hardwareReport(null))));
   router.get('/profiles/:id/hardware', wrap(async (req, res) => res.json(await hardwareReport(req.params.id))));
