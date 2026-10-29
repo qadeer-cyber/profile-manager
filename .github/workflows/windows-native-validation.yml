@@ -24,11 +24,7 @@ on:
 
 jobs:
   m17-windows-validation:
-    if: >-
-      ${{
-        (github.event_name == 'workflow_dispatch' && inputs.m17_validation_only == true)
-        || (github.event_name == 'push' && github.ref == 'refs/heads/feature/m10-local-parity')
-      }}
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/feature/m10-local-parity') || (github.event_name == 'workflow_dispatch' && github.event.inputs.m17_validation_only == 'true') }}
     runs-on: windows-2022
     timeout-minutes: 90
     permissions:
@@ -99,11 +95,7 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Result`nM17 validation job completed. Inspect step logs above for PASS/FAIL."
 
   windows-build:
-    if: >-
-      ${{
-        (github.event_name != 'workflow_dispatch' || inputs.m17_validation_only != true)
-        && !(github.event_name == 'push' && github.ref == 'refs/heads/feature/m10-local-parity')
-      }}
+    if: ${{ (github.event_name != 'push' || github.ref != 'refs/heads/feature/m10-local-parity') && (github.event_name != 'workflow_dispatch' || github.event.inputs.m17_validation_only != 'true') }}
     runs-on: windows-2022
     timeout-minutes: 120
     permissions:
