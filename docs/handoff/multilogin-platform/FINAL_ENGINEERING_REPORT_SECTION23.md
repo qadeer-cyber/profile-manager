@@ -5,7 +5,7 @@
 **Baseline:** Alpha.3 `2d65207` frozen · prior tip `11aab86` (templates @ `4e9f730`)
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** `0ee8028817c382003a26a71d4bd00f15c87c619f` (prior tip `11aab86` / feature `4e9f730`)
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** `dc60291` (feature `0ee8028`; prior `11aab86` / `4e9f730`)
 
 ## 2. Multilogin technology audit
 M41 CfT dual-slot rollback **IMPLEMENTED**; M37 WebDriver **PARTIAL** (host chromedriver, automation CDP only); M18 provider adapters extended (Bright zone status, Webshare subscription, Oxylabs Public API stats when JWT+userId).
@@ -29,7 +29,7 @@ Provider usage calls documented endpoints only; no invented pools.
 **PARTIAL** — CDP attach + **WebDriver bridge API** (`POST /webdriver/start`); chromedriver not bundled.
 
 ## 19. Windows testing
-`npm run test:browser-runtime` — **51 pass / 0 fail** on `dedicated-browser-engine-win.yml` (Actions run pending for `0ee8028`).  
+`npm run test:browser-runtime` — **51 pass / 0 fail** on `dedicated-browser-engine-win.yml` (https://github.com/qadeer-cyber/profile-manager/actions/runs/40931194317 @ `dc60291`).  
 **Preview installer §19: NO-GO.**
 
 ## 20. Next milestone
