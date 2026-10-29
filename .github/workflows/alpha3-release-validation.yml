@@ -87,8 +87,10 @@ jobs:
         shell: pwsh
         run: |
           $hostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
-          foreach ($name in @('cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'playwright.azureedge.net')) {
-            if (-not (Select-String -Path $hostsFile -Pattern [regex]::Escape($name) -Quiet)) {
+          $names = @('cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'playwright.azureedge.net')
+          $current = @(Get-Content $hostsFile)
+          foreach ($name in $names) {
+            if (-not ($current | Where-Object { $_ -match [regex]::Escape($name) })) {
               Add-Content -Path $hostsFile -Value "127.0.0.1 $name"
             }
           }
