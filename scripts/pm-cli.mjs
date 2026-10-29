@@ -17,11 +17,17 @@ async function api(method, path, body) {
   return json;
 }
 
-const [cmd, arg] = process.argv.slice(2);
+const [cmd, arg, arg2] = process.argv.slice(2);
 try {
   if (!cmd || cmd === 'help') {
-    console.log(`Usage: pm-cli <command> [id]
-Commands: list | launch <id> | stop <id> | schema
+    console.log(`Usage: pm-cli <command> [args]
+Commands:
+  list                    List profiles (id, running, name)
+  launch <id>             Launch with automation (CDP / marionette)
+  stop <id>               Stop profile
+  schema                  GET /profile-config/schema
+  config <id>             GET /profiles/:id/browser-config (warnings + schema v2)
+  bridges                 GET /webdriver and /geckodriver bridge reports
 Env: PM_API_BASE (default ${base}), PM_API_TOKEN (required)`);
     process.exit(0);
   }
@@ -34,6 +40,12 @@ Env: PM_API_BASE (default ${base}), PM_API_TOKEN (required)`);
     console.log(JSON.stringify(await api('POST', `/profiles/${arg}/stop`), null, 2));
   } else if (cmd === 'schema') {
     console.log(JSON.stringify(await api('GET', '/profile-config/schema'), null, 2));
+  } else if (cmd === 'config') {
+    if (!arg) throw new Error('config requires profile id');
+    console.log(JSON.stringify(await api('GET', `/profiles/${arg}/browser-config`), null, 2));
+  } else if (cmd === 'bridges') {
+    const [webdriver, geckodriver] = await Promise.all([api('GET', '/webdriver'), api('GET', '/geckodriver')]);
+    console.log(JSON.stringify({ webdriver, geckodriver }, null, 2));
   } else {
     throw new Error(`Unknown command: ${cmd}`);
   }

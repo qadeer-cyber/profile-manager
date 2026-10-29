@@ -7,6 +7,7 @@ Manual profile browsing uses **native spawn** and does not enable automation unl
 | Example | Purpose |
 |---------|---------|
 | `cookie-robot-example.mjs` | Queue CookieRobot-local jobs (Chromium CDP only) |
+| `npm run pm-cli -- bridges` | Print ChromeDriver + geckodriver bridge reports (requires token) |
 | `webdriver-chromedriver-bridge.md` | Selenium + ChromeDriver bridge + **opt-in driver cache** |
 | `geckodriver-firefox-bridge.md` | Firefox marionette + geckodriver cache |
 | `puppeteer-cdp-attach.md` | CDP attach without WebDriver |

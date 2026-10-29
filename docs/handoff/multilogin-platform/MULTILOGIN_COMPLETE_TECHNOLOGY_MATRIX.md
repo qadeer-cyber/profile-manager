@@ -8,7 +8,7 @@
 |----|-----------------------------------|--------------|------------------|
 | M1 | Isolated browser profiles (cookies/sessions) | VERIFIED | Per-profile `userDataDir`, locks, M1–M17 |
 | M2 | Mimic (Chromium antidetect engine) | PARTIAL | Stock CfT + native spawn; **no custom Mimic compile** |
-| M3 | Stealthfox (Firefox engine) | PARTIAL | Gecko spawn; HTTP/SOCKS proxy + locale `user.js` prefs (`firefox-proxy-locale.test.js`); not Stealthfox patches |
+| M3 | Stealthfox (Firefox engine) | PARTIAL | Stock Gecko spawn; proxy/locale/timezone/WebRTC ICE prefs (`firefox-gecko-prefs.test.js`); **not** antidetect patches |
 | M4 | Quick profiles | VERIFIED | `POST /api/profiles/quick` + UI button |
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
@@ -25,7 +25,7 @@
 | M17 | Proxy templates / traffic saver | PARTIAL | Saved proxies; no traffic saver |
 | M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Bright balance+zone status; Webshare list+subscription; Oxylabs Public API stats when JWT configured |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
-| M20 | Fingerprint: timezone/locale/lang | PARTIAL | Native: CLI; CDP locale Playwright-only |
+| M20 | Fingerprint: timezone/locale/lang | PARTIAL | Chromium: CLI/CDP; Firefox: `-lang` + `user.js` + `TZ` env |
 | M21 | Fingerprint: geolocation | PARTIAL | Prefs + Playwright geolocation option |
 | M22 | Fingerprint: screen/DPR | PARTIAL | Window/force-DPR flags (Chromium) |
 | M23 | Fingerprint: Navigator/UA/client hints | PARTIAL | UA presets from CfT version; no HW spoof |
@@ -40,9 +40,9 @@
 | M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
 | M33 | Human typing emulation | MISSING | Not implemented |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
-| M35 | CLI / Script runner | PARTIAL | `npm run pm-cli` + cookie-robot example |
+| M35 | CLI / Script runner | PARTIAL | `pm-cli` list/launch/stop/schema/config/bridges + cookie-robot example |
 | M36 | Playwright/Puppeteer attach | PARTIAL | CDP when `automation: true`; see puppeteer-cdp-attach.md |
-| M37 | Selenium/WebDriver | PARTIAL | Local bridge API; opt-in CfT/Mozilla cache or PATH (`AUTOMATION_DRIVERS.md`); not in offline EXE |
+| M37 | Selenium/WebDriver | PARTIAL | Engine-specific bridge start + `test/webdriver-api.test.js`; opt-in driver cache; not in offline EXE |
 | M38 | Workspaces / team sync | PARTIAL | Local workspaces + optional vault lock; no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
 | M40 | Android cloud phones / ADB farms | PARTIAL | `GET /api/adb/devices` lists **user-owned** USB devices when host `adb` is on PATH; **NOT farm-equivalent** |

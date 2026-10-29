@@ -29,6 +29,10 @@ export function profileConfigWarnings(config) {
   if (config.browserEngine === 'firefox') {
     warnings.push({ code: 'FIREFOX_EXTENSIONS_UNSUPPORTED', message: 'Chromium extension assignments are not loaded on the Firefox engine path.' });
     warnings.push({ code: 'FIREFOX_CHROMIUM_FLAGS_IGNORED', message: 'Chromium-only launch flags (WebGL disable, force-DPR) are not applied to Firefox.' });
+    warnings.push({ code: 'FIREFOX_COOKIES_API_CHROMIUM_STORE', message: 'Stopped-profile cookie import/export uses the Chromium cookie database only; Gecko cookies are not exposed by the cookies API.' });
+    if (config.webrtcSettings?.mode && config.webrtcSettings.mode !== 'browser_default') {
+      warnings.push({ code: 'FIREFOX_WEBRTC_GECKO_PREFS', message: 'WebRTC policy is mapped to stock Firefox ICE prefs (user.js), not Chromium --force-webrtc-ip-handling-policy.' });
+    }
   }
   const fp = config.advancedSettings?.fingerprint || {};
   if (fp.canvas === 'noise' || fp.audio === 'noise') {

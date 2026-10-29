@@ -7,7 +7,7 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P0 | Native manual runtime | Chromium native default; Firefox gecko spawn | VERIFIED |
 | P0 | Profile config engine v2 | Typed model, warnings, migration | VERIFIED |
 | P0 | Matrix + §22 living docs | Backed by tests | VERIFIED |
-| P1 | Firefox runtime | Proxy/locale/cookies isolation; no Chrome flags | PARTIAL→VERIFIED |
+| P1 | Firefox runtime | Proxy/locale/timezone/WebRTC gecko prefs; gecko cookies API still out | PARTIAL |
 | P1 | Native tab restore | Save tabs on native close + discoverable UX | VERIFIED |
 | P1 | Quick profiles + trash | Ephemeral + soft-delete + save regular | VERIFIED |
 | P1 | Profile templates | Reusable preset rows + UI + bulk create | VERIFIED |
@@ -24,6 +24,10 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P3 | Canvas/WebGL noise | Requires fork | UNSUPPORTED |
 | N/A | Cloud sync/teams/billing | — | NOT_APPLICABLE_CLOUD |
 
+## Backlog saturation (honest)
+
+Further **stock** work is mostly **UX polish**, **CLI/examples**, and **platform gaps** (macOS/Linux window focus). Antidetect noise, custom Chromium, cloud parity, and CAPTCHA guarantees remain **BLOCKED/UNSUPPORTED/N-A**. See **`SECTION23_FINAL_DELIVERY_OUTLINE_DRAFT.md`** for a 20-point local delivery checklist (not Multilogin-complete).
+
 ## Completed increments (cumulative on branch)
 
 - Audit matrix + §22 doc set  
@@ -32,18 +36,17 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 - Template UI increment (`4e9f730` / docs `11aab86`)  
 - Rollback/WebDriver/provider increment (`dc60291` / docs `ecbdb10`)  
 - Workspaces + CookieRobot + geckodriver (`e4214aa` / **60** runtime tests)  
-- Installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests in `test:browser-runtime`
-- Driver cache package: opt-in CfT chromedriver + MPL geckodriver; Settings UI; `AUTOMATION_DRIVERS.md`; latitude benchmark scaffold; **68** tests
-- CookieRobot + examples: CDP reliability, Firefox honesty, job UI, WebDriver/geckodriver docs; **71** tests
-- **This increment:** tab restore UX + native launch tests; CookieRobot real CDP test; Firefox proxy/locale prefs; **77** tests
+- Installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests
+- Driver cache package; **68** tests
+- CookieRobot CDP + tab restore UX; **77** tests
+- **This increment:** Firefox gecko WebRTC/timezone; cookie API honesty; pm-cli bridges; **82** tests
 
 ## Still open (honest)
 
-- Drivers **in offline EXE** (**MISSING** by design — opt-in cache only)  
+- Gecko cookie import/export (**MISSING** — Chromium store only)  
+- Drivers **in offline EXE** (**MISSING** by design)  
 - Custom Chromium compile (**BLOCKED**)  
 - §19 preview publish (**NO-GO** until owner sign-off)  
-- Full Firefox parity (extensions, fingerprint patches) (**UNSUPPORTED** / stock Gecko)  
-- Full Firefox CI without host Firefox (**BLOCKED** on GHA)  
 - macOS/Linux native window focus (**MISSING**)
 
 ## Definition of done (VERIFIED)

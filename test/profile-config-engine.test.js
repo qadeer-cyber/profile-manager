@@ -8,9 +8,11 @@ test('schema lists browser engines', () => {
 });
 
 test('firefox config emits honest warnings', () => {
-  const config = normalizeProfileConfigInput({ browserEngine: 'firefox' }, {});
+  const config = normalizeProfileConfigInput({ browserEngine: 'firefox', webrtcSettings: { mode: 'disable_non_proxied_udp' } }, {});
   const w = profileConfigWarnings(config);
   assert.ok(w.some(x => x.code === 'FIREFOX_EXTENSIONS_UNSUPPORTED'));
+  assert.ok(w.some(x => x.code === 'FIREFOX_COOKIES_API_CHROMIUM_STORE'));
+  assert.ok(w.some(x => x.code === 'FIREFOX_WEBRTC_GECKO_PREFS'));
 });
 
 test('rejects invalid browserEngine', () => {

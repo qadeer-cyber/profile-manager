@@ -7,6 +7,7 @@ test('pm-cli help exits 0', () => {
   const r = spawnSync(process.execPath, [path.join('scripts', 'pm-cli.mjs'), 'help'], { encoding: 'utf8' });
   assert.equal(r.status, 0);
   assert.match(r.stdout, /list/);
+  assert.match(r.stdout, /bridges/);
 });
 
 test('pm-cli without token exits non-zero', () => {

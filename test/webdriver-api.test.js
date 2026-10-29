@@ -31,3 +31,13 @@ test('webdriver start rejects profiles without CDP automation port', async () =>
   assert.equal(report.status, 200);
   assert.equal(report.body.bundled, false);
 });
+
+test('automation bridges are engine-specific', async () => {
+  const gecko = await call('GET', '/api/v1/geckodriver');
+  assert.equal(gecko.status, 200);
+  assert.equal(typeof gecko.body.requiresGeckodriverOnPath, 'boolean');
+  const ff = await call('POST', '/api/v1/profiles', { name: 'FF bridge', browserEngine: 'firefox' });
+  const cr = await call('POST', '/api/v1/profiles', { name: 'CR bridge', browserEngine: 'chromium' });
+  assert.equal((await call('POST', `/api/v1/profiles/${ff.body.id}/webdriver/start`, {})).status, 409);
+  assert.equal((await call('POST', `/api/v1/profiles/${cr.body.id}/geckodriver/start`, {})).status, 409);
+});

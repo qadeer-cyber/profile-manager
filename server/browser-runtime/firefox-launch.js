@@ -8,6 +8,8 @@ import { validateBrowserSettings } from '../browser-settings.js';
 import { getSetting } from '../db.js';
 import { pidMatches, isAlive } from '../proc.js';
 import { automationDefault } from '../testflags.js';
+import { validateWebRtcSettings } from '../webrtc-policy.js';
+import { geckoWebRtcUserPrefLines, geckoTimezoneUserPrefLine, geckoTimezoneEnv } from '../firefox-gecko-prefs.js';
 
 const automationEnabled = opts => !!opts?.automation || automationDefault();
 
@@ -67,12 +69,20 @@ function writeGeckoProxyPrefs(profileDir, proxy, relayUrl) {
 }
 
 function writeGeckoLocalePrefs(profileDir, regional) {
-  if (!regional?.languages?.length) return;
   const prefs = [];
-  const accept = regional.languages.join(',');
-  prefs.push(`user_pref("intl.accept_languages", "${accept.replace(/"/g, '')}");`);
-  if (regional.locale) prefs.push(`user_pref("intl.locale.requested", "${String(regional.locale).replace(/"/g, '')}");`);
+  if (regional?.languages?.length) {
+    const accept = regional.languages.join(',');
+    prefs.push(`user_pref("intl.accept_languages", "${accept.replace(/"/g, '')}");`);
+    if (regional.locale) prefs.push(`user_pref("intl.locale.requested", "${String(regional.locale).replace(/"/g, '')}");`);
+  }
+  const tzLine = geckoTimezoneUserPrefLine(regional?.timezoneId);
+  if (tzLine) prefs.push(tzLine);
   appendGeckoUserJs(profileDir, prefs);
+}
+
+function writeGeckoWebRtcPrefs(profileDir, webrtcSettings) {
+  const lines = geckoWebRtcUserPrefLines(validateWebRtcSettings(webrtcSettings || {}));
+  appendGeckoUserJs(profileDir, lines);
 }
 
 function appendGeckoUserJs(profileDir, prefs) {
@@ -99,6 +109,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   }
   writeGeckoProxyPrefs(profileDir, p.proxy && !p.proxy.username ? p.proxy : null, relayUrl);
   writeGeckoLocalePrefs(profileDir, regional);
+  writeGeckoWebRtcPrefs(profileDir, p.webrtcSettings);
 
   const args = ['-no-remote', '-profile', profileDir];
   let marionettePort = null;
@@ -112,9 +123,10 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     if (typeof u === 'string' && u.trim()) args.push(u.trim());
   }
 
+  const timezoneId = geckoTimezoneEnv(regional.timezoneId);
   return {
     runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls,
-    restoreTabs: !!opts.restoreTabs, automation, marionettePort,
+    restoreTabs: !!opts.restoreTabs, automation, marionettePort, timezoneId,
   };
 }
 
@@ -130,9 +142,9 @@ export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs 
 }
 
 export async function launchFirefoxNative(plan) {
-  const env = plan.marionettePort
-    ? { ...process.env, MARIONETTE_PORT: String(plan.marionettePort) }
-    : process.env;
+  const env = { ...process.env };
+  if (plan.marionettePort) env.MARIONETTE_PORT = String(plan.marionettePort);
+  if (plan.timezoneId) env.TZ = plan.timezoneId;
   const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false, env });
   if (!proc.pid) throw Object.assign(new Error('Failed to spawn Firefox'), { status: 500, code: 'FIREFOX_SPAWN_FAILED' });
   const browserPid = await discoverGeckoBrowserPid(plan.profileDir, [proc.pid]);

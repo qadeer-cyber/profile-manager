@@ -25,6 +25,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [library, setLibrary] = useState([]);
   const [libraryError, setLibraryError] = useState('');
   const [libraryLoading, setLibraryLoading] = useState(true);
+  const [configWarnings, setConfigWarnings] = useState([]);
   const regional = f.browserSettings || emptyForm.browserSettings;
   const policy = f.webrtcSettings || emptyForm.webrtcSettings;
   const advanced = f.advancedSettings || emptyForm.advancedSettings;
@@ -36,6 +37,10 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     setF({ ...f, extensionAssignments: next ? [...without, next] : without });
   };
   useEffect(() => { api('/api/extensions').then(setLibrary).catch(e => setLibraryError(e.message)).finally(() => setLibraryLoading(false)); }, []);
+  useEffect(() => {
+    const body = { browserEngine: f.browserEngine || 'chromium', browserSettings: f.browserSettings, webrtcSettings: f.webrtcSettings, advancedSettings: f.advancedSettings };
+    api('/api/profile-config/validate', { method: 'POST', body }).then(r => setConfigWarnings(r.warnings || [])).catch(() => setConfigWarnings([]));
+  }, [f.browserEngine, f.browserSettings, f.webrtcSettings, f.advancedSettings]);
   const lib = useProxyLibrary();
   const toast = useToast();
   const set = (k, v) => setF({ ...f, [k]: v });
@@ -82,6 +87,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
         <option value="firefox">Firefox / Gecko (separate profile tree)</option>
       </select></label>
       <p className="muted hint">Manual launches use an independent browser process (no Playwright pipe). Firefox uses Settings → Firefox executable. Chromium extensions are not loaded on Firefox profiles.</p>
+      {configWarnings.length > 0 && <ul className="muted">{configWarnings.map(w => <li key={w.code}>{w.message}</li>)}</ul>}
       <label className="check toggle"><input type="checkbox" role="switch" checked={!!f.automationEnabled} onChange={e => set('automationEnabled', e.target.checked)} /> Enable automation (CDP)</label>
       <p className="muted hint">When on, launching this profile opens a local debugging port that automation tools can connect to. Any program on this computer can then control the browser, so leave it off unless you need it.{initial.running ? ' Applies on the next launch.' : ''}</p>
       {advanced.preferences?.restoreTabs !== true && <div className="notice">
@@ -117,9 +123,13 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
         {WEBRTC_CHOICES.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
       </select></label>
       <p className="muted hint">Disable non-proxied UDP is the strongest restriction Chromium supports. WebRTC can still use TCP or a configured proxy. The saved policy is applied on the next launch and checked against the browser arguments before the process starts.{initial.running ? ' This profile is running, so the current window keeps the previous policy until you stop and launch it again.' : ''}</p>
+      {(f.browserEngine || 'chromium') === 'firefox' && <p className="muted hint">On Firefox, the same mode is mapped to stock Gecko ICE prefs in <code>user.js</code>, not Chromium policy flags.</p>}
     </div>}
     {tab === 'extensions' && <div className="form">
-      <div className="notice warn">Assigned extensions are copied unpacked extensions from the library. Chromium loads the enabled ones with --load-extension and does not load the others. Headless launches use a shell that often ignores extensions; use a visible window when an extension must run. This app does not review extension code, and loading one does not sandbox it beyond Chromium.</div>
+      {(f.browserEngine || 'chromium') === 'firefox'
+        ? <div className="notice warn">Extension assignments apply to Chromium profiles only. Switch the browser engine to Chromium on the General tab to load unpacked extensions.</div>
+        : <div className="notice warn">Assigned extensions are copied unpacked extensions from the library. Chromium loads the enabled ones with --load-extension and does not load the others. Headless launches use a shell that often ignores extensions; use a visible window when an extension must run. This app does not review extension code, and loading one does not sandbox it beyond Chromium.</div>}
+      {(f.browserEngine || 'chromium') === 'firefox' ? null : <>
       {libraryLoading && <p className="muted">Loading extensions…</p>}
       {libraryError && <p className="err-text">{libraryError}</p>}
       {!library.length && !libraryError && <p className="muted">No extensions in the library yet. Add an unpacked extension on the Extensions page, then assign it here.</p>}
@@ -133,13 +143,14 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
         </div>;
       })}
       <p className="muted hint">Disabled means the extension stays in the library but this profile does not pass it to Chromium. There is no supported launch flag that loads an unpacked extension and keeps it turned off.</p>
+      </>}
     </div>}
     {tab === 'identity' && <IdentityFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'fingerprint' && <FingerprintFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'location' && <LocationFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'preferences' && <PreferenceFields settings={advanced} onChange={setAdvanced} />}
-    {tab === 'cookies' && (initial.id ? <CookieManager profileId={initial.id} /> : <p className="muted">Save the profile before managing its cookies.</p>)}
+    {tab === 'cookies' && (initial.id ? <CookieManager profileId={initial.id} browserEngine={f.browserEngine || 'chromium'} /> : <p className="muted">Save the profile before managing its cookies.</p>)}
     {tab === 'hardware' && <HardwarePanel profileId={initial.id} />}
     {tab === 'notes' && <div className="form"><label>Notes<textarea rows="8" value={f.notes} onChange={e => set('notes', e.target.value)} placeholder="Anything worth remembering about this profile" /></label></div>}
   </Drawer>;

@@ -367,8 +367,14 @@ async function hardwareReport(id, { previous = null } = {}) {
     consistency: { ...consistency, interpretation: summarizeConsistency(consistency) },
   };
 }
+function assertChromiumCookieApi(profile) {
+  if (profile.browserEngine === 'firefox') {
+    throw Object.assign(err(501, 'Cookie import/export for stopped profiles uses the Chromium cookie store. Firefox gecko cookies are not exposed by this API.'), { code: 'FIREFOX_COOKIES_UNSUPPORTED' });
+  }
+}
 async function cookieList(id) {
   const profile = must(id);
+  if (!engine.isRunning(id)) assertChromiumCookieApi(profile);
   if (engine.isRunning(id)) {
     const ctx = typeof engine.liveContext === 'function' ? engine.liveContext(id) : null;
     if (!ctx) throw err(409, 'This profile is running without a local browser context, so its cookies cannot be listed safely');
@@ -379,6 +385,7 @@ async function cookieList(id) {
 function cookieMutation(id) {
   const profile = must(id);
   if (engine.isRunning(id)) throw Object.assign(err(409, 'Stop the profile before changing its cookies. A live cookie database cannot be edited safely.'), { code: 'PROFILE_RUNNING' });
+  assertChromiumCookieApi(profile);
   return profile;
 }
 function bulkLaunch(body, allowOverride, onItem) {

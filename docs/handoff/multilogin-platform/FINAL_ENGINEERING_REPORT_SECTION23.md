@@ -1,21 +1,21 @@
-# §23 Final engineering report (checkpoint — tab restore UX + CookieRobot CDP + Firefox prefs)
+# §23 Final engineering report (checkpoint — Firefox gecko prefs + automation UX)
 
 **Branch:** `feature/dedicated-browser-engine`  
-**Prior tip:** `743d94b` (CookieRobot polish) · docs `f924e5b`
+**Prior tip:** `a2c15f0` · docs `c4a5266`
 
 ## 1. Commit
-**Tip:** `20c8df7` — native tab restore discoverability, Firefox proxy/locale prefs, CookieRobot CDP integration test.
+**Tip:** _(this package)_ — Firefox WebRTC/timezone gecko prefs, cookie API honesty, pm-cli bridges, profile UX.
 
 ## 2. Package
-- **Tab restore UX:** `tabRestore` on public profile API (enabled + saved count); Profiles list badge; General → Startup nudge in profile editor; Startup tab notice; opt-in launch plan tests (`test/native-tab-restore-launch.test.js`).
-- **Harvest path:** unchanged logic (`resolveNativeTabUrlsForSave` on stop/health); launch plan reads `.pm-tabs.json` when `restoreTabs` is true.
-- **CookieRobot:** `runCookieRobotTasksOverCdp` extracted; job runner simplified; **real** headless Chromium CDP test (`test/cookie-robot-cdp.test.js`).
-- **Firefox P1:** HTTP/HTTPS vs SOCKS5 `user.js` proxy prefs; `intl.accept_languages` / `intl.locale.requested` (`test/firefox-proxy-locale.test.js`).
+- **Firefox P1 (stock):** `firefox-gecko-prefs.js` maps WebRTC modes → ICE `user.js` lines; timezone via `privacy.timezone.override` + `TZ` env; tests `firefox-gecko-prefs.test.js`.
+- **Cookie/extension UX:** Firefox profiles get `501 FIREFOX_COOKIES_UNSUPPORTED` on stopped cookie API; Cookies tab + config warnings; Extensions tab blocked for Firefox; removed Stealthfox wording in Settings.
+- **Automation polish:** `pm-cli bridges|config`; webdriver-api engine-specific tests; profile-config validate warnings in editor.
+- **Delivery planning:** draft `SECTION23_FINAL_DELIVERY_OUTLINE_DRAFT.md` (20 points; not Multilogin-complete).
 
 ## 3. Tests
-`npm run test:browser-runtime` — **77 pass / 0 fail** (was 71).
+`npm run test:browser-runtime` — **82 pass / 0 fail** (was 77).
 
 ## 4. §19
-Still **NO-GO publish** without owner sign-off. No `[ci:installer-smoke]` (no packaged launch/proxy edits).
+Still **NO-GO publish** without owner sign-off. No `[ci:installer-smoke]`.
 
 **No Multilogin equivalence percentage claimed.**

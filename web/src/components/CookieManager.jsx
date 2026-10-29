@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { useToast } from './Toasts.jsx';
 import { Confirm } from './Dialog.jsx';
 
-export function CookieManager({ profileId }) {
+export function CookieManager({ profileId, browserEngine = 'chromium' }) {
   const toast = useToast();
   const [cookies, setCookies] = useState(null);
   const [error, setError] = useState('');
@@ -15,7 +15,10 @@ export function CookieManager({ profileId }) {
     try { setCookies((await api(`/api/profiles/${profileId}/cookies`)).cookies); }
     catch (e) { setCookies([]); setError(e.message); }
   }, [profileId]);
-  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => { if (browserEngine !== 'firefox') load(); }, [load, browserEngine]);
+  if (browserEngine === 'firefox') {
+    return <div className="notice warn">Cookie import/export uses the Chromium profile cookie database. Firefox profiles keep cookies in the separate gecko tree and are not editable through this panel yet.</div>;
+  }
   const keyOf = cookie => `${cookie.domain}\n${cookie.path}\n${cookie.name}`;
   const chosen = () => (cookies || []).filter(cookie => selected.has(keyOf(cookie))).map(cookie => ({ name: cookie.name, domain: cookie.domain, path: cookie.path }));
   const download = async () => {

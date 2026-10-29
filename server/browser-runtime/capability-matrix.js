@@ -5,7 +5,7 @@ export function browserEngineCapabilityMatrix() {
     legend: { IMPLEMENTED: 'working + tested', PARTIAL: 'some paths only', UNSUPPORTED: 'stock CfT limit', BLOCKED: 'needs owner HW or custom build' },
     rows: [
       { id: 'manual_native_launch', title: 'Manual browse without Playwright pipe', state: 'IMPLEMENTED', evidence: 'test/browser-runtime-native-launch.test.js' },
-      { id: 'firefox_gecko_runtime', title: 'Firefox second runtime (native spawn)', state: 'PARTIAL', evidence: 'test/firefox-launch-plan.test.js + test/firefox-proxy-locale.test.js', note: 'HTTP/SOCKS proxy + locale user.js prefs; requires host Firefox; extensions N/A' },
+      { id: 'firefox_gecko_runtime', title: 'Firefox second runtime (native spawn)', state: 'PARTIAL', evidence: 'firefox-launch-plan + firefox-proxy-locale + firefox-gecko-prefs tests', note: 'Proxy/locale/timezone/WebRTC ICE prefs; gecko cookies API not exposed; extensions N/A' },
       { id: 'profile_config_engine_v2', title: 'Typed profile config + warnings', state: 'IMPLEMENTED', evidence: 'test/profile-config-engine.test.js' },
       { id: 'profile_isolation', title: 'Per-profile userDataDir + lock', state: 'IMPLEMENTED', evidence: 'existing M1–M17 tests' },
       { id: 'proxy_socks_auth', title: 'SOCKS5 with auth via local relay', state: 'IMPLEMENTED', evidence: 'native --proxy-server + relay' },
