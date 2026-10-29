@@ -83,6 +83,6 @@ test('purge requires confirmName', async () => {
     .run(id, 'Exact', '[]', '', '', now, now);
   await softDeleteProfile(id, { stopFn: async () => {} });
   await assert.rejects(async () => purgeFromTrash(id, { confirmName: 'wrong' }), /confirmName/);
-  purgeFromTrash(id, { confirmName: 'Exact' });
+  await purgeFromTrash(id, { confirmName: 'Exact' });
   assert.equal(db.prepare('SELECT id FROM profiles WHERE id=?').get(id), undefined);
 });

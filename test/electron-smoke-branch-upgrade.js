@@ -4,7 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import http from 'http';
-import { spawnServer, stopServer } from './_ports.mjs';
+import { spawnInstalledServer, stopServer } from './_ports.mjs';
 
 if (process.platform !== 'win32') {
   console.error('branch upgrade smoke requires Windows');
@@ -34,7 +34,7 @@ function silentInstall(setupPath) {
   });
 }
 
-async function seedPersistFixture() {
+async function seedPersistFixture(installDirForSeed) {
   const server = http.createServer((req, res) => {
     const u = req.url || '';
     if (u.startsWith('/set')) {
@@ -49,7 +49,7 @@ async function seedPersistFixture() {
   const originPort = server.address().port;
   const env = { ...process.env, PM_DATA_DIR: dataDir, PM_API_TOKEN: 'branch-up-seed' };
   const auth = { Authorization: 'Bearer branch-up-seed', 'Content-Type': 'application/json' };
-  const proc = await spawnServer(env);
+  const proc = await spawnInstalledServer(installDirForSeed, env);
   try {
     await fetch(proc.url + '/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ minFreeMemoryGiB: 0 }) });
     const persist = await (await fetch(proc.url + '/api/v1/profiles', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Persist' }) })).json();
@@ -83,7 +83,7 @@ for (const p of [installDir, appData]) {
 await silentInstall(alpha3Setup);
 ok(fs.existsSync(path.join(installDir, 'Profile Manager.exe')), 'alpha.3 baseline installed');
 
-await seedPersistFixture();
+await seedPersistFixture(installDir);
 ok(fs.existsSync(dbPath), `profiles.db exists (${dbPath})`);
 
 const preVersion = (await import('better-sqlite3')).default;

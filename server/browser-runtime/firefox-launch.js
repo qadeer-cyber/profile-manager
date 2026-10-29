@@ -8,8 +8,8 @@ import { validateBrowserSettings } from '../browser-settings.js';
 import { getSetting } from '../db.js';
 import { pidMatches, isAlive } from '../proc.js';
 import { automationDefault } from '../testflags.js';
-import { validateWebRtcSettings } from '../webrtc-policy.js';
-import { geckoWebRtcUserPrefLines, geckoTimezoneUserPrefLine, geckoTimezoneEnv } from '../firefox-gecko-prefs.js';
+import { buildManagedGeckoPrefLines, writeManagedGeckoUserJs } from '../firefox-gecko-userjs.js';
+import { geckoTimezoneEnv } from '../firefox-gecko-prefs.js';
 
 const automationEnabled = opts => !!opts?.automation || automationDefault();
 
@@ -37,61 +37,6 @@ export function resolveFirefoxExecutable() {
   return null;
 }
 
-function writeGeckoProxyPrefs(profileDir, proxy, relayUrl) {
-  if (!proxy && !relayUrl) return;
-  const prefs = [];
-  if (relayUrl) {
-    prefs.push('user_pref("network.proxy.type", 1);');
-    try {
-      const u = new URL(relayUrl);
-      prefs.push(`user_pref("network.proxy.http", "${u.hostname}");`);
-      prefs.push(`user_pref("network.proxy.http_port", ${Number(u.port)});`);
-      prefs.push(`user_pref("network.proxy.ssl", "${u.hostname}");`);
-      prefs.push(`user_pref("network.proxy.ssl_port", ${Number(u.port)});`);
-      prefs.push(`user_pref("network.proxy.socks", "${u.hostname}");`);
-      prefs.push(`user_pref("network.proxy.socks_port", ${Number(u.port)});`);
-    } catch { /* skip malformed relay */ }
-  } else if (proxy) {
-    prefs.push('user_pref("network.proxy.type", 1);');
-    const type = String(proxy.type || 'http').toLowerCase();
-    if (type === 'socks5' || type === 'socks') {
-      prefs.push(`user_pref("network.proxy.socks", "${proxy.host}");`);
-      prefs.push(`user_pref("network.proxy.socks_port", ${Number(proxy.port)});`);
-      prefs.push(`user_pref("network.proxy.socks_version", 5);`);
-    } else {
-      prefs.push(`user_pref("network.proxy.http", "${proxy.host}");`);
-      prefs.push(`user_pref("network.proxy.http_port", ${Number(proxy.port)});`);
-      prefs.push(`user_pref("network.proxy.ssl", "${proxy.host}");`);
-      prefs.push(`user_pref("network.proxy.ssl_port", ${Number(proxy.port)});`);
-    }
-  }
-  appendGeckoUserJs(profileDir, prefs);
-}
-
-function writeGeckoLocalePrefs(profileDir, regional) {
-  const prefs = [];
-  if (regional?.languages?.length) {
-    const accept = regional.languages.join(',');
-    prefs.push(`user_pref("intl.accept_languages", "${accept.replace(/"/g, '')}");`);
-    if (regional.locale) prefs.push(`user_pref("intl.locale.requested", "${String(regional.locale).replace(/"/g, '')}");`);
-  }
-  const tzLine = geckoTimezoneUserPrefLine(regional?.timezoneId);
-  if (tzLine) prefs.push(tzLine);
-  appendGeckoUserJs(profileDir, prefs);
-}
-
-function writeGeckoWebRtcPrefs(profileDir, webrtcSettings) {
-  const lines = geckoWebRtcUserPrefLines(validateWebRtcSettings(webrtcSettings || {}));
-  appendGeckoUserJs(profileDir, lines);
-}
-
-function appendGeckoUserJs(profileDir, prefs) {
-  if (!prefs.length) return;
-  const file = path.join(profileDir, 'user.js');
-  fs.mkdirSync(profileDir, { recursive: true });
-  fs.writeFileSync(file, prefs.join('\n') + '\n', { flag: 'a' });
-}
-
 export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, opts = {} } = {}) {
   const automation = automationEnabled(opts);
   const exe = resolveFirefoxExecutable();
@@ -107,9 +52,13 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
     relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
   }
-  writeGeckoProxyPrefs(profileDir, p.proxy && !p.proxy.username ? p.proxy : null, relayUrl);
-  writeGeckoLocalePrefs(profileDir, regional);
-  writeGeckoWebRtcPrefs(profileDir, p.webrtcSettings);
+  const managed = buildManagedGeckoPrefLines({
+    proxy: p.proxy && !p.proxy.username ? p.proxy : null,
+    relayUrl,
+    regional,
+    webrtcSettings: p.webrtcSettings,
+  });
+  writeManagedGeckoUserJs(profileDir, managed);
 
   const args = ['-no-remote', '-profile', profileDir];
   let marionettePort = null;

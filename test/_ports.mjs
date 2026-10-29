@@ -1,5 +1,6 @@
 // Port helpers for tests: every server listens on an OS-assigned free port (port 0) unless an
 // env override is given (e.g. PM_TEST_PORT=4000), so parallel runs on a shared machine can't collide.
+import fs from 'fs';
 import net from 'net';
 import path from 'path';
 import { execFileSync, fork } from 'child_process';
@@ -68,11 +69,21 @@ export function freePort(envName) {
 // child.kill('SIGTERM') is TerminateProcess: signal handlers never run and Chromium is
 // torn down before it can flush cookies. POSIX children are process-group leaders so
 // the fallback kill covers browsers they spawned.
-export function spawnServer(env, { envName = 'PM_TEST_PORT', port, echo = false, timeoutMs = 20000 } = {}) {
+export function resolveInstalledServerScript(installDir) {
+  const candidates = [
+    process.env.PM_INSTALLED_SERVER_SCRIPT,
+    installDir && path.join(installDir, 'resources', 'app.asar.unpacked', 'server', 'index.js'),
+    installDir && path.join(installDir, 'resources', 'app', 'server', 'index.js'),
+  ].filter(Boolean);
+  return candidates.find(p => fs.existsSync(p)) || null;
+}
+
+export function spawnServerEntry(entryScript, env, { envName = 'PM_TEST_PORT', port, echo = false, timeoutMs = 20000, execPath = process.execPath, electronRunAsNode = false } = {}) {
   const PORT = String(port ?? (process.env[envName] || 0));
-  const proc = trackProcess(fork(serverScript, [], {
+  const proc = trackProcess(fork(entryScript, [], {
+    execPath,
     execArgv: [],
-    env: { ...env, PORT },
+    env: { ...env, PORT, ...(electronRunAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
     detached: process.platform !== 'win32',
     windowsHide: true,
     stdio: ['ignore', 'pipe', 'inherit', 'ipc'],
@@ -87,6 +98,18 @@ export function spawnServer(env, { envName = 'PM_TEST_PORT', port, echo = false,
     });
     proc.on('exit', c => { clearTimeout(t); if (!proc.url) reject(new Error('server exited before start: ' + c + '\n' + proc.out)); });
   });
+}
+
+export function spawnInstalledServer(installDir, env, opts = {}) {
+  const script = resolveInstalledServerScript(installDir);
+  if (!script) throw new Error(`installed server script not found under ${installDir}`);
+  const exe = path.join(installDir, 'Profile Manager.exe');
+  const execPath = fs.existsSync(exe) ? exe : process.execPath;
+  return spawnServerEntry(script, env, { ...opts, execPath, electronRunAsNode: fs.existsSync(exe) });
+}
+
+export function spawnServer(env, { envName = 'PM_TEST_PORT', port, echo = false, timeoutMs = 20000 } = {}) {
+  return spawnServerEntry(serverScript, env, { envName, port, echo, timeoutMs });
 }
 
 function isShutdownDone(m) { return !!(m && typeof m === 'object' && m.type === 'shutdown-done'); }

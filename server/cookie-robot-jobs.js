@@ -3,12 +3,12 @@ import crypto from 'crypto';
 import { chromium } from 'playwright';
 import { db } from './db.js';
 import * as engine from './browsers.js';
+import { validateCookieRobotUrlList, validateCookieRobotUrl } from './cookie-robot-url.js';
 
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
-const URL_RE = /^https?:\/\/.+/i;
-const BLOCKED_HOSTS = /^(accounts\.google\.|google\.com\/recaptcha|www\.google\.com\/recaptcha)/i;
 const CDP_WAIT_MS = 45000;
 
+/** @type {Map<string, { control: { cancel: boolean }, gen: number }>} */
 const runners = new Map();
 let launchProfileFn = null;
 
@@ -37,15 +37,7 @@ function assertChromiumProfile(profileId) {
 }
 
 function parseUrls(urls) {
-  if (!Array.isArray(urls) || !urls.length || urls.length > 30) throw fail(400, 'urls must be an array of 1-30 http(s) URLs', 'INVALID_URLS');
-  return urls.map(u => {
-    const url = String(u || '').trim();
-    if (!URL_RE.test(url)) throw fail(400, `Invalid URL: ${url.slice(0, 80)}`, 'INVALID_URLS');
-    let host;
-    try { host = new URL(url).hostname; } catch { throw fail(400, 'Invalid URL', 'INVALID_URLS'); }
-    if (BLOCKED_HOSTS.test(host)) throw fail(400, 'This job runner does not target Google CAPTCHA or account flows', 'URL_NOT_ALLOWED');
-    return url;
-  });
+  return validateCookieRobotUrlList(urls);
 }
 
 function rowToJob(row) {
@@ -64,6 +56,17 @@ function rowToJob(row) {
   };
 }
 
+function attachRunner(id, control) {
+  const gen = (runners.get(id)?.gen ?? 0) + 1;
+  runners.set(id, { control, gen });
+  return gen;
+}
+
+function runnerActive(id, gen) {
+  const r = runners.get(id);
+  return r && r.gen === gen;
+}
+
 export function createCookieRobotJob({ profileId, urls, delayMs = 1500 }) {
   assertChromiumProfile(profileId);
   const id = crypto.randomUUID();
@@ -74,8 +77,8 @@ export function createCookieRobotJob({ profileId, urls, delayMs = 1500 }) {
   db.prepare('INSERT INTO cookie_robot_jobs (id,profile_id,status,tasks_json,delay_ms,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(id, profileId, 'queued', JSON.stringify(tasks), delay, null, now, now);
   const control = { cancel: false };
-  runners.set(id, control);
-  setImmediate(() => runCookieRobotJob(id, control).catch(() => {}));
+  const gen = attachRunner(id, control);
+  setImmediate(() => runCookieRobotJob(id, control, gen).catch(() => {}));
   return getCookieRobotJob(id);
 }
 
@@ -96,8 +99,8 @@ function persistTasks(id, tasks, status, error = null) {
 }
 
 export function cancelCookieRobotJob(id) {
-  const control = runners.get(id);
-  if (control) control.cancel = true;
+  const r = runners.get(id);
+  if (r) r.control.cancel = true;
   const job = getCookieRobotJob(id);
   if (job.status === 'running' || job.status === 'queued') persistTasks(id, job.tasks, 'cancelled');
   return getCookieRobotJob(id);
@@ -113,14 +116,15 @@ export function retryCookieRobotJob(id, { failedOnly = false } = {}) {
   });
   persistTasks(id, tasks, 'queued');
   const control = { cancel: false };
-  runners.set(id, control);
-  setImmediate(() => runCookieRobotJob(id, control).catch(() => {}));
+  const gen = attachRunner(id, control);
+  setImmediate(() => runCookieRobotJob(id, control, gen).catch(() => {}));
   return getCookieRobotJob(id);
 }
 
-async function waitForCdpPort(profileId, timeoutMs = CDP_WAIT_MS) {
+async function waitForCdpPort(profileId, timeoutMs, control) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
+    if (control.cancel) throw fail(409, 'Job cancelled', 'JOB_CANCELLED');
     const info = engine.runInfo(profileId);
     if (info?.cdp_port) return info.cdp_port;
     if (!engine.isRunning(profileId)) break;
@@ -130,8 +134,8 @@ async function waitForCdpPort(profileId, timeoutMs = CDP_WAIT_MS) {
 }
 
 /** Testable CDP task runner (real Chromium CDP when port is live). */
-export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500, signal = {} } = {}) {
-  const browser = await connectCdpWithRetry(cdpPort);
+export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500, signal = {}, validateFinalUrl = true } = {}) {
+  const browser = await connectCdpWithRetry(cdpPort, signal);
   try {
     const context = browser.contexts()[0] || await browser.newContext();
     const out = [];
@@ -141,7 +145,15 @@ export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500
       let page;
       try {
         page = await context.newPage();
+        let redirectBlocked = null;
+        page.on('framenavigated', frame => {
+          if (frame !== page.mainFrame()) return;
+          try { validateCookieRobotUrl(frame.url(), { afterRedirect: true }); }
+          catch (e) { redirectBlocked = e.message; }
+        });
         await page.goto(tasks[i].url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        if (redirectBlocked) throw fail(400, redirectBlocked, 'URL_NOT_ALLOWED');
+        if (validateFinalUrl) validateCookieRobotUrl(page.url(), { afterRedirect: true });
         out.push({ ...tasks[i], status: 'ok', error: null, at: new Date().toISOString() });
       } catch (error) {
         out.push({ ...tasks[i], status: 'failed', error: error.message, at: new Date().toISOString() });
@@ -156,10 +168,11 @@ export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500
   }
 }
 
-async function connectCdpWithRetry(cdpPort) {
+async function connectCdpWithRetry(cdpPort, signal) {
   const url = `http://127.0.0.1:${cdpPort}`;
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (signal?.cancel) throw fail(409, 'Job cancelled', 'JOB_CANCELLED');
     try {
       return await chromium.connectOverCDP(url);
     } catch (e) {
@@ -170,17 +183,28 @@ async function connectCdpWithRetry(cdpPort) {
   throw fail(503, `CDP connect failed: ${lastErr?.message || lastErr}`, 'CDP_CONNECT_FAILED');
 }
 
-async function runCookieRobotJob(id, control) {
+async function runCookieRobotJob(id, control, gen) {
   const row = db.prepare('SELECT * FROM cookie_robot_jobs WHERE id=?').get(id);
   if (!row) return;
+  if (!runnerActive(id, gen)) return;
+  if (control.cancel) {
+    persistTasks(id, JSON.parse(row.tasks_json || '[]'), 'cancelled');
+    runners.delete(id);
+    return;
+  }
   let tasks = JSON.parse(row.tasks_json || '[]');
   persistTasks(id, tasks, 'running');
   const profileId = row.profile_id;
   const delayMs = Number(row.delay_ms) || 1500;
   let launchedByJob = false;
   try {
+    if (control.cancel || !runnerActive(id, gen)) {
+      persistTasks(id, tasks, 'cancelled');
+      return;
+    }
     assertChromiumProfile(profileId);
     if (!engine.isRunning(profileId)) {
+      if (control.cancel) { persistTasks(id, tasks, 'cancelled'); return; }
       if (!launchProfileFn) throw fail(500, 'CookieRobot launch is not configured', 'INTERNAL');
       await launchProfileFn(profileId);
       launchedByJob = true;
@@ -190,18 +214,23 @@ async function runCookieRobotJob(id, control) {
         throw fail(409, 'Profile is running without automation (CDP). Stop it and start a job again to launch with automation, or enable automation on the profile.', 'NO_CDP');
       }
     }
-    const cdpPort = await waitForCdpPort(profileId);
+    const cdpPort = await waitForCdpPort(profileId, CDP_WAIT_MS, control);
+    if (control.cancel || !runnerActive(id, gen)) {
+      persistTasks(id, tasks, 'cancelled');
+      return;
+    }
     tasks = await runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs, signal: control });
-    if (control.cancel) {
+    if (control.cancel || !runnerActive(id, gen)) {
       persistTasks(id, tasks, 'cancelled');
       return;
     }
     const failed = tasks.some(t => t.status === 'failed');
     persistTasks(id, tasks, failed ? 'failed' : 'done', failed ? 'one or more URLs failed' : null);
   } catch (error) {
-    persistTasks(id, tasks, 'failed', error.message || 'job failed');
+    if (error.code === 'JOB_CANCELLED' || control.cancel) persistTasks(id, tasks, 'cancelled');
+    else persistTasks(id, tasks, 'failed', error.message || 'job failed');
   } finally {
-    runners.delete(id);
+    if (runnerActive(id, gen)) runners.delete(id);
     if (launchedByJob && control.cancel) {
       try { await engine.stop(profileId, { timeoutMs: 15000 }); } catch { /* best effort */ }
     }

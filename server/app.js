@@ -297,11 +297,17 @@ function clone(id, body = {}) {
 }
 async function remove(id) {
   must(id);
-  await softDeleteProfile(id, { stopFn: async i => engine.stop(i) });
+  await softDeleteProfile(id, {
+    stopFn: async i => engine.stop(i),
+    isRunningFn: i => engine.isRunning(i),
+  });
 }
 async function purgeProfile(id, confirmName) {
-  await engine.stop(id).catch(() => {});
-  return purgeFromTrash(id, { confirmName });
+  return purgeFromTrash(id, {
+    confirmName,
+    stopFn: async i => engine.stop(i),
+    isRunningFn: i => engine.isRunning(i),
+  });
 }
 const headlessDefault = () => process.env.HEADLESS === '1' || getSetting('defaultHeadless', false);
 const updateHandler = (req, res) => { res.json(applyUpdate(req.params.id, req.body)); };
