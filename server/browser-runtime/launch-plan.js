@@ -12,7 +12,7 @@ import { chromiumIdentity } from '../chromium-identity.js';
 import { extensionLaunchPlan } from '../extensions.js';
 import { getSetting } from '../db.js';
 import { chromiumMissingError } from '../chromium.js';
-import { automationDefault, proxyLoopback } from '../testflags.js';
+import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
 const automationEnabled = opts => !!opts.automation || automationDefault();
 import { chooseLaunchUrls, readSavedTabs } from '../tab-restore.js';
@@ -70,7 +70,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     } else {
       args.push(proxyArg(`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`));
     }
-    if (proxyLoopback()) args.push('--proxy-bypass-list=<-loopback>');
+    // Dev/test: PM_PROXY_LOOPBACK. Packaged manual native: always send loopback through the proxy (offline smoke).
+    if (proxyLoopback() || (isPackaged() && runtime === 'native')) args.push('--proxy-bypass-list=<-loopback>');
   }
 
   if (regional.languages.length) {
