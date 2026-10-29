@@ -1,24 +1,20 @@
-# §23 Final engineering report (checkpoint — opt-in automation drivers)
+# §23 Final engineering report (checkpoint — CookieRobot + automation docs)
 
 **Branch:** `feature/dedicated-browser-engine`  
-**Baseline:** Alpha.3 frozen · installer smoke green [40934718409](https://github.com/qadeer-cyber/profile-manager/actions/runs/40934718409) @ `98dbc0c`
+**Prior tip:** `1daa79d` (opt-in driver cache) · installer smoke green @ `98dbc0c`
 
 ## 1. Commit
-**Tip:** `1daa79d` — opt-in ChromeDriver/geckodriver cache + Settings UI + latitude benchmark scaffold.
+**Tip:** _(this push)_ — CookieRobot CDP polish + automation example/docs refresh.
 
-## 2. Package summary
-| Item | Status |
-|------|--------|
-| CfT ChromeDriver cache (pinned SHA, same version as Chromium) | PARTIAL — user opt-in download |
-| Mozilla geckodriver 0.36.0 cache (MPL-2.0) | PARTIAL — user opt-in download |
-| Offline EXE bundles drivers | **No** (honest) |
-| `npm run benchmark:latitude-scaffold` | PARTIAL — template only, no fake Latitude numbers |
-| M33 human typing | **Skipped** (would be non-verifiable noise) |
+## 2. Package
+- CookieRobot: CDP port wait + connect retry, dedicated page per URL, `browser.close()` detach only, Firefox rejected at create, `GET /api/cookie-robot`, retry failed-only, UI profile picker + task details.
+- Examples: `webdriver-chromedriver-bridge.md`, `geckodriver-firefox-bridge.md`, `cookie-robot-example.mjs` (job API + opt-in cache pointers).
+- Native tab restore: unchanged (already on stop/health periodic harvest); no packaged launch change.
 
 ## 3. Tests
-`npm run test:browser-runtime` — **68 pass / 0 fail** (includes `automation-drivers.test.js`).
+`npm run test:browser-runtime` — **71 pass / 0 fail**.
 
-## 4. §19 preview
-Still **NO-GO publish** without owner sign-off. Installer gates 1–4 evidenced at `98dbc0c`. Driver story moved from “missing entirely” to **documented opt-in cache**; not a publish blocker for bundling.
+## 4. §19
+Still **NO-GO publish** without owner sign-off. No `[ci:installer-smoke]` (no packaged launch/proxy edits).
 
 **No Multilogin equivalence percentage claimed.**
