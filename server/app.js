@@ -20,6 +20,8 @@ import { executableCompatibility, installVerifiedChromiumWithBackup, listInstall
 import { fingerprintCapabilityReport } from './fingerprint-capabilities.js';
 import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
 import { summarizeConsistency } from './fingerprint-summary.js';
+import { buildMonitoringReport } from './monitoring-report.js';
+import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
 import { buildUserAgent } from './advanced-launch.js';
@@ -852,6 +854,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/:id/launch/cancel', wrap(async (req, res) => res.json(engine.cancelLaunch(req.params.id))));
   ui.get('/profiles/:id/launch-status', wrap(async (req, res) => { must(req.params.id); res.json(engine.launchStatus(req.params.id)); }));
   ui.get('/resources', wrap((req, res) => res.json(engine.resourceSnapshot())));
+  ui.get('/monitoring', wrap(async (req, res) => {
+    res.json(await buildMonitoringReport(engine.monitoringSessions(), { refresh: req.query.refresh !== '0' }));
+  }));
   ui.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(ui);
   mountExtensionRoutes(ui);
@@ -933,6 +938,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   v1.post('/profiles/:id/launch/cancel', wrap(async (req, res) => res.json(engine.cancelLaunch(req.params.id))));
   v1.get('/profiles/:id/launch-status', wrap(async (req, res) => { must(req.params.id); res.json(engine.launchStatus(req.params.id)); }));
   v1.get('/resources', wrap((req, res) => res.json(engine.resourceSnapshot())));
+  v1.get('/monitoring', wrap(async (req, res) => {
+    res.json(await buildMonitoringReport(engine.monitoringSessions(), { refresh: req.query.refresh !== '0' }));
+  }));
   v1.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(v1);
   mountExtensionRoutes(v1);
@@ -978,11 +986,13 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   if (scrubbed) scrubDatabaseFile();
   setStrictPrefixes(true); // all stored secrets are now prefixed; reject anything unprefixed from here on
   engine.startHealthMonitor();
+  const stopSampler = startProcessSnapshotSampler(Number(process.env.PM_PROCESS_SAMPLE_MS || 4000));
   const app = createApp(appOpts);
   const server = await new Promise((res, rej) => { const s = app.listen(port, host, () => res(s)).on('error', rej); });
   const actual = server.address().port;
   return { server, port: actual, url: `http://${host}:${actual}`, recovery, reencrypted, scrubbed, migration, events: engine.events,
     close: async () => {
+      stopSampler?.();
       await engine.shutdown();
       const closed = new Promise(r => server.close(() => r()));
       server.closeAllConnections?.(); // includes open SSE streams, which would otherwise keep close() pending

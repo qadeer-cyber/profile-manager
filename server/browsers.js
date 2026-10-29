@@ -202,13 +202,27 @@ export function launchStatus(id) {
   };
 }
 
-export function resourceSnapshot() {
-  const sessions = runningIds().map(rid => {
+export function monitoringSessions() {
+  return runningIds().map(rid => {
     const row = runInfo(rid);
-    const profile = db.prepare('SELECT name FROM profiles WHERE id=?').get(rid);
+    const profile = db.prepare('SELECT name, last_error FROM profiles WHERE id=?').get(rid);
     const entry = live.get(rid);
-    return { id: rid, name: profile?.name ?? null, pid: entry?.browserPid ?? row?.pid ?? null };
+    let dir = null;
+    try { dir = userDataDir(rid); } catch {}
+    return {
+      id: rid,
+      name: profile?.name ?? null,
+      pid: entry?.browserPid ?? row?.pid ?? null,
+      userDataDir: dir,
+      lastError: profile?.last_error ?? null,
+      status: launching.has(rid) ? 'launching' : (live.has(rid) ? 'running' : 'settling'),
+      launchMetrics: getLaunchMetrics(rid),
+    };
   });
+}
+
+export function resourceSnapshot() {
+  const sessions = monitoringSessions().map(({ launchMetrics, ...session }) => session);
   return {
     generatedAt: new Date().toISOString(),
     host: hostResourceSample(),

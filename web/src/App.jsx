@@ -7,11 +7,12 @@ import { ExtensionsPage } from './pages/ExtensionsPage.jsx';
 import { SettingsPage } from './pages/SettingsPage.jsx';
 import { DiagnosticsPage } from './pages/DiagnosticsPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
+import { MonitoringPage } from './pages/MonitoringPage.jsx';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
+const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
@@ -28,7 +29,7 @@ export function App() {
       if (event.key === 'n' && page === 'profiles') { event.preventDefault(); document.querySelector('[data-action=new-profile]')?.click(); return; }
       if (event.key === 'g') { prefix = 'g'; return; }
       if (prefix === 'g') {
-        const map = { d: 'dashboard', p: 'profiles', x: 'proxies', e: 'extensions', s: 'settings', i: 'diagnostics' };
+        const map = { d: 'dashboard', p: 'profiles', x: 'proxies', e: 'extensions', m: 'monitoring', s: 'settings', i: 'diagnostics' };
         if (map[event.key]) { setPage(map[event.key]); if (map[event.key] === 'profiles') setFolder('__all'); }
         prefix = '';
       }
@@ -74,7 +75,7 @@ export function App() {
         <div className="seg sm" role="radiogroup" aria-label="Theme">{[['light', 'sun'], ['system', 'diagnostics'], ['dark', 'moon']].map(([k, ic]) =>
           <button key={k} role="radio" aria-checked={theme === k} title={k[0].toUpperCase() + k.slice(1) + ' theme'} className={theme === k ? 'sel' : ''} onClick={() => setTheme(k)}>{k === 'system' ? 'Auto' : <Icon name={ic} />}</button>)}</div>
         <button className="ghost" onClick={() => setCompact(value => !value)}>{compact ? 'Comfortable' : 'Compact'}</button>
-        <span>{window.pm?.desktop ? 'Desktop app' : 'Web mode'} · g then d/p/x/e/s/i</span>
+        <span>{window.pm?.desktop ? 'Desktop app' : 'Web mode'} · g then d/p/x/m/s/i</span>
       </div>
     </nav>
     <main className="content">
@@ -83,6 +84,7 @@ export function App() {
       {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
       {page === 'proxies' && <ProxiesPage />}
       {page === 'extensions' && <ExtensionsPage />}
+      {page === 'monitoring' && <MonitoringPage />}
       {page === 'settings' && <SettingsPage />}
       {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
     </main>
