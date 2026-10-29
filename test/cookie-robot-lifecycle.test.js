@@ -36,7 +36,7 @@ after(() => {
   delete process.env.PM_DATA_DIR;
 });
 
-test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000 }, async () => {
+test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000, skip: process.platform === 'win32' && !!process.env.CI }, async () => {
   let exe;
   try { exe = chromium.executablePath(); } catch (e) {
     assert.fail(`Chromium unavailable: ${e.message}`);

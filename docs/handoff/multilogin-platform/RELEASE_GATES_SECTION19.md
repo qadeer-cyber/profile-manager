@@ -36,4 +36,4 @@ Prior failed run **40933139496** (`cd72dfb`): `electron-smoke-offline.js` failed
 
 **NO-GO preview publish** — automated gates **1–4** and **6** have green CI evidence at `98dbc0c`; **gate 7 (owner sign-off)** remains. ChromeDriver/geckodriver: **opt-in cache** under data dir (`AUTOMATION_DRIVERS.md`), not bundled in the offline EXE. Custom Chromium **BLOCKED**.
 
-**§19 movement:** installer path is **proven on GHA** without publishing; preview tag still requires human approval, not CI alone.
+**§19 movement:** installer path was **proven on GHA** @ `98dbc0c` (run 40934718409). Branch final candidate `09eeefd` has green `engine-windows`; one `[ci:installer-smoke]` attempt @ `4a39ccb` **failed** (run 40944906478) — see `FINAL_CANDIDATE_SHA.md`. Preview tag still requires human approval and a green installer-smoke on the owner-chosen SHA, not CI alone.

@@ -74,6 +74,7 @@ export function resolveInstalledServerScript(installDir) {
     process.env.PM_INSTALLED_SERVER_SCRIPT,
     installDir && path.join(installDir, 'resources', 'app.asar.unpacked', 'server', 'index.js'),
     installDir && path.join(installDir, 'resources', 'app', 'server', 'index.js'),
+    installDir && path.join(installDir, 'resources', 'app.asar', 'server', 'index.js'),
   ].filter(Boolean);
   return candidates.find(p => fs.existsSync(p)) || null;
 }
