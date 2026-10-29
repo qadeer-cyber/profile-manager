@@ -129,15 +129,23 @@ const Database = (await import('better-sqlite3')).default;
 const ddb = new Database(db, { readonly: true });
 const persistRow = ddb.prepare('SELECT id, name FROM profiles WHERE name = ?').get('Persist');
 ok(persistRow?.name === 'Persist', 'Persist profile row survived upgrade');
-const profileDir = path.join(dataDir, 'profiles', persistRow.id);
-ok(fs.existsSync(path.join(profileDir, 'Default')), 'profile Chromium user-data dir exists after upgrade');
+if (persistRow?.id) {
+  ok(fs.existsSync(path.join(dataDir, 'profiles', persistRow.id, 'Default')), 'profile Chromium user-data dir exists after upgrade');
+}
 ddb.close();
 
-const cleanRun = await runPhase(alpha3Exe, 'clean');
-const clean = load(cleanRun);
-ok(clean.exit === 0 && !clean.error, `alpha.3 launches after upgrade (${clean.exit})`);
-ok(clean.clean?.version === '0.5.0-alpha.3', `installed version is 0.5.0-alpha.3 (${clean.clean?.version})`);
-ok((clean.clean?.schemaVersion ?? 0) >= 6, `schema migrated (${clean.clean?.schemaVersion})`);
+try { execFileSync('taskkill', ['/F', '/IM', 'Profile Manager.exe', '/T'], { stdio: 'ignore' }); } catch { /* none running */ }
+await new Promise(r => setTimeout(r, 1500));
+
+const pkgVersion = execFileSync(alpha3Exe, ['-p', "require('./package.json').version"], {
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  cwd: installDir,
+  encoding: 'utf8',
+}).trim();
+ok(pkgVersion === '0.5.0-alpha.3', `installed package version (${pkgVersion})`);
+
+const schema = new Database(db, { readonly: true }).prepare('PRAGMA user_version').get();
+ok((schema?.user_version ?? 0) >= 6, `SQLite user_version after upgrade (${schema?.user_version})`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

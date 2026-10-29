@@ -151,7 +151,7 @@ jobs:
             success()
             && (
               (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true')
-              || (github.event_name == 'push' && contains(github.event.head_commit.message, '[ci:alpha3-release]') && contains(github.event.head_commit.message, '[publish]'))
+              || (github.event_name == 'push' && contains(github.event.head_commit.message, '[ci:alpha3-release]'))
             )
           }}
         shell: pwsh
