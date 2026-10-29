@@ -4,7 +4,10 @@ M17 Latitude 5480 validation — isolated PM_DATA_DIR under %LOCALAPPDATA%; neve
 Exit: 0 PASS | 1 FAIL | 2 BLOCKED (non-Windows)
 #>
 [CmdletBinding()]
-param([string] $ExpectedCommit = '')
+param(
+  [string] $ExpectedCommit = '',
+  [switch] $SkipDeps
+)
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 if ($env:OS -ne 'Windows_NT') { Write-Host 'BLOCKED: Windows 10 x64 required.'; exit 2 }
@@ -28,11 +31,15 @@ try {
   if ($ExpectedCommit -and ($report.head.ToLowerInvariant() -ne $ExpectedCommit.ToLowerInvariant())) { throw "HEAD $($report.head) != $ExpectedCommit" }
   $report.prereqs.node = (node -v)
   $report.prereqs.npm = (npm -v)
-  Log 'npm ci'
-  & npm ci --no-audit --no-fund 2>&1 | Out-File (Join-Path $runRoot 'npm-ci.log')
-  if ($LASTEXITCODE -ne 0) { throw "npm ci $LASTEXITCODE" }
-  Log 'playwright install chromium'
-  & npx playwright install chromium 2>&1 | Out-File (Join-Path $runRoot 'pw.log')
+  if (-not $SkipDeps) {
+    Log 'npm ci'
+    & npm ci --no-audit --no-fund 2>&1 | Out-File (Join-Path $runRoot 'npm-ci.log')
+    if ($LASTEXITCODE -ne 0) { throw "npm ci $LASTEXITCODE" }
+    Log 'playwright install chromium'
+    & npx playwright install chromium 2>&1 | Out-File (Join-Path $runRoot 'pw.log')
+  } else {
+    Log 'SkipDeps: using workflow-installed dependencies'
+  }
   $env:PM_DATA_DIR = $isolatedData
   $env:PM_API_TOKEN = 'm17-win-smoke'
   foreach ($suite in @('test:m17-regression')) {
