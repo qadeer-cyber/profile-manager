@@ -14,6 +14,10 @@ export function SettingsPage() {
       <label className="check"><input type="checkbox" checked={s.defaultHeadless} onChange={e => setS({ ...s, defaultHeadless: e.target.checked })} /> Launch profiles without a visible window (headless)</label>
       <label>Custom Chromium executable (leave empty to use the bundled/downloaded Chromium)<input value={s.executablePath} onChange={e => setS({ ...s, executablePath: e.target.value })} placeholder="C:\\Path\\to\\chrome.exe" /></label>
       <label>Start page when a profile launches<input value={s.startUrl} onChange={e => setS({ ...s, startUrl: e.target.value })} placeholder="https://…" /></label>
+      <label>Max running profiles at once (1–8)<input type="number" min={1} max={8} value={s.maxRunningProfiles ?? 4} onChange={e => setS({ ...s, maxRunningProfiles: Number(e.target.value) })} /></label>
+      <label>Minimum free host memory guard (GiB, 0–4)<input type="number" min={0} max={4} value={s.minFreeMemoryGiB ?? 1} onChange={e => setS({ ...s, minFreeMemoryGiB: Number(e.target.value) })} /></label>
+      <label>Max concurrent launches (1–4)<input type="number" min={1} max={4} value={s.maxConcurrentLaunches ?? 2} onChange={e => setS({ ...s, maxConcurrentLaunches: Number(e.target.value) })} /></label>
+      <p className="muted">Latitude 5480 / 8 GiB defaults: 4 running profiles, 1 GiB free-memory guard, 2 parallel launches.</p>
     </section>
     <section className="panel"><h2>Automation API</h2>
       {token ? <><p className="muted">Use this token with <code>/api/v1</code> (header <code>Authorization: Bearer …</code>). Base URL changes each launch in the desktop app; see Diagnostics.</p>

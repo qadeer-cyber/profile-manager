@@ -1,7 +1,7 @@
 // Live dashboard counts. Every number is a database aggregate or the process's
 // running-profile set. Nothing here is a sample or a placeholder.
 import { db } from './db.js';
-import { runningIds, runInfo } from './browsers.js';
+import { runningIds, runInfo, resourceSnapshot } from './browsers.js';
 import { currentVersion } from './migrations.js';
 
 export function dashboardStats() {
@@ -14,6 +14,8 @@ export function dashboardStats() {
     .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))
     .slice(0, 20)
     .map(profile => ({ id: profile.id, name: profile.name, message: profile.last_error, at: profile.updated_at }));
+  const resources = resourceSnapshot();
+  const memoryById = new Map(resources.browsers.profiles.map(row => [row.id, row.memoryMiB]));
   const sessions = [...live].map(id => {
     const info = runInfo(id);
     const profile = profiles.find(row => row.id === id);
@@ -23,6 +25,7 @@ export function dashboardStats() {
       pid: info?.pid ?? null,
       startedAt: info?.started_at ?? null,
       automation: !!info?.cdp_port,
+      memoryMiB: memoryById.get(id) ?? null,
     };
   });
   const countStatus = status => proxies.filter(proxy => proxy.last_test_status === status).length;
@@ -46,5 +49,10 @@ export function dashboardStats() {
     sessions,
     errors,
     extensions: db.prepare('SELECT COUNT(*) n FROM extensions').get().n,
+    resources: {
+      host: resources.host,
+      totalBrowserMemoryMiB: resources.browsers.totalBrowserMemoryMiB,
+      queue: resources.queue,
+    },
   };
 }

@@ -5,6 +5,11 @@ import { advancedLaunchPlan, applyAdvancedPreferences, applyDocumentPermissions,
 import { verifyFingerprintLaunchArgs } from './fingerprint-settings.js';
 import { executableCompatibility } from './chromium-lifecycle.js';
 import { assertLaunchResources } from './launch-limits.js';
+import { classifyLaunchError } from './launch-errors.js';
+import { beginLaunchMetrics, finalizeLaunchMetrics, getLaunchMetrics, markBrowserReady, markContextReady } from './launch-metrics.js';
+import { runWithLaunchQueue, launchQueueState, pendingLaunchCount } from './launch-queue.js';
+export { pendingLaunchCount };
+import { hostResourceSample, profileResourceRows } from './resource-monitor.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
@@ -33,6 +38,8 @@ export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
+const launchAbort = new Map(); // id -> true when user cancelled during startup
+let healthTicks = 0;
 // Read-only, in-process evidence for the installed offline smoke; no HTTP surface.
 // Select fields explicitly: running rows also contain CDP/relay connection details.
 export function lifecycleSmokeSnapshot(id) {
@@ -162,13 +169,76 @@ export async function recoverAfterRestart() {
 export function launch(p, opts = {}) {
   if (live.has(p.id) || settling.has(p.id)) return Promise.resolve(runInfo(p.id));
   if (launching.has(p.id)) return launching.get(p.id);
-  const pr = doLaunch(p, opts).finally(() => launching.delete(p.id));
+  const pr = runWithLaunchQueue(p.id, () => doLaunch(p, opts)).finally(() => {
+    launching.delete(p.id);
+    launchAbort.delete(p.id);
+  });
   launching.set(p.id, pr);
   return pr;
 }
 
+function assertLaunchNotCancelled(id) {
+  if (launchAbort.get(id)) {
+    launchAbort.delete(id);
+    throw httpErr(499, 'Launch was cancelled before the browser finished starting.', 'LAUNCH_CANCELLED');
+  }
+}
+
+export function cancelLaunch(id) {
+  if (live.has(id)) throw httpErr(409, 'Profile is already running. Stop it instead of cancelling startup.', 'ALREADY_RUNNING');
+  if (!launching.has(id)) return { cancelled: false, phase: 'not_launching' };
+  launchAbort.set(id, true);
+  return { cancelled: true, phase: 'launching' };
+}
+
+export function launchStatus(id) {
+  return {
+    launching: launching.has(id),
+    running: live.has(id),
+    settling: settling.has(id),
+    cancelRequested: !!launchAbort.get(id),
+    metrics: getLaunchMetrics(id),
+    queue: launchQueueState(),
+  };
+}
+
+export function resourceSnapshot() {
+  const sessions = runningIds().map(rid => {
+    const row = runInfo(rid);
+    const profile = db.prepare('SELECT name FROM profiles WHERE id=?').get(rid);
+    const entry = live.get(rid);
+    return { id: rid, name: profile?.name ?? null, pid: entry?.browserPid ?? row?.pid ?? null };
+  });
+  return {
+    generatedAt: new Date().toISOString(),
+    host: hostResourceSample(),
+    browsers: profileResourceRows(sessions),
+    queue: launchQueueState(),
+    launchSlotsInUse: launching.size,
+    runningProfiles: live.size,
+  };
+}
+
+async function reconcileOrphanRunningRows() {
+  for (const row of db.prepare('SELECT * FROM running').all()) {
+    if (live.has(row.id) || launching.has(row.id)) continue;
+    let dir;
+    try { dir = userDataDir(row.id); } catch {
+      db.prepare('DELETE FROM running WHERE id=?').run(row.id);
+      continue;
+    }
+    if (!(await browserOwnedByProfile(row.pid, dir))) {
+      clearChromeLocks(dir);
+      releaseLock(dir);
+      db.prepare('DELETE FROM running WHERE id=?').run(row.id);
+    }
+  }
+}
+
 async function doLaunch(p, opts = {}) {
-  assertLaunchResources(live.size + launching.size);
+  assertLaunchResources(live.size + launching.size + Math.max(0, pendingLaunchCount() - 1));
+  const metricsHandle = beginLaunchMetrics(p.id);
+  assertLaunchNotCancelled(p.id);
   const { headless, url } = opts, automation = automationEnabled(opts);
   const regional = validateBrowserSettings(p.browserSettings || {});
   const contextSettings = browserContextSettings(regional);
@@ -227,12 +297,15 @@ async function doLaunch(p, opts = {}) {
     if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
     applyAdvancedPreferences(dir, p.advancedSettings || {});
     const preferencesBaseline = readPreferences(dir);
+    assertLaunchNotCancelled(p.id);
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {
       if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !executablePath) throw chromiumMissingError(!!headless, true);
       const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
       throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
     }
+    markContextReady(metricsHandle);
+    assertLaunchNotCancelled(p.id);
     if (plan.userAgent) await installUserAgent(ctx, plan.userAgent);
     const watchPermissions = page => page.on('framenavigated', frame => {
       if (frame === page.mainFrame()) applyDocumentPermissions(page, frame.url(), plan.permissions).catch(() => {});
@@ -260,6 +333,7 @@ async function doLaunch(p, opts = {}) {
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     entry.browserPid = browserPid;
+    markBrowserReady(metricsHandle);
     // Bind identity to the launched child, never to a later PID-only lookup.
     entry.diagnosticStart = Number(browserPid) === Number(entry.childPid) ? await diagnosticStart : null;
     const owned = await browserOwnedByProfile(browserPid, dir);
@@ -312,15 +386,18 @@ async function doLaunch(p, opts = {}) {
       ctx.on('page', page => { watch(page); note(); });
       note();
     }
+    finalizeLaunchMetrics(metricsHandle, { success: true });
     return runInfo(p.id);
   } catch (e) {
     entry?.detachTermination?.();
     if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
     if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
     releaseLock(dir);
-    try { setStatus(p.id, { last_error: e.message }); } catch {}
-    emit('profile:launch-failed', p.id, { error: e.message });
-    throw e.status ? e : httpErr(500, `Failed to launch browser: ${e.message}`, 'LAUNCH_FAILED');
+    const classified = classifyLaunchError(e.status ? e : httpErr(500, e.message, 'LAUNCH_FAILED'));
+    finalizeLaunchMetrics(metricsHandle, { success: false, errorCode: classified.code });
+    try { setStatus(p.id, { last_error: classified.message }); } catch {}
+    emit('profile:launch-failed', p.id, { error: classified.message, launch: classified });
+    throw e.status ? e : httpErr(500, classified.message, classified.code);
   }
 }
 
@@ -584,10 +661,12 @@ let healthTimer = null;
 export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
   stopHealthMonitor();
   healthTimer = setInterval(() => {
+    healthTicks += 1;
     for (const [id, e] of live) {
       if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
       else if (!e.stopping) applyProfileExit(e, userDataDir(id));
     }
+    if (healthTicks % 10 === 0) reconcileOrphanRunningRows().catch(() => {});
   }, intervalMs);
   healthTimer.unref?.();
 }

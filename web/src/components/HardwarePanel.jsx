@@ -34,6 +34,7 @@ export function HardwarePanel({ profileId }) {
       <Fact label="Media devices" availability={browser.media?.devices?.availability}>{browser.media?.devices?.availability === 'observed' ? `${browser.media.devices.count} devices (${(browser.media.devices.kinds || []).join(', ') || 'no kind'})` : browser.media?.devices?.reason}</Fact>
       <Fact label="Screen" availability="observed">{browser.screen?.innerWidth}×{browser.screen?.innerHeight} viewport · {browser.screen?.width}×{browser.screen?.height} screen · scale {browser.screen?.devicePixelRatio}</Fact>
     </> : <Fact label="Browser facts" availability="unavailable">{browser.reason === 'not_running' ? 'Launch the profile to observe browser hardware. Nothing is simulated while it is stopped.' : browser.reason}</Fact>}
+    {report.consistency?.interpretation && <div className="notice"><strong>{report.consistency.interpretation.headline}</strong> {report.consistency.interpretation.detail}</div>}
     {report.consistency?.findings?.map(item => <Fact key={item.id} label={item.id} availability={item.status}>{item.summary}</Fact>)}
     {report.unsupported.map(item => <Fact key={item.fact} label={item.fact} availability="unsupported">{item.reason}</Fact>)}
   </div>;

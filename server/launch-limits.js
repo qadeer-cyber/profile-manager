@@ -29,3 +29,12 @@ export function assertLaunchResources(runningCount) {
   }
   return limits;
 }
+
+export function resourceLimitsSummary({ runningCount = 0, queuePending = 0 } = {}) {
+  const limits = launchLimits({ runningCount: runningCount + queuePending });
+  return {
+    ...limits,
+    queuePending,
+    concurrencyNote: 'maxRunningProfiles counts live browsers. maxConcurrentLaunches limits parallel startup work only.',
+  };
+}

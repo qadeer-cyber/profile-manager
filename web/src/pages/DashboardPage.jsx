@@ -19,6 +19,8 @@ export function DashboardPage({ onOpenProfiles }) {
       <div className="stat-grid">
         <Stat label="Profiles" value={stats.profiles.total} detail={`${stats.profiles.stopped} stopped`} />
         <Stat label="Running" value={stats.profiles.running} detail={`${stats.sessions.length} live session${stats.sessions.length === 1 ? '' : 's'}`} />
+        <Stat label="Browser RAM" value={stats.resources?.totalBrowserMemoryMiB != null ? `${stats.resources.totalBrowserMemoryMiB} MiB` : '—'} detail={stats.resources?.host ? `Host free ${stats.resources.host.freeMemGiB} GiB · queue ${stats.resources.queue?.queuedLaunches ?? 0}` : 'RSS observed on Linux when profiles run'} />
+        <Stat label="Host CPU load" value={stats.resources?.host?.loadAvg?.[0] != null ? stats.resources.host.loadAvg[0] : '—'} detail={stats.resources?.host?.cpuCount ? `${stats.resources.host.cpuCount} cores · ${stats.resources.host.lowMemoryWarning ? 'low memory warning' : 'memory OK'}` : 'load average unavailable on Windows'} />
         <Stat label="Errors" value={stats.profiles.withError} detail="profiles with a last error" />
         <Stat label="Automation" value={stats.profiles.automationEnabled} detail="profiles with CDP enabled" />
         <Stat label="Proxies" value={stats.proxies.total} detail={`${stats.proxies.ok} ok · ${stats.proxies.failed} failed · ${stats.proxies.untested} untested`} />
@@ -27,8 +29,8 @@ export function DashboardPage({ onOpenProfiles }) {
       <div className="cols">
         <section className="panel"><h2>Live sessions</h2>
           {!stats.sessions.length && <p className="muted">No profile is running in this process.</p>}
-          {!!stats.sessions.length && <table className="grid"><thead><tr><th>Profile</th><th>PID</th><th>Started</th><th>CDP</th></tr></thead><tbody>
-            {stats.sessions.map(session => <tr key={session.id}><td>{session.name || session.id}</td><td className="mono-sm">{session.pid ?? '—'}</td><td className="muted">{session.startedAt ? new Date(session.startedAt).toLocaleString() : '—'}</td><td>{session.automation ? 'On' : 'Off'}</td></tr>)}
+          {!!stats.sessions.length && <table className="grid"><thead><tr><th>Profile</th><th>PID</th><th>RAM (MiB)</th><th>Started</th><th>CDP</th></tr></thead><tbody>
+            {stats.sessions.map(session => <tr key={session.id}><td>{session.name || session.id}</td><td className="mono-sm">{session.pid ?? '—'}</td><td className="mono-sm">{session.memoryMiB ?? '—'}</td><td className="muted">{session.startedAt ? new Date(session.startedAt).toLocaleString() : '—'}</td><td>{session.automation ? 'On' : 'Off'}</td></tr>)}
           </tbody></table>}
         </section>
         <section className="panel"><h2>Recent profile errors</h2>

@@ -18,7 +18,8 @@ import { currentVersion } from './migrations.js';
 import { chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
 import { executableCompatibility, installVerifiedChromiumWithBackup, listInstallBackups, rollbackLatest } from './chromium-lifecycle.js';
 import { fingerprintCapabilityReport } from './fingerprint-capabilities.js';
-import { launchLimits } from './launch-limits.js';
+import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
+import { summarizeConsistency } from './fingerprint-summary.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
 import { buildUserAgent } from './advanced-launch.js';
@@ -86,7 +87,15 @@ const err = (status, msg) => Object.assign(new Error(msg), { status });
 // CHROMIUM_MISSING -> 503 {error:'CHROMIUM_MISSING', message} (same shape in /api and /api/v1)
 const errorBody = e => e.code === 'CHROMIUM_MISSING' ? { error: 'CHROMIUM_MISSING', message: e.message } : { error: e.message, code: e.code, ...(e.extra || {}) };
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(e.code === 'CHROMIUM_MISSING' ? 503 : e.status || 500).json(errorBody(e)));
-const SETTINGS_DEFAULTS = { defaultHeadless: false, executablePath: '', startUrl: '', maxRunningProfiles: 4, minFreeMemoryGiB: 1 };
+const SETTINGS_DEFAULTS = {
+  defaultHeadless: false,
+  executablePath: '',
+  startUrl: '',
+  maxRunningProfiles: 4,
+  minFreeMemoryGiB: 1,
+  maxConcurrentLaunches: 2,
+  launchReservationSeconds: 120,
+};
 
 // Re-encrypt stored proxy secrets with the preferred backend (plaintext/AES -> safeStorage, etc.)
 export function reencryptSecrets() {
@@ -284,7 +293,7 @@ async function hardwareReport(id, { previous = null } = {}) {
     configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions, fingerprint: profile.advancedSettings.fingerprint } : null,
     browser,
     unsupported: UNSUPPORTED_OVERRIDES,
-    consistency,
+    consistency: { ...consistency, interpretation: summarizeConsistency(consistency) },
   };
 }
 async function cookieList(id) {
@@ -801,7 +810,8 @@ function diagnostics() {
     dataDir: DATA_DIR, schemaVersion: currentVersion(db), migration,
     encryption: encryptionStatus(), browser: { path: browserPath, installed: browserInstalled, browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default' },
     profiles: db.prepare('SELECT COUNT(*) n FROM profiles').get().n, proxies: db.prepare('SELECT COUNT(*) n FROM proxies').get().n, running: engine.runningIds().length, pid: process.pid,
-    launchLimits: launchLimits({ runningCount: engine.runningIds().length }),
+    launchLimits: resourceLimitsSummary({ runningCount: engine.runningIds().length, queuePending: engine.pendingLaunchCount?.() ?? 0 }),
+    resources: typeof engine.resourceSnapshot === 'function' ? engine.resourceSnapshot() : null,
     browserCompatibility: executableCompatibility(browserPath && browserInstalled ? browserPath : ''),
   };
 }
@@ -839,6 +849,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/:id/clone', wrap((req, res) => res.status(201).json(publicP(clone(req.params.id, req.body)))));
   ui.delete('/profiles/:id', wrap(async (req, res) => { await remove(req.params.id); res.status(204).end(); }));
   ui.post('/profiles/:id/launch', wrap(async (req, res) => res.json(await doLaunch(req.params.id, req.body))));
+  ui.post('/profiles/:id/launch/cancel', wrap(async (req, res) => res.json(engine.cancelLaunch(req.params.id))));
+  ui.get('/profiles/:id/launch-status', wrap(async (req, res) => { must(req.params.id); res.json(engine.launchStatus(req.params.id)); }));
+  ui.get('/resources', wrap((req, res) => res.json(engine.resourceSnapshot())));
   ui.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(ui);
   mountExtensionRoutes(ui);
@@ -866,6 +879,16 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       const n = Number(b.minFreeMemoryGiB);
       if (!Number.isInteger(n) || n < 0 || n > 4) throw err(400, 'minFreeMemoryGiB must be an integer from 0 to 4');
       setSetting('minFreeMemoryGiB', n);
+    }
+    if ('maxConcurrentLaunches' in b) {
+      const n = Number(b.maxConcurrentLaunches);
+      if (!Number.isInteger(n) || n < 1 || n > 4) throw err(400, 'maxConcurrentLaunches must be an integer from 1 to 4');
+      setSetting('maxConcurrentLaunches', n);
+    }
+    if ('launchReservationSeconds' in b) {
+      const n = Number(b.launchReservationSeconds);
+      if (!Number.isInteger(n) || n < 30 || n > 600) throw err(400, 'launchReservationSeconds must be an integer from 30 to 600');
+      setSetting('launchReservationSeconds', n);
     }
     res.json(Object.fromEntries(Object.entries(SETTINGS_DEFAULTS).map(([k, d]) => [k, getSetting(k, d)])));
   }));
@@ -907,6 +930,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   v1.put('/profiles/:id', wrap(updateHandler));
   v1.patch('/profiles/:id', wrap(updateHandler));
   v1.post('/profiles/:id/launch', wrap(async (req, res) => res.json(await doLaunch(req.params.id, req.body, { allowOverride: true }))));
+  v1.post('/profiles/:id/launch/cancel', wrap(async (req, res) => res.json(engine.cancelLaunch(req.params.id))));
+  v1.get('/profiles/:id/launch-status', wrap(async (req, res) => { must(req.params.id); res.json(engine.launchStatus(req.params.id)); }));
+  v1.get('/resources', wrap((req, res) => res.json(engine.resourceSnapshot())));
   v1.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(v1);
   mountExtensionRoutes(v1);
