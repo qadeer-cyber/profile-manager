@@ -28,6 +28,8 @@ test('Win32 CIM process snapshot returns chrome rows without fabricating memory'
 
 test('two headless profiles, monitoring, recovery API, and data marker on Windows', { skip: !isWin, timeout: 300000 }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m17-winc-'));
+  const prevDataDir = process.env.PM_DATA_DIR;
+  process.env.PM_DATA_DIR = dir;
   const server = http.createServer((req, res) => { res.end('ok'); });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const pageUrl = `http://127.0.0.1:${server.address().port}/`;
@@ -74,6 +76,8 @@ test('two headless profiles, monitoring, recovery API, and data marker on Window
     if (proc) await stopServer(proc).catch(() => {});
     await new Promise(r => server.close(() => r()));
     fs.rmSync(dir, { recursive: true, force: true });
+    if (prevDataDir === undefined) delete process.env.PM_DATA_DIR;
+    else process.env.PM_DATA_DIR = prevDataDir;
   }
 });
 
