@@ -1,39 +1,39 @@
-# §23 Final engineering report (checkpoint — workspaces + CookieRobot + geckodriver)
+# §23 Final engineering report (checkpoint — installer smoke path + export/ADB/focus)
 
 **Model:** Composer 2.5 Fast  
 **Branch:** `feature/dedicated-browser-engine`  
-**Baseline:** Alpha.3 `2d65207` frozen · prior tip `ecbdb10` (rollback/WebDriver @ `dc60291`)
+**Baseline:** Alpha.3 `2d65207` frozen · prior tip `e4214aa` (workspaces/CookieRobot/geckodriver)
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** _(after push)_
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** _(see git push; message includes `[ci:installer-smoke]`)_
 
 ## 2. Multilogin technology audit
-M38 workspaces **PARTIAL→local IMPLEMENTED**; M32 CookieRobot **PARTIAL** (job runner); M37 WebDriver **PARTIAL** (+ geckodriver Firefox path); M3 Firefox automation **PARTIAL** (-marionette + geckodriver bridge).
+M8 export **PARTIAL** (+ bookmarks/history read API); M10 running manager **VERIFIED** (+ Focus); M40 ADB **PARTIAL** (optional host `adb`, not farm-equivalent).
 
 ## 3–8. Architecture / privacy / custom EXE
 Unchanged honest status; no custom Chromium EXE.
 
 ## 9. Profile management
-Workspaces assign profiles locally; vault lock when `electron-safeStorage` available.
+Stopped-profile Chromium bookmarks/history export; running-session Focus/Locate API (Win32 or CDP).
 
 ## 10. CookieRobot-local
-Queued jobs with task log, cancel/retry; blocks Google account/CAPTCHA URL patterns; Chromium automation only.
+Unchanged from prior checkpoint.
 
 ## 13. Automation
-ChromeDriver + Geckodriver bridges (not bundled); Firefox `automation:true` uses native `-marionette`.
+Optional `GET /api/adb/devices` for user-owned Android USB debugging only.
 
 ## 14. Workspaces
-**Local-only** — no SaaS sync.
+Unchanged local-only.
 
 ## 16. Performance / Latitude
-Documented soft caps in `LATITUDE_RESOURCE_GUARDS.md`; no invented HD 620 metrics.
+Unchanged; no invented metrics.
 
 ## 19. Windows testing
-`npm run test:browser-runtime` — **60 pass / 0 fail** target on `dedicated-browser-engine-win.yml`.  
-Migration test covers schema **v13–v16** (Alpha.3 upgrade path fields). Full Electron EXE upgrade smoke remains **BLOCKED** without release artifacts on CI.  
-**Preview installer §19: NO-GO.**
+- `engine-windows` job: `npm run test:browser-runtime` — **65 pass / 0 fail** (added export/ADB/focus unit tests).  
+- New `installer-smoke-offline` job: builds `dist:win:offline`, runs Alpha.3→branch preservation (`electron-smoke-branch-upgrade.js`) + `electron-smoke-offline.js`; **no GitHub release publish**. Trigger: `[ci:installer-smoke]` or workflow_dispatch.  
+- **§19 preview publish: still NO-GO** until installer job green + owner sign-off; gates 2–4 now have automated evidence path.
 
 ## 20. Next milestone
-Bundled drivers optional pack; Latitude physical smoke; custom Chromium **BLOCKED**.
+Bundled drivers; Latitude physical smoke; custom Chromium **BLOCKED**.
 
 **No Multilogin equivalence percentage claimed.**

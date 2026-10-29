@@ -47,6 +47,11 @@ import { buildUserAgent } from './advanced-launch.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
 import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection } from './cookies.js';
+import {
+  assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
+} from './profile-browser-export.js';
+import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
+import { adbAdapterReport, listAdbDevices } from './adb-adapter.js';
 import { createBackup, createEncryptedBackup, inspectBackup, restoreBackup } from './backup.js';
 import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
 import { dashboardStats } from './dashboard.js';
@@ -610,6 +615,39 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id)).consistency)));
   router.post('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id, { previous: readPreviousObservation(req.body) })).consistency)));
   router.get('/profiles/:id/cookies', wrap(async (req, res) => res.json(await cookieList(req.params.id))));
+  router.get('/profiles/:id/bookmarks/export', wrap((req, res) => {
+    const profile = must(req.params.id);
+    assertProfileStoppedForDiskExport(engine.isRunning, profile.id);
+    res.set('Cache-Control', 'no-store');
+    res.json(exportStoppedProfileBookmarks(userDataDir(profile.id)));
+  }));
+  router.get('/profiles/:id/history/export', wrap((req, res) => {
+    const profile = must(req.params.id);
+    assertProfileStoppedForDiskExport(engine.isRunning, profile.id);
+    const limit = req.query.limit != null ? Number(req.query.limit) : 500;
+    res.set('Cache-Control', 'no-store');
+    res.json(exportStoppedProfileHistory(userDataDir(profile.id), { limit }));
+  }));
+  router.post('/profiles/:id/browser/focus', wrap(async (req, res) => {
+    must(req.params.id);
+    if (!engine.isRunning(req.params.id)) throw err(409, 'Profile is not running.', 'NOT_RUNNING');
+    const row = engine.runInfo(req.params.id);
+    res.json(await focusRunningBrowserSession({ pid: row?.pid ?? null, cdpPort: row?.cdp_port ?? null }));
+  }));
+  router.get('/profiles/:id/browser/locate', wrap(async (req, res) => {
+    must(req.params.id);
+    if (!engine.isRunning(req.params.id)) throw err(409, 'Profile is not running.', 'NOT_RUNNING');
+    const row = engine.runInfo(req.params.id);
+    res.json(await locateRunningBrowserSession({ pid: row?.pid ?? null, cdpPort: row?.cdp_port ?? null }));
+  }));
+  router.get('/adb', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(adbAdapterReport());
+  }));
+  router.get('/adb/devices', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(listAdbDevices());
+  }));
   router.post('/profiles/:id/cookies/import', wrap((req, res) => {
     const profile = cookieMutation(req.params.id);
     const cookies = Array.isArray(req.body) ? req.body : req.body.cookies;

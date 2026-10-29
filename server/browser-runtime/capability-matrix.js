@@ -20,11 +20,16 @@ export function browserEngineCapabilityMatrix() {
       { id: 'trash_bin', title: 'Trash restore / purge', state: 'IMPLEMENTED', evidence: 'test/profile-lifecycle.test.js' },
       { id: 'profile_templates', title: 'Template library + UI', state: 'IMPLEMENTED', evidence: 'TemplatesPage + bulk fromTemplate job + test/profile-lifecycle.test.js' },
       { id: 'browser_update_rollback', title: 'Dual-slot CfT backup + rollback', state: 'IMPLEMENTED', evidence: 'chromium-lifecycle + test/update-manager.test.js + Diagnostics rollback' },
-      { id: 'webdriver_localhost', title: 'Localhost WebDriver bridge', state: 'PARTIAL', evidence: 'webdriver-bridge.js + POST /webdriver/start', note: 'Requires host chromedriver; automation CDP sessions only' },
+      { id: 'webdriver_localhost', title: 'Localhost WebDriver bridge', state: 'PARTIAL', evidence: 'webdriver-bridge.js + geckodriver-bridge.js', note: 'Host chromedriver/geckodriver; automation sessions only' },
+      { id: 'local_workspaces', title: 'Local workspaces / vault lock', state: 'IMPLEMENTED', evidence: 'workspaces.js + WorkspacesPage + test/workspaces.test.js' },
+      { id: 'cookie_robot_local', title: 'CookieRobot-local job runner', state: 'PARTIAL', evidence: 'cookie-robot-jobs.js + CookieRobotPage', note: 'Chromium CDP batches; user URLs only' },
       { id: 'advanced_monitoring_pipe', title: 'Advanced Monitoring CDP pipe facts', state: 'PARTIAL', note: 'Requires Playwright-connected session' },
       { id: 'custom_chromium_build', title: 'Dedicated compiled browser binary', state: 'BLOCKED', evidence: 'CHROMIUM-DERIVED-FEASIBILITY.md' },
       { id: 'google_sorry_loop', title: 'Google Search CAPTCHA-free guarantee', state: 'UNSUPPORTED', note: 'Environmental + Google policy; see P1 findings' },
       { id: 'latitude_ipv6', title: 'Owner Latitude direct IPv6 path', state: 'BLOCKED', note: 'Not in GHA windows-2022' },
+      { id: 'bookmarks_history_export', title: 'Bookmarks/history export (stopped Chromium profile)', state: 'IMPLEMENTED', evidence: 'profile-browser-export.js + test/profile-browser-export.test.js' },
+      { id: 'browser_window_focus', title: 'Focus/locate running browser window', state: 'PARTIAL', evidence: 'browser-window-actions.js', note: 'CDP bringToFront or Win32 foreground; no macOS/Linux native yet' },
+      { id: 'local_adb_adapter', title: 'Optional local ADB device list', state: 'PARTIAL', evidence: 'adb-adapter.js', note: 'Host adb on PATH; NOT farm-equivalent' },
     ],
   };
 }

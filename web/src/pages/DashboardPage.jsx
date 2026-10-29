@@ -31,8 +31,8 @@ export function DashboardPage({ onOpenProfiles }) {
       <div className="cols">
         <section className="panel"><h2>Live sessions</h2>
           {!stats.sessions.length && <p className="muted">No profile is running in this process.</p>}
-          {!!stats.sessions.length && <table className="grid"><thead><tr><th>Profile</th><th>PID</th><th>Started</th><th>CDP</th></tr></thead><tbody>
-            {stats.sessions.map(session => <tr key={session.id}><td>{session.name || session.id}</td><td className="mono-sm">{session.pid ?? '—'}</td><td className="muted">{session.startedAt ? new Date(session.startedAt).toLocaleString() : '—'}</td><td>{session.automation ? 'On' : 'Off'}</td></tr>)}
+          {!!stats.sessions.length && <table className="grid"><thead><tr><th>Profile</th><th>PID</th><th>Started</th><th>CDP</th><th></th></tr></thead><tbody>
+            {stats.sessions.map(session => <SessionRow key={session.id} session={session} />)}
           </tbody></table>}
         </section>
         <section className="panel"><h2>Recent profile errors</h2>
@@ -45,4 +45,28 @@ export function DashboardPage({ onOpenProfiles }) {
 }
 function Stat({ label, value, detail }) {
   return <section className="stat"><span className="muted">{label}</span><b>{value}</b><span className="muted">{detail}</span></section>;
+}
+
+function SessionRow({ session }) {
+  const [busy, setBusy] = useState(false);
+  const focus = async () => {
+    setBusy(true);
+    try {
+      const r = await api(`/api/profiles/${session.id}/browser/focus`, { method: 'POST' });
+      if (!r.ok) throw new Error(r.reason || 'Could not focus browser window');
+    } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
+  const stop = async () => {
+    setBusy(true);
+    try { await api(`/api/profiles/${session.id}/stop`, { method: 'POST' }); } catch (e) { window.alert(e.message); }
+    setBusy(false);
+  };
+  return <tr>
+    <td>{session.name || session.id}</td>
+    <td className="mono-sm">{session.pid ?? '—'}</td>
+    <td className="muted">{session.startedAt ? new Date(session.startedAt).toLocaleString() : '—'}</td>
+    <td>{session.automation ? 'On' : 'Off'}</td>
+    <td className="actions"><button disabled={busy} onClick={focus}>Focus</button><button disabled={busy} onClick={stop}>Stop</button></td>
+  </tr>;
 }

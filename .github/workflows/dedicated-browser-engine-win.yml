@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/dedicated-browser-engine
+  workflow_dispatch:
 
 jobs:
   engine-windows:
@@ -24,3 +25,116 @@ jobs:
         run: npm run test:browser-runtime
       - name: Firefox host spawn smoke
         run: node --test test/firefox-spawn-smoke.test.js
+
+  installer-smoke-offline:
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch'
+        || contains(github.event.head_commit.message, '[ci:installer-smoke]')
+      }}
+    runs-on: windows-2022
+    timeout-minutes: 150
+    env:
+      PM_API_TOKEN: branch-installer-smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run metadata (no release publish)
+        shell: pwsh
+        run: |
+          @"
+          ## Offline installer smoke (branch build only)
+          - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **SHA:** ${{ github.sha }}
+          - **Publish:** disabled (no \`gh release create\`, no Alpha.3 retag)
+          "@ | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - name: Confirm Node prebuild + Electron native modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/confirm-node-native.mjs
+          rm -rf node_modules/better-sqlite3/prebuilds
+          npx electron-builder install-app-deps
+          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
+      - name: Build offline setup EXE (dist:win:offline path)
+        timeout-minutes: 45
+        run: npm run dist:win:offline
+      - name: SHA-256 of offline setup
+        shell: pwsh
+        run: |
+          $exes = @(Get-ChildItem release -File | Where-Object { $_.Extension -eq '.exe' -and $_.Name -like '*offline*Setup*.exe' })
+          if ($exes.Count -ne 1) { throw "expected one setup exe, got $($exes.Count)" }
+          $exe = $exes[0]
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "PM_BRANCH_SETUP=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Add-Content $env:GITHUB_STEP_SUMMARY "### Branch offline installer`n- **File:** $($exe.Name)`n- **Bytes:** $($exe.Length)`n- **SHA-256:** ``$hash``"
+      - name: Block Playwright download hosts
+        shell: pwsh
+        run: |
+          $hostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = @('cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'playwright.azureedge.net')
+          $current = @(Get-Content $hostsFile)
+          foreach ($name in $names) {
+            if (-not ($current | Where-Object { $_ -match [regex]::Escape($name) })) {
+              Add-Content -Path $hostsFile -Value "127.0.0.1 $name"
+            }
+          }
+      - name: Download Alpha.3 installer for upgrade preservation test
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $dest = Join-Path $env:RUNNER_TEMP 'Profile.Manager-offline-Setup-0.5.0-alpha.3-x64.exe'
+          gh release download v0.5.0-alpha.3-m1-m17 -p 'Profile.Manager-offline-Setup-0.5.0-alpha.3-x64.exe' -O $dest -R ${{ github.repository }}
+          "PM_ALPHA3_SETUP=$dest" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Alpha.3 to branch upgrade preservation smoke
+        timeout-minutes: 45
+        env:
+          PM_BRANCH_SETUP: ${{ env.PM_BRANCH_SETUP }}
+          PM_ALPHA3_SETUP: ${{ env.PM_ALPHA3_SETUP }}
+        run: node test/electron-smoke-branch-upgrade.js
+      - name: Isolate profile data for clean install smoke
+        shell: pwsh
+        run: |
+          foreach ($p in @(
+            (Join-Path $env:APPDATA 'profile-manager'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager')
+          )) {
+            if (Test-Path $p) { Remove-Item -LiteralPath $p -Recurse -Force }
+          }
+      - name: Silent install branch EXE + offline electron smoke
+        timeout-minutes: 60
+        shell: pwsh
+        run: |
+          $setup = $env:PM_BRANCH_SETUP
+          if (-not $setup) { throw 'PM_BRANCH_SETUP missing' }
+          Start-Process -FilePath $setup -ArgumentList '/S' -Wait -NoNewWindow
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager\Profile Manager.exe'
+          if (-not (Test-Path $exe)) { throw "installed exe missing at $exe" }
+          "PM_OFFLINE_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: electron-smoke-offline.js
+        timeout-minutes: 60
+        env:
+          PM_OFFLINE_EXE: ${{ env.PM_OFFLINE_EXE }}
+        run: node test/electron-smoke-offline.js
+      - name: §19 gate checklist (evidence only)
+        if: always()
+        shell: pwsh
+        run: |
+          @"
+          ### §19 preview gates (this job)
+          | Gate | Result |
+          |------|--------|
+          | Offline EXE build | see SHA step |
+          | Alpha.3 → branch data preservation | upgrade smoke step |
+          | Installed offline smoke | electron-smoke-offline step |
+          | GitHub release publish | **skipped by design** |
+          | Owner sign-off | **still required** |
+          "@ | Add-Content -Path $env:GITHUB_STEP_SUMMARY

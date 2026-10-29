@@ -11,11 +11,15 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P1 | Native tab restore | Save tabs on native close | PARTIAL |
 | P1 | Quick profiles + trash | Ephemeral + soft-delete + save regular | VERIFIED |
 | P1 | Profile templates | Reusable preset rows + UI + bulk create | VERIFIED |
-| P1 | CookieRobot-local | Documented API script + safety guards | PARTIAL |
+| P1 | CookieRobot-local | Job runner API + UI + URL guards | PARTIAL |
 | P1 | Automation examples | Playwright/CDP samples in repo | PARTIAL |
 | P1 | WebDriver localhost | ChromeDriver bridge API (automation CDP only) | PARTIAL |
+| P2 | Bookmarks/history export | Stopped Chromium profile read API | VERIFIED |
+| P2 | Running profile focus | Dashboard + profiles Focus button | PARTIAL (Win32/CDP) |
+| P2 | Optional local ADB | List user devices when adb on PATH | PARTIAL |
 | P2 | Performance benchmarks | Latitude-oriented metrics script | MISSING |
 | P2 | Side-by-side browser rollback | CfT backup slot + rollback | VERIFIED |
+| P2 | §19 installer CI smoke | Non-publishing windows-2022 job | PARTIAL (await first green run) |
 | P3 | Custom Chromium compile | Recipe only until approved infra | BLOCKED |
 | P3 | Canvas/WebGL noise | Requires fork | UNSUPPORTED |
 | N/A | Cloud sync/teams/billing | — | NOT_APPLICABLE_CLOUD |
@@ -26,14 +30,17 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 - Native Chromium + Firefox gecko scaffold + config engine v2  
 - P0 continuation: UI engine/trash/quick/templates API/tab harvest/pm-cli  
 - Template UI increment (`4e9f730` / docs `11aab86`)  
-- **This increment:** update-manager dual-slot report; Diagnostics rollback; WebDriver bridge; provider API usage; Firefox CI smoke; **51** tests in `test:browser-runtime`
+- Rollback/WebDriver/provider increment (`dc60291` / docs `ecbdb10`)  
+- Workspaces + CookieRobot + geckodriver (`e4214aa` / **60** runtime tests)  
+- **This increment:** installer-smoke CI job (no publish); bookmarks/history export; browser focus/locate; optional ADB adapter; **65** tests in `test:browser-runtime`
 
 ## Still open (honest)
 
 - Bundled chromedriver / geckodriver (**MISSING**)  
 - Custom Chromium compile (**BLOCKED**)  
-- Latitude / preview EXE §19 (**BLOCKED** without owner)  
-- Full Firefox CI without host Firefox (**BLOCKED** on GHA)
+- §19 preview publish (**NO-GO** until installer job green + owner)  
+- Full Firefox CI without host Firefox (**BLOCKED** on GHA)  
+- macOS/Linux native window focus (**MISSING**)
 
 ## Definition of done (VERIFIED)
 
