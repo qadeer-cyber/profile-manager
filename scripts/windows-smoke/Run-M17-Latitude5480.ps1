@@ -44,7 +44,8 @@ try {
   $env:PM_API_TOKEN = 'm17-win-smoke'
   foreach ($suite in @('test:m17-regression')) {
     Log $suite
-    & npm run $suite 2>&1 | Out-File (Join-Path $runRoot ($suite -replace ':','-') + '.log')
+    $logFile = Join-Path $runRoot (($suite -replace ':', '-') + '.log')
+    & npm run $suite 2>&1 | Out-File -FilePath $logFile -Encoding utf8
     if ($LASTEXITCODE -ne 0) { throw "$suite exit $LASTEXITCODE" }
     $report.steps += @{ name = $suite; exitCode = 0 }
   }
