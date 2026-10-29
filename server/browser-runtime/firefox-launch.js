@@ -1,0 +1,106 @@
+// Firefox/Gecko manual launch (no Chromium flags, separate profile tree).
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { anonymizeProxy } from 'proxy-chain';
+import net from 'node:net';
+import { validateBrowserSettings } from '../browser-settings.js';
+import { getSetting } from '../db.js';
+import { pidMatches, isAlive } from '../proc.js';
+import { launchRuntimeMode } from './launch-plan.js';
+
+const freePort = () => new Promise((res, rej) => {
+  const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }).on('error', rej);
+});
+
+export function geckoUserDataDir(profileId, dataDirFn) {
+  return path.join(dataDirFn(profileId), 'gecko');
+}
+
+export function resolveFirefoxExecutable() {
+  const configured = getSetting('firefoxExecutablePath', '') || process.env.PM_FIREFOX_EXECUTABLE || '';
+  if (configured && fs.existsSync(configured)) return configured;
+  if (process.platform === 'win32') {
+    const candidates = [
+      path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Mozilla Firefox', 'firefox.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Mozilla Firefox', 'firefox.exe'),
+    ];
+    return candidates.find(c => fs.existsSync(c)) || null;
+  }
+  for (const c of ['/usr/bin/firefox', '/usr/bin/firefox-esr', '/Applications/Firefox.app/Contents/MacOS/firefox']) {
+    if (fs.existsSync(c)) return c;
+  }
+  return null;
+}
+
+function writeGeckoProxyPrefs(profileDir, proxy, relayUrl) {
+  if (!proxy && !relayUrl) return;
+  const prefs = [];
+  if (relayUrl) {
+    prefs.push('user_pref("network.proxy.type", 1);');
+    try {
+      const u = new URL(relayUrl);
+      prefs.push(`user_pref("network.proxy.http", "${u.hostname}");`);
+      prefs.push(`user_pref("network.proxy.http_port", ${Number(u.port)});`);
+      prefs.push(`user_pref("network.proxy.ssl", "${u.hostname}");`);
+      prefs.push(`user_pref("network.proxy.ssl_port", ${Number(u.port)});`);
+      prefs.push(`user_pref("network.proxy.socks", "${u.hostname}");`);
+      prefs.push(`user_pref("network.proxy.socks_port", ${Number(u.port)});`);
+    } catch { /* skip malformed relay */ }
+  } else if (proxy) {
+    prefs.push('user_pref("network.proxy.type", 1);');
+    prefs.push(`user_pref("network.proxy.socks", "${proxy.host}");`);
+    prefs.push(`user_pref("network.proxy.socks_port", ${proxy.port});`);
+    prefs.push(`user_pref("network.proxy.socks_version", 5);`);
+  }
+  const file = path.join(profileDir, 'user.js');
+  fs.mkdirSync(profileDir, { recursive: true });
+  fs.writeFileSync(file, prefs.join('\n') + '\n', { flag: 'a' });
+}
+
+export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, opts = {} } = {}) {
+  const runtime = launchRuntimeMode(opts);
+  if (runtime !== 'native') {
+    throw Object.assign(new Error('Firefox automation/headless requires a future Playwright adapter'), { status: 501, code: 'FIREFOX_PLAYWRIGHT_UNSUPPORTED' });
+  }
+  const exe = resolveFirefoxExecutable();
+  if (!exe) {
+    throw Object.assign(new Error('Firefox is not installed. Set Settings → firefoxExecutablePath or install Firefox.'), { status: 503, code: 'FIREFOX_MISSING' });
+  }
+  const regional = validateBrowserSettings(p.browserSettings || {});
+  const profileDir = geckoUserDataDir(p.id, userDataDirFn || (() => userDataDir));
+  fs.mkdirSync(profileDir, { recursive: true });
+
+  let relayUrl = null;
+  if (p.proxy?.username) {
+    const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
+    relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
+  }
+  writeGeckoProxyPrefs(profileDir, p.proxy && !p.proxy.username ? p.proxy : null, relayUrl);
+
+  const args = ['-no-remote', '-profile', profileDir];
+  if (regional.languages.length) args.push('-lang', regional.locale || regional.languages[0]);
+  const openUrls = [];
+  if (opts.url) openUrls.push(opts.url);
+  for (const u of openUrls) args.push(u);
+
+  return { runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls };
+}
+
+export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const pid of candidates) {
+      if (pid && await pidMatches(pid, profileDir)) return pid;
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
+  return candidates.find(p => p && isAlive(p)) ?? null;
+}
+
+export async function launchFirefoxNative(plan) {
+  const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false });
+  if (!proc.pid) throw Object.assign(new Error('Failed to spawn Firefox'), { status: 500, code: 'FIREFOX_SPAWN_FAILED' });
+  const browserPid = await discoverGeckoBrowserPid(plan.profileDir, [proc.pid]);
+  return { proc, browserPid, spawnPid: proc.pid, argv: plan.args };
+}

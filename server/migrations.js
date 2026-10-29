@@ -122,6 +122,12 @@ export const migrations = [
       if (!cols.includes('provider_ref')) db.exec('ALTER TABLE proxies ADD COLUMN provider_ref TEXT');
       if (!cols.includes('provider_meta')) db.exec("ALTER TABLE proxies ADD COLUMN provider_meta TEXT NOT NULL DEFAULT '{}'");
     } },
+  { version: 13, name: 'profiles.browser_engine chromium|firefox', up: db => {
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('browser_engine')) {
+        db.exec(`ALTER TABLE profiles ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium' CHECK (browser_engine IN ('chromium','firefox'))`);
+      }
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

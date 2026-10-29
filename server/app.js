@@ -25,6 +25,7 @@ import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
+import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
 import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
@@ -136,7 +137,9 @@ const row2p = r => {
   let advancedSettings = normalizeAdvancedSettings({});
   if (r.advanced_settings) { try { advancedSettings = normalizeAdvancedSettings(JSON.parse(r.advanced_settings)); } catch { /* keep defaults when the stored JSON is unreadable */ } }
   delete r.advanced_settings;
-  return { ...r, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const browserEngine = r.browser_engine === 'firefox' ? 'firefox' : 'chromium';
+  delete r.browser_engine;
+  return { ...r, browserEngine, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -175,7 +178,12 @@ function validate(b, prev) {
   const advancedSettings = validateAdvancedSettings('advancedSettings' in b ? b.advancedSettings : {}, prev?.advancedSettings);
   const extensionAssignments = 'extensionAssignments' in b ? assertKnownAssignments(b.extensionAssignments) : null;
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
-  return { name, browserSettings, webrtcSettings, advancedSettings, extensionAssignments, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
+  let browserEngine = prev?.browserEngine ?? 'chromium';
+  if ('browserEngine' in b) {
+    if (b.browserEngine !== 'chromium' && b.browserEngine !== 'firefox') throw err(400, 'browserEngine must be chromium or firefox');
+    browserEngine = b.browserEngine;
+  }
+  return { name, browserEngine, browserSettings, webrtcSettings, advancedSettings, extensionAssignments, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
     folder: String(b.folder ?? prev?.folder ?? '').trim(), notes: String(b.notes ?? prev?.notes ?? ''),
     proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : 'proxyId' in b ? (b.proxyId == null || b.proxyId === '' ? null : mustProxy(b.proxyId).id) : prev?.proxy_id ?? null,
     automationEnabled: 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false };
@@ -194,8 +202,8 @@ function insert(v) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   const dir = userDataDir(id);
   if (fs.existsSync(dir)) throw err(500, 'data directory collision'); // never share a data dir
-  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_settings,webrtc_settings,advanced_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), now, now);
+  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_engine,browser_settings,webrtc_settings,advanced_settings,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), now, now);
   if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   fs.mkdirSync(dir, { recursive: true });
   return id;
@@ -437,8 +445,8 @@ function rejectPassphraseQuery(req) {
 }
 function applyUpdate(id, body) {
   const v = validate(body, must(id));
-  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,updated_at=? WHERE id=?')
-    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), new Date().toISOString(), id);
+  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_engine=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,updated_at=? WHERE id=?')
+    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), new Date().toISOString(), id);
   if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   const result = publicP(get(id));
   if (result.running && ('browserSettings' in body || 'webrtcSettings' in body || 'advancedSettings' in body || 'extensionAssignments' in body)) result.appliesOnNextLaunch = true;
@@ -485,7 +493,17 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     const profile = get(req.params.id);
     if (!profile) throw err(404, 'Profile not found');
-    res.json(buildProfileConfigModel(profile));
+    res.json(buildProfileConfigDocument(profile));
+  }));
+  router.get('/profile-config/schema', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(profileConfigJsonSchema());
+  }));
+  router.post('/profile-config/validate', express.json(), wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const config = normalizeProfileConfigInput(body, body);
+    res.json({ valid: true, config, warnings: profileConfigWarnings(config) });
   }));
   router.get('/parity-scorecard', wrap((req, res) => res.json(computeParityCoverage())));
   router.get('/hardware', wrap(async (req, res) => res.json(await hardwareReport(null))));

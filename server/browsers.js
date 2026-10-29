@@ -36,6 +36,7 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
+import { buildFirefoxLaunchPlan, launchFirefoxNative } from './browser-runtime/firefox-launch.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -263,6 +264,31 @@ async function doLaunch(p, opts = {}) {
   let relayUrl = null, ctx = null, entry = null;
   let launchPlan = null;
   try {
+    if ((p.browserEngine || 'chromium') === 'firefox') {
+      const fxPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, userDataDirFn: userDataDir, opts: { ...opts, url: opts.url } });
+      const native = await launchFirefoxNative(fxPlan);
+      markContextReady(metricsHandle);
+      entry = {
+        ctx: null, runtime: 'native', engine: 'firefox', relayUrl: fxPlan.relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
+        stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
+        exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline: readPreferences(dir), closeReason: null,
+        launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
+        requestedArgs: native.argv, restoreTabs: false, tabUrls: [],
+      };
+      captureTermination(entry, native.proc);
+      const owned = await browserOwnedByProfile(native.browserPid, fxPlan.profileDir);
+      entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, []);
+      markBrowserReady(metricsHandle);
+      native.proc.on('exit', () => onClosed(p.id, null));
+      updateLock(dir, { browserPid: native.browserPid, cdpPort: null });
+      live.set(p.id, entry);
+      db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, null, null, fxPlan.relayUrl, new Date().toISOString());
+      setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
+      emit('profile:started', p.id, { runtime: 'native', engine: 'firefox' });
+      console.log('FIREFOX-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid }));
+      finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native', engine: 'firefox' });
+      return runInfo(p.id);
+    }
     launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
     relayUrl = launchPlan.relayUrl;
     const { args, plan, regional, cdpPort } = launchPlan;

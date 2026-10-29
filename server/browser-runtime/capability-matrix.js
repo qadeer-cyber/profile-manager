@@ -5,6 +5,8 @@ export function browserEngineCapabilityMatrix() {
     legend: { IMPLEMENTED: 'working + tested', PARTIAL: 'some paths only', UNSUPPORTED: 'stock CfT limit', BLOCKED: 'needs owner HW or custom build' },
     rows: [
       { id: 'manual_native_launch', title: 'Manual browse without Playwright pipe', state: 'IMPLEMENTED', evidence: 'test/browser-runtime-native-launch.test.js' },
+      { id: 'firefox_gecko_runtime', title: 'Firefox second runtime (native spawn)', state: 'PARTIAL', evidence: 'test/firefox-launch-plan.test.js', note: 'Requires host Firefox; extensions N/A' },
+      { id: 'profile_config_engine_v2', title: 'Typed profile config + warnings', state: 'IMPLEMENTED', evidence: 'test/profile-config-engine.test.js' },
       { id: 'profile_isolation', title: 'Per-profile userDataDir + lock', state: 'IMPLEMENTED', evidence: 'existing M1–M17 tests' },
       { id: 'proxy_socks_auth', title: 'SOCKS5 with auth via local relay', state: 'IMPLEMENTED', evidence: 'native --proxy-server + relay' },
       { id: 'extensions', title: 'Unpacked extensions on command line', state: 'IMPLEMENTED', evidence: 'extensions-launch tests' },
