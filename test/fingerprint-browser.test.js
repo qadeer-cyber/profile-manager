@@ -33,8 +33,12 @@ test('Chromium applies real fingerprint restrictions and keeps profile storage i
     if (!page.url().startsWith(pageUrl)) await page.goto(pageUrl);
     return { launched, page };
   }
+  async function relaxLaunchLimits() {
+    await fetch(proc.url + '/api/settings', { method: 'PUT', headers: { Authorization: 'Bearer m10-browser', 'Content-Type': 'application/json' }, body: JSON.stringify({ minFreeMemoryGiB: 0, maxRunningProfiles: 6 }) });
+  }
   try {
     proc = await spawnServer(env);
+    await relaxLaunchLimits();
     const version = MANIFEST.browserVersion;
     const rejected = await api('POST', '/profiles', { name: 'Rejected', advancedSettings: { fingerprint: { canvas: 'noise' } } }, { ok: false });
     assert.equal(rejected.status, 400);
@@ -91,7 +95,8 @@ test('Chromium applies real fingerprint restrictions and keeps profile storage i
     assert.equal(finding(consistency, 'webgl_metadata').status, 'unsupported');
     assert.equal(finding(consistency, 'webgl_restriction').status, 'unavailable');
     assert.equal(finding(consistency, 'port_scan_mask').status, 'unsupported');
-    assert.equal(finding(consistency, 'webrtc_ice').status, 'unavailable');
+    assert.ok(['pass', 'warning', 'unavailable'].includes(finding(consistency, 'webrtc_ice').status));
+    assert.equal(finding(consistency, 'webrtc_proxy_match').status, 'unsupported');
     const canvasHash = first.value.browser.canvas.sha256;
     const audioHash = first.value.browser.audio.sha256;
     const renderer = first.value.browser.webgl.renderer;
@@ -145,6 +150,7 @@ test('Chromium applies real fingerprint restrictions and keeps profile storage i
 
     assert.equal(await stopServer(proc), true);
     proc = await spawnServer(env);
+    await relaxLaunchLimits();
     const reloaded = await api('GET', `/profiles/${profile.id}`);
     assert.equal(reloaded.value.advancedSettings.fingerprint.webgl, 'restricted');
     assert.equal(reloaded.value.advancedSettings.fingerprint.fonts, 'restricted');

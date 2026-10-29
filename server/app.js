@@ -15,7 +15,10 @@ import { encrypt, decrypt, needsReencrypt, loadApiToken, encryptionStatus, setSt
 import * as engine from './browsers.js';
 import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpError, diagnosticsAuthorized } from './diagnostics.js';
 import { currentVersion } from './migrations.js';
-import { installVerifiedChromium, chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
+import { chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
+import { executableCompatibility, installVerifiedChromiumWithBackup, listInstallBackups, rollbackLatest } from './chromium-lifecycle.js';
+import { fingerprintCapabilityReport } from './fingerprint-capabilities.js';
+import { launchLimits } from './launch-limits.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
 import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-settings.js';
 import { buildUserAgent } from './advanced-launch.js';
@@ -63,7 +66,7 @@ export function installBrowser({ install } = {}) {
     engine.events.emit('event', { type: 'browser:install', state: 'failed', error, code: 'BAD_INSTALL_ROOT' });
     return Promise.resolve();
   }
-  install = install || installVerifiedChromium;
+  install = install || installVerifiedChromiumWithBackup;
   Object.assign(browserInstall, { state: 'running', log: '', error: null, code: null });
   engine.events.emit('event', { type: 'browser:install', state: 'running' });
   const log = line => { browserInstall.log = (browserInstall.log + line + '\n').slice(-4000); };
@@ -83,7 +86,7 @@ const err = (status, msg) => Object.assign(new Error(msg), { status });
 // CHROMIUM_MISSING -> 503 {error:'CHROMIUM_MISSING', message} (same shape in /api and /api/v1)
 const errorBody = e => e.code === 'CHROMIUM_MISSING' ? { error: 'CHROMIUM_MISSING', message: e.message } : { error: e.message, code: e.code, ...(e.extra || {}) };
 const wrap = fn => (req, res) => Promise.resolve().then(() => fn(req, res)).catch(e => res.status(e.code === 'CHROMIUM_MISSING' ? 503 : e.status || 500).json(errorBody(e)));
-const SETTINGS_DEFAULTS = { defaultHeadless: false, executablePath: '', startUrl: '' };
+const SETTINGS_DEFAULTS = { defaultHeadless: false, executablePath: '', startUrl: '', maxRunningProfiles: 4, minFreeMemoryGiB: 1 };
 
 // Re-encrypt stored proxy secrets with the preferred backend (plaintext/AES -> safeStorage, etc.)
 export function reencryptSecrets() {
@@ -440,6 +443,7 @@ function batchHandlers(allowOverride) {
 function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
+  router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/hardware', wrap(async (req, res) => res.json(await hardwareReport(null))));
   router.get('/profiles/:id/hardware', wrap(async (req, res) => res.json(await hardwareReport(req.params.id))));
   router.get('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id)).consistency)));
@@ -797,6 +801,8 @@ function diagnostics() {
     dataDir: DATA_DIR, schemaVersion: currentVersion(db), migration,
     encryption: encryptionStatus(), browser: { path: browserPath, installed: browserInstalled, browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default' },
     profiles: db.prepare('SELECT COUNT(*) n FROM profiles').get().n, proxies: db.prepare('SELECT COUNT(*) n FROM proxies').get().n, running: engine.runningIds().length, pid: process.pid,
+    launchLimits: launchLimits({ runningCount: engine.runningIds().length }),
+    browserCompatibility: executableCompatibility(browserPath && browserInstalled ? browserPath : ''),
   };
 }
 
@@ -851,10 +857,30 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     if ('defaultHeadless' in b) setSetting('defaultHeadless', !!b.defaultHeadless);
     if ('executablePath' in b) { const p = String(b.executablePath || '').trim(); if (p && !fs.existsSync(p)) throw err(400, `Browser executable not found: ${p}`); setSetting('executablePath', p); }
     if ('startUrl' in b) { const u = String(b.startUrl || '').trim(); if (u && !/^https?:\/\//.test(u)) throw err(400, 'startUrl must start with http:// or https://'); setSetting('startUrl', u); }
+    if ('maxRunningProfiles' in b) {
+      const n = Number(b.maxRunningProfiles);
+      if (!Number.isInteger(n) || n < 1 || n > 8) throw err(400, 'maxRunningProfiles must be an integer from 1 to 8');
+      setSetting('maxRunningProfiles', n);
+    }
+    if ('minFreeMemoryGiB' in b) {
+      const n = Number(b.minFreeMemoryGiB);
+      if (!Number.isInteger(n) || n < 0 || n > 4) throw err(400, 'minFreeMemoryGiB must be an integer from 0 to 4');
+      setSetting('minFreeMemoryGiB', n);
+    }
     res.json(Object.fromEntries(Object.entries(SETTINGS_DEFAULTS).map(([k, d]) => [k, getSetting(k, d)])));
   }));
   ui.get('/diagnostics', (req, res) => res.json(diagnostics()));
   ui.get('/browser', (req, res) => res.json(browserStatus()));
+  ui.get('/browser/compatibility', wrap((req, res) => {
+    let pathValue = getSetting('executablePath', '');
+    if (!pathValue) { try { pathValue = chromium.executablePath(); } catch {} }
+    res.json(executableCompatibility(pathValue && fs.existsSync(pathValue) ? pathValue : ''));
+  }));
+  ui.get('/browser/backups', wrap((req, res) => res.json({ chromium: listInstallBackups('chromium'), 'chromium-headless-shell': listInstallBackups('chromium-headless-shell') })));
+  ui.post('/browser/rollback', wrap((req, res) => {
+    const name = req.body?.name === 'chromium-headless-shell' ? 'chromium-headless-shell' : 'chromium';
+    res.json({ name, restored: rollbackLatest(name) });
+  }));
   ui.post('/browser/install', (req, res) => { installBrowser(); res.status(202).json(browserStatus()); });
   ui.get('/api-token', (req, res) => uiToken ? res.json({ token: API_TOKEN }) : res.status(403).json({ error: 'only available in the desktop app' }));
   // Server-sent events: profile:started / stopped / crashed / launch-failed

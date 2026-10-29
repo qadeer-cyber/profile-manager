@@ -8,15 +8,26 @@ Do not copy that string onto the Latitude 5480. That machine’s integrated GPU 
 
 Alpha.2 installers and tags stay as they are. This branch does not publish a build.
 
+## Execution status
+
+**BLOCKED** on Linux cloud agents. Only a native Windows 10/11 run on the Latitude 5480 counts as Windows verification.
+
 ## What to run
 
 On the laptop, from this branch:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/windows-smoke/Run-M10-Latitude5480.ps1 -ExpectedCommit 29ef2d113546b64d2482aea988ede0900ee7ee3b
+```
+
+Or manually:
 
 ```text
 npm ci
 npx playwright install chromium
 npm run build
 npm run test:m10
+npm run test:m11
 ```
 
 `test:m10` is the fingerprint unit tests plus `test/fingerprint-browser.test.js`. A skip is not a pass. If Chromium is missing, the browser test should fail, not skip.

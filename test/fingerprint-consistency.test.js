@@ -52,6 +52,8 @@ test('a stopped profile does not receive a pass for signals that were not observ
   assert.equal(byId(report, 'webgl_metadata').status, 'unsupported');
   assert.equal(byId(report, 'canvas_noise').status, 'unsupported');
   assert.equal(byId(report, 'navigator_custom').status, 'unsupported');
+  assert.equal(byId(report, 'webrtc_proxy_match').status, 'unsupported');
+  assert.equal(byId(report, 'webrtc_ice').status, 'unavailable');
   assert.equal(report.findings.some(item => item.status === 'pass' && /undetectable|anonymous|masked proxy/i.test(item.summary)), false);
 });
 
@@ -73,10 +75,25 @@ test('matching client hints, screen, timezone, and an absent WebRTC flag can pas
   assert.equal(byId(report, 'timezone').status, 'pass');
   assert.equal(byId(report, 'languages').status, 'pass');
   assert.equal(byId(report, 'webrtc_flag').status, 'pass');
+  assert.equal(byId(report, 'webrtc_proxy_match').status, 'unsupported');
+  assert.equal(byId(report, 'webrtc_proxy_match').status, 'unsupported');
   assert.equal(byId(report, 'webrtc_ice').status, 'unavailable');
   assert.equal(byId(report, 'webgl_metadata').status, 'unsupported');
   assert.equal(byId(report, 'port_scan_policy').status, 'pass');
   assert.match(byId(report, 'port_scan_policy').summary, /not proof/);
+});
+
+test('ICE summary is graded without comparing to a proxy IP', () => {
+  const report = fingerprintFindings({
+    advanced: DEFAULT_ADVANCED_SETTINGS,
+    webrtc: { mode: 'browser_default' },
+    observation: baseObservation({ webrtcIce: { availability: 'observed', candidateCount: 2, types: { host: 2, srflx: 0, relay: 0, prflx: 0, unknown: 0 }, addressClasses: { private: 1, public: 0, loopback: 1, unknown: 0 }, note: 'x' } }),
+    commandLine: 'chrome',
+    chromiumVersion: version,
+    hostPlatform: 'linux',
+  });
+  assert.equal(byId(report, 'webrtc_ice').status, 'pass');
+  assert.match(byId(report, 'webrtc_ice').summary, /not compared to the proxy/);
 });
 
 test('a mismatched version, a weakened private-network flag, and a failed WebGL restriction are not passes', () => {
@@ -123,5 +140,5 @@ test('WebGL restricted passes only when the flag is present and the context is g
 
 test('a comparison body cannot carry cookies or account data', () => {
   assert.throws(() => readPreviousObservation({ previous: { canvasSha256: 'abc', cookie: 'secret' } }), error => error.code === 'INVALID_FINGERPRINT_COMPARISON');
-  assert.deepEqual(readPreviousObservation({ previous: { canvasSha256: 'abc' } }), { canvasSha256: 'abc', audioSha256: null, webglRenderer: null });
+  assert.deepEqual(readPreviousObservation({ previous: { canvasSha256: 'abc' } }), { canvasSha256: 'abc', audioSha256: null, webglRenderer: null, fingerprintSettings: null });
 });

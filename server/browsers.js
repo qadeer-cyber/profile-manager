@@ -3,6 +3,8 @@ import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
 import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences, applyDocumentPermissions, installUserAgent } from './advanced-launch.js';
 import { verifyFingerprintLaunchArgs } from './fingerprint-settings.js';
+import { executableCompatibility } from './chromium-lifecycle.js';
+import { assertLaunchResources } from './launch-limits.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
@@ -166,6 +168,7 @@ export function launch(p, opts = {}) {
 }
 
 async function doLaunch(p, opts = {}) {
+  assertLaunchResources(live.size + launching.size);
   const { headless, url } = opts, automation = automationEnabled(opts);
   const regional = validateBrowserSettings(p.browserSettings || {});
   const contextSettings = browserContextSettings(regional);
@@ -181,6 +184,10 @@ async function doLaunch(p, opts = {}) {
     const cdpPort = automation ? await freePort() : null;
     const args = automation ? [`--remote-debugging-port=${cdpPort}`, '--remote-debugging-address=127.0.0.1'] : [];
     const executablePath = getSetting('executablePath', '') || undefined;
+    if (executablePath) {
+      const compat = executableCompatibility(executablePath);
+      if (!compat.launchAllowed) throw httpErr(503, compat.warning, 'CHROMIUM_VERSION_MISMATCH');
+    }
     if (!executablePath) { const miss = chromiumMissingError(!!headless); if (miss) throw miss; }
     // We own shutdown: Playwright's own signal handlers would kill browsers before cookies/storage are flushed.
     const launchOpts = { ...contextSettings, headless, viewport: null, args, executablePath, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false };

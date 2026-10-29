@@ -2,6 +2,7 @@
 // A finding is "pass" only when the compared values were both present.
 import { privateNetworkWeakening, WEBGL_DISABLE_ARG } from './fingerprint-settings.js';
 import { chromiumPolicyArgs } from './webrtc-policy.js';
+import { iceConsistencyFinding } from './webrtc-observe.js';
 
 const STATUSES = new Set(['pass', 'warning', 'unsupported', 'unavailable']);
 const HOST_PLATFORM = {
@@ -147,7 +148,9 @@ export function fingerprintFindings({
   else findings.push(finding('webrtc_flag', commandLine.includes(policyFlag) ? 'pass' : 'warning', commandLine.includes(policyFlag)
     ? `The process has ${policyFlag}. That restricts candidate paths. It does not copy the proxy IP into WebRTC.`
     : `The saved WebRTC policy ${policyFlag} is not on the process command line.`));
-  findings.push(finding('webrtc_ice', 'unavailable', 'ICE candidates are not collected. No claim is made that WebRTC matches the proxy.'));
+  findings.push(finding('webrtc_proxy_match', 'unsupported', 'WebRTC addresses are never compared to the proxy exit IP. ICE is summarized by candidate type only.'));
+  const iceFinding = iceConsistencyFinding(webrtc.mode || 'browser_default', seen?.webrtcIce);
+  findings.push(finding(iceFinding.id, iceFinding.status, iceFinding.summary));
 
   if (fingerprint.webgl === 'restricted') {
     if (!seen || typeof commandLine !== 'string') findings.push(finding('webgl_restriction', 'unavailable', 'WebGL restriction needs both a running page and the process command line.'));
@@ -207,11 +210,21 @@ export function fingerprintFindings({
   findings.push(restart('restart_canvas', 'canvasSha256', 'canvas readback'));
   findings.push(restart('restart_audio', 'audioSha256', 'audio render'));
   findings.push(restart('restart_webgl', 'webglRenderer', 'WebGL renderer'));
+  if (!previous || previous.fingerprintSettings == null || previous.fingerprintSettings === '') {
+    findings.push(finding('restart_fingerprint', 'unavailable', 'No previous fingerprint settings were supplied.'));
+  } else if (!fingerprint || !Object.keys(fingerprint).length) {
+    findings.push(finding('restart_fingerprint', 'unavailable', 'This profile has no fingerprint settings to compare.'));
+  } else {
+    const current = JSON.stringify(fingerprint);
+    findings.push(finding('restart_fingerprint', current === previous.fingerprintSettings ? 'pass' : 'warning', current === previous.fingerprintSettings
+      ? 'Fingerprint settings match the previous observation.'
+      : 'Fingerprint settings changed since the previous observation.'));
+  }
 
   return { findings, counts: counts(findings) };
 }
 
-const PREVIOUS_KEYS = new Set(['canvasSha256', 'audioSha256', 'webglRenderer']);
+const PREVIOUS_KEYS = new Set(['canvasSha256', 'audioSha256', 'webglRenderer', 'fingerprintSettings']);
 
 export function readPreviousObservation(body) {
   if (!body || body.previous == null) return null;
@@ -223,7 +236,8 @@ export function readPreviousObservation(body) {
     if (!PREVIOUS_KEYS.has(key)) {
       throw Object.assign(new Error('previous may only include canvasSha256, audioSha256, and webglRenderer'), { status: 400, code: 'INVALID_FINGERPRINT_COMPARISON' });
     }
-    if (previous[key] != null && (typeof previous[key] !== 'string' || previous[key].length > 300)) {
+    const max = key === 'fingerprintSettings' ? 2000 : 300;
+    if (previous[key] != null && (typeof previous[key] !== 'string' || previous[key].length > max)) {
       throw Object.assign(new Error(`${key} must be a short string`), { status: 400, code: 'INVALID_FINGERPRINT_COMPARISON' });
     }
   }
@@ -231,5 +245,6 @@ export function readPreviousObservation(body) {
     canvasSha256: previous.canvasSha256 || null,
     audioSha256: previous.audioSha256 || null,
     webglRenderer: previous.webglRenderer || null,
+    fingerprintSettings: previous.fingerprintSettings || null,
   };
 }

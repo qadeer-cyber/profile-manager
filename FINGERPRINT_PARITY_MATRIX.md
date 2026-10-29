@@ -33,7 +33,7 @@ Classifications:
 | 13 | AudioContext render | Real `OfflineAudioContext` render. This run: the same SHA-256 at 44100 Hz after relaunch. | Fully implemented and browser-verified |
 | 14 | Profile storage | Separate user-data directories. This run: localStorage and a persistent cookie survived restart and did not appear in a second profile. | Fully implemented and browser-verified |
 | 15 | Private-network command line | The live process did not disable `PrivateNetworkAccessSendPreflights`, `PrivateNetworkAccessRespectPreflightResults`, `BlockInsecurePrivateNetworkRequests`, or `LocalNetworkAccessChecks`. The check says this is not proof that every local port probe fails. | Fully implemented and browser-verified |
-| 16 | WebRTC | Saved modes are Chromium’s IP-handling policies, including `disable_non_proxied_udp`. There is no off switch and no proxy-IP copy. This pass did not relaunch a non-default policy. ICE candidates are not collected. | Partially implemented |
+| 16 | WebRTC | Saved modes are Chromium’s IP-handling policies, including `disable_non_proxied_udp`. ICE candidate types are collected on a live page and summarized; they are not compared to the proxy IP. | Partially implemented |
 | 17 | Geolocation prompt and deny | Ask and deny are stored and applied through the same permission path as other permissions. This browser run checked Allow, not prompt or deny. | Partially implemented |
 | 18 | Canvas noise | Rejected. No noise field is stored. | Requires custom Chromium |
 | 19 | AudioContext noise | Rejected. | Requires custom Chromium |

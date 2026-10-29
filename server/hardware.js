@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import http from 'http';
 import os from 'os';
 import { applyDocumentPermissions } from './advanced-launch.js';
+import { gatherIceInPage, summarizeIceCandidates } from './webrtc-observe.js';
 
 async function observeInPage() {
   const text = value => typeof value === 'string' ? value.slice(0, 300) : null;
@@ -190,6 +191,8 @@ export async function observeBrowser(ctx, { permissions } = {}) {
     await probe.page.goto(probe.url);
     if (permissions && Object.keys(permissions).length) await applyDocumentPermissions(probe.page, probe.url, permissions);
     const facts = summarize(await probe.page.evaluate(observeInPage));
+    const iceRaw = await gatherIceInPage(probe.page);
+    facts.webrtcIce = iceRaw.availability === 'observed' ? summarizeIceCandidates(iceRaw.lines) : iceRaw;
     return { availability: 'observed', source: 'browser', ...facts };
   } catch {
     return { availability: 'unavailable', reason: 'collection_failed' };
