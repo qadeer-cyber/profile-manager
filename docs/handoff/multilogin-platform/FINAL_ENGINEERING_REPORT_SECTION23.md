@@ -5,7 +5,7 @@
 **Baseline:** Alpha.3 `2d65207` frozen; includes P1 `90f0d40` + engine platform + P0 `61a1bae`
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** _(see git push SHA below)_
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** `4e9f730d8fd9b91e5ae73ce31a0fc0105f6193b4` (template UI + tab harvest; prior checkpoint `61a1bae` / docs `6300add`)
 
 ## 2. Multilogin technology audit
 Matrix/backlog updated: M5 templates **PARTIAL→UI VERIFIED** (API+Templates page+bulk job); M11 tab harvest hardened; M37 WebDriver still **MISSING**.
