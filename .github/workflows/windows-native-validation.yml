@@ -30,7 +30,6 @@ jobs:
     permissions:
       contents: read
     env:
-      PM_DATA_DIR: ${{ runner.temp }}\pm-m17-isolated-data
       PM_API_TOKEN: m17-gha-validation
     steps:
       - name: Checkout exact ref
@@ -40,6 +39,9 @@ jobs:
       - name: Record environment (redacted summary inputs)
         shell: pwsh
         run: |
+          $env:PM_DATA_DIR = Join-Path $env:RUNNER_TEMP 'pm-m17-isolated-data'
+          New-Item -ItemType Directory -Path $env:PM_DATA_DIR -Force | Out-Null
+          "PM_DATA_DIR=$($env:PM_DATA_DIR)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           $summary = @"
           ## M17 Windows validation
           - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
