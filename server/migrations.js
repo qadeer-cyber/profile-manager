@@ -142,6 +142,27 @@ export const migrations = [
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL)`);
     } },
+  { version: 16, name: 'local workspaces and cookie robot jobs', up: db => {
+      db.exec(`CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        vault_locked INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS cookie_robot_jobs (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        tasks_json TEXT NOT NULL,
+        delay_ms INTEGER NOT NULL DEFAULT 1500,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('workspace_id')) db.exec('ALTER TABLE profiles ADD COLUMN workspace_id TEXT REFERENCES workspaces(id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_workspace ON profiles(workspace_id)');
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

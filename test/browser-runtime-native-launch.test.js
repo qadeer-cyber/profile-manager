@@ -11,6 +11,7 @@ import { browserEngineArchitectureReport } from '../server/browser-runtime/index
 test('manual profile start selects native runtime by default', () => {
   assert.equal(launchRuntimeMode({ automation: false, headless: false }), 'native');
   assert.equal(launchRuntimeMode({ automation: true, headless: false }), 'playwright');
+  assert.equal(launchRuntimeMode({ automation: true, headless: false }, 'firefox'), 'native');
   assert.equal(launchRuntimeMode({ automation: false, headless: true }), 'playwright');
 });
 

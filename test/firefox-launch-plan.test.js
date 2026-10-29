@@ -31,6 +31,9 @@ test('firefox launch plan uses -no-remote and -profile', async () => {
   const plan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, opts: { automation: false, headless: false } });
   assert.equal(plan.engine, 'firefox');
   assert.ok(plan.args.includes('-no-remote'));
+  const autoPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, opts: { automation: true, headless: false } });
+  assert.ok(autoPlan.args.includes('-marionette'));
+  assert.ok(autoPlan.marionettePort > 0);
   assert.ok(plan.args.some(a => a === '-profile' || String(a).includes('gecko')));
   assert.equal(plan.args.some(a => String(a).includes('--disable-webgl')), false);
   db.close();

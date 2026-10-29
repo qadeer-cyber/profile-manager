@@ -8,13 +8,15 @@ import { SettingsPage } from './pages/SettingsPage.jsx';
 import { DiagnosticsPage } from './pages/DiagnosticsPage.jsx';
 import { TrashPage } from './pages/TrashPage.jsx';
 import { TemplatesPage } from './pages/TemplatesPage.jsx';
+import { WorkspacesPage } from './pages/WorkspacesPage.jsx';
+import { CookieRobotPage } from './pages/CookieRobotPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
 import { MonitoringPage } from './pages/MonitoringPage.jsx';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['templates', 'Templates'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
+const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['workspaces', 'Workspaces'], ['templates', 'Templates'], ['cookie-robot', 'CookieRobot'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
@@ -86,6 +88,8 @@ export function App() {
       {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} />}
       {page === 'trash' && <TrashPage />}
       {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}
+      {page === 'workspaces' && <WorkspacesPage />}
+      {page === 'cookie-robot' && <CookieRobotPage />}
       {page === 'proxies' && <ProxiesPage />}
       {page === 'extensions' && <ExtensionsPage />}
       {page === 'monitoring' && <MonitoringPage />}

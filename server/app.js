@@ -27,6 +27,14 @@ import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
+import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
+import {
+  listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
+  assertWorkspaceAccess, vaultStorageAvailable,
+} from './workspaces.js';
+import {
+  configureCookieRobot, createCookieRobotJob, getCookieRobotJob, listCookieRobotJobs, cancelCookieRobotJob, retryCookieRobotJob,
+} from './cookie-robot-jobs.js';
 import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
 import {
   createQuickProfile, softDeleteProfile, listTrash, restoreFromTrash, purgeFromTrash, convertQuickToRegular,
@@ -150,7 +158,9 @@ const row2p = r => {
   delete r.is_quick;
   const deletedAt = r.deleted_at || null;
   delete r.deleted_at;
-  return { ...r, browserEngine, isQuick, deletedAt, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const workspaceId = r.workspace_id || null;
+  delete r.workspace_id;
+  return { ...r, browserEngine, isQuick, deletedAt, workspaceId, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -160,12 +170,19 @@ const publicP = p => {
   const ri = p.running && engine.runInfo(p.id);
   if (ri) {
     out.pid = ri.pid ?? null;
-    // CDP only exists when the profile was launched with automation (remote-debugging port open)
-    if (ri.cdp_port) out.cdp = { wsEndpoint: ri.ws_endpoint, httpEndpoint: `http://127.0.0.1:${ri.cdp_port}`, debuggerAddress: `127.0.0.1:${ri.cdp_port}`, pid: ri.pid ?? null };
+    if (ri.cdp_port && p.browserEngine === 'firefox') {
+      out.cdp = { marionettePort: ri.cdp_port, debuggerAddress: `127.0.0.1:${ri.cdp_port}`, automation: true, pid: ri.pid ?? null };
+    } else if (ri.cdp_port) {
+      out.cdp = { wsEndpoint: ri.ws_endpoint, httpEndpoint: `http://127.0.0.1:${ri.cdp_port}`, debuggerAddress: `127.0.0.1:${ri.cdp_port}`, pid: ri.pid ?? null };
+    }
   }
   return out;
 };
-const get = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=? AND deleted_at IS NULL').get(id));
+const get = id => {
+  const p = row2p(db.prepare('SELECT * FROM profiles WHERE id=? AND deleted_at IS NULL').get(id));
+  if (p) assertWorkspaceAccess(p.workspaceId);
+  return p;
+};
 const getAny = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=?').get(id));
 const must = id => { const p = get(id); if (!p) throw err(404, 'not found'); return p; };
 
@@ -195,8 +212,12 @@ function validate(b, prev) {
     if (b.browserEngine !== 'chromium' && b.browserEngine !== 'firefox') throw err(400, 'browserEngine must be chromium or firefox');
     browserEngine = b.browserEngine;
   }
+  let workspaceId = prev?.workspaceId ?? null;
+  if ('workspaceId' in b) workspaceId = b.workspaceId == null || b.workspaceId === '' ? null : String(b.workspaceId);
+  if (workspaceId) assertWorkspaceAccess(workspaceId);
   return { name, browserEngine, browserSettings, webrtcSettings, advancedSettings, extensionAssignments, tags: [...new Set(tags.map(t => String(t).trim()).filter(Boolean))],
     folder: String(b.folder ?? prev?.folder ?? '').trim(), notes: String(b.notes ?? prev?.notes ?? ''),
+    workspaceId,
     proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : 'proxyId' in b ? (b.proxyId == null || b.proxyId === '' ? null : mustProxy(b.proxyId).id) : prev?.proxy_id ?? null,
     automationEnabled: 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false };
 }
@@ -214,17 +235,19 @@ function insert(v) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   const dir = userDataDir(id);
   if (fs.existsSync(dir)) throw err(500, 'data directory collision'); // never share a data dir
-  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_engine,browser_settings,webrtc_settings,advanced_settings,is_quick,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), v.isQuick ? 1 : 0, now, now);
+  db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,proxy_id,automation_enabled,browser_engine,browser_settings,webrtc_settings,advanced_settings,is_quick,workspace_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), v.isQuick ? 1 : 0, v.workspaceId || null, now, now);
   if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   fs.mkdirSync(dir, { recursive: true });
   return id;
 }
-function list({ q = '', tag = '', folder } = {}) {
-  let l = db.prepare('SELECT * FROM profiles WHERE deleted_at IS NULL ORDER BY created_at DESC').all().map(row2p);
+function list({ q = '', tag = '', folder, workspaceId } = {}) {
+  let l = db.prepare('SELECT * FROM profiles WHERE deleted_at IS NULL ORDER BY created_at DESC').all().map(row2p)
+    .filter(p => { try { assertWorkspaceAccess(p.workspaceId); return true; } catch { return false; } });
   if (q) { const s = String(q).toLowerCase(); l = l.filter(p => (p.name + ' ' + p.notes + ' ' + p.tags.join(' ') + ' ' + p.folder).toLowerCase().includes(s)); }
   if (tag) l = l.filter(p => p.tags.includes(tag));
   if (folder !== undefined && folder !== '__all') l = l.filter(p => p.folder === folder);
+  if (workspaceId) l = l.filter(p => p.workspaceId === workspaceId);
   return l;
 }
 function cloneMode(body) {
@@ -272,6 +295,7 @@ const doLaunch = async (id, b = {}, { allowOverride = false } = {}) => {
   return publicP(get(id));
 };
 const doStop = async id => { must(id); await engine.stop(id); return publicP(get(id)); };
+configureCookieRobot({ launchProfile: id => doLaunch(id, { automation: true }, { allowOverride: true }) });
 
 function chromiumFacts() {
   let executable = '';
@@ -490,8 +514,8 @@ function rejectPassphraseQuery(req) {
 }
 function applyUpdate(id, body) {
   const v = validate(body, must(id));
-  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_engine=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,updated_at=? WHERE id=?')
-    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), new Date().toISOString(), id);
+  db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_engine=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,workspace_id=?,updated_at=? WHERE id=?')
+    .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), v.workspaceId || null, new Date().toISOString(), id);
   if (v.extensionAssignments) replaceProfileExtensions(id, v.extensionAssignments);
   const result = publicP(get(id));
   if (result.running && ('browserSettings' in body || 'webrtcSettings' in body || 'advancedSettings' in body || 'extensionAssignments' in body)) result.appliesOnNextLaunch = true;
@@ -539,10 +563,26 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.json(webDriverBridgeReport());
   }));
   router.post('/profiles/:id/webdriver/start', wrap(async (req, res) => {
-    must(req.params.id);
+    const p = must(req.params.id);
+    if (p.browserEngine === 'firefox') throw err(409, 'ChromeDriver bridge is Chromium-only. Use POST /profiles/:id/geckodriver/start for Firefox marionette sessions.');
     const row = engine.runInfo(req.params.id);
     if (!row?.cdp_port) throw err(409, 'WebDriver bridge requires a running automation session (CDP port). Manual native launches cannot attach.');
     res.json(await startWebDriverBridge(req.params.id, `127.0.0.1:${row.cdp_port}`));
+  }));
+  router.get('/geckodriver', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(geckodriverBridgeReport());
+  }));
+  router.post('/profiles/:id/geckodriver/start', wrap(async (req, res) => {
+    const p = must(req.params.id);
+    if (p.browserEngine !== 'firefox') throw err(409, 'Geckodriver bridge is Firefox-only.');
+    const row = engine.runInfo(req.params.id);
+    if (!row?.cdp_port) throw err(409, 'Geckodriver requires Firefox running with automation (-marionette).');
+    res.json(await startGeckodriverBridge(req.params.id, row.cdp_port));
+  }));
+  router.post('/profiles/:id/geckodriver/stop', wrap((req, res) => {
+    must(req.params.id);
+    res.json(stopGeckodriverBridge(req.params.id));
   }));
   router.post('/profiles/:id/webdriver/stop', wrap((req, res) => {
     must(req.params.id);
@@ -861,6 +901,26 @@ function mountProxyRoutes(r) {
   }));
 }
 function mountWorkspace(router) {
+  router.get('/workspaces/vault-status', wrap((req, res) => res.json({ vaultStorageAvailable: vaultStorageAvailable(), backend: encryptionStatus().backend })));
+  router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces())));
+  router.post('/workspaces', wrap((req, res) => res.status(201).json(createWorkspace(req.body || {}))));
+  router.patch('/workspaces/:id', wrap((req, res) => res.json(updateWorkspace(req.params.id, req.body || {}))));
+  router.delete('/workspaces/:id', wrap((req, res) => { deleteWorkspace(req.params.id); res.status(204).end(); }));
+  router.post('/profiles/:id/workspace', wrap((req, res) => {
+    must(req.params.id);
+    assignProfileWorkspace(req.params.id, req.body?.workspaceId ?? null);
+    res.json(publicP(get(req.params.id)));
+  }));
+  router.post('/cookie-robot/jobs', wrap((req, res) => {
+    const profileId = req.body?.profileId;
+    if (!profileId) throw err(400, 'profileId is required');
+    must(profileId);
+    res.status(202).json(createCookieRobotJob({ profileId, urls: req.body?.urls, delayMs: req.body?.delayMs }));
+  }));
+  router.get('/cookie-robot/jobs', wrap((req, res) => res.json(listCookieRobotJobs(req.query.limit))));
+  router.get('/cookie-robot/jobs/:id', wrap((req, res) => res.json(getCookieRobotJob(req.params.id))));
+  router.post('/cookie-robot/jobs/:id/cancel', wrap((req, res) => res.json(cancelCookieRobotJob(req.params.id))));
+  router.post('/cookie-robot/jobs/:id/retry', wrap((req, res) => res.json(retryCookieRobotJob(req.params.id))));
   router.get('/dashboard', wrap((req, res) => res.json(dashboardStats())));
   router.get('/profile-table', wrap((req, res) => {
     const query = { ...req.query };

@@ -39,6 +39,7 @@ import { launchNativeChromium } from './browser-runtime/native-chromium.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import { harvestNativeTabUrls, resolveNativeTabUrlsForSave } from './session-harvest.js';
 import { stopWebDriverBridge } from './webdriver-bridge.js';
+import { stopGeckodriverBridge } from './geckodriver-bridge.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
@@ -280,15 +281,17 @@ async function doLaunch(p, opts = {}) {
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline: readPreferences(dir), closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
         requestedArgs: native.argv, restoreTabs: fxPlan.restoreTabs, tabUrls: [], geckoDir: fxPlan.profileDir,
+        marionettePort: fxPlan.marionettePort || null, automation: !!fxPlan.automation,
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, fxPlan.profileDir);
       entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, []);
       markBrowserReady(metricsHandle);
       native.proc.on('exit', () => onClosed(p.id, null));
-      updateLock(dir, { browserPid: native.browserPid, cdpPort: null });
+      const marionettePort = fxPlan.marionettePort || null;
+      updateLock(dir, { browserPid: native.browserPid, cdpPort: marionettePort });
       live.set(p.id, entry);
-      db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, null, null, fxPlan.relayUrl, new Date().toISOString());
+      db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, marionettePort, null, fxPlan.relayUrl, new Date().toISOString());
       setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
       emit('profile:started', p.id, { runtime: 'native', engine: 'firefox' });
       console.log('FIREFOX-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid }));
@@ -735,6 +738,7 @@ export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTi
 
 export async function stop(id, { timeoutMs = 5000 } = {}) {
   stopWebDriverBridge(id);
+  stopGeckodriverBridge(id);
   if (launching.has(id)) await launching.get(id).catch(() => {});
   const e = live.get(id) || settling.get(id);
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
@@ -769,7 +773,9 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
 export async function shutdown() {
   stopHealthMonitor();
   const { stopAllWebDriverBridges } = await import('./webdriver-bridge.js');
+  const { stopAllGeckodriverBridges } = await import('./geckodriver-bridge.js');
   stopAllWebDriverBridges();
+  stopAllGeckodriverBridges();
   // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
   await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
 }

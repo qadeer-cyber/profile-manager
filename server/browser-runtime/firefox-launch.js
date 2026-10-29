@@ -7,7 +7,9 @@ import net from 'node:net';
 import { validateBrowserSettings } from '../browser-settings.js';
 import { getSetting } from '../db.js';
 import { pidMatches, isAlive } from '../proc.js';
-import { launchRuntimeMode } from './launch-plan.js';
+import { automationDefault } from '../testflags.js';
+
+const automationEnabled = opts => !!opts?.automation || automationDefault();
 
 const freePort = () => new Promise((res, rej) => {
   const s = net.createServer().listen(0, '127.0.0.1', () => { const p = s.address().port; s.close(() => res(p)); }).on('error', rej);
@@ -59,10 +61,7 @@ function writeGeckoProxyPrefs(profileDir, proxy, relayUrl) {
 }
 
 export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, opts = {} } = {}) {
-  const runtime = launchRuntimeMode(opts);
-  if (runtime !== 'native') {
-    throw Object.assign(new Error('Firefox automation/headless requires a future Playwright adapter'), { status: 501, code: 'FIREFOX_PLAYWRIGHT_UNSUPPORTED' });
-  }
+  const automation = automationEnabled(opts);
   const exe = resolveFirefoxExecutable();
   if (!exe) {
     throw Object.assign(new Error('Firefox is not installed. Set Settings → firefoxExecutablePath or install Firefox.'), { status: 503, code: 'FIREFOX_MISSING' });
@@ -79,13 +78,21 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   writeGeckoProxyPrefs(profileDir, p.proxy && !p.proxy.username ? p.proxy : null, relayUrl);
 
   const args = ['-no-remote', '-profile', profileDir];
+  let marionettePort = null;
+  if (automation) {
+    marionettePort = await freePort();
+    args.push('-marionette');
+  }
   if (regional.languages.length) args.push('-lang', regional.locale || regional.languages[0]);
   const openUrls = Array.isArray(opts.openUrls) ? opts.openUrls.slice(0, 20) : (opts.url ? [opts.url] : []);
   for (const u of openUrls) {
     if (typeof u === 'string' && u.trim()) args.push(u.trim());
   }
 
-  return { runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls, restoreTabs: !!opts.restoreTabs };
+  return {
+    runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls,
+    restoreTabs: !!opts.restoreTabs, automation, marionettePort,
+  };
 }
 
 export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs = 15000) {
@@ -100,7 +107,10 @@ export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs 
 }
 
 export async function launchFirefoxNative(plan) {
-  const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false });
+  const env = plan.marionettePort
+    ? { ...process.env, MARIONETTE_PORT: String(plan.marionettePort) }
+    : process.env;
+  const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false, env });
   if (!proc.pid) throw Object.assign(new Error('Failed to spawn Firefox'), { status: 500, code: 'FIREFOX_SPAWN_FAILED' });
   const browserPid = await discoverGeckoBrowserPid(plan.profileDir, [proc.pid]);
   return { proc, browserPid, spawnPid: proc.pid, argv: plan.args };

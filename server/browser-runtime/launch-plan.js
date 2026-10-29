@@ -24,17 +24,18 @@ const freePort = () => new Promise((res, rej) => {
 });
 
 /** @returns {'native'|'playwright'} */
-export function launchRuntimeMode(opts = {}) {
-  if (process.env.PM_MANUAL_LAUNCH_RUNTIME === 'playwright') return 'playwright';
+export function launchRuntimeMode(opts = {}, engine = 'chromium') {
+  if (process.env.PM_MANUAL_LAUNCH_RUNTIME === 'playwright' && engine !== 'firefox') return 'playwright';
   const automation = automationEnabled(opts);
   const headless = !!opts.headless;
+  if (engine === 'firefox') return 'native';
   return automation || headless ? 'playwright' : 'native';
 }
 
 export async function buildProfileLaunchPlan(p, opts = {}) {
   const { headless, url } = opts;
   const automation = automationEnabled(opts);
-  const runtime = launchRuntimeMode(opts);
+  const runtime = launchRuntimeMode(opts, 'chromium');
   const regional = validateBrowserSettings(p.browserSettings || {});
   const contextSettings = browserContextSettings(regional);
   const policy = validateWebRtcSettings(p.webrtcSettings || {});
