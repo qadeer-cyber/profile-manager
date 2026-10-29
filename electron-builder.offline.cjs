@@ -11,7 +11,7 @@ const files = base.files.flatMap(pattern => pattern === '!node_modules/better-sq
       '!node_modules/better-sqlite3/prebuilds/darwin-*',
       '!node_modules/better-sqlite3/prebuilds/linux*',
       '!node_modules/better-sqlite3/prebuilds/win32-arm64.node',
-      '!node_modules/better-sqlite3/build/**',
+      // Electron ABI module from install-app-deps must ship in the offline EXE (Windows CI).
     ]
   : [pattern]);
 module.exports = {
