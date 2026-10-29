@@ -37,13 +37,23 @@ test('two headless profiles, monitoring, recovery API, and data marker on Window
   try {
     proc = await spawnServer(env);
     await fetch(proc.url + '/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ minFreeMemoryGiB: 0, maxRunningProfiles: 4 }) });
-    const a = (await fetch(proc.url + '/api/v1/profiles', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Win A' }) })).json();
-    const b = (await fetch(proc.url + '/api/v1/profiles', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Win B' }) })).json();
-    await fetch(proc.url + '/api/v1/profiles/' + a.id + '/launch', { method: 'POST', headers: auth, body: JSON.stringify({ headless: true, automation: true, url: pageUrl }) });
-    await fetch(proc.url + '/api/v1/profiles/' + b.id + '/launch', { method: 'POST', headers: auth, body: JSON.stringify({ headless: true, automation: true, url: pageUrl }) });
-    const mon = await fetch(proc.url + '/api/v1/monitoring?refresh=1', { headers: auth }).then(r => r.json());
+    const a = await (await fetch(proc.url + '/api/v1/profiles', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Win A' }) })).json();
+    const b = await (await fetch(proc.url + '/api/v1/profiles', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Win B' }) })).json();
+    assert.ok(a.id && b.id, 'profile ids from POST /profiles');
+    const launchA = fetch(proc.url + '/api/v1/profiles/' + a.id + '/launch', { method: 'POST', headers: auth, body: JSON.stringify({ headless: true, automation: true, url: pageUrl }) });
+    const launchB = fetch(proc.url + '/api/v1/profiles/' + b.id + '/launch', { method: 'POST', headers: auth, body: JSON.stringify({ headless: true, automation: true, url: pageUrl }) });
+    const [resA, resB] = await Promise.all([launchA, launchB]);
+    assert.equal(resA.status, 200, 'launch A');
+    assert.equal(resB.status, 200, 'launch B');
+    let mon;
+    const deadline = Date.now() + 120000;
+    while (Date.now() < deadline) {
+      mon = await fetch(proc.url + '/api/v1/monitoring?refresh=1', { headers: auth }).then(r => r.json());
+      if (mon.totals?.runningProfiles >= 2) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
     assert.equal(mon.environment.platform, 'win32');
-    assert.ok(mon.totals.runningProfiles >= 2);
+    assert.ok(mon.totals.runningProfiles >= 2, `runningProfiles=${mon.totals.runningProfiles}`);
     const snap = await refreshProcessSnapshot({ force: true });
     const { userDataDir } = await import('../server/db.js');
     const metrics = buildProfileProcessMetrics([
