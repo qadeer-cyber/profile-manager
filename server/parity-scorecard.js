@@ -16,7 +16,7 @@ export const SCORECARD = Object.freeze([
   { id: 'webrtc_ice', area: 'WebRTC policy + ICE diagnostics', status: 'VERIFIED', evidence: 'test/webrtc-observe.test.js, fingerprint-gaps-browser' },
   { id: 'geolocation_modes', area: 'Geolocation Allow/Ask/Deny', status: 'VERIFIED', evidence: 'test/fingerprint-gaps-browser.test.js' },
   { id: 'chromium_lifecycle', area: 'Chromium install backup/rollback', status: 'VERIFIED', evidence: 'test/chromium-lifecycle.test.js' },
-  { id: 'crash_recovery', area: 'Crash/orphan recovery + locks', status: 'PARTIAL', evidence: 'engine recoverAfterRestart; Windows crash matrix BLOCKED' },
+  { id: 'crash_recovery', area: 'Crash/orphan recovery + locks', status: 'PARTIAL', evidence: 'test/m17-crash-recovery.test.js; Windows crash matrix BLOCKED' },
   { id: 'multilogin_mask_parity', area: 'Multilogin-style masked fingerprints', status: 'UNSUPPORTED', evidence: 'Requires custom Chromium — privacy-engine-report.js' },
 ]);
 

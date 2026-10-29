@@ -26,7 +26,7 @@ export function MonitoringPage() {
       </div>
     </header>
     {error && <div className="notice warn" role="alert">{error}</div>}
-    {!report && !error && <p className="muted">Loading observations…</p>}
+    {!report && !error && <p className="muted" role="status">Loading observations…</p>}
     {report && <>
       {report.host.lowMemoryWarning && <div className="notice warn">Host free memory is about {report.host.freeMemGiB} GiB.</div>}
       {report.observationError && <div className="notice warn">Process sample: {report.observationError}</div>}

@@ -47,13 +47,17 @@ async function windowsProcessRows() {
   let parsed;
   try { parsed = JSON.parse(stdout); } catch { return []; }
   const list = Array.isArray(parsed) ? parsed : [parsed];
-  return list.map(row => ({
-    pid: Number(row.ProcessId),
-    ppid: Number(row.ParentProcessId),
-    commandLine: row.CommandLine || '',
-    workingSetBytes: Number(row.WorkingSetSize) || 0,
-    name: row.Name || '',
-  })).filter(row => row.pid > 0);
+  return list.map(row => {
+    const ws = Number(row.WorkingSetSize);
+    return {
+      pid: Number(row.ProcessId),
+      ppid: Number(row.ParentProcessId),
+      commandLine: row.CommandLine || '',
+      workingSetBytes: Number.isFinite(ws) && ws > 0 ? ws : 0,
+      workingSetAvailable: Number.isFinite(ws) && ws > 0,
+      name: row.Name || '',
+    };
+  }).filter(row => row.pid > 0);
 }
 
 export async function refreshProcessSnapshot({ force = false } = {}) {

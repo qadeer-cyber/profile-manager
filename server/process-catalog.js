@@ -16,6 +16,12 @@ export function chromeProcessRole(commandLine) {
   return 'browser';
 }
 
+export function workingSetToMiB(workingSetBytes) {
+  const n = Number(workingSetBytes);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.round(n / 1024 / 1024 * 10) / 10;
+}
+
 export function profileDirInCommandLine(commandLine, userDataDir, platform = process.platform) {
   const hay = normPath(commandLine, platform);
   const needle = normPath(userDataDir, platform);
@@ -38,6 +44,7 @@ export function parseWindowsProcessRows(raw) {
     name: row.Name ?? row.name ?? '',
     commandLine: row.CommandLine ?? row.commandLine ?? '',
     workingSetBytes: Number(row.WorkingSetSize ?? row.workingSetBytes ?? 0) || 0,
+    workingSetAvailable: Number(row.WorkingSetSize ?? row.workingSetBytes ?? 0) > 0,
     cpuPercent: row.cpuPercent ?? null,
   })).filter(row => Number.isInteger(row.pid) && row.pid > 0);
 }
@@ -50,17 +57,20 @@ export function buildProfileProcessMetrics(profiles, processRows, { platform = p
       if (!profileDirInCommandLine(row.commandLine, profile.userDataDir, platform)) continue;
       if (assigned.has(row.pid) && assigned.get(row.pid) !== profile.id) continue;
       const role = chromeProcessRole(row.commandLine) || 'child';
+      const memoryMiB = workingSetToMiB(row.workingSetBytes);
       processes.push({
         pid: row.pid,
         ppid: row.ppid,
         role,
-        memoryMiB: row.workingSetBytes ? Math.round(row.workingSetBytes / 1024 / 1024 * 10) / 10 : null,
+        memoryMiB,
+        memoryAvailable: memoryMiB != null,
         cpuPercent: row.cpuPercent ?? null,
       });
       assigned.set(row.pid, profile.id);
     }
-    const memoryMiB = processes.length
-      ? Math.round(processes.reduce((sum, item) => sum + (item.memoryMiB || 0), 0) * 10) / 10
+    const observed = processes.filter(item => item.memoryMiB != null);
+    const memoryMiB = observed.length
+      ? Math.round(observed.reduce((sum, item) => sum + item.memoryMiB, 0) * 10) / 10
       : null;
     processes.sort((a, b) => a.role.localeCompare(b.role) || a.pid - b.pid);
     return {

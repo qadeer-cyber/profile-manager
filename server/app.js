@@ -16,7 +16,7 @@ import * as engine from './browsers.js';
 import { mountProfileDiagnostics, isProfileDiagnosticsRequest, diagnosticsHttpError, diagnosticsAuthorized } from './diagnostics.js';
 import { currentVersion } from './migrations.js';
 import { chromiumStatus, browsersRoot, isResourcesBrowsers } from './chromium.js';
-import { executableCompatibility, installVerifiedChromiumWithBackup, listInstallBackups, rollbackLatest } from './chromium-lifecycle.js';
+import { executableCompatibility, installVerifiedChromiumWithBackup, interruptedInstallState, listInstallBackups, rollbackLatest } from './chromium-lifecycle.js';
 import { fingerprintCapabilityReport } from './fingerprint-capabilities.js';
 import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
 import { summarizeConsistency } from './fingerprint-summary.js';
@@ -861,6 +861,13 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/monitoring', wrap(async (req, res) => {
     res.json(await buildMonitoringReport(engine.monitoringSessions(), { refresh: req.query.refresh !== '0' }));
   }));
+  ui.get('/recovery-status', wrap((req, res) => res.json({
+    ...engine.recoveryStatus(),
+    chromium: {
+      chromium: interruptedInstallState('chromium'),
+      'chromium-headless-shell': interruptedInstallState('chromium-headless-shell'),
+    },
+  })));
   ui.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(ui);
   mountExtensionRoutes(ui);
@@ -945,6 +952,13 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   v1.get('/monitoring', wrap(async (req, res) => {
     res.json(await buildMonitoringReport(engine.monitoringSessions(), { refresh: req.query.refresh !== '0' }));
   }));
+  v1.get('/recovery-status', wrap((req, res) => res.json({
+    ...engine.recoveryStatus(),
+    chromium: {
+      chromium: interruptedInstallState('chromium'),
+      'chromium-headless-shell': interruptedInstallState('chromium-headless-shell'),
+    },
+  })));
   v1.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(v1);
   mountExtensionRoutes(v1);

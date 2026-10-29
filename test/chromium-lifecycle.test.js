@@ -34,6 +34,12 @@ test('installWithBackup rolls back when extraction fails', async () => {
   assert.equal(life.listInstallBackups('chromium', { root, manifest }).length, 0);
 });
 
+test('interruptedInstallState reports partial installs and rollback availability', () => {
+  const state = life.interruptedInstallState('chromium', { root: tmp, manifest: { revision: '1', builds: { chromium: { linux64: { path: 'x.zip' } } } } });
+  assert.equal(typeof state.present, 'boolean');
+  assert.equal(typeof state.rollbackAvailable, 'boolean');
+});
+
 test('executableCompatibility blocks a mismatched custom executable', async () => {
   const { chromium } = await import('playwright');
   const exe = chromium.executablePath();

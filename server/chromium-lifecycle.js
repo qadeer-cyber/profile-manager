@@ -73,6 +73,24 @@ export async function installVerifiedChromiumWithBackup(opts = {}) {
   return out;
 }
 
+export function interruptedInstallState(name, { root = browsersRoot(), manifest = MANIFEST } = {}) {
+  const dir = installDir(name, { root, manifest });
+  let verified = false;
+  try {
+    verified = fs.existsSync(path.join(dir, '.pm-verified.json'));
+  } catch {}
+  const backups = listInstallBackups(name, { root, manifest });
+  return {
+    name,
+    installDir: dir,
+    present: fs.existsSync(dir),
+    verified,
+    partialInstall: fs.existsSync(dir) && !verified,
+    rollbackAvailable: backups.length > 0,
+    backupCount: backups.length,
+  };
+}
+
 export function executableCompatibility(executablePath) {
   const identity = chromiumIdentity(executablePath || '');
   return {

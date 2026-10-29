@@ -10,6 +10,7 @@ import { beginLaunchMetrics, finalizeLaunchMetrics, getLaunchMetrics, markBrowse
 import { runWithLaunchQueue, launchQueueState, pendingLaunchCount } from './launch-queue.js';
 export { pendingLaunchCount };
 import { hostResourceSample, profileResourceRows } from './resource-monitor.js';
+import { recoverySnapshot, sweepAbandonedLocks } from './crash-recovery.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
@@ -150,20 +151,18 @@ export async function recoverAfterRestart() {
     clearChromeLocks(dir); releaseLock(dir, lock?.ownerPid);
     db.prepare('DELETE FROM running WHERE id=?').run(r.id);
     report.cleared++;
+    try {
+      setStatus(r.id, { last_error: 'Previous browser session did not shut down cleanly. Storage was kept; launch again when ready.' });
+    } catch {}
   }
-  // Locks without a running row (e.g. crash mid-launch)
-  const root = path.dirname(userDataDir('00000000-0000-0000-0000-000000000000'));
-  for (const id of fs.existsSync(root) ? fs.readdirSync(root) : []) {
-    const dir = path.join(root, id), lock = readLock(dir);
-    if (!lock || !isStale(lock)) continue;
-    const pid = lock.browserPid;
-    if (await browserOwnedByProfile(pid, dir)) {
-      if (await killTree(pid, { expect: dir })) report.killed++;
-      else if (await browserOwnedByProfile(pid, dir)) continue;
-    }
-    fs.rmSync(path.join(dir, LOCK_NAME), { force: true }); clearChromeLocks(dir); report.staleLocks++;
-  }
+  const abandoned = await sweepAbandonedLocks({ browserOwnedByProfile, killTree });
+  report.staleLocks += abandoned.abandonedLocks;
+  report.skipped += abandoned.skippedLive;
   return report;
+}
+
+export function recoveryStatus() {
+  return recoverySnapshot({ liveCount: live.size, launchingCount: launching.size });
 }
 
 export function launch(p, opts = {}) {
@@ -409,7 +408,9 @@ async function doLaunch(p, opts = {}) {
     releaseLock(dir);
     const classified = classifyLaunchError(e.status ? e : httpErr(500, e.message, 'LAUNCH_FAILED'));
     finalizeLaunchMetrics(metricsHandle, { success: false, errorCode: classified.code });
-    try { setStatus(p.id, { last_error: classified.message }); } catch {}
+    if (classified.code !== 'LAUNCH_CANCELLED') {
+      try { setStatus(p.id, { last_error: classified.message }); } catch {}
+    }
     emit('profile:launch-failed', p.id, { error: classified.message, launch: classified });
     throw e.status ? e : httpErr(500, classified.message, classified.code);
   }
