@@ -1,19 +1,18 @@
-# §23 Final engineering report (checkpoint — Firefox gecko prefs + automation UX)
+# §23 Final engineering report (checkpoint — gecko cookies read/export)
 
 **Branch:** `feature/dedicated-browser-engine`  
-**Prior tip:** `a2c15f0` · docs `c4a5266`
+**Prior tip:** `be2b419` · docs `957d2ef`
 
 ## 1. Commit
-**Tip:** `be2b419` — Firefox WebRTC/timezone gecko prefs, cookie API honesty, pm-cli bridges, profile UX.
+**Tip:** _(this package)_ — Firefox gecko cookie read/export, examples suite, §23 final report draft.
 
 ## 2. Package
-- **Firefox P1 (stock):** `firefox-gecko-prefs.js` maps WebRTC modes → ICE `user.js` lines; timezone via `privacy.timezone.override` + `TZ` env; tests `firefox-gecko-prefs.test.js`.
-- **Cookie/extension UX:** Firefox profiles get `501 FIREFOX_COOKIES_UNSUPPORTED` on stopped cookie API; Cookies tab + config warnings; Extensions tab blocked for Firefox; removed Stealthfox wording in Settings.
-- **Automation polish:** `pm-cli bridges|config`; webdriver-api engine-specific tests; profile-config validate warnings in editor.
-- **Delivery planning:** draft `SECTION23_FINAL_DELIVERY_OUTLINE_DRAFT.md` (20 points; not Multilogin-complete).
+- **Gecko cookies:** `server/gecko-cookies.js` reads stopped-profile `moz_cookies`; `GET /cookies` + `/cookies/export` for Firefox (`readOnly`); import/clear **501 FIREFOX_COOKIES_READ_ONLY**; CookieManager read-only UX.
+- **Examples:** `gecko-cookies-export.mjs`, `profile-config-example.mjs`, `pm-cli-bridges-example.md`; README updated.
+- **§23:** `SECTION23_FINAL_ENGINEERING_REPORT_DRAFT.md` — full 20-point honest delivery report (not Multilogin-complete); Actions **40934718409**, preview **NO-GO**.
 
 ## 3. Tests
-`npm run test:browser-runtime` — **82 pass / 0 fail** (was 77).
+`npm run test:browser-runtime` — **85 pass / 0 fail** (was 82).
 
 ## 4. §19
 Still **NO-GO publish** without owner sign-off. No `[ci:installer-smoke]`.

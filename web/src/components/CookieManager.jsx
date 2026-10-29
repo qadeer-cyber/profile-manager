@@ -10,15 +10,17 @@ export function CookieManager({ profileId, browserEngine = 'chromium' }) {
   const [selected, setSelected] = useState(() => new Set());
   const [confirm, setConfirm] = useState(null);
   const [revealed, setRevealed] = useState(() => new Set());
+  const [readOnly, setReadOnly] = useState(browserEngine === 'firefox');
   const load = useCallback(async () => {
     setError('');
-    try { setCookies((await api(`/api/profiles/${profileId}/cookies`)).cookies); }
+    try {
+      const body = await api(`/api/profiles/${profileId}/cookies`);
+      setReadOnly(!!body.readOnly);
+      setCookies(body.cookies);
+    }
     catch (e) { setCookies([]); setError(e.message); }
   }, [profileId]);
-  React.useEffect(() => { if (browserEngine !== 'firefox') load(); }, [load, browserEngine]);
-  if (browserEngine === 'firefox') {
-    return <div className="notice warn">Cookie import/export uses the Chromium profile cookie database. Firefox profiles keep cookies in the separate gecko tree and are not editable through this panel yet.</div>;
-  }
+  React.useEffect(() => { load(); }, [load]);
   const keyOf = cookie => `${cookie.domain}\n${cookie.path}\n${cookie.name}`;
   const chosen = () => (cookies || []).filter(cookie => selected.has(keyOf(cookie))).map(cookie => ({ name: cookie.name, domain: cookie.domain, path: cookie.path }));
   const download = async () => {
@@ -54,14 +56,14 @@ export function CookieManager({ profileId, browserEngine = 'chromium' }) {
     } catch (e) { toast(e.message, 'error'); }
   };
   return <div className="form">
-    <div className="notice warn">Cookie values are shown only in this list and in an exported file. They are not written to the application log. Stop the profile before importing or clearing; a live browser keeps its own copy of the cookie database.</div>
+    <div className="notice warn">Cookie values are shown only in this list and in an exported file. They are not written to the application log. Stop the profile before importing or clearing; a live browser keeps its own copy of the cookie database.{readOnly && ' Firefox gecko cookies are read-only here (export supported; import/clear are not implemented).'}</div>
     {error && <p className="err-text">{error}</p>}
     <div className="row">
       <button onClick={load}>Refresh</button>
       <button onClick={download} disabled={!cookies}>Export JSON</button>
-      <label className="file-btn">Import JSON<input type="file" accept="application/json,.json" onChange={onImport} /></label>
-      <button className="ghost-danger" disabled={!selected.size} onClick={() => setConfirm('selected')}>Clear selected</button>
-      <button className="ghost-danger" disabled={!cookies?.length} onClick={() => setConfirm('all')}>Clear all</button>
+      {!readOnly && <label className="file-btn">Import JSON<input type="file" accept="application/json,.json" onChange={onImport} /></label>}
+      {!readOnly && <button className="ghost-danger" disabled={!selected.size} onClick={() => setConfirm('selected')}>Clear selected</button>}
+      {!readOnly && <button className="ghost-danger" disabled={!cookies?.length} onClick={() => setConfirm('all')}>Clear all</button>}
     </div>
     <div className="table-wrap"><table className="grid cookies"><thead><tr><th></th><th>Name</th><th>Domain</th><th>Flags</th><th>Value</th></tr></thead><tbody>
       {(cookies || []).map(cookie => {

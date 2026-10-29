@@ -36,11 +36,11 @@
 | M28 | Fingerprint: Fonts enumeration mask | PARTIAL | local-fonts deny (CDP path) |
 | M29 | Fingerprint: Media devices mask | PARTIAL | Permission deny |
 | M30 | Port scan / local network protection | PARTIAL | Refuses weakening PNA flags |
-| M31 | Cookie import/export | VERIFIED | cookies API |
+| M31 | Cookie import/export | VERIFIED | Chromium stopped SQLite; Firefox gecko **read/export** (`gecko-cookies.js`); import/clear Firefox **501** |
 | M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
 | M33 | Human typing emulation | MISSING | Not implemented |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
-| M35 | CLI / Script runner | PARTIAL | `pm-cli` list/launch/stop/schema/config/bridges + cookie-robot example |
+| M35 | CLI / Script runner | PARTIAL | `pm-cli` + cookie-robot, profile-config, gecko-cookies-export examples |
 | M36 | Playwright/Puppeteer attach | PARTIAL | CDP when `automation: true`; see puppeteer-cdp-attach.md |
 | M37 | Selenium/WebDriver | PARTIAL | Engine-specific bridge start + `test/webdriver-api.test.js`; opt-in driver cache; not in offline EXE |
 | M38 | Workspaces / team sync | PARTIAL | Local workspaces + optional vault lock; no team cloud |

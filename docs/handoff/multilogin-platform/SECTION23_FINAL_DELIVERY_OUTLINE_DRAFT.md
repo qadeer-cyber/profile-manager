@@ -19,7 +19,7 @@ Most open matrix rows are **UNSUPPORTED** (stock browser limits), **BLOCKED** (c
 9. **Tab restore (native opt-in)** — harvest on stop/health, Startup UX, launch plan tests.
 10. **Quick profiles + trash + templates + clone** — lifecycle APIs and UI.
 11. **Workspaces (local)** — vault lock optional; no team cloud.
-12. **Cookie import/export (Chromium stopped profile)** — SQLite store; Firefox gecko cookies explicitly out of scope until implemented.
+12. **Cookie import/export** — Chromium stopped SQLite (full); Firefox gecko **read/export** only (`gecko-cookies.js`).
 13. **CookieRobot-local** — Chromium CDP jobs + integration test; Firefox rejected at create.
 14. **Automation API** — `/api/v1`, bearer token, CDP when automation enabled.
 15. **WebDriver + geckodriver bridges** — localhost only, opt-in driver cache, engine-specific start/stop.

@@ -7,12 +7,12 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P0 | Native manual runtime | Chromium native default; Firefox gecko spawn | VERIFIED |
 | P0 | Profile config engine v2 | Typed model, warnings, migration | VERIFIED |
 | P0 | Matrix + §22 living docs | Backed by tests | VERIFIED |
-| P1 | Firefox runtime | Proxy/locale/timezone/WebRTC gecko prefs; gecko cookies API still out | PARTIAL |
+| P1 | Firefox runtime | Gecko prefs + read-only cookies; import/clear gecko N/A | PARTIAL |
 | P1 | Native tab restore | Save tabs on native close + discoverable UX | VERIFIED |
 | P1 | Quick profiles + trash | Ephemeral + soft-delete + save regular | VERIFIED |
 | P1 | Profile templates | Reusable preset rows + UI + bulk create | VERIFIED |
 | P1 | CookieRobot-local | CDP integration test + job runner | VERIFIED |
-| P1 | Automation examples | WebDriver + geckodriver docs with opt-in cache; cookie-robot job API example | PARTIAL |
+| P1 | Automation examples | WebDriver + geckodriver + gecko cookie export + profile-config | PARTIAL |
 | P1 | WebDriver localhost | Bridge + opt-in driver cache (CfT/geckodriver) | PARTIAL |
 | P2 | Bookmarks/history export | Stopped Chromium profile read API | VERIFIED |
 | P2 | Running profile focus | Dashboard + profiles Focus button | PARTIAL (Win32/CDP) |
@@ -26,24 +26,17 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 
 ## Backlog saturation (honest)
 
-Further **stock** work is mostly **UX polish**, **CLI/examples**, and **platform gaps** (macOS/Linux window focus). Antidetect noise, custom Chromium, cloud parity, and CAPTCHA guarantees remain **BLOCKED/UNSUPPORTED/N-A**. See **`SECTION23_FINAL_DELIVERY_OUTLINE_DRAFT.md`** for a 20-point local delivery checklist (not Multilogin-complete).
+Stock-implementable items are largely **done** or **read-only** (Firefox gecko cookies). Remaining work is **BLOCKED/UNSUPPORTED/cloud-N/A**, **platform gaps**, or **owner gates** (§19 preview). Full closure draft: **`SECTION23_FINAL_ENGINEERING_REPORT_DRAFT.md`**.
 
 ## Completed increments (cumulative on branch)
 
-- Audit matrix + §22 doc set  
-- Native Chromium + Firefox gecko scaffold + config engine v2  
-- P0 continuation: UI engine/trash/quick/templates API/tab harvest/pm-cli  
-- Template UI increment (`4e9f730` / docs `11aab86`)  
-- Rollback/WebDriver/provider increment (`dc60291` / docs `ecbdb10`)  
-- Workspaces + CookieRobot + geckodriver (`e4214aa` / **60** runtime tests)  
-- Installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests
-- Driver cache package; **68** tests
-- CookieRobot CDP + tab restore UX; **77** tests
-- **This increment:** Firefox gecko WebRTC/timezone; cookie API honesty; pm-cli bridges; **82** tests
+- Audit matrix + §22 doc set through CookieRobot/tab restore/Firefox prefs (**77** tests)
+- Firefox gecko WebRTC/timezone + pm-cli bridges (**82** tests)
+- **This increment:** gecko `moz_cookies` read/export + examples + §23 final draft (**85** tests)
 
 ## Still open (honest)
 
-- Gecko cookie import/export (**MISSING** — Chromium store only)  
+- Gecko cookie **import/clear** (**MISSING** — read/export only)  
 - Drivers **in offline EXE** (**MISSING** by design)  
 - Custom Chromium compile (**BLOCKED**)  
 - §19 preview publish (**NO-GO** until owner sign-off)  

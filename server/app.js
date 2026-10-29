@@ -47,6 +47,8 @@ import { buildUserAgent } from './advanced-launch.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
 import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection } from './cookies.js';
+import { readGeckoProfileCookies, exportGeckoCookiesPayload } from './gecko-cookies.js';
+import { geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import {
   assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
 } from './profile-browser-export.js';
@@ -367,25 +369,28 @@ async function hardwareReport(id, { previous = null } = {}) {
     consistency: { ...consistency, interpretation: summarizeConsistency(consistency) },
   };
 }
-function assertChromiumCookieApi(profile) {
+function assertGeckoCookieWrite(profile) {
   if (profile.browserEngine === 'firefox') {
-    throw Object.assign(err(501, 'Cookie import/export for stopped profiles uses the Chromium cookie store. Firefox gecko cookies are not exposed by this API.'), { code: 'FIREFOX_COOKIES_UNSUPPORTED' });
+    throw Object.assign(err(501, 'Gecko cookie import and clear are not implemented. Stop the profile and use GET cookies or cookies/export for read-only export.'), { code: 'FIREFOX_COOKIES_READ_ONLY' });
   }
 }
 async function cookieList(id) {
   const profile = must(id);
-  if (!engine.isRunning(id)) assertChromiumCookieApi(profile);
   if (engine.isRunning(id)) {
     const ctx = typeof engine.liveContext === 'function' ? engine.liveContext(id) : null;
     if (!ctx) throw err(409, 'This profile is running without a local browser context, so its cookies cannot be listed safely');
-    return { cookies: cookiesFromContext(await ctx.cookies()) };
+    return { engine: profile.browserEngine || 'chromium', readOnly: false, cookies: cookiesFromContext(await ctx.cookies()) };
   }
-  return { cookies: readProfileCookies(userDataDir(profile.id)) };
+  if (profile.browserEngine === 'firefox') {
+    const geckoDir = geckoUserDataDir(profile.id, userDataDir);
+    return { engine: 'firefox', readOnly: true, cookies: readGeckoProfileCookies(geckoDir) };
+  }
+  return { engine: 'chromium', readOnly: false, cookies: readProfileCookies(userDataDir(profile.id)) };
 }
 function cookieMutation(id) {
   const profile = must(id);
   if (engine.isRunning(id)) throw Object.assign(err(409, 'Stop the profile before changing its cookies. A live cookie database cannot be edited safely.'), { code: 'PROFILE_RUNNING' });
-  assertChromiumCookieApi(profile);
+  assertGeckoCookieWrite(profile);
   return profile;
 }
 function bulkLaunch(body, allowOverride, onItem) {
@@ -635,6 +640,12 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id)).consistency)));
   router.post('/profiles/:id/fingerprint-consistency', wrap(async (req, res) => res.json((await hardwareReport(req.params.id, { previous: readPreviousObservation(req.body) })).consistency)));
   router.get('/profiles/:id/cookies', wrap(async (req, res) => res.json(await cookieList(req.params.id))));
+  router.get('/profiles/:id/cookies/export', wrap(async (req, res) => {
+    const payload = await cookieList(req.params.id);
+    res.set('Cache-Control', 'no-store');
+    if (payload.engine === 'firefox') res.json(exportGeckoCookiesPayload(payload.cookies));
+    else res.json({ version: 1, engine: 'chromium', readOnly: false, cookies: payload.cookies });
+  }));
   router.get('/profiles/:id/bookmarks/export', wrap((req, res) => {
     const profile = must(req.params.id);
     assertProfileStoppedForDiskExport(engine.isRunning, profile.id);
