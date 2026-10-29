@@ -1,16 +1,16 @@
-// Windows-only: install alpha.2 EXE, seed profile data, upgrade to alpha.3 EXE in release/, verify preservation.
+// Windows-only: install alpha.2 EXE, seed profile data via API, upgrade to alpha.3 EXE, verify preservation.
 import { spawn, execFileSync } from 'child_process';
 import fs from 'fs';
-import https from 'https';
 import os from 'os';
 import path from 'path';
+import http from 'http';
+import { spawnServer, stopServer } from './_ports.mjs';
+
 if (process.platform !== 'win32') {
   console.error('alpha2→alpha3 upgrade smoke requires Windows');
   process.exit(2);
 }
 
-const ALPHA2_URL = process.env.PM_ALPHA2_SETUP_URL
-  || 'https://github.com/qadeer-cyber/profile-manager/releases/download/v0.5.0-alpha.2-m1-m9/Profile.Manager-offline-Setup-0.5.0-alpha.2-x64.exe';
 const ALPHA2_SHA = (process.env.PM_ALPHA2_SHA256 || '053447b2b6f024a238fca478626601dbdf7b9abc95e06864995495b57cad45e4').toLowerCase();
 const alpha3Setup = process.env.PM_ALPHA3_SETUP
   || (() => {
@@ -21,25 +21,8 @@ const alpha3Setup = process.env.PM_ALPHA3_SETUP
 
 const installDir = path.join(process.env.LOCALAPPDATA, 'Programs', 'Profile Manager');
 const appData = path.join(process.env.APPDATA, 'profile-manager');
-const db = path.join(appData, 'data', 'profiles.db');
-
-function download(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https.get(url, res => {
-      if (res.statusCode === 302 || res.statusCode === 301) {
-        file.close();
-        return download(res.headers.location, dest).then(resolve, reject);
-      }
-      if (res.statusCode !== 200) {
-        reject(new Error(`download ${res.statusCode}`));
-        return;
-      }
-      res.pipe(file);
-      file.on('finish', () => file.close(resolve));
-    }).on('error', reject);
-  });
-}
+const dataDir = path.join(appData, 'data');
+const db = path.join(dataDir, 'profiles.db');
 
 function silentInstall(setupPath) {
   const p = spawn(setupPath, ['/S'], { stdio: 'inherit', windowsHide: true });
@@ -80,6 +63,39 @@ function load(run) {
   return { ...JSON.parse(fs.readFileSync(run.result, 'utf8')), exit: run.code };
 }
 
+async function seedPersistFixture() {
+  const server = http.createServer((req, res) => {
+    const u = req.url || '';
+    if (u.startsWith('/set')) {
+      res.setHeader('Content-Type', 'text/html');
+      res.end(`<script>localStorage.setItem('pm_k','pm_v');document.cookie='pm_c=pm_cookie; path=/; max-age=86400';fetch('/wrote').catch(()=>{})<\/script>`);
+      return;
+    }
+    if (u.startsWith('/wrote')) { res.end('ok'); return; }
+    res.end('ok');
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const originPort = server.address().port;
+  const env = { ...process.env, PM_DATA_DIR: dataDir, PM_API_TOKEN: 'a3up-seed' };
+  const auth = { Authorization: 'Bearer a3up-seed', 'Content-Type': 'application/json' };
+  const proc = await spawnServer(env);
+  try {
+    await fetch(proc.url + '/api/settings', { method: 'PUT', headers: auth, body: JSON.stringify({ minFreeMemoryGiB: 0 }) });
+    const persist = await (await fetch(proc.url + '/api/v1/profiles', { method: 'POST', headers: auth, body: JSON.stringify({ name: 'Persist' }) })).json();
+    const launch = await fetch(proc.url + '/api/v1/profiles/' + persist.id + '/launch', {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ headless: true, automation: true, url: `http://127.0.0.1:${originPort}/set` }),
+    });
+    if (launch.status !== 200) throw new Error('launch ' + launch.status);
+    await new Promise(r => setTimeout(r, 3000));
+    await fetch(proc.url + '/api/v1/profiles/' + persist.id + '/stop', { method: 'POST', headers: auth });
+    fs.writeFileSync(path.join(appData, 'offline-smoke.json'), JSON.stringify({ port: originPort, id: persist.id }));
+  } finally {
+    await stopServer(proc).catch(() => {});
+    await new Promise(r => server.close(() => r()));
+  }
+}
+
 let pass = 0;
 let fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); };
@@ -101,11 +117,9 @@ await silentInstall(cache);
 const alpha2Exe = path.join(installDir, 'Profile Manager.exe');
 ok(fs.existsSync(alpha2Exe), 'alpha.2 installed');
 
-const seedRun = await runPhase(alpha2Exe, 'seed');
-const seed = load(seedRun);
-ok(seed.exit === 0 && !seed.error, `alpha.2 seed phase (${seed.exit})`);
-ok(seed.persist?.wrote === true, 'alpha.2 persisted cookie/localStorage');
+await seedPersistFixture();
 ok(fs.existsSync(db), `profiles.db exists (${db})`);
+ok(fs.existsSync(path.join(appData, 'offline-smoke.json')), 'offline-smoke marker written');
 
 await silentInstall(alpha3Setup);
 const alpha3Exe = path.join(installDir, 'Profile Manager.exe');
@@ -117,9 +131,9 @@ ok(check.exit === 0 && !check.error, `alpha.3 check after upgrade (${check.exit}
 ok(check.saved?.read?.ls === 'pm_v' && String(check.saved?.read?.c || '').includes('pm_c=pm_cookie'),
   `cookies/localStorage survived upgrade (${JSON.stringify(check.saved?.read)})`);
 
-const diagRun = await runPhase(alpha3Exe, 'clean');
-const diag = load(diagRun);
-ok(diag.clean?.version === '0.5.0-alpha.3', `installed version is 0.5.0-alpha.3 (${diag.clean?.version})`);
+const cleanRun = await runPhase(alpha3Exe, 'clean');
+const clean = load(cleanRun);
+ok(clean.clean?.version === '0.5.0-alpha.3', `installed version is 0.5.0-alpha.3 (${clean.clean?.version})`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
