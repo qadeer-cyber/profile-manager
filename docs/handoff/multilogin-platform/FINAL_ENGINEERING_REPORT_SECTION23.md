@@ -4,7 +4,7 @@
 **Prior tip:** `be2b419` · docs `957d2ef`
 
 ## 1. Commit
-**Tip:** _(this package)_ — Firefox gecko cookie read/export, examples suite, §23 final report draft.
+**Tip:** `72803fe` — Firefox gecko cookie read/export, examples suite, §23 final report draft.
 
 ## 2. Package
 - **Gecko cookies:** `server/gecko-cookies.js` reads stopped-profile `moz_cookies`; `GET /cookies` + `/cookies/export` for Firefox (`readOnly`); import/clear **501 FIREFOX_COOKIES_READ_ONLY**; CookieManager read-only UX.

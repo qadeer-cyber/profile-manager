@@ -2,7 +2,7 @@
 
 **Branch:** `feature/dedicated-browser-engine`  
 **Alpha.3 frozen:** tag `v0.5.0-alpha.3-m1-m17` @ `2d65207` — **not retagged**  
-**Checkpoint tip:** _(update on landing)_  
+**Checkpoint tip:** `72803fe` · docs _(§23 SHA commit)_  
 **Prior checkpoint:** `be2b419` · docs `957d2ef`
 
 This document is the expanded **20-point local delivery report**. It does **not** claim Multilogin-complete parity, a percentage score, Stealthfox/Mimic equivalence, or CAPTCHA-free Google.
