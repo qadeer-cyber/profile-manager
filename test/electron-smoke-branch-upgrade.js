@@ -95,6 +95,17 @@ ok(preSchema >= 6, `alpha.3 schema baseline (${preSchema})`);
 await silentInstall(branchSetup);
 ok(fs.existsSync(path.join(installDir, 'Profile Manager.exe')), 'branch build installed over alpha.3');
 
+// Migrations run on first server start (NSIS only replaces the app binary).
+const migrateEnv = { ...process.env, PM_DATA_DIR: dataDir, PM_API_TOKEN: 'branch-up-migrate' };
+const migrateAuth = { Authorization: 'Bearer branch-up-migrate' };
+const migrateProc = await spawnInstalledServer(installDir, migrateEnv);
+try {
+  const settings = await fetch(`${migrateProc.url}/api/settings`, { headers: migrateAuth });
+  ok(settings.ok, `branch server started after upgrade (${settings.status})`);
+} finally {
+  await stopServer(migrateProc).catch(() => {});
+}
+
 const Database = (await import('better-sqlite3')).default;
 const ddb = new Database(dbPath, { readonly: true });
 const persistRow = ddb.prepare('SELECT id, name FROM profiles WHERE name = ?').get('Persist');
