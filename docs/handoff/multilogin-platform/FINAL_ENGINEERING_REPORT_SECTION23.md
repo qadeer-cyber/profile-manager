@@ -1,67 +1,68 @@
-# §23 Final engineering report (checkpoint)
+# §23 Final engineering report (checkpoint — P0 continuation)
 
 **Model:** Composer 2.5 Fast  
 **Branch:** `feature/dedicated-browser-engine`  
-**Baseline:** includes P1 `90f0d40` + Alpha.3 `2d65207` (unchanged tag)
+**Baseline:** Alpha.3 `2d65207` frozen; includes P1 `90f0d40` + prior engine work
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** `574a127` (platform increment on `070502c` engine base)
+**Branch:** `feature/dedicated-browser-engine` · **Commit:** `61a1bae32237ad06789d75eca7e5e9a8e47ec7a3` (P0 continuation on `38658ee` engine platform)
 
 ## 2. Multilogin technology audit
-`MULTILOGIN_COMPLETE_TECHNOLOGY_MATRIX.md` — 45 rows, clean-room from public help.
+Matrix updated: M4/M5/M6/M11/M35/M36 reflect this increment.
 
 ## 3. Browser architecture A–I
-Native Chromium manual + Playwright adapter; Firefox gecko spawn scaffold; see `LOCAL_PLATFORM_ARCHITECTURE.md`.
+Unchanged layers; native Chromium + Firefox gecko paths; Playwright automation adapter.
 
 ## 4. Independent manual browser proof
-VERIFIED (Chromium): tests + `NATIVE-LAUNCH` log. Firefox: argv/plan tests; host spawn BLOCKED on Linux CI without Firefox.
+**VERIFIED** (Chromium native + tests). Firefox host spawn **BLOCKED** on CI without installed Firefox.
 
-## 5. Privacy controls implemented
-Stock-supported: WebRTC, WebGL off, proxy, extensions (Chromium), UA presets, permissions prefs. UNSUPPORTED: canvas/audio noise, HW spoof.
+## 5. Real privacy controls
+Stock-supported controls unchanged; UI exposes **browserEngine** selection.
 
 ## 6. Custom Chromium
-BLOCKED — recipe in `CHROMIUM_ENGINE_RECIPE.md`; no custom EXE.
+**BLOCKED** — no compiled EXE.
 
 ## 7. Firefox runtime
-PARTIAL — migration `browser_engine`, `firefox-launch.js`, native spawn path; extensions UNSUPPORTED on Firefox.
+**PARTIAL** — Settings `firefoxExecutablePath` + profile editor engine selector.
 
 ## 8. Profile config engine
-VERIFIED — `profile-config-engine.js`, schema + validate API, `/profiles/:id/browser-config`.
+**VERIFIED** — schema/validate APIs + UI engine field.
 
 ## 9. Profile management
-VERIFIED clone/folders/tags/bulk; MISSING quick profiles, trash, templates.
+**VERIFIED/PARTIAL** — quick profiles, trash, templates API; template UI **MISSING**.
 
 ## 10. Cookies / CookieRobot-local
-VERIFIED import/export; PARTIAL `examples/local-automation/cookie-robot-example.mjs`.
+**PARTIAL** — example script + CLI; no bundled robot UI.
 
 ## 11. Proxy / network
-VERIFIED SOCKS/HTTP/S library; PARTIAL provider adapters.
+**VERIFIED** (unchanged).
 
 ## 12. Extensions
-VERIFIED Chromium; UNSUPPORTED Firefox path.
+Chromium **VERIFIED**; Firefox **UNSUPPORTED**.
 
 ## 13. Local automation
-VERIFIED `/api/v1` token; PARTIAL examples; MISSING WebDriver server.
+**PARTIAL** — `npm run pm-cli`, puppeteer attach doc; WebDriver **MISSING**.
 
 ## 14. Workspaces / ADB
-NOT_APPLICABLE_CLOUD / future optional.
+**NOT_APPLICABLE_CLOUD**.
 
-## 15. UX
-Existing premium minimal UI; engine selector UI MISSING (API only).
+## 15. Premium UX
+Trash page + quick profile + engine/proxy settings; template UI **MISSING**.
 
 ## 16. Performance
-MISSING Latitude benchmarks this run.
+**MISSING** Latitude benchmarks.
 
 ## 17. Security
-VERIFIED pinned CfT SHA-256 + secret encryption; see `SECURITY_MAINTENANCE.md`.
+Soft-delete preserves data until confirmed purge; settings path validation for Firefox exe.
 
 ## 18. Google compatibility
-PARTIAL native shape; UNSUPPORTED CAPTCHA-free — `GOOGLE_COMPATIBILITY_LOCAL.md`.
+**PARTIAL** — no CAPTCHA promises.
 
 ## 19. Windows testing
-VERIFIED `npm run test:browser-runtime` on windows-2022 workflow; Latitude BLOCKED.
+`npm run test:browser-runtime` — target **39 pass / 0 fail** on windows-2022 workflow.  
+**Preview installer §19: NO-GO.**
 
-## 20. Release §19
-NO-GO preview installer — gates in `RELEASE_GATES_SECTION19.md`.
+## 20. Next milestone
+Template UI + save-quick-as-regular in profile row; WebDriver localhost bridge; Latitude dual-engine smoke.
 
-**No overall Multilogin equivalence percentage** (explicitly not claimed).
+**No Multilogin equivalence percentage claimed.**
