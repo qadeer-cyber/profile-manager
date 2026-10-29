@@ -34,6 +34,7 @@ Stock-implementable items are largely **done** or **read-only** (Firefox gecko c
 - Firefox gecko WebRTC/timezone + pm-cli bridges (**82** tests)
 - **This increment:** gecko `moz_cookies` read/export + examples + §23 final draft (**85** tests)
 - **A6 + B + C (latest):** GeckoDriver navigate stub, Firefox observables, tab-restore title evidence, Phase C blocker doc (**107** `test:browser-runtime`)
+- **D–E + G–H (UI integration):** Workspaces/ADB/proxy template UI, security checklist, Latitude package, §23 handoff (**108** `test:browser-runtime`)
 
 ## Still open (honest)
 

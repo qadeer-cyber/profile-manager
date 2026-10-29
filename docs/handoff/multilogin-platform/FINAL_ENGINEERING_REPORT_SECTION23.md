@@ -1,7 +1,7 @@
 # §23 Final engineering report — Phase G–H handoff
 
 **Branch:** `feature/dedicated-browser-engine`  
-**Checkpoint tip (pre–final-candidate CI):** see git `HEAD` after push  
+**Final candidate SHA:** `09eeefd` (after green `engine-windows` run 40944392766)  
 **Alpha.3 frozen:** `v0.5.0-alpha.3-m1-m17` @ `2d65207` — not retagged  
 **Preview publish:** **NO-GO** until owner §19 sign-off  
 
