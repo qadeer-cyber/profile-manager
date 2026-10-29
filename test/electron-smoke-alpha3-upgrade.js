@@ -141,8 +141,8 @@ const builtVersion = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'u
 ok(builtVersion === '0.5.0-alpha.3', `CI tree version (${builtVersion})`);
 ok(path.basename(alpha3Setup).includes('0.5.0-alpha.3'), `installer artifact name (${path.basename(alpha3Setup)})`);
 
-const schema = new Database(db, { readonly: true }).prepare('PRAGMA user_version').get();
-ok((schema?.user_version ?? 0) >= 6, `SQLite user_version after upgrade (${schema?.user_version})`);
+const schemaV = new Database(db, { readonly: true }).prepare('SELECT COALESCE(MAX(version), 0) AS v FROM schema_version').get();
+ok((schemaV?.v ?? 0) >= 6, `schema_version after upgrade (${schemaV?.v})`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
