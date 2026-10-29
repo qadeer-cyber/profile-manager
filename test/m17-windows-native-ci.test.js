@@ -75,7 +75,12 @@ test('two headless profiles, monitoring, recovery API, and data marker on Window
   } finally {
     if (proc) await stopServer(proc).catch(() => {});
     await new Promise(r => server.close(() => r()));
-    fs.rmSync(dir, { recursive: true, force: true });
+    await new Promise(r => setTimeout(r, 300));
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+    } catch (e) {
+      console.warn('M17_WIN_CI cleanup:', e.message);
+    }
     if (prevDataDir === undefined) delete process.env.PM_DATA_DIR;
     else process.env.PM_DATA_DIR = prevDataDir;
   }
