@@ -1,20 +1,23 @@
-# §23 Final engineering report (checkpoint — gecko cookies read/export)
+# §23 Final engineering report (checkpoint — Phase A P0/P1 remediation)
 
 **Branch:** `feature/dedicated-browser-engine`  
-**Prior tip:** `be2b419` · docs `957d2ef`
+**Prior tip:** `72803fe` · docs `b3a8d99`
 
 ## 1. Commit
-**Tip:** `72803fe` — Firefox gecko cookie read/export, examples suite, §23 final report draft.
+**Tip:** _(this package)_ — Phase A: trash await, gecko user.js, CookieRobot races/URL validation, upgrade seed via installed server.
 
-## 2. Package
-- **Gecko cookies:** `server/gecko-cookies.js` reads stopped-profile `moz_cookies`; `GET /cookies` + `/cookies/export` for Firefox (`readOnly`); import/clear **501 FIREFOX_COOKIES_READ_ONLY**; CookieManager read-only UX.
-- **Examples:** `gecko-cookies-export.mjs`, `profile-config-example.mjs`, `pm-cli-bridges-example.md`; README updated.
-- **§23:** `SECTION23_FINAL_ENGINEERING_REPORT_DRAFT.md` — full 20-point honest delivery report (not Multilogin-complete); Actions **40934718409**, preview **NO-GO**.
+## 2. Phase A (complete in this package)
+- **A1:** `softDeleteProfile` / `purgeFromTrash` await `stopFn`; refuse trash/purge when still running; trash busy lock.
+- **A2:** Deterministic PM managed block in `firefox-gecko-userjs.js` (proxy→direct `network.proxy.type=0`).
+- **A3:** CookieRobot generation tokens + cancel before launch/CDP; stale runner ignore.
+- **A4:** `cookie-robot-url.js` protocol/host/path validation + post-navigation check hook.
+- **A5:** Branch upgrade smoke seeds via `spawnInstalledServer` (Alpha.3 unpacked server), not workspace fork.
+- **A6 (partial):** New regression tests (trash, user.js, URL, cancel); full browser E2E matrix still open.
 
 ## 3. Tests
-`npm run test:browser-runtime` — **85 pass / 0 fail** (was 82).
+`npm run test:browser-runtime` — **94 pass / 0 fail** (was 85).
 
 ## 4. §19
-Still **NO-GO publish** without owner sign-off. No `[ci:installer-smoke]`.
+Still **NO-GO publish** without owner sign-off. Installer-smoke last green **40934718409** @ `98dbc0c` — not re-run on this SHA.
 
 **No Multilogin equivalence percentage claimed.**
