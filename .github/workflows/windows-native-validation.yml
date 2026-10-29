@@ -11,7 +11,11 @@ on:
         type: boolean
         default: false
   push:
-    branches: [windows-validation, development/v0.5.0]
+    branches:
+      - windows-validation
+      - development/v0.5.0
+      # M17 validation-only when workflow_dispatch is unavailable to integration tokens
+      - feature/m10-local-parity
   pull_request:
     branches: [main]
     paths-ignore:
@@ -20,7 +24,11 @@ on:
 
 jobs:
   m17-windows-validation:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.m17_validation_only == true }}
+    if: >-
+      ${{
+        (github.event_name == 'workflow_dispatch' && inputs.m17_validation_only == true)
+        || (github.event_name == 'push' && github.ref == 'refs/heads/feature/m10-local-parity')
+      }}
     runs-on: windows-2022
     timeout-minutes: 90
     permissions:
@@ -39,6 +47,7 @@ jobs:
           $summary = @"
           ## M17 Windows validation
           - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **Event:** ${{ github.event_name }}
           - **SHA:** ${{ github.sha }}
           - **Ref:** ${{ github.ref }}
           - **Runner:** $env:RUNNER_OS $env:RUNNER_ARCH
@@ -90,7 +99,11 @@ jobs:
           Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Result`nM17 validation job completed. Inspect step logs above for PASS/FAIL."
 
   windows-build:
-    if: ${{ github.event_name != 'workflow_dispatch' || inputs.m17_validation_only != true }}
+    if: >-
+      ${{
+        (github.event_name != 'workflow_dispatch' || inputs.m17_validation_only != true)
+        && !(github.event_name == 'push' && github.ref == 'refs/heads/feature/m10-local-parity')
+      }}
     runs-on: windows-2022
     timeout-minutes: 120
     permissions:
