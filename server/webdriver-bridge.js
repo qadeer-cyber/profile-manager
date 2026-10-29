@@ -57,10 +57,12 @@ export async function startWebDriverBridge(profileId, debuggerAddress) {
   const port = await freePort();
   const executable = resolveChromedriverExecutable();
   let proc;
+  const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable);
   try {
     proc = spawn(executable, [`--port=${port}`, '--allowed-ips=127.0.0.1'], {
       stdio: 'ignore',
       windowsHide: true,
+      shell,
       env: { ...process.env, PATH: process.env.PATH },
     });
   } catch (error) {

@@ -9,16 +9,17 @@ import {
 } from '../server/webdriver-bridge.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-wd-'));
+const script = path.join(tmp, 'fake-chromedriver.mjs');
 const stub = path.join(tmp, process.platform === 'win32' ? 'chromedriver-stub.cmd' : 'chromedriver-stub.sh');
 
 if (process.platform === 'win32') {
-  fs.writeFileSync(stub, '@echo off\r\nnode "%~dp0fake-chromedriver.mjs" %*\r\n');
+  fs.writeFileSync(stub, `@echo off\r\n"${process.execPath.replace(/"/g, '""')}" "${script.replace(/"/g, '""')}" %*\r\n`);
 } else {
-  fs.writeFileSync(stub, `#!/bin/sh\nexec node "${path.join(tmp, 'fake-chromedriver.mjs')}" "$@"\n`);
+  fs.writeFileSync(stub, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`);
   fs.chmodSync(stub, 0o755);
 }
 
-fs.writeFileSync(path.join(tmp, 'fake-chromedriver.mjs'), `
+fs.writeFileSync(script, `
 import net from 'node:net';
 const portArg = process.argv.find(a => a.startsWith('--port='));
 const port = Number(portArg?.slice(7) || 0);

@@ -15,7 +15,12 @@ const call = async (method, url, payload) => {
   return { status: response.status, body: text ? JSON.parse(text) : null };
 };
 before(async () => { server = await startServer({ port: 0, staticDir: null }); });
-after(async () => { await server.close(); fs.rmSync(dir, { recursive: true, force: true }); delete process.env.PM_DATA_DIR; });
+after(async () => {
+  await server.close();
+  try { const { db } = await import('../server/db.js'); db.close(); } catch {}
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  delete process.env.PM_DATA_DIR;
+});
 
 test('webdriver start rejects profiles without CDP automation port', async () => {
   const created = await call('POST', '/api/v1/profiles', { name: 'No CDP' });
