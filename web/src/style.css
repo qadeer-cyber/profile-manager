@@ -132,6 +132,7 @@ label.check{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:
   .badge{position:absolute;margin:-18px 0 0 18px;font-size:10px}.side-section,.folders,.side-foot span{display:none}.seg.sm{flex-direction:column}
   .col-folder,.col-proxy,.grid th.col-folder,.grid th.col-proxy{display:none}.cols,.two{grid-template-columns:1fr}
 }
+@media (max-width:1400px){.stat-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}.content{padding:14px 18px}}
 @media (max-width:640px){.col-tags,.grid th.col-tags{display:none}.page-head{flex-direction:column}.proxy-grid{grid-template-columns:1fr}.span2{grid-column:auto}}
 .hint{margin:-8px 0 14px 23px}
 .fact{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)}

@@ -35,6 +35,8 @@
     "test:m11": "node --test test/webrtc-observe.test.js test/chromium-lifecycle.test.js test/m11-local.test.js",
     "test:m12": "node --test test/launch-errors.test.js test/launch-queue.test.js test/resource-monitor.test.js test/m12-local.test.js && node --test --test-timeout=180000 test/m12-launch-browser.test.js",
     "test:m13": "node --test test/m13-windows-metrics.test.js test/m13-monitoring.test.js test/launch-queue.test.js test/launch-errors.test.js && node --test --test-timeout=240000 test/m13-benchmark.test.js",
+    "test:m14": "node --test test/m14-parity-api.test.js test/m14-settings-persistence.test.js",
+    "test:m14-m16": "npm run test:m10 && npm run test:m11 && npm run test:m12 && npm run test:m13 && npm run test:m14",
     "test:m3:browser": "npm run build && node --test test/browser-settings-browser.test.js test/regional-locale-browser.test.js test/regional-locale-diagnostic-failure.test.js test/regional-locale-diagnostic-negative.test.js test/regional-locale-diagnostic-closefail.test.js",
     "test:e4": "node --test --test-timeout=180000 test/diagnostics-e4-merge-gate.test.js"
   },
