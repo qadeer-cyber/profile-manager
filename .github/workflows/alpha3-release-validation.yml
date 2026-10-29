@@ -53,7 +53,9 @@ jobs:
       - name: Windows-native M17 CI tests
         run: npm run test:m17-windows-ci
       - name: Confirm Node prebuild + Electron native modules
+        shell: bash
         run: |
+          set -euo pipefail
           node scripts/confirm-node-native.mjs
           rm -rf node_modules/better-sqlite3/prebuilds
           npx electron-builder install-app-deps
