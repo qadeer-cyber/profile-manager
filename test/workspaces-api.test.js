@@ -23,8 +23,10 @@ const call = async (method, url, payload) => {
 before(async () => { server = await startServer({ port: 0, staticDir: null }); });
 after(async () => {
   await server.close();
-  fs.rmSync(dir, { recursive: true, force: true });
+  try { const { db } = await import('../server/db.js'); db.close(); } catch {}
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
   delete process.env.PM_DATA_DIR;
+  delete process.env.PM_API_TOKEN;
 });
 
 test('workspace API CRUD, profile assignment, and list filter', async () => {

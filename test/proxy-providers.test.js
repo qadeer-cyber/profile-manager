@@ -17,7 +17,14 @@ const call = async (method, url, payload) => {
   return { status: response.status, text, body: text ? JSON.parse(text) : null };
 };
 before(async () => { server = await startServer({ port: 0, staticDir: null }); });
-after(async () => { setProviderFetch(null); await server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => {
+  setProviderFetch(null);
+  await server.close();
+  try { const { db } = await import('../server/db.js'); db.close(); } catch {}
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+  delete process.env.PM_DATA_DIR;
+  delete process.env.PM_API_TOKEN;
+});
 
 test('documented provider adapters build endpoints, import lists, and do not return secrets', async () => {
   const catalog = await call('GET', '/api/v1/proxy-providers');
