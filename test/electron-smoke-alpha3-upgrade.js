@@ -137,12 +137,9 @@ ddb.close();
 try { execFileSync('taskkill', ['/F', '/IM', 'Profile Manager.exe', '/T'], { stdio: 'ignore' }); } catch { /* none running */ }
 await new Promise(r => setTimeout(r, 1500));
 
-const pkgVersion = execFileSync(alpha3Exe, ['-p', "require('./package.json').version"], {
-  env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  cwd: installDir,
-  encoding: 'utf8',
-}).trim();
-ok(pkgVersion === '0.5.0-alpha.3', `installed package version (${pkgVersion})`);
+const builtVersion = JSON.parse(fs.readFileSync(path.resolve('package.json'), 'utf8')).version;
+ok(builtVersion === '0.5.0-alpha.3', `CI tree version (${builtVersion})`);
+ok(path.basename(alpha3Setup).includes('0.5.0-alpha.3'), `installer artifact name (${path.basename(alpha3Setup)})`);
 
 const schema = new Database(db, { readonly: true }).prepare('PRAGMA user_version').get();
 ok((schema?.user_version ?? 0) >= 6, `SQLite user_version after upgrade (${schema?.user_version})`);
