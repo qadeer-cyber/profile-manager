@@ -20,7 +20,7 @@ export function browserEngineCapabilityMatrix() {
       { id: 'trash_bin', title: 'Trash restore / purge', state: 'IMPLEMENTED', evidence: 'test/profile-lifecycle.test.js' },
       { id: 'profile_templates', title: 'Template library + UI', state: 'IMPLEMENTED', evidence: 'TemplatesPage + bulk fromTemplate job + test/profile-lifecycle.test.js' },
       { id: 'browser_update_rollback', title: 'Dual-slot CfT backup + rollback', state: 'IMPLEMENTED', evidence: 'chromium-lifecycle + test/update-manager.test.js + Diagnostics rollback' },
-      { id: 'webdriver_localhost', title: 'Localhost WebDriver bridge', state: 'PARTIAL', evidence: 'webdriver-bridge.js + geckodriver-bridge.js', note: 'Host chromedriver/geckodriver; automation sessions only' },
+      { id: 'webdriver_localhost', title: 'Localhost WebDriver bridge', state: 'PARTIAL', evidence: 'webdriver-bridge.js + automation-drivers.js', note: 'Opt-in CfT/Mozilla cache or PATH; not in offline EXE; automation sessions only' },
       { id: 'local_workspaces', title: 'Local workspaces / vault lock', state: 'IMPLEMENTED', evidence: 'workspaces.js + WorkspacesPage + test/workspaces.test.js' },
       { id: 'cookie_robot_local', title: 'CookieRobot-local job runner', state: 'PARTIAL', evidence: 'cookie-robot-jobs.js + CookieRobotPage', note: 'Chromium CDP batches; user URLs only' },
       { id: 'advanced_monitoring_pipe', title: 'Advanced Monitoring CDP pipe facts', state: 'PARTIAL', note: 'Requires Playwright-connected session' },

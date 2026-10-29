@@ -1,7 +1,7 @@
 // Optional localhost ChromeDriver bridge for automation launches only (CDP port open).
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import net from 'node:net';
+import { resolveChromedriverForBridge, automationDriversReport } from './automation-drivers.js';
 
 const bridges = new Map();
 
@@ -33,17 +33,17 @@ function waitForPort(port, { timeoutMs = 15000 } = {}) {
 }
 
 export function resolveChromedriverExecutable() {
-  const configured = process.env.PM_CHROMEDRIVER_PATH || '';
-  if (configured && fs.existsSync(configured)) return configured;
-  return process.platform === 'win32' ? 'chromedriver.exe' : 'chromedriver';
+  return resolveChromedriverForBridge();
 }
 
 export function webDriverBridgeReport() {
+  const drivers = automationDriversReport();
   return {
     supported: true,
     bundled: false,
-    requiresChromedriverOnPath: true,
+    requiresChromedriverOnPath: !drivers.chromedriver.installed,
     configureWith: 'PM_CHROMEDRIVER_PATH',
+    optionalCache: drivers.chromedriver,
     attachCapability: 'goog:chromeOptions.debuggerAddress',
     note: 'Only for profiles running with automation (Playwright path + remote-debugging-port). Manual native launches cannot use WebDriver.',
     activeSessions: [...bridges.keys()],

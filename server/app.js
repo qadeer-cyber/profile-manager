@@ -52,6 +52,7 @@ import {
 } from './profile-browser-export.js';
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
 import { adbAdapterReport, listAdbDevices } from './adb-adapter.js';
+import { automationDriversReport, installAutomationDrivers } from './automation-drivers.js';
 import { createBackup, createEncryptedBackup, inspectBackup, restoreBackup } from './backup.js';
 import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
 import { dashboardStats } from './dashboard.js';
@@ -122,6 +123,7 @@ const SETTINGS_DEFAULTS = {
   minFreeMemoryGiB: 1,
   maxConcurrentLaunches: 2,
   launchReservationSeconds: 120,
+  automationDriversOptIn: false,
 };
 
 // Re-encrypt stored proxy secrets with the preferred backend (plaintext/AES -> safeStorage, etc.)
@@ -648,6 +650,15 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     res.json(listAdbDevices());
   }));
+  router.get('/automation-drivers', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(automationDriversReport());
+  }));
+  router.post('/automation-drivers/install', wrap(async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const which = req.body?.driver === 'chromedriver' || req.body?.driver === 'geckodriver' ? req.body.driver : 'both';
+    res.json(await installAutomationDrivers(which, { confirm: !!req.body?.confirm }));
+  }));
   router.post('/profiles/:id/cookies/import', wrap((req, res) => {
     const profile = cookieMutation(req.params.id);
     const cookies = Array.isArray(req.body) ? req.body : req.body.cookies;
@@ -1137,6 +1148,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       if (!Number.isInteger(n) || n < 30 || n > 600) throw err(400, 'launchReservationSeconds must be an integer from 30 to 600');
       setSetting('launchReservationSeconds', n);
     }
+    if ('automationDriversOptIn' in b) setSetting('automationDriversOptIn', !!b.automationDriversOptIn);
     res.json(Object.fromEntries(Object.entries(SETTINGS_DEFAULTS).map(([k, d]) => [k, getSetting(k, d)])));
   }));
   ui.get('/diagnostics', (req, res) => res.json(diagnostics()));

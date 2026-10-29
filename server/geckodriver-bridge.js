@@ -1,7 +1,7 @@
 // Optional localhost geckodriver bridge — Firefox marionette sessions only.
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import net from 'node:net';
+import { resolveGeckodriverForBridge, automationDriversReport } from './automation-drivers.js';
 
 const bridges = new Map();
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
@@ -32,17 +32,17 @@ function waitForPort(port, { timeoutMs = 15000 } = {}) {
 }
 
 export function resolveGeckodriverExecutable() {
-  const configured = process.env.PM_GECKODRIVER_PATH || '';
-  if (configured && fs.existsSync(configured)) return configured;
-  return process.platform === 'win32' ? 'geckodriver.exe' : 'geckodriver';
+  return resolveGeckodriverForBridge();
 }
 
 export function geckodriverBridgeReport() {
+  const drivers = automationDriversReport();
   return {
     supported: true,
     bundled: false,
-    requiresGeckodriverOnPath: true,
+    requiresGeckodriverOnPath: !drivers.geckodriver.installed,
     configureWith: 'PM_GECKODRIVER_PATH',
+    optionalCache: drivers.geckodriver,
     note: 'Only for Firefox profiles running with automation:true (-marionette). Chromium uses the ChromeDriver bridge.',
     activeSessions: [...bridges.keys()],
   };

@@ -20,6 +20,7 @@ export function SettingsPage() {
       <label>Max concurrent launches (1–4)<input type="number" min={1} max={4} value={s.maxConcurrentLaunches ?? 2} onChange={e => setS({ ...s, maxConcurrentLaunches: Number(e.target.value) })} /></label>
       <p className="muted">Latitude 5480 / 8 GiB defaults: 4 running profiles, 1 GiB free-memory guard, 2 parallel launches.</p>
     </section>
+    <AutomationDriversPanel toast={toast} settings={s} onSettingsChange={setS} />
     <section className="panel"><h2>Automation API</h2>
       {token ? <><p className="muted">Use this token with <code>/api/v1</code> (header <code>Authorization: Bearer …</code>). Base URL changes each launch in the desktop app; see Diagnostics.</p>
         <div className="row"><input readOnly className="mono-input" value={show ? token : '•'.repeat(24)} /><button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button><button onClick={() => { navigator.clipboard.writeText(token); toast('Token copied', 'success'); }}>Copy</button></div></>
@@ -32,6 +33,36 @@ export function SettingsPage() {
     </section>
     <BackupPanel toast={toast} />
   </>;
+}
+
+function AutomationDriversPanel({ toast, settings, onSettingsChange }) {
+  const [report, setReport] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => { api('/api/automation-drivers').then(setReport).catch(() => {}); }, []);
+  useEffect(load, [settings.automationDriversOptIn]);
+  const install = async driver => {
+    setBusy(true);
+    try {
+      const r = await api('/api/automation-drivers/install', { method: 'POST', body: { driver, confirm: true } });
+      setReport(r.report || r);
+      toast(`${driver === 'both' ? 'Drivers' : driver} installed under data folder`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return <section className="panel"><h2>WebDriver helpers (optional cache)</h2>
+    <p className="muted">ChromeDriver and geckodriver are <strong>not</strong> bundled in the offline installer. You can cache verified builds under your data folder after opt-in. CfT ChromeDriver matches pinned Chromium {report?.chromedriver?.pinnedBrowserVersion || '…'}; geckodriver is Mozilla MPL-2.0. You can still use <code>PM_CHROMEDRIVER_PATH</code> / <code>PM_GECKODRIVER_PATH</code> or PATH.</p>
+    <label className="check"><input type="checkbox" checked={!!settings.automationDriversOptIn} onChange={e => onSettingsChange({ ...settings, automationDriversOptIn: e.target.checked })} /> I want to download automation drivers into my Profile Manager data folder (explicit opt-in)</label>
+    {report && <ul className="muted">
+      <li>ChromeDriver: {report.chromedriver.installed ? <>installed <code>{report.chromedriver.path}</code></> : 'not cached'}</li>
+      <li>Geckodriver: {report.geckodriver.installed ? <>installed <code>{report.geckodriver.path}</code></> : 'not cached'}</li>
+    </ul>}
+    <div className="row">
+      <button disabled={busy || !settings.automationDriversOptIn} onClick={() => install('chromedriver')}>Download ChromeDriver</button>
+      <button disabled={busy || !settings.automationDriversOptIn} onClick={() => install('geckodriver')}>Download geckodriver</button>
+      <button disabled={busy || !settings.automationDriversOptIn} onClick={() => install('both')}>Download both</button>
+    </div>
+    {!settings.automationDriversOptIn && <p className="muted">Save settings with opt-in checked, then download.</p>}
+  </section>;
 }
 
 function BackupPanel({ toast }) {
