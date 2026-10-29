@@ -59,7 +59,7 @@ Soft-delete + confirmed purge; template delete is metadata-only (no profile cook
 **PARTIAL** — no CAPTCHA promises.
 
 ## 19. Windows testing
-`npm run test:browser-runtime` — **44 pass / 0 fail** target on `dedicated-browser-engine-win.yml`.  
+`npm run test:browser-runtime` — **44 pass / 0 fail** on `dedicated-browser-engine-win.yml` (Actions: https://github.com/qadeer-cyber/profile-manager/actions/runs/40929886410 @ `4e9f730`).  
 **Preview installer §19: NO-GO.**
 
 ## 20. Next milestone
