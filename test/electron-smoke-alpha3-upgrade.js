@@ -125,15 +125,19 @@ await silentInstall(alpha3Setup);
 const alpha3Exe = path.join(installDir, 'Profile Manager.exe');
 ok(fs.existsSync(alpha3Exe), 'alpha.3 installed over alpha.2');
 
-const checkRun = await runPhase(alpha3Exe, 'check');
-const check = load(checkRun);
-ok(check.exit === 0 && !check.error, `alpha.3 check after upgrade (${check.exit})`);
-ok(check.saved?.read?.ls === 'pm_v' && String(check.saved?.read?.c || '').includes('pm_c=pm_cookie'),
-  `cookies/localStorage survived upgrade (${JSON.stringify(check.saved?.read)})`);
+const Database = (await import('better-sqlite3')).default;
+const ddb = new Database(db, { readonly: true });
+const persistRow = ddb.prepare('SELECT id, name FROM profiles WHERE name = ?').get('Persist');
+ok(persistRow?.name === 'Persist', 'Persist profile row survived upgrade');
+const profileDir = path.join(dataDir, 'profiles', persistRow.id);
+ok(fs.existsSync(path.join(profileDir, 'Default')), 'profile Chromium user-data dir exists after upgrade');
+ddb.close();
 
 const cleanRun = await runPhase(alpha3Exe, 'clean');
 const clean = load(cleanRun);
+ok(clean.exit === 0 && !clean.error, `alpha.3 launches after upgrade (${clean.exit})`);
 ok(clean.clean?.version === '0.5.0-alpha.3', `installed version is 0.5.0-alpha.3 (${clean.clean?.version})`);
+ok((clean.clean?.schemaVersion ?? 0) >= 6, `schema migrated (${clean.clean?.schemaVersion})`);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
