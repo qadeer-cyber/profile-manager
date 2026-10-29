@@ -19,12 +19,14 @@ This measures **this local desktop app** (M1–M16), not Multilogin cloud/SaaS. 
 | Bulk ops | VERIFIED | bulk-jobs |
 | Automation API | VERIFIED | api e2e |
 | Performance/monitoring | VERIFIED | M12/M13 |
-| Windows stability smoke | BLOCKED | Latitude runner not run on Linux CI |
+| Windows stability smoke | PARTIAL | GHA windows-2022 PASS; Latitude HD620 not run |
 | Desktop UI | VERIFIED | Dashboard + Advanced Monitoring |
 | WebRTC + ICE | VERIFIED | webrtc-observe, gaps browser |
 | Geolocation modes | VERIFIED | gaps browser |
 | Chromium backup/rollback | VERIFIED | chromium-lifecycle |
-| Crash/orphan recovery | PARTIAL | recoverAfterRestart; full Windows crash matrix BLOCKED |
+| Crash/orphan recovery | VERIFIED | m17 tests + windows-2022 native CI |
 | Multilogin mask parity | UNSUPPORTED | Custom engine — see privacy-engine report |
 
 **Observation-only diagnostics do not earn VERIFIED** when Multilogin documents a user-facing control (e.g. canvas noise).
+
+**Current local product parity:** **88.9%** (16/18 credits; formula unchanged).

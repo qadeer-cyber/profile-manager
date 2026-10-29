@@ -27,6 +27,6 @@ module.exports = {
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
     deleteAppDataOnUninstall: false,
-    artifactName: '${productName}-offline-Setup-${version}-x64.${ext}',
+    artifactName: 'Profile.Manager-offline-Setup-${version}-x64.${ext}',
   },
 };

@@ -1,0 +1,168 @@
+name: Alpha.3 release validation and publish
+on:
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Create GitHub pre-release and upload EXE (only if all gates pass)
+        type: boolean
+        default: false
+  push:
+    branches:
+      - feature/m10-local-parity
+      - cursor/alpha3-track-a-07a4
+
+jobs:
+  alpha3-windows-release:
+    if: >-
+      ${{
+        (github.event_name == 'workflow_dispatch')
+        || (github.event_name == 'push' && contains(github.event.head_commit.message, '[ci:alpha3-release]'))
+      }}
+    runs-on: windows-2022
+    timeout-minutes: 150
+    permissions:
+      contents: write
+    env:
+      PM_API_TOKEN: alpha3-gha-validation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Record run metadata
+        shell: pwsh
+        run: |
+          @"
+          ## Alpha.3 release validation
+          - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **SHA:** ${{ github.sha }}
+          - **Runner:** Windows Server 2022 (not Latitude 5480)
+          "@ | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Host "OS=$([Environment]::OSVersion.VersionString)"
+      - name: Install Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: npm ci
+        run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+      - name: Build web UI
+        run: npm run build
+      - name: M10–M17 regression
+        run: npm run test:m17-regression
+      - name: Windows-native M17 CI tests
+        run: npm run test:m17-windows-ci
+      - name: Confirm Node prebuild + Electron native modules
+        run: |
+          node scripts/confirm-node-native.mjs
+          rm -rf node_modules/better-sqlite3/prebuilds
+          npx electron-builder install-app-deps
+          test -f node_modules/better-sqlite3/build/Release/better_sqlite3.node
+      - name: Electron desktop smoke (source tree)
+        run: npm run test:electron
+      - name: Build offline Alpha.3 setup EXE
+        timeout-minutes: 45
+        run: |
+          node scripts/fetch-bundled-chromium.mjs win64
+          npx electron-builder --config electron-builder.offline.cjs --win nsis --x64 --publish never
+          Get-ChildItem release -Filter '*.exe' | Format-Table Name, Length
+      - name: SHA-256 of offline setup
+        shell: pwsh
+        id: hash
+        run: |
+          $exes = @(Get-ChildItem release -File | Where-Object { $_.Extension -eq '.exe' -and $_.Name -like '*offline*Setup*.exe' })
+          if ($exes.Count -ne 1) { throw "expected one setup exe, got $($exes.Count)" }
+          $exe = $exes[0]
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Set-Content -Encoding ascii release/SHA256SUMS.txt
+          "PM_ALPHA3_SETUP=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PM_ALPHA3_SHA=$hash" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PM_ALPHA3_NAME=$($exe.Name)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PM_ALPHA3_BYTES=$($exe.Length)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-Content release/SHA256SUMS.txt
+          Add-Content $env:GITHUB_STEP_SUMMARY "### Installer`n- **File:** $($exe.Name)`n- **Bytes:** $($exe.Length)`n- **SHA-256:** ``$hash``"
+      - name: Block Playwright download hosts
+        shell: pwsh
+        run: |
+          $hostsFile = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          foreach ($name in @('cdn.playwright.dev', 'playwright.download.prss.microsoft.com', 'playwright.azureedge.net')) {
+            if (-not (Select-String -Path $hostsFile -Pattern [regex]::Escape($name) -Quiet)) {
+              Add-Content -Path $hostsFile -Value "127.0.0.1 $name"
+            }
+          }
+      - name: Alpha.2 to Alpha.3 upgrade smoke
+        timeout-minutes: 45
+        env:
+          PM_ALPHA3_SETUP: ${{ env.PM_ALPHA3_SETUP }}
+        run: node test/electron-smoke-alpha3-upgrade.js
+      - name: Isolate profile data for clean Alpha.3 install smoke
+        shell: pwsh
+        run: |
+          foreach ($p in @(
+            (Join-Path $env:APPDATA 'profile-manager'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager')
+          )) {
+            if (Test-Path $p) { Remove-Item -LiteralPath $p -Recurse -Force }
+          }
+      - name: Clean install Alpha.3 + offline smoke
+        timeout-minutes: 45
+        shell: pwsh
+        run: |
+          $setup = $env:PM_ALPHA3_SETUP
+          $p = Start-Process -FilePath $setup -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "install exit $($p.ExitCode)" }
+        env:
+          PM_ALPHA3_SETUP: ${{ env.PM_ALPHA3_SETUP }}
+      - name: Offline installed-app smoke
+        timeout-minutes: 40
+        env:
+          PM_AUTOMATION_DEFAULT: "1"
+          PM_PROXY_LOOPBACK: "1"
+          PM_PROXY_TEST_INSECURE_TLS: "1"
+          PLAYWRIGHT_DOWNLOAD_HOST: "http://127.0.0.1:9"
+        run: node test/electron-smoke-offline.js
+      - name: Uninstall keeps profile data
+        shell: pwsh
+        run: |
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Profile Manager'
+          $un = Join-Path $installDir 'Uninstall Profile Manager.exe'
+          $db = Join-Path $env:APPDATA 'profile-manager\data\profiles.db'
+          if (-not (Test-Path $db)) { throw "missing db before uninstall" }
+          $p = Start-Process -FilePath $un -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "uninstall $($p.ExitCode)" }
+          if (-not (Test-Path $db)) { throw "profiles.db removed on uninstall" }
+          Add-Content $env:GITHUB_STEP_SUMMARY "### Uninstall`n- **profiles.db preserved:** PASS"
+      - name: Publish Alpha.3 pre-release
+        if: >-
+          ${{
+            success()
+            && (
+              (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_release == 'true')
+              || (github.event_name == 'push' && contains(github.event.head_commit.message, '[ci:alpha3-release]') && contains(github.event.head_commit.message, '[publish]'))
+            )
+          }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = 'v0.5.0-alpha.3-m1-m17'
+          $title = 'Profile Manager v0.5.0-alpha.3 — Local Windows Preview'
+          $notes = Get-Content -Raw release/RELEASE-NOTES-alpha3.md
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git tag -a $tag -m $title -f
+          git push origin $tag -f
+          gh release create $tag `
+            --title $title `
+            --notes-file release/RELEASE-NOTES-alpha3.md `
+            --prerelease `
+            "$env:PM_ALPHA3_SETUP#application/octet-stream" `
+            release/SHA256SUMS.txt `
+            release/RELEASE-NOTES-alpha3.md
+          $url = gh release view $tag --json url -q .url
+          Add-Content $env:GITHUB_STEP_SUMMARY "### Published`n- **Release:** $url`n- **Tag:** $tag"
+      - name: Validation complete (no publish)
+        if: always()
+        shell: pwsh
+        run: |
+          Add-Content $env:GITHUB_STEP_SUMMARY "### Gates`nSee step results above. Publish requires ``[ci:alpha3-release][publish]`` on push or workflow_dispatch with publish_release=true."

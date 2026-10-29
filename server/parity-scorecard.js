@@ -11,12 +11,12 @@ export const SCORECARD = Object.freeze([
   { id: 'bulk', area: 'Bulk ops + jobs', status: 'VERIFIED', evidence: 'test/bulk-jobs.test.js' },
   { id: 'automation_api', area: 'Automation API /api/v1', status: 'VERIFIED', evidence: 'test/api.e2e.js' },
   { id: 'performance', area: 'Launch metrics + queue + resources', status: 'VERIFIED', evidence: 'test/m12, test/m13 benchmark' },
-  { id: 'windows_stability', area: 'Windows process monitoring + smoke runner', status: 'BLOCKED', evidence: 'Run-M13-Latitude5480.ps1 — not executed on Linux agent' },
+  { id: 'windows_stability', area: 'Windows process monitoring + smoke runner', status: 'PARTIAL', evidence: 'GHA windows-2022 m17-windows-validation run 40879417553; Latitude HD620 BLOCKED' },
   { id: 'desktop_ui', area: 'Premium desktop UI + Advanced Monitoring', status: 'VERIFIED', evidence: 'web build; MonitoringPage separate from Dashboard' },
   { id: 'webrtc_ice', area: 'WebRTC policy + ICE diagnostics', status: 'VERIFIED', evidence: 'test/webrtc-observe.test.js, fingerprint-gaps-browser' },
   { id: 'geolocation_modes', area: 'Geolocation Allow/Ask/Deny', status: 'VERIFIED', evidence: 'test/fingerprint-gaps-browser.test.js' },
   { id: 'chromium_lifecycle', area: 'Chromium install backup/rollback', status: 'VERIFIED', evidence: 'test/chromium-lifecycle.test.js' },
-  { id: 'crash_recovery', area: 'Crash/orphan recovery + locks', status: 'PARTIAL', evidence: 'test/m17-crash-recovery.test.js; Windows crash matrix BLOCKED' },
+  { id: 'crash_recovery', area: 'Crash/orphan recovery + locks', status: 'VERIFIED', evidence: 'test/m17-crash-recovery.test.js, m17-windows-native-ci; GHA windows-2022 PASS' },
   { id: 'multilogin_mask_parity', area: 'Multilogin-style masked fingerprints', status: 'UNSUPPORTED', evidence: 'Requires custom Chromium — privacy-engine-report.js' },
 ]);
 

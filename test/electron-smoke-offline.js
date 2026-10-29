@@ -130,7 +130,7 @@ ok(!fs.existsSync(appData), 'clean install has not created %APPDATA%\\profile-ma
 const cleanRun = await runPhase('clean', tlsPort);
 const clean = load(cleanRun);
 ok(clean.exit === 0 && !clean.error, `clean launch exited (${clean.exit})`);
-ok(clean.clean?.version === '0.5.0-alpha.2', `installed version is 0.5.0-alpha.2 (${clean.clean?.version})`);
+ok(clean.clean?.version === '0.5.0-alpha.3', `installed version is 0.5.0-alpha.3 (${clean.clean?.version})`);
 ok(path.basename(clean.clean?.userData || '') === 'profile-manager', `userData is profile-manager (${clean.clean?.userData})`);
 ok(clean.clean?.from === 0 && clean.clean?.backup && fs.existsSync(clean.clean.backup), `fresh database was backed up before migration (${clean.clean?.backup})`);
 fs.rmSync(appData, { recursive: true, force: true });

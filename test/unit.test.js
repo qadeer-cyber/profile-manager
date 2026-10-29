@@ -162,9 +162,9 @@ test('migrate copies a file database before changing it and keeps the rows', () 
   assert.equal(fs.readdirSync(dir).filter(n => n.endsWith('.bak')).length, 2);
   db.close();
 });
-test('0.5.0-alpha.2 keeps the v0.4.0 install identity and uninstall keeps data', () => {
+test('0.5.0-alpha.3 keeps the v0.4.0 install identity and uninstall keeps data', () => {
   const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '0.5.0-alpha.2');
+  assert.equal(pkg.version, '0.5.0-alpha.3');
   assert.equal(pkg.name, 'profile-manager');
   assert.equal(pkg.build.appId, 'local.profilemanager.app');
   assert.equal(pkg.build.productName, 'Profile Manager');
