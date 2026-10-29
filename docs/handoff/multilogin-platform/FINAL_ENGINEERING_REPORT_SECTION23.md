@@ -1,39 +1,31 @@
-# §23 Final engineering report (checkpoint — installer smoke path + export/ADB/focus)
+# §23 Final engineering report (checkpoint — installer smoke GREEN)
 
 **Model:** Composer 2.5 Fast  
 **Branch:** `feature/dedicated-browser-engine`  
-**Baseline:** Alpha.3 `2d65207` frozen · prior tip `e4214aa` (workspaces/CookieRobot/geckodriver)
+**Baseline:** Alpha.3 `2d65207` frozen  
 
 ## 1. Branch + commit SHA
-**Branch:** `feature/dedicated-browser-engine` · **Commit:** `a773079` (feature `[ci:installer-smoke]`)
+**Tip:** `98dbc0c` (packaged native proxy loopback fix) · prior feature `cd72dfb` (export/ADB/focus + installer job)
 
-## 2. Multilogin technology audit
-M8 export **PARTIAL** (+ bookmarks/history read API); M10 running manager **VERIFIED** (+ Focus); M40 ADB **PARTIAL** (optional host `adb`, not farm-equivalent).
+## 2. Actions (windows-2022)
+| Run | SHA | engine-windows | installer-smoke-offline |
+|-----|-----|----------------|-------------------------|
+| [40934718409](https://github.com/qadeer-cyber/profile-manager/actions/runs/40934718409) | `98dbc0c` | **success** | **success** (upgrade 8/8, offline smoke 45/0) |
+| [40933139496](https://github.com/qadeer-cyber/profile-manager/actions/runs/40933139496) | `cd72dfb` | success | failure (loopback bypass on packaged native — fixed) |
 
-## 3–8. Architecture / privacy / custom EXE
-Unchanged honest status; no custom Chromium EXE.
+Local: `npm run test:browser-runtime` — **65 pass / 0 fail**.
 
-## 9. Profile management
-Stopped-profile Chromium bookmarks/history export; running-session Focus/Locate API (Win32 or CDP).
+## 3. §19 preview gates
+Gates **1–4**, **6**, **8** evidenced on run 40934718409. **NO-GO publish** until owner sign-off (gate 7) and bundled-driver / custom-engine blockers unchanged.
 
-## 10. CookieRobot-local
-Unchanged from prior checkpoint.
+## 4. Product increments (since e4214aa)
+- Installer-smoke CI (no `gh release create`)  
+- Bookmarks/history export API + Storage UI download  
+- Optional ADB device list (not farm-equivalent)  
+- Running-profile Focus (Dashboard + Profiles)  
+- Packaged native proxied launch adds `--proxy-bypass-list=<-loopback>`  
 
-## 13. Automation
-Optional `GET /api/adb/devices` for user-owned Android USB debugging only.
-
-## 14. Workspaces
-Unchanged local-only.
-
-## 16. Performance / Latitude
-Unchanged; no invented metrics.
-
-## 19. Windows testing
-- `engine-windows` job: `npm run test:browser-runtime` — **65 pass / 0 fail** (added export/ADB/focus unit tests).  
-- New `installer-smoke-offline` job: builds `dist:win:offline`, runs Alpha.3→branch preservation (`electron-smoke-branch-upgrade.js`) + `electron-smoke-offline.js`; **no GitHub release publish**. Trigger: `[ci:installer-smoke]` or workflow_dispatch.  
-- **§19 preview publish: still NO-GO** until installer job green + owner sign-off; gates 2–4 now have automated evidence path.
-
-## 20. Next milestone
-Bundled drivers; Latitude physical smoke; custom Chromium **BLOCKED**.
+## 5. Still open (honest)
+Bundled chromedriver/geckodriver **MISSING**; custom Chromium **BLOCKED**; M33 human typing **MISSING** (intentionally skipped); Latitude physical metrics **not invented**.
 
 **No Multilogin equivalence percentage claimed.**

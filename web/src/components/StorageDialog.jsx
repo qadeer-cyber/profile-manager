@@ -40,6 +40,37 @@ export function StorageDialog({ profile, onClose }) {
       <p className="muted">Cleanup never deletes cookies, login data, history, preferences, bookmarks, or extensions. Cache removes Cache, Code Cache, GPU caches, and service-worker cache. Site data also removes local storage, IndexedDB, and the service worker. A running profile cannot be cleaned.</p>
       <label>Type clear-cache or clear-site-data<input value={confirm} onChange={e => setConfirm(e.target.value)} placeholder="clear-cache" autoComplete="off" /></label>
       <button className="btn-danger" disabled={busy || !info.cleanupAllowed || (confirm !== 'clear-cache' && confirm !== 'clear-site-data')} onClick={cleanup}>{busy ? 'Working…' : 'Delete confirmed data'}</button>
+      <div className="row" style={{ marginTop: '1rem', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button type="button" disabled={busy || profile.running} title={profile.running ? 'Stop the profile before export' : 'Export Chromium bookmarks JSON'}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try {
+              const data = await api(`/api/profiles/${profile.id}/bookmarks/export`);
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `${profile.name.replace(/[^\w.-]+/g, '_')}-bookmarks.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            } catch (e) { setError(e.message); }
+            setBusy(false);
+          }}>Export bookmarks</button>
+        <button type="button" disabled={busy || profile.running} title={profile.running ? 'Stop the profile before export' : 'Export recent history JSON'}
+          onClick={async () => {
+            setBusy(true); setError('');
+            try {
+              const data = await api(`/api/profiles/${profile.id}/history/export?limit=500`);
+              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `${profile.name.replace(/[^\w.-]+/g, '_')}-history.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+            } catch (e) { setError(e.message); }
+            setBusy(false);
+          }}>Export history</button>
+      </div>
+      {profile.running && <p className="muted">Stop this profile to export on-disk bookmarks or history.</p>}
     </div>}
   </Dialog>;
 }

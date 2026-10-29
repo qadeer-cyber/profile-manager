@@ -19,7 +19,7 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P2 | Optional local ADB | List user devices when adb on PATH | PARTIAL |
 | P2 | Performance benchmarks | Latitude-oriented metrics script | MISSING |
 | P2 | Side-by-side browser rollback | CfT backup slot + rollback | VERIFIED |
-| P2 | §19 installer CI smoke | Non-publishing windows-2022 job | PARTIAL (await first green run) |
+| P2 | §19 installer CI smoke | Non-publishing windows-2022 job | VERIFIED (run 40934718409 @ `98dbc0c`) |
 | P3 | Custom Chromium compile | Recipe only until approved infra | BLOCKED |
 | P3 | Canvas/WebGL noise | Requires fork | UNSUPPORTED |
 | N/A | Cloud sync/teams/billing | — | NOT_APPLICABLE_CLOUD |
@@ -32,7 +32,7 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 - Template UI increment (`4e9f730` / docs `11aab86`)  
 - Rollback/WebDriver/provider increment (`dc60291` / docs `ecbdb10`)  
 - Workspaces + CookieRobot + geckodriver (`e4214aa` / **60** runtime tests)  
-- **This increment:** installer-smoke CI job (no publish); bookmarks/history export; browser focus/locate; optional ADB adapter; **65** tests in `test:browser-runtime`
+- **This increment:** installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests in `test:browser-runtime`
 
 ## Still open (honest)
 
