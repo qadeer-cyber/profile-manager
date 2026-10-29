@@ -132,6 +132,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder }) {
         <td className="col-name"><div className="name">{p.name}{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>{p.notes && <div className="muted clamp">{p.notes}</div>}
           {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
+          {p.tabRestore?.enabled && <span className="tag" title={p.running ? 'Tab restore on — saved on graceful stop' : p.tabRestore.savedCount ? `${p.tabRestore.savedCount} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet'}>Tab restore{p.tabRestore.savedCount ? ` · ${p.tabRestore.savedCount}` : ''}</span>}
           {p.cdp && <div className="mono" title="Automation (CDP) endpoint">{p.cdp.wsEndpoint}</div>}</td>
         <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>
         <td className="col-tags">{p.tags.map(t => <button key={t} className="tag" onClick={() => setTag(t)}>{t}</button>)}</td>

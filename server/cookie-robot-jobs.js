@@ -129,6 +129,33 @@ async function waitForCdpPort(profileId, timeoutMs = CDP_WAIT_MS) {
   throw fail(409, 'Timed out waiting for automation CDP on the profile. Enable automation on the profile or retry.', 'NO_CDP');
 }
 
+/** Testable CDP task runner (real Chromium CDP when port is live). */
+export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500, signal = {} } = {}) {
+  const browser = await connectCdpWithRetry(cdpPort);
+  try {
+    const context = browser.contexts()[0] || await browser.newContext();
+    const out = [];
+    for (let i = 0; i < tasks.length; i++) {
+      if (signal.cancel) break;
+      if (tasks[i].status === 'ok') { out.push(tasks[i]); continue; }
+      let page;
+      try {
+        page = await context.newPage();
+        await page.goto(tasks[i].url, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        out.push({ ...tasks[i], status: 'ok', error: null, at: new Date().toISOString() });
+      } catch (error) {
+        out.push({ ...tasks[i], status: 'failed', error: error.message, at: new Date().toISOString() });
+      } finally {
+        try { await page?.close(); } catch {}
+      }
+      if (i < tasks.length - 1 && !signal.cancel) await new Promise(r => setTimeout(r, delayMs));
+    }
+    return out;
+  } finally {
+    try { await browser.close(); } catch {}
+  }
+}
+
 async function connectCdpWithRetry(cdpPort) {
   const url = `http://127.0.0.1:${cdpPort}`;
   let lastErr;
@@ -150,7 +177,6 @@ async function runCookieRobotJob(id, control) {
   persistTasks(id, tasks, 'running');
   const profileId = row.profile_id;
   const delayMs = Number(row.delay_ms) || 1500;
-  let browser = null;
   let launchedByJob = false;
   try {
     assertChromiumProfile(profileId);
@@ -165,23 +191,10 @@ async function runCookieRobotJob(id, control) {
       }
     }
     const cdpPort = await waitForCdpPort(profileId);
-    browser = await connectCdpWithRetry(cdpPort);
-    const context = browser.contexts()[0] || await browser.newContext();
-    for (let i = 0; i < tasks.length; i++) {
-      if (control.cancel) { persistTasks(id, tasks, 'cancelled'); return; }
-      if (tasks[i].status === 'ok') continue;
-      let page;
-      try {
-        page = await context.newPage();
-        await page.goto(tasks[i].url, { waitUntil: 'domcontentloaded', timeout: 45000 });
-        tasks[i] = { ...tasks[i], status: 'ok', error: null, at: new Date().toISOString() };
-      } catch (error) {
-        tasks[i] = { ...tasks[i], status: 'failed', error: error.message, at: new Date().toISOString() };
-      } finally {
-        try { await page?.close(); } catch {}
-      }
-      persistTasks(id, tasks, 'running');
-      if (i < tasks.length - 1 && !control.cancel) await new Promise(r => setTimeout(r, delayMs));
+    tasks = await runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs, signal: control });
+    if (control.cancel) {
+      persistTasks(id, tasks, 'cancelled');
+      return;
     }
     const failed = tasks.some(t => t.status === 'failed');
     persistTasks(id, tasks, failed ? 'failed' : 'done', failed ? 'one or more URLs failed' : null);
@@ -189,12 +202,6 @@ async function runCookieRobotJob(id, control) {
     persistTasks(id, tasks, 'failed', error.message || 'job failed');
   } finally {
     runners.delete(id);
-    if (browser) {
-      try {
-        // connectOverCDP: close() detaches Playwright; browser process keeps running.
-        await browser.close();
-      } catch { /* ignore */ }
-    }
     if (launchedByJob && control.cancel) {
       try { await engine.stop(profileId, { timeoutMs: 15000 }); } catch { /* best effort */ }
     }

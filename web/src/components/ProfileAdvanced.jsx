@@ -96,6 +96,7 @@ export function PreferenceFields({ settings, onChange }) {
   const [urls, setUrls] = useState((prefs.startupUrls || []).join('\n'));
   const setPerm = (key, value) => onChange({ ...settings, preferences: { ...prefs, permissions: { ...prefs.permissions, [key]: value } } });
   return <div className="form">
+    <div className="notice">Startup options apply on the next manual launch (native Chromium or Firefox). They do not affect CookieRobot jobs, which use automation CDP with their own URL list.</div>
     <label>Startup URLs<textarea rows="4" value={urls} onChange={e => { setUrls(e.target.value); onChange({ ...settings, preferences: { ...prefs, startupUrls: e.target.value.split(/\s+/).map(s => s.trim()).filter(Boolean) } }); }} placeholder="https://example.com" /></label>
     <p className="muted hint">One http or https URL per line, at most 8. An explicit launch URL replaces them for that launch. Credentials in a URL are rejected.</p>
     <label className="check"><input type="checkbox" checked={prefs.restoreTabs === true} onChange={e => onChange({ ...settings, preferences: { ...prefs, restoreTabs: e.target.checked } })} /> Restore previous tabs</label>

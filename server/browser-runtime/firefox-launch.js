@@ -51,10 +51,32 @@ function writeGeckoProxyPrefs(profileDir, proxy, relayUrl) {
     } catch { /* skip malformed relay */ }
   } else if (proxy) {
     prefs.push('user_pref("network.proxy.type", 1);');
-    prefs.push(`user_pref("network.proxy.socks", "${proxy.host}");`);
-    prefs.push(`user_pref("network.proxy.socks_port", ${proxy.port});`);
-    prefs.push(`user_pref("network.proxy.socks_version", 5);`);
+    const type = String(proxy.type || 'http').toLowerCase();
+    if (type === 'socks5' || type === 'socks') {
+      prefs.push(`user_pref("network.proxy.socks", "${proxy.host}");`);
+      prefs.push(`user_pref("network.proxy.socks_port", ${Number(proxy.port)});`);
+      prefs.push(`user_pref("network.proxy.socks_version", 5);`);
+    } else {
+      prefs.push(`user_pref("network.proxy.http", "${proxy.host}");`);
+      prefs.push(`user_pref("network.proxy.http_port", ${Number(proxy.port)});`);
+      prefs.push(`user_pref("network.proxy.ssl", "${proxy.host}");`);
+      prefs.push(`user_pref("network.proxy.ssl_port", ${Number(proxy.port)});`);
+    }
   }
+  appendGeckoUserJs(profileDir, prefs);
+}
+
+function writeGeckoLocalePrefs(profileDir, regional) {
+  if (!regional?.languages?.length) return;
+  const prefs = [];
+  const accept = regional.languages.join(',');
+  prefs.push(`user_pref("intl.accept_languages", "${accept.replace(/"/g, '')}");`);
+  if (regional.locale) prefs.push(`user_pref("intl.locale.requested", "${String(regional.locale).replace(/"/g, '')}");`);
+  appendGeckoUserJs(profileDir, prefs);
+}
+
+function appendGeckoUserJs(profileDir, prefs) {
+  if (!prefs.length) return;
   const file = path.join(profileDir, 'user.js');
   fs.mkdirSync(profileDir, { recursive: true });
   fs.writeFileSync(file, prefs.join('\n') + '\n', { flag: 'a' });
@@ -76,6 +98,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
   }
   writeGeckoProxyPrefs(profileDir, p.proxy && !p.proxy.username ? p.proxy : null, relayUrl);
+  writeGeckoLocalePrefs(profileDir, regional);
 
   const args = ['-no-remote', '-profile', profileDir];
   let marionettePort = null;

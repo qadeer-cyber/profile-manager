@@ -84,6 +84,11 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       <p className="muted hint">Manual launches use an independent browser process (no Playwright pipe). Firefox uses Settings → Firefox executable. Chromium extensions are not loaded on Firefox profiles.</p>
       <label className="check toggle"><input type="checkbox" role="switch" checked={!!f.automationEnabled} onChange={e => set('automationEnabled', e.target.checked)} /> Enable automation (CDP)</label>
       <p className="muted hint">When on, launching this profile opens a local debugging port that automation tools can connect to. Any program on this computer can then control the browser, so leave it off unless you need it.{initial.running ? ' Applies on the next launch.' : ''}</p>
+      {advanced.preferences?.restoreTabs !== true && <div className="notice">
+        <strong>Tab restore is off</strong> for this profile. To reopen http(s) tabs after a graceful stop, open the <button type="button" className="link" onClick={() => setTab('preferences')}>Startup</button> tab and enable <em>Restore previous tabs</em>. Manual native launches save tabs on stop when that option is on.
+        {initial.id && initial.tabRestore?.savedCount > 0 && <span> This profile already has {initial.tabRestore.savedCount} saved tab{initial.tabRestore.savedCount === 1 ? '' : 's'} waiting (they open only after you enable restore).</span>}
+      </div>}
+      {advanced.preferences?.restoreTabs === true && initial.id && <p className="muted hint">Tab restore is on — see the <button type="button" className="link" onClick={() => setTab('preferences')}>Startup</button> tab for startup URLs and saved-tab behavior.{!initial.running && initial.tabRestore?.savedCount > 0 ? ` Next launch can reopen ${initial.tabRestore.savedCount} saved tab${initial.tabRestore.savedCount === 1 ? '' : 's'}.` : ''}{initial.tabRestore?.corrupt ? ' Saved tab list file looks corrupt; stop the profile once to refresh it.' : ''}</p>}
     </div>}
     {tab === 'proxy' && <div className="form">
       <div className="seg">{[['none', 'Direct connection'], ...(lib.available ? [['library', 'From library']] : []), ['custom', 'Custom']].map(([k, l]) =>

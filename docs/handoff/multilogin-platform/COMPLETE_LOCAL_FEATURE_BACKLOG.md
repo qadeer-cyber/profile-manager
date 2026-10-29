@@ -8,11 +8,11 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 | P0 | Profile config engine v2 | Typed model, warnings, migration | VERIFIED |
 | P0 | Matrix + §22 living docs | Backed by tests | VERIFIED |
 | P1 | Firefox runtime | Proxy/locale/cookies isolation; no Chrome flags | PARTIAL→VERIFIED |
-| P1 | Native tab restore | Save tabs on native close | PARTIAL |
+| P1 | Native tab restore | Save tabs on native close + discoverable UX | VERIFIED |
 | P1 | Quick profiles + trash | Ephemeral + soft-delete + save regular | VERIFIED |
 | P1 | Profile templates | Reusable preset rows + UI + bulk create | VERIFIED |
-| P1 | CookieRobot-local | Job runner API + UI + URL guards | PARTIAL |
-| P1 | Automation examples | Playwright/CDP samples in repo | PARTIAL |
+| P1 | CookieRobot-local | CDP integration test + job runner | VERIFIED |
+| P1 | Automation examples | WebDriver + geckodriver docs with opt-in cache; cookie-robot job API example | PARTIAL |
 | P1 | WebDriver localhost | Bridge + opt-in driver cache (CfT/geckodriver) | PARTIAL |
 | P2 | Bookmarks/history export | Stopped Chromium profile read API | VERIFIED |
 | P2 | Running profile focus | Dashboard + profiles Focus button | PARTIAL (Win32/CDP) |
@@ -32,14 +32,17 @@ Priority: **P0** ship path · **P1** parity · **P2** nice · **P3** blocked/clo
 - Template UI increment (`4e9f730` / docs `11aab86`)  
 - Rollback/WebDriver/provider increment (`dc60291` / docs `ecbdb10`)  
 - Workspaces + CookieRobot + geckodriver (`e4214aa` / **60** runtime tests)  
-- **This increment:** installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests in `test:browser-runtime`
-- **Driver cache package:** opt-in CfT chromedriver + MPL geckodriver under data dir; Settings UI; `AUTOMATION_DRIVERS.md`; latitude benchmark scaffold; **68** tests
+- Installer-smoke CI **green** (40934718409); export/ADB/focus; loopback bypass fix; Storage export buttons; **65** tests in `test:browser-runtime`
+- Driver cache package: opt-in CfT chromedriver + MPL geckodriver; Settings UI; `AUTOMATION_DRIVERS.md`; latitude benchmark scaffold; **68** tests
+- CookieRobot + examples: CDP reliability, Firefox honesty, job UI, WebDriver/geckodriver docs; **71** tests
+- **This increment:** tab restore UX + native launch tests; CookieRobot real CDP test; Firefox proxy/locale prefs; **77** tests
 
 ## Still open (honest)
 
 - Drivers **in offline EXE** (**MISSING** by design — opt-in cache only)  
 - Custom Chromium compile (**BLOCKED**)  
-- §19 preview publish (**NO-GO** until installer job green + owner)  
+- §19 preview publish (**NO-GO** until owner sign-off)  
+- Full Firefox parity (extensions, fingerprint patches) (**UNSUPPORTED** / stock Gecko)  
 - Full Firefox CI without host Firefox (**BLOCKED** on GHA)  
 - macOS/Linux native window focus (**MISSING**)
 

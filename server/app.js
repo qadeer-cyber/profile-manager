@@ -53,6 +53,7 @@ import {
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
 import { adbAdapterReport, listAdbDevices } from './adb-adapter.js';
 import { automationDriversReport, installAutomationDrivers } from './automation-drivers.js';
+import { readSavedTabs } from './tab-restore.js';
 import { createBackup, createEncryptedBackup, inspectBackup, restoreBackup } from './backup.js';
 import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
 import { dashboardStats } from './dashboard.js';
@@ -183,6 +184,16 @@ const publicP = p => {
       out.cdp = { wsEndpoint: ri.ws_endpoint, httpEndpoint: `http://127.0.0.1:${ri.cdp_port}`, debuggerAddress: `127.0.0.1:${ri.cdp_port}`, pid: ri.pid ?? null };
     }
   }
+  const restoreEnabled = p.advancedSettings?.preferences?.restoreTabs === true;
+  const tabRestore = { enabled: restoreEnabled, savedCount: 0, corrupt: false };
+  if (restoreEnabled) {
+    try {
+      const saved = readSavedTabs(userDataDir(p.id));
+      tabRestore.savedCount = saved.urls.length;
+      tabRestore.corrupt = !!saved.corrupt;
+    } catch { /* profile dir not created yet */ }
+  }
+  out.tabRestore = tabRestore;
   return out;
 };
 const get = id => {

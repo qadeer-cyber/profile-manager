@@ -8,7 +8,7 @@
 |----|-----------------------------------|--------------|------------------|
 | M1 | Isolated browser profiles (cookies/sessions) | VERIFIED | Per-profile `userDataDir`, locks, M1–M17 |
 | M2 | Mimic (Chromium antidetect engine) | PARTIAL | Stock CfT + native spawn; **no custom Mimic compile** |
-| M3 | Stealthfox (Firefox engine) | PARTIAL | Gecko spawn + Windows CI Firefox install smoke; not Stealthfox patches |
+| M3 | Stealthfox (Firefox engine) | PARTIAL | Gecko spawn; HTTP/SOCKS proxy + locale `user.js` prefs (`firefox-proxy-locale.test.js`); not Stealthfox patches |
 | M4 | Quick profiles | VERIFIED | `POST /api/profiles/quick` + UI button |
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
@@ -16,7 +16,7 @@
 | M8 | Import/export profile | PARTIAL | Backup/restore encrypted; stopped-profile bookmarks/history export API; not Multilogin format |
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
-| M11 | Startup URLs / tabs | PARTIAL | `resolveNativeTabUrlsForSave` on stop/health + session-harvest tests; Playwright path unchanged |
+| M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; native launch plan tests; UI Startup/General; Playwright automation path still uses ctx pages |
 | M12 | Window state / maximized | PARTIAL | Chromium window flags; Firefox PARTIAL |
 | M13 | Extension manager (Chromium) | VERIFIED | Unpacked MV2/MV3 library |
 | M14 | Extension manager (Firefox) | UNSUPPORTED | Chromium-only extension loader |
@@ -37,7 +37,7 @@
 | M29 | Fingerprint: Media devices mask | PARTIAL | Permission deny |
 | M30 | Port scan / local network protection | PARTIAL | Refuses weakening PNA flags |
 | M31 | Cookie import/export | VERIFIED | cookies API |
-| M32 | CookieRobot / scripted warming | PARTIAL | Local job runner + UI; Chromium CDP; example script |
+| M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
 | M33 | Human typing emulation | MISSING | Not implemented |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
 | M35 | CLI / Script runner | PARTIAL | `npm run pm-cli` + cookie-robot example |
