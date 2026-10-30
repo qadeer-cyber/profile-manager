@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { freePort, trackProcess, hardKill } from './_ports.mjs';
 import { runCookieRobotTasksOverCdp } from '../server/cookie-robot-jobs.js';
+import { startLocalHttpFixture } from './_local-http-fixture.mjs';
 
 const children = [];
 
@@ -15,10 +16,12 @@ after(() => {
 });
 
 test('runCookieRobotTasksOverCdp visits URLs over real Chromium CDP', { timeout: 120000 }, async () => {
+  const fixture = await startLocalHttpFixture();
   let exe;
   try {
     exe = chromium.executablePath();
   } catch (e) {
+    await fixture.close();
     assert.fail(`Chromium executable unavailable for CDP integration test: ${e.message}`);
   }
   const port = await freePort('PM_TEST_CDP_PORT');
@@ -43,8 +46,9 @@ test('runCookieRobotTasksOverCdp visits URLs over real Chromium CDP', { timeout:
   }
   if (!ready) assert.fail('Timed out waiting for Chromium remote debugging port');
 
-  const tasks = [{ url: 'https://example.com/', status: 'pending' }];
+  const tasks = [{ url: fixture.origin, status: 'pending' }];
   const result = await runCookieRobotTasksOverCdp(port, tasks, { delayMs: 100 });
   assert.equal(result.length, 1);
   assert.equal(result[0].status, 'ok', result[0].error || 'task failed');
+  await fixture.close();
 });

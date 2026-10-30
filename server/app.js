@@ -38,7 +38,7 @@ import {
 import { buildProfileConfigDocument, profileConfigJsonSchema, normalizeProfileConfigInput, profileConfigWarnings } from './profile-config-engine.js';
 import {
   createQuickProfile, softDeleteProfile, listTrash, restoreFromTrash, purgeFromTrash, convertQuickToRegular,
-  createTemplateFromProfile, listTemplates, applyTemplate, deleteTemplate,
+  createTemplateFromProfile, listTemplates, applyTemplate, deleteTemplate, resumeIncompletePurges,
 } from './profile-lifecycle.js';
 import { startProcessSnapshotSampler } from './process-snapshot.js';
 import { DEFAULT_BROWSER_SETTINGS, validateBrowserSettings } from './browser-settings.js';
@@ -170,7 +170,9 @@ const row2p = r => {
   delete r.deleted_at;
   const workspaceId = r.workspace_id || null;
   delete r.workspace_id;
-  return { ...r, browserEngine, isQuick, deletedAt, workspaceId, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const purgeError = r.purge_error || null;
+  delete r.purge_error;
+  return { ...r, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -1301,6 +1303,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
 // Start everything: recovery, secret migration, health monitor, HTTP listener.
 export async function startServer({ port = Number(process.env.PORT || 3000), host = process.env.HOST || '127.0.0.1', ...appOpts } = {}) {
   const recovery = await engine.recoverAfterRestart();
+  const purgeRecovery = resumeIncompletePurges();
   const reencrypted = reencryptSecrets();
   // Secrets were rewritten (re-encryption, or migration v6 moved inline proxies): VACUUM once so old values don't survive in free pages/WAL.
   const scrubbed = reencrypted > 0 || migration.applied.includes(6);
@@ -1311,7 +1314,7 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const app = createApp(appOpts);
   const server = await new Promise((res, rej) => { const s = app.listen(port, host, () => res(s)).on('error', rej); });
   const actual = server.address().port;
-  return { server, port: actual, url: `http://${host}:${actual}`, recovery, reencrypted, scrubbed, migration, events: engine.events,
+  return { server, port: actual, url: `http://${host}:${actual}`, recovery, purgeRecovery, reencrypted, scrubbed, migration, events: engine.events,
     close: async () => {
       stopSampler?.();
       await engine.shutdown();

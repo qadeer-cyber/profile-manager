@@ -114,7 +114,12 @@ const schemaV = ddb.prepare('SELECT COALESCE(MAX(version), 0) AS v FROM schema_v
 ok((schemaV?.v ?? 0) >= 16, `schema_version after branch upgrade (${schemaV?.v})`);
 ok(ddb.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workspaces'").get(), 'workspaces table present');
 if (persistRow?.id) {
-  ok(fs.existsSync(path.join(dataDir, 'profiles', persistRow.id, 'Default')), 'Chromium user-data dir exists after upgrade');
+  const profDir = path.join(dataDir, 'profiles', persistRow.id, 'Default');
+  ok(fs.existsSync(profDir), 'Chromium user-data dir exists after upgrade');
+  const lsDir = path.join(profDir, 'Local Storage', 'leveldb');
+  ok(fs.existsSync(lsDir), 'Local Storage leveldb dir exists after upgrade');
+  const cookieFiles = fs.readdirSync(profDir).filter(f => /^Cookies/i.test(f));
+  ok(cookieFiles.length > 0, `Chromium Cookies store present after upgrade (${cookieFiles.join(',')})`);
 }
 ddb.close();
 

@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'crypto';
 import { chromium } from 'playwright';
 import { freePort, trackProcess, hardKill } from './_ports.mjs';
+import { startLocalHttpFixture } from './_local-http-fixture.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-cr-life-'));
 process.env.PM_DATA_DIR = dir;
@@ -36,9 +37,11 @@ after(() => {
   delete process.env.PM_DATA_DIR;
 });
 
-test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000, skip: process.platform === 'win32' && !!process.env.CI }, async () => {
+test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000 }, async () => {
+  const fixture = await startLocalHttpFixture();
   let exe;
   try { exe = chromium.executablePath(); } catch (e) {
+    await fixture.close();
     assert.fail(`Chromium unavailable: ${e.message}`);
   }
   configureCookieRobot({
@@ -71,7 +74,7 @@ test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000
   db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,browser_engine,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(pid, 'Chromium', '[]', '', '', 'chromium', now, now);
 
-  const job = createCookieRobotJob({ profileId: pid, urls: ['https://example.com/'], delayMs: 500 });
+  const job = createCookieRobotJob({ profileId: pid, urls: [fixture.origin], delayMs: 500 });
   assert.equal(job.status, 'queued');
 
   const deadline = Date.now() + 90000;
@@ -83,4 +86,5 @@ test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000
   }
   assert.equal(final.status, 'done', final.error || JSON.stringify(final.tasks));
   assert.equal(final.tasks[0].status, 'ok');
+  await fixture.close();
 });

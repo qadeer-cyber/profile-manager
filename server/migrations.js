@@ -163,6 +163,10 @@ export const migrations = [
       if (!cols.includes('workspace_id')) db.exec('ALTER TABLE profiles ADD COLUMN workspace_id TEXT REFERENCES workspaces(id)');
       db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_workspace ON profiles(workspace_id)');
     } },
+  { version: 17, name: 'profiles purge_error for recovery-safe trash purge', up: db => {
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('purge_error')) db.exec('ALTER TABLE profiles ADD COLUMN purge_error TEXT');
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

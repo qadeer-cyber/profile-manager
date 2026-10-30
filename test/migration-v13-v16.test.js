@@ -12,7 +12,7 @@ function openDb(dir) {
   return Database(file);
 }
 
-test('migrations v13–v16 add engine, trash, templates, workspaces, cookie robot', () => {
+test('migrations v13–v17 add engine, trash, templates, workspaces, cookie robot, purge recovery', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-mig-v16-'));
   const db = openDb(dir);
   migrate(db, migrations.filter(m => m.version <= 12));
@@ -25,6 +25,7 @@ test('migrations v13–v16 add engine, trash, templates, workspaces, cookie robo
   assert.ok(cols.includes('is_quick'));
   assert.ok(cols.includes('deleted_at'));
   assert.ok(cols.includes('workspace_id'));
+  assert.ok(cols.includes('purge_error'));
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='profile_templates'").get());
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='workspaces'").get());
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='cookie_robot_jobs'").get());

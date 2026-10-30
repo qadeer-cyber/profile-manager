@@ -8,6 +8,56 @@ const fail = (status, message, code) => Object.assign(new Error(message), { stat
 
 const trashLocks = new Set();
 
+export function profileDataPaths(id) {
+  return {
+    chromium: userDataDir(id),
+    gecko: geckoUserDataDir(id, userDataDir),
+  };
+}
+
+/** Remove on-disk profile trees. DB row must still exist until this succeeds. */
+export function removeProfileDataFromDisk(id, { rmSyncImpl = fs.rmSync } = {}) {
+  const failures = [];
+  for (const [kind, dir] of Object.entries(profileDataPaths(id))) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      rmSyncImpl(dir, { recursive: true, force: true });
+      if (fs.existsSync(dir)) failures.push(`${kind}: directory still present after removal (${dir})`);
+    } catch (e) {
+      failures.push(`${kind}: ${e.message || e}`);
+    }
+  }
+  if (failures.length) {
+    throw fail(500, `Profile data removal failed: ${failures.join('; ')}`, 'PURGE_FS_FAILED');
+  }
+}
+
+export function clearPurgeError(id) {
+  db.prepare('UPDATE profiles SET purge_error=NULL, updated_at=? WHERE id=?').run(new Date().toISOString(), id);
+}
+
+export function recordPurgeError(id, message) {
+  db.prepare('UPDATE profiles SET purge_error=?, updated_at=? WHERE id=?').run(String(message || 'purge failed').slice(0, 500), new Date().toISOString(), id);
+}
+
+/** Retry filesystem cleanup for trashed profiles that previously failed purge (dirs may already be gone). */
+export function resumeIncompletePurges({ rmSyncImpl = fs.rmSync } = {}) {
+  const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+  if (!cols.includes('purge_error')) return [];
+  const rows = db.prepare('SELECT id FROM profiles WHERE deleted_at IS NOT NULL AND purge_error IS NOT NULL').all();
+  const out = [];
+  for (const { id } of rows) {
+    try {
+      removeProfileDataFromDisk(id, { rmSyncImpl });
+      clearPurgeError(id);
+      out.push({ id, recovered: true });
+    } catch (e) {
+      out.push({ id, recovered: false, error: e.message });
+    }
+  }
+  return out;
+}
+
 export function activeProfileFilterSql(alias = '') {
   const p = alias ? `${alias}.` : '';
   return `${p}deleted_at IS NULL`;
@@ -66,7 +116,7 @@ export function restoreFromTrash(id) {
   return { id, restored: true };
 }
 
-export async function purgeFromTrash(id, { confirmName, stopFn, isRunningFn } = {}) {
+export async function purgeFromTrash(id, { confirmName, stopFn, isRunningFn, rmSyncImpl } = {}) {
   if (trashLocks.has(id)) throw fail(409, 'Trash operation in progress', 'TRASH_BUSY');
   trashLocks.add(id);
   try {
@@ -75,9 +125,14 @@ export async function purgeFromTrash(id, { confirmName, stopFn, isRunningFn } = 
     if (String(confirmName || '') !== row.name) throw fail(400, 'confirmName must match the profile name exactly', 'CONFIRM_NAME_MISMATCH');
     if (typeof stopFn === 'function') await stopFn(id).catch(() => {});
     if (isRunningFn?.(id)) throw fail(409, 'Cannot purge a running profile', 'PROFILE_STILL_RUNNING');
+    try {
+      removeProfileDataFromDisk(id, { rmSyncImpl });
+      clearPurgeError(id);
+    } catch (e) {
+      if (e.code === 'PURGE_FS_FAILED') recordPurgeError(id, e.message);
+      throw e;
+    }
     db.prepare('DELETE FROM profiles WHERE id=?').run(id);
-    fs.rmSync(userDataDir(id), { recursive: true, force: true });
-    try { fs.rmSync(geckoUserDataDir(id, userDataDir), { recursive: true, force: true }); } catch {}
     return { id, purged: true };
   } finally {
     trashLocks.delete(id);
