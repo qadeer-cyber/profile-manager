@@ -86,6 +86,7 @@ import {
   setExtensionEnabled, unassignExtension,
 } from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
+import { assertNotPausedTemplate, proxyHealthAnalytics, proxyTagGroups } from './proxy-library.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
 const browserInstall = { state: 'idle', log: '', error: null, code: null };
@@ -862,11 +863,12 @@ function deleteProxy(id, force) {
   if (assigned.length && !force) throw Object.assign(err(409, `Proxy is assigned to ${assigned.length} profile(s). Unassign it first or pass ?force=1.`), { code: 'PROXY_IN_USE', extra: { assignedProfiles: assigned } });
   db.transaction(() => { db.prepare('UPDATE profiles SET proxy_id=NULL WHERE proxy_id=?').run(id); db.prepare('DELETE FROM proxies WHERE id=?').run(id); })();
 }
-function duplicateProxy(id, { name, asTemplate = false } = {}) {
+function duplicateProxy(id, { name, asTemplate = false, stripTemplate = false } = {}) {
   const r = mustProxy(id);
   let password = '';
   try { password = decrypt(r.password); } catch { password = ''; }
-  const tags = [...JSON.parse(r.tags || '[]')];
+  let tags = [...JSON.parse(r.tags || '[]')];
+  if (stripTemplate) tags = tags.filter(t => t !== 'template');
   if (asTemplate && !tags.includes('template')) tags.push('template');
   const label = String(name || `${r.name} (copy)`).trim().slice(0, 200) || `${r.type}://${r.host}:${r.port}`;
   const newId = createProxyRow({
@@ -886,7 +888,10 @@ function duplicateProxy(id, { name, asTemplate = false } = {}) {
 function assignProxy(profileId, proxyId) {
   const p = must(profileId);
   if (proxyId !== null && typeof proxyId !== 'string') throw err(400, 'proxyId must be a string or null');
-  if (proxyId) mustProxy(proxyId);
+  if (proxyId) {
+    const px = mustProxy(proxyId);
+    assertNotPausedTemplate(JSON.parse(px.tags || '[]'));
+  }
   db.prepare('UPDATE profiles SET proxy_id=?, updated_at=? WHERE id=?').run(proxyId, new Date().toISOString(), profileId);
   const out = publicP(get(profileId));
   if (p.running) out.appliesOnNextLaunch = true;
@@ -1088,6 +1093,47 @@ function mountExtensionRoutes(r) {
   }));
 }
 function mountProxyRoutes(r) {
+  r.get('/proxies/groups', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(proxyTagGroups());
+  }));
+  r.get('/proxies/library/analytics', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(proxyHealthAnalytics());
+  }));
+  r.get('/proxies/templates', wrap((req, res) => {
+    res.json(listProxies({ ...req.query, tag: 'template' }));
+  }));
+  r.post('/proxies/templates', wrap((req, res) => {
+    const body = { ...(req.body || {}), tags: cleanTags([...(Array.isArray(req.body?.tags) ? req.body.tags : []), 'template']) };
+    res.status(201).json(publicProxy(proxyRow(createProxyRow(body))));
+  }));
+  r.patch('/proxies/templates/:id', wrap((req, res) => {
+    const row = mustProxy(req.params.id);
+    if (!JSON.parse(row.tags || '[]').includes('template')) throw err(400, 'Proxy is not a template preset', 'NOT_TEMPLATE');
+    res.json(patchProxy(req.params.id, req.body));
+  }));
+  r.delete('/proxies/templates/:id', wrap((req, res) => {
+    const row = mustProxy(req.params.id);
+    if (!JSON.parse(row.tags || '[]').includes('template')) throw err(400, 'Proxy is not a template preset', 'NOT_TEMPLATE');
+    deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true');
+    res.status(204).end();
+  }));
+  r.post('/proxies/templates/:id/instantiate', wrap((req, res) => {
+    const row = mustProxy(req.params.id);
+    if (!JSON.parse(row.tags || '[]').includes('template')) throw err(400, 'Proxy is not a template preset', 'NOT_TEMPLATE');
+    res.status(201).json(duplicateProxy(req.params.id, { name: req.body?.name, stripTemplate: true }));
+  }));
+  r.post('/proxies/test-batch', wrap(async (req, res) => {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw err(400, 'ids must be an array of 1-50 proxy ids');
+    const results = [];
+    for (const id of ids) {
+      try { results.push({ id, ok: true, ...(await testLibraryProxy(id)) }); }
+      catch (e) { results.push({ id, ok: false, error: e.message, code: e.code || null }); }
+    }
+    res.json({ tested: ids.length, ok: results.filter(r => r.ok && r.status !== 'failed').length, results });
+  }));
   r.get('/proxies/library/summary', wrap((req, res) => {
     const rows = db.prepare('SELECT tags, last_test_status, provider FROM proxies').all();
     let templates = 0;
@@ -1118,6 +1164,16 @@ function mountProxyRoutes(r) {
   r.post('/profiles/:id/proxy', wrap((req, res) => {
     if (!('proxyId' in req.body)) throw err(400, 'proxyId is required (string or null)');
     res.json(assignProxy(req.params.id, req.body.proxyId));
+  }));
+  r.post('/profiles/:id/proxy/switch', wrap((req, res) => {
+    must(req.params.id);
+    const mode = req.body?.mode;
+    if (mode === 'direct') return res.json(assignProxy(req.params.id, null));
+    if (mode === 'library') {
+      if (!req.body?.proxyId) throw err(400, 'proxyId is required for library mode');
+      return res.json(assignProxy(req.params.id, req.body.proxyId));
+    }
+    throw err(400, 'mode must be direct or library');
   }));
 }
 function mountWorkspace(router) {

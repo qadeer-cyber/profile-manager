@@ -17,7 +17,13 @@ export function ProxiesPage() {
   const lib = useProxyLibrary({ q, status, tag });
   const [dialog, setDialog] = useState(null), [testing, setTesting] = useState({});
   const [summary, setSummary] = useState(null);
-  useEffect(() => { api('/api/proxies/library/summary').then(setSummary).catch(() => {}); }, [lib.list.length]);
+  const [analytics, setAnalytics] = useState(null);
+  const [groups, setGroups] = useState([]);
+  useEffect(() => {
+    api('/api/proxies/library/summary').then(setSummary).catch(() => {});
+    api('/api/proxies/library/analytics').then(setAnalytics).catch(() => {});
+    api('/api/proxies/groups').then(setGroups).catch(() => {});
+  }, [lib.list.length]);
   const S = useSelection(lib.list.map(p => p.id));
   const tags = useMemo(() => [...new Set(lib.list.flatMap(p => p.tags))].sort(), [lib.list]);
   if (lib.available === false) return <LegacySummary />;
@@ -36,7 +42,10 @@ export function ProxiesPage() {
   return <>
     <header className="page-head"><div><h1>Proxies</h1><div className="muted">{plural(lib.list.length, 'proxy')} in library{summary ? <> · {summary.templates} template{summary.templates === 1 ? '' : 's'} · {summary.testedOk} ok / {summary.testedFailed} failed · {summary.providerAccounts} provider account{summary.providerAccounts === 1 ? '' : 's'}</> : null}</div></div>
       <div className="row"><button onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import</button>
+        <button onClick={() => setDialog({ kind: 'edit', data: null, template: true })}>New template</button>
         <button className="primary" onClick={() => setDialog({ kind: 'edit', data: null })}><Icon name="plus" /> Add proxy</button></div></header>
+    {analytics && <p className="muted small">{analytics.note} Local checks (7d): {analytics.checksLast7Days}{analytics.avgOkLatencyMs != null ? ` · avg ok latency ${analytics.avgOkLatencyMs} ms` : ''} · {analytics.profilesDirect} direct / {analytics.profilesAssigned} proxied profiles.</p>}
+    {!!groups.length && <div className="chips">{groups.slice(0, 12).map(g => <button key={g.tag} type="button" className="tag" onClick={() => setTag(g.tag === '_untagged' ? '' : g.tag)}>{g.tag === '_untagged' ? 'Untagged' : g.tag} ({g.count})</button>)}</div>}
     <div className="toolbar">
       <div className="search"><Icon name="search" /><input type="search" placeholder="Search name, host, username, tags…" value={q} onChange={e => setQ(e.target.value)} /></div>
       <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status filter"><option value="">Any status</option><option value="ok">Working</option><option value="failed">Failing</option><option value="untested">Untested</option></select>
@@ -62,12 +71,17 @@ export function ProxiesPage() {
           <div className="muted">{new Date(p.lastTest.testedAt).toLocaleString()}</div></> : <span className="muted">Never</span>}</td>
         <td className="actions"><button disabled={testing[p.id]} onClick={() => test([p.id])}><Icon name="bolt" /> Test</button>
           <button className="icon-btn" aria-label={'History ' + p.name} title="Latency history" onClick={() => setDialog({ kind: 'history', data: p })}><Icon name="diagnostics" /></button>
-          <button className="icon-btn" aria-label={'Duplicate ' + p.name} title="Duplicate as template preset" onClick={async () => {
+          {p.tags.includes('template') ? <button className="icon-btn" title="Create live proxy from template" aria-label={'Instantiate ' + p.name} onClick={async () => {
+            try {
+              await api(`/api/proxies/templates/${p.id}/instantiate`, { method: 'POST', body: { name: p.name.replace(/template/i, '').trim() || `${p.name} live` } });
+              toast('Live proxy created from template', 'success'); lib.reload();
+            } catch (e) { toast(e.message, 'error'); }
+          }}><Icon name="plus" /></button> : <button className="icon-btn" aria-label={'Duplicate ' + p.name} title="Duplicate as template preset" onClick={async () => {
             try {
               await api(`/api/proxies/${p.id}/duplicate`, { method: 'POST', body: { name: `${p.name} template`, asTemplate: true } });
               toast('Template preset created', 'success'); lib.reload();
             } catch (e) { toast(e.message, 'error'); }
-          }}><Icon name="copy" /></button>
+          }}><Icon name="copy" /></button>}
           <button className="icon-btn" aria-label={'Edit ' + p.name} title="Edit" onClick={() => setDialog({ kind: 'edit', data: p })}><Icon name="edit" /></button>
           <button className="icon-btn danger" aria-label={'Delete ' + p.name} title="Delete" onClick={() => remove(p, false)}><Icon name="trash" /></button></td>
       </tr>; })}
@@ -75,7 +89,7 @@ export function ProxiesPage() {
     </tbody></table></div>
     <ProviderPanel onChanged={lib.reload} />
     {dialog?.kind === 'history' && <LatencyHistory proxy={dialog.data} onClose={() => setDialog(null)} />}
-    {dialog?.kind === 'edit' && <ProxyEditor proxy={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); lib.reload(); }} />}
+    {dialog?.kind === 'edit' && <ProxyEditor proxy={dialog.data} templateMode={!!dialog.template} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); lib.reload(); }} />}
     {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={lib.reload} />}
     {dialog?.kind === 'force' && <Confirm title="Proxy is in use" danger confirmLabel="Unassign and delete" message={`${dialog.msg} Deleting it switches those profiles to a direct connection.`} onConfirm={() => remove(dialog.data, true)} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'bulk-delete' && <Confirm title={`Delete ${plural(selected.length, 'proxy')}`} danger confirmLabel="Delete" message={`Delete ${plural(selected.length, 'proxy')}? Any profiles using them switch to a direct connection.`}
@@ -83,25 +97,31 @@ export function ProxiesPage() {
   </>;
 }
 
-function ProxyEditor({ proxy, onClose, onSaved }) {
+function ProxyEditor({ proxy, onClose, onSaved, templateMode = false }) {
   const toast = useToast();
-  const [f, setF] = useState(() => proxy ? { ...proxy, password: '', tags: proxy.tags.join(', ') } : { name: '', type: 'http', host: '', port: '', username: '', password: '', tags: '' });
+  const isTemplate = templateMode || !!proxy?.tags?.includes('template');
+  const [f, setF] = useState(() => proxy ? { ...proxy, password: '', tags: proxy.tags.filter(t => t !== 'template').join(', ') } : { name: '', type: 'http', host: '', port: '', username: '', password: '', tags: '' });
   const [clearPw, setClearPw] = useState(false), [result, setResult] = useState(null), [saving, setSaving] = useState(false);
   const set = (k, v) => setF({ ...f, [k]: v });
   const save = async (andTest) => {
     if (!f.host.trim() || !f.port) return toast('Host and port are required', 'error');
-    const body = { name: f.name.trim() || undefined, type: f.type, host: f.host.trim(), port: Number(f.port), username: f.username, tags: f.tags.split(',').map(t => t.trim()).filter(Boolean) };
+    const body = { name: f.name.trim() || undefined, type: f.type, host: f.host.trim(), port: Number(f.port), username: f.username, tags: f.tags.split(',').map(t => t.trim()).filter(t => t && t !== 'template') };
     if (f.password || !proxy) body.password = f.password; else if (clearPw) body.password = '';
     setSaving(true);
     try {
-      const p = await api(proxy ? `/api/proxies/${proxy.id}` : '/api/proxies', { method: proxy ? 'PATCH' : 'POST', body });
-      if (andTest) { setResult({ busy: true }); const r = await api(`/api/proxies/${p.id}/test`, { method: 'POST' }); setResult(r); setSaving(false); if (!r.ok) return; }
-      toast(proxy ? 'Proxy saved' : 'Proxy added', 'success'); onSaved();
+      const url = !proxy
+        ? (isTemplate ? '/api/proxies/templates' : '/api/proxies')
+        : (isTemplate ? `/api/proxies/templates/${proxy.id}` : `/api/proxies/${proxy.id}`);
+      const method = proxy ? 'PATCH' : 'POST';
+      const p = await api(url, { method, body });
+      if (andTest && !isTemplate) { setResult({ busy: true }); const r = await api(`/api/proxies/${p.id}/test`, { method: 'POST' }); setResult(r); setSaving(false); if (!r.ok) return; }
+      toast(proxy ? (isTemplate ? 'Template saved' : 'Proxy saved') : (isTemplate ? 'Template added' : 'Proxy added'), 'success'); onSaved();
     } catch (e) { toast(e.message, 'error'); setResult(null); }
     setSaving(false);
   };
-  return <Dialog title={proxy ? 'Edit proxy' : 'Add proxy'} onClose={onClose} footer={<><ProxyTestResult r={result} /><span className="grow" />
-    <button onClick={onClose}>Cancel</button><button disabled={saving} onClick={() => save(true)}>Save and test</button><button className="primary" disabled={saving} onClick={() => save(false)}>Save</button></>}>
+  const title = proxy ? (isTemplate ? 'Edit template' : 'Edit proxy') : (isTemplate ? 'New template' : 'Add proxy');
+  return <Dialog title={title} onClose={onClose} footer={<><ProxyTestResult r={result} /><span className="grow" />
+    <button onClick={onClose}>Cancel</button>{!isTemplate && <button disabled={saving} onClick={() => save(true)}>Save and test</button>}<button className="primary" disabled={saving} onClick={() => save(false)}>Save</button></>}>
     <label>Name<input autoFocus value={f.name} onChange={e => set('name', e.target.value)} placeholder="Defaults to type://host:port" /></label>
     <div className="proxy-grid">
       <label>Type<select value={f.type} onChange={e => set('type', e.target.value)}><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option></select></label>
