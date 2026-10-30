@@ -39,7 +39,12 @@ const call = async (method, url, payload, headers = {}) => {
   return { status: response.status, body: parsed, text };
 };
 before(async () => { server = await startServer({ port: 0, staticDir: null }); });
-after(async () => { await server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => {
+  try { await server.close(); } finally {
+    if (db.open) db.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
 
 async function makeProfile(name) {
   const response = await call('POST', '/api/v1/profiles', JSON.stringify({ name }), { 'Content-Type': 'application/json' });

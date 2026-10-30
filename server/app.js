@@ -1,3 +1,5 @@
+import { createStreamedPortableBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
+import { pipeline as streamPipeline } from 'node:stream/promises';
 import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
 import express from 'express';
@@ -742,6 +744,21 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
       profileIds,
     }));
   }));
+  router.post('/profiles/:id/backup/export-stream', wrap(async (req, res) => {
+    must(req.params.id); rejectPassphraseQuery(req);
+    const transfer = await createStreamedPortableBackup(req.params.id, { passphrase: req.body?.passphrase, confirmSensitive: req.body?.confirmSensitive === true, ids: engine.runningIds() });
+    try {
+      res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': String(transfer.size), 'Content-Disposition': `attachment; filename="profile-${req.params.id.slice(0, 8)}.pmp"`, 'Cache-Control': 'no-store', 'X-Backup-Encrypted': 'aes-256-gcm', 'X-Backup-Format': 'portable-v2-streamed' });
+      await streamPipeline(fs.createReadStream(transfer.file), res);
+    } finally { transfer.cleanup(); }
+  }));
+  for (const action of ['inspect', 'restore']) router.post(`/backup/${action}-stream`, wrap(async (req, res) => {
+    rejectPassphraseQuery(req);
+    const transfer = await spoolBackupUpload(req);
+    try {
+      res.json(await processStreamedBackup(transfer, { passphrase: req.get('x-backup-passphrase') || undefined, collision: String(req.query.collision || 'abort'), profileIds: req.query.profileIds || undefined, running: engine.runningIds(), inspect: action === 'inspect' }));
+    } finally { transfer.cleanup(); }
+  }));
   router.post('/profiles/:id/backup/export', wrap((req, res) => {
     must(req.params.id);
     rejectPassphraseQuery(req);
@@ -1304,6 +1321,11 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     if ((uiToken && tokenOk(req.get('x-ui-token'), uiToken)) || tokenOk((req.get('authorization') || '').replace(/^Bearer /, ''), API_TOKEN)) return next();
     res.status(401).json({ error: 'Recovery requires a desktop or API token' });
   });
+  ui.get('/recovery/transfers', wrap((req, res) => { res.set('Cache-Control', 'no-store'); res.json(interruptedBackupTransfers()); }));
+  ui.post('/recovery/transfers/:id/cleanup', wrap((req, res) => {
+    if (req.body?.confirm !== true) throw err(400, 'Explicit transfer cleanup confirmation is required');
+    res.json(cleanupInterruptedBackupTransfer(req.params.id));
+  }));
   ui.get('/recovery/operations', wrap((req, res) => { res.set('Cache-Control', 'no-store'); res.json(recoveryDiagnostics()); }));
   ui.post('/recovery/operations/:id/recover', wrap((req, res) => {
     if (req.body?.confirm !== true) throw err(400, 'Explicit recovery confirmation is required');
@@ -1386,6 +1408,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   if (staticDir && fs.existsSync(staticDir)) { app.use(express.static(staticDir)); app.get(/^\/(?!api).*/, (req, res) => res.sendFile(path.join(staticDir, 'index.html'))); }
   // JSON errors for malformed bodies etc.
   app.use((e, req, res, next) => {
+    if (res.headersSent) return next(e);
     if (isProfileDiagnosticsRequest(req)) {
       const { status, body } = diagnosticsHttpError(e.type === 'entity.parse.failed' || e.status === 400 ? 'INVALID_REQUEST' : 'INTERNAL_ERROR');
       res.set('Cache-Control', 'no-store');
@@ -1417,6 +1440,8 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
       await engine.shutdown();
       const closed = new Promise(r => server.close(() => r()));
       server.closeAllConnections?.(); // includes open SSE streams, which would otherwise keep close() pending
-      await Promise.race([closed, new Promise(r => setTimeout(r, 3000))]);
+      let closeTimer;
+      try { await Promise.race([closed, new Promise(r => { closeTimer = setTimeout(r, 3000); })]); }
+      finally { clearTimeout(closeTimer); }
     } };
 }

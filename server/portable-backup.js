@@ -1,3 +1,4 @@
+import { hashFileSync } from './file-integrity.js';
 // Portable v2: explicit dependencies inside a mandatory authenticated encrypted envelope.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,19 +27,26 @@ function collect(root, prefix, output, limits, depth = 0) {
   if (!fs.existsSync(root)) return;
   if (depth > 64) throw fail('Backup nesting exceeds limits', 'UNSAFE_ARCHIVE');
   for (const name of fs.readdirSync(root)) {
-    if (['SingletonLock', 'SingletonSocket', 'SingletonCookie', '.pm-lock.json', '.pm-lock', '.parentlock', 'parent.lock', 'lock'].includes(name)) continue;
+    const profileRoot = /^profiles\/[0-9a-f-]{36}(?:\/gecko)?$/i.test(prefix);
+    if (profileRoot && ['SingletonLock', 'SingletonSocket', 'SingletonCookie', '.pm-lock.json', '.pm-lock', '.parentlock', 'parent.lock', 'lock'].includes(name)) continue;
     const file = path.join(root, name), st = fs.lstatSync(file), rel = prefix + '/' + name;
     assertArchivePath(rel);
     if (st.isSymbolicLink()) throw fail('Backup refuses symlinks', 'UNSAFE_PROFILE_LINK');
     if (st.isDirectory()) collect(file, rel, output, limits, depth + 1);
     else if (st.isFile()) {
       limits.bytes += st.size;
-      if (st.size > 32 * 1024 * 1024 || limits.bytes > 60 * 1024 * 1024 || output.length >= 9998) throw fail('Portable data exceeds 60 MiB or 9998 file limit', 'UNSAFE_ARCHIVE');
-      output.push({ path: rel, data: fs.readFileSync(file) });
+      if (st.size > (limits.streaming ? 4 * 1024 ** 3 : 32 * 1024 * 1024) || limits.bytes > (limits.streaming ? 8 * 1024 ** 3 : 60 * 1024 * 1024) || output.length >= (limits.streaming ? 100000 : 9998)) throw fail('Portable data exceeds 60 MiB or 9998 file limit', 'UNSAFE_ARCHIVE');
+      output.push(limits.streaming ? { path: rel, source: file, size: st.size, sha256: hashFileSync(file) } : { path: rel, data: fs.readFileSync(file) });
     } else throw fail('Backup refuses special files', 'UNSAFE_ARCHIVE');
   }
 }
 function extensionPrefix(row) { return `${row.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${row.id}`; }
+function boundedData(file, maxBytes) {
+  if (!file) return null;
+  if (!file.source) { if (file.data.length > maxBytes) throw fail('Extension metadata exceeds size limits'); return file.data; }
+  if (fs.statSync(file.source).size > maxBytes) throw fail('Extension metadata exceeds size limits');
+  return fs.readFileSync(file.source);
+}
 function validateExtension(e, files) {
   validateId(e.id);
   if (typeof e.name !== 'string' || !e.name || e.name.length > 128 || typeof e.version !== 'string' || e.version.length > 32 || ![2, 3].includes(e.manifest_version)) throw fail('Extension metadata is invalid');
@@ -50,22 +58,22 @@ function validateExtension(e, files) {
   const manifestFile = files.find(f => f.path === e.storage_dir + '/manifest.json');
   if (!manifestFile) throw fail('Portable extension assets are missing', 'DEPENDENCY_MISSING');
   let manifest;
-  try { manifest = JSON.parse(manifestFile.data.toString('utf8')); } catch { throw fail('Portable extension manifest is invalid'); }
+  try { manifest = JSON.parse(boundedData(manifestFile, 1024 * 1024).toString('utf8')); } catch { throw fail('Portable extension manifest is invalid'); }
   if (![2, 3].includes(manifest?.manifest_version) || typeof manifest.name !== 'string' || typeof manifest.version !== 'string') throw fail('Portable extension manifest is invalid');
   if (e.browser_engine === 'firefox') {
     const gid = manifest.browser_specific_settings?.gecko?.id || manifest.applications?.gecko?.id;
     if (typeof gid !== 'string' || !/^(?:[a-z0-9._+-]+@[a-z0-9._-]+|\{[0-9a-f-]{36}\})$/i.test(gid) || gid !== e.gecko_extension_id) throw fail('Portable Firefox extension identity is invalid');
     const xpi = files.find(f => f.path === e.storage_dir + '/extension.xpi');
     if (xpi) {
-      const inside = validateXpiArchive(xpi.data).get('manifest.json');
-      if (!inside || !inside.equals(manifestFile.data)) throw fail('XPI and extension manifests disagree');
+      const inside = validateXpiArchive(boundedData(xpi, 32 * 1024 * 1024)).get('manifest.json');
+      if (!inside || !inside.equals(boundedData(manifestFile, 1024 * 1024))) throw fail('XPI and extension manifests disagree');
     }
   }
 }
 export function createPortableBackup(profileId, options = {}) {
   return db.transaction(() => createPortableSnapshot(profileId, options)).immediate();
 }
-function createPortableSnapshot(profileId, { ids = [], passphrase, confirmSensitive = false } = {}) {
+function createPortableSnapshot(profileId, { ids = [], passphrase, confirmSensitive = false, descriptorMode = false } = {}) {
   if (!confirmSensitive) throw fail('Confirm export of sensitive browser data and choose a passphrase.', 'SENSITIVE_EXPORT_CONFIRMATION');
   // Validate encryption controls before reading sensitive data.
   if (typeof passphrase !== 'string' || passphrase.length < 8 || passphrase.length > 1024) throw fail('Passphrase must be 8 to 1024 characters', 'INVALID_PASSPHRASE');
@@ -87,7 +95,7 @@ function createPortableSnapshot(profileId, { ids = [], passphrase, confirmSensit
     try { deps.proxy.password = decrypt(px.password); } catch { throw fail('Proxy secret cannot be decrypted. Re-enter it before export.', 'PROXY_SECRET_UNAVAILABLE'); }
   }
   if (row.proxy) throw fail('Legacy inline proxy must be migrated before portable export', 'DEPENDENCY_MISSING');
-  const files = [], limits = { bytes: 0 };
+  const files = [], limits = { bytes: 0, streaming: descriptorMode };
   const profileRoot = regularPath(`profiles/${profileId}`);
   if (fs.existsSync(profileRoot)) collect(profileRoot, `profiles/${profileId}`, files, limits);
   for (const link of db.prepare('SELECT extension_id,enabled FROM profile_extensions WHERE profile_id=?').all(profileId)) {
@@ -103,14 +111,19 @@ function createPortableSnapshot(profileId, { ids = [], passphrase, confirmSensit
   const meta = {
     format: 'profile-manager-profile-backup', version: 2, schemaVersion: currentVersion(db), createdAt: new Date().toISOString(),
     profiles: [{ id: row.id, name: row.name }], profileSnapshot: row, dependencies: deps,
-    fileChecksums: Object.fromEntries(files.map(f => [f.path, hash(f.data)])),
+    fileChecksums: Object.fromEntries(files.map(f => [f.path, f.sha256 || hash(f.data)])),
     limitations: ['Browser data may contain OS-bound credentials. Password-manager entries and browser-encrypted cookies are not guaranteed portable across operating systems or machines.'],
   };
+  if (descriptorMode) return { meta, files };
   const encodedManifest = Buffer.from(JSON.stringify(meta));
   if (encodedManifest.length > 1024 * 1024) throw fail('Portable manifest exceeds 1 MiB', 'UNSAFE_ARCHIVE');
   const archive = packArchive([{ path: 'meta.json', data: encodedManifest }, ...files]);
   if (archive.length + 64 > 64 * 1024 * 1024) throw fail('Portable container exceeds the 64 MiB transfer limit', 'UNSAFE_ARCHIVE');
   return encryptBackup(archive, passphrase);
+}
+
+export function createPortableDescriptors(profileId, options = {}) {
+  return db.transaction(() => createPortableSnapshot(profileId, { ...options, descriptorMode: true })).immediate();
 }
 
 export function validatePortableV2(files, meta, { encrypted } = {}) {
@@ -148,7 +161,7 @@ export function validatePortableV2(files, meta, { encrypted } = {}) {
   const roots = [`profiles/${row.id}/`, ...deps.extensions.map(e => extensionPrefix(e) + '/')];
   const payload = files.filter(f => f.path !== 'meta.json');
   if (Object.keys(meta.fileChecksums).length !== payload.length) throw fail('Portable checksum manifest is incomplete');
-  for (const f of payload) if (!roots.some(r => f.path.startsWith(r)) || meta.fileChecksums[f.path] !== hash(f.data)) throw fail('Portable file checksum or dependency path is invalid');
+  for (const f of payload) if (!roots.some(r => f.path.startsWith(r)) || meta.fileChecksums[f.path] !== (f.sha256 || hash(f.data))) throw fail('Portable file checksum or dependency path is invalid');
   return { row, deps };
 }
 function insertRow(table, record) {
@@ -173,7 +186,7 @@ export function restorePortableV2(files, meta, { encrypted, collision, running, 
   const workspaceId = deps.workspace ? remap('workspaces', deps.workspace.id) : null;
   const proxyId = deps.proxy ? remap('proxies', deps.proxy.id) : null;
   for (const e of deps.extensions) remap('extensions', e.id);
-  const treeFor = (prefix, target) => ({ target, files: files.filter(f => f.path.startsWith(prefix + '/')).map(f => ({ path: f.path.slice(prefix.length + 1), data: f.data })) });
+  const treeFor = (prefix, target) => ({ target, files: files.filter(f => f.path.startsWith(prefix + '/')).map(f => ({ path: f.path.slice(prefix.length + 1), ...(f.source ? { source: f.source, sha256: f.sha256 } : { data: f.data }) })) });
   const trees = [treeFor(`profiles/${row.id}`, `profiles/${id}`), ...deps.extensions.map(e => treeFor(extensionPrefix(e), `${e.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${mapping.extensions[e.id]}`))];
   const now = new Date().toISOString();
   const result = { added: [], replaced: [], renamed: [], proxyDetached: [], extensionsSkipped: 0, dependencyMap: mapping, warnings: meta.limitations || [] };

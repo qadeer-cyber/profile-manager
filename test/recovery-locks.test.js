@@ -54,3 +54,62 @@ test('trash restore and overlapping trash actions cannot race a pending restore'
   assert.throws(() => restoreFromTrash(id), e => e.code === 'PROFILE_OPERATION_BUSY');
   await assert.rejects(() => softDeleteProfile(id), e => e.code === 'PROFILE_OPERATION_BUSY');
 });
+
+test('corrupt journal is visible without crashing startup; locks and retained bytes survive', async () => {
+  const { recoverDataOperationsAtStartup } = await import('../server/recovery-journal.js');
+  const id = profile();
+  assert.throws(() => restore(id, p => { if (p === 'after-db-commit') throw Error('crash'); }), /committed/);
+  const op = recoveryDiagnostics().find(o => o.profileIds.includes(id));
+  db.prepare('UPDATE pm_recovery_operations SET plan_json=? WHERE id=?').run('{broken private metadata', op.id);
+  assert.doesNotThrow(() => recoverDataOperationsAtStartup());
+  const diag = recoveryDiagnostics().find(o => o.id === op.id);
+  assert.equal(diag.state, 'needs_review'); assert.equal(diag.recoverable, false);
+  assert.equal(JSON.stringify(diag).includes('private metadata'), false);
+  assert.throws(() => recoverOperation(op.id, { cleanup: true }), /corrupt/);
+  assert.throws(() => assertProfileOperationAvailable(id), e => e.code === 'PROFILE_OPERATION_BUSY');
+  assert.equal(fs.readFileSync(path.join(dir, 'recovery-operations', op.id, 'park', '0', 'marker'), 'utf8'), 'before');
+});
+test('missing staged data and forged journal paths fail closed before any cleanup', () => {
+  const id = profile();
+  assert.throws(() => restore(id, point => { if (point === 'after-db-commit') throw Error('crash'); }), /committed/);
+  const op = recoveryDiagnostics().find(o => o.profileIds.includes(id));
+  const row = db.prepare('SELECT plan_json FROM pm_recovery_operations WHERE id=?').get(op.id);
+  const plan = JSON.parse(row.plan_json); plan.moves[0].park = `recovery-operations/${op.id}/park/../outside`;
+  db.prepare('UPDATE pm_recovery_operations SET plan_json=? WHERE id=?').run(JSON.stringify(plan), op.id);
+  assert.throws(() => recoverOperation(op.id, { cleanup: true }), /invalid/);
+  assert.equal(fs.readFileSync(path.join(dir, 'recovery-operations', op.id, 'park', '0', 'marker'), 'utf8'), 'before');
+});
+test('missing committed files refuse verification and preserve parked originals', () => {
+  const id = profile();
+  assert.throws(() => restore(id, p => { if (p === 'after-db-commit') throw Error('crash'); }), /committed/);
+  const op = recoveryDiagnostics().find(o => o.profileIds.includes(id));
+  fs.rmSync(path.join(userDataDir(id), 'marker'));
+  assert.throws(() => recoverOperation(op.id, { cleanup: true }), /files need review/);
+  assert.ok(fs.existsSync(path.join(dir, 'recovery-operations', op.id, 'park', '0', 'marker')));
+});
+test('duplicate confirmed cleanup is idempotent and failed cleanup retains locks', () => {
+  const id = profile();
+  assert.throws(() => restore(id, p => { if (p === 'before-cleanup') throw Error('crash'); }), /committed/);
+  const op = recoveryDiagnostics().find(o => o.profileIds.includes(id));
+  const original = fs.rmSync;
+  try { fs.rmSync = () => { throw Object.assign(Error('locked fixture'), { code: 'EBUSY' }); }; assert.throws(() => recoverOperation(op.id, { cleanup: true }), /locked fixture/); }
+  finally { fs.rmSync = original; }
+  assert.throws(() => assertProfileOperationAvailable(id), e => e.code === 'PROFILE_OPERATION_BUSY');
+  assert.equal(recoverOperation(op.id, { cleanup: true }).state, 'done');
+  assert.equal(recoverOperation(op.id, { cleanup: true }).state, 'done');
+  assert.doesNotThrow(() => assertProfileOperationAvailable(id));
+});
+
+test('missing staged file still permits a verified rollback when original live data is intact', async () => {
+  const { recoverDataOperationsAtStartup } = await import('../server/recovery-journal.js');
+  const id = profile();
+  assert.throws(() => restore(id, p => { if (p === 'prepared') throw Error('interrupted'); }), /interrupted/);
+  const op = recoveryDiagnostics().find(o => o.profileIds.includes(id));
+  fs.rmSync(path.join(dir, 'recovery-operations', op.id, 'stage', '0', 'marker'));
+  db.prepare('UPDATE pm_recovery_operations SET state=? WHERE id=?').run('prepared', op.id);
+  recoverDataOperationsAtStartup();
+  assert.equal(fs.readFileSync(path.join(userDataDir(id), 'marker'), 'utf8'), 'before');
+  assert.equal(db.prepare('SELECT name FROM profiles WHERE id=?').get(id).name, 'Before');
+  assert.equal(db.prepare('SELECT state FROM pm_recovery_operations WHERE id=?').get(op.id).state, 'rolled_back');
+  assert.doesNotThrow(() => assertProfileOperationAvailable(id));
+});

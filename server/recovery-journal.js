@@ -1,3 +1,4 @@
+import { hashFileSync } from './file-integrity.js';
 // Local filesystem/SQLite coordination. Journal stores paths and fingerprints, not file contents or credential values.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -42,7 +43,7 @@ export function treeFingerprint(dir) {
   if (!fs.existsSync(dir)) return null;
   const result = {}; let count = 0, bytes = 0;
   const visit = (file, rel, depth) => {
-    if (depth > 64 || ++count > 20000) throw fail('Recovery tree exceeds safety limits');
+    if (depth > 64 || ++count > 200000) throw fail('Recovery tree exceeds safety limits');
     const st = fs.lstatSync(file);
     if (st.isSymbolicLink()) throw fail('Recovery refuses symlinks');
     if (st.isDirectory()) {
@@ -50,8 +51,8 @@ export function treeFingerprint(dir) {
       for (const name of fs.readdirSync(file).sort()) visit(path.join(file, name), rel ? rel + '/' + name : name, depth + 1);
     } else if (st.isFile()) {
       bytes += st.size;
-      if (st.size > 32 * 1024 * 1024 || bytes > 128 * 1024 * 1024) throw fail('Recovery tree exceeds byte limits');
-      result[rel] = crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+      if (st.size > 4 * 1024 ** 3 || bytes > 8 * 1024 ** 3) throw fail('Recovery tree exceeds byte limits');
+      result[rel] = hashFileSync(file);
     } else throw fail('Recovery refuses special files');
   };
   visit(dir, '', 0);
@@ -108,14 +109,34 @@ function record(kind, profileIds, targets) {
 function savePlan(id, plan, state) {
   db.prepare('UPDATE pm_recovery_operations SET plan_json=?,state=?,updated_at=? WHERE id=?').run(JSON.stringify(plan), state, new Date().toISOString(), id);
 }
+function validFingerprint(value) {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value['/'] !== 'directory') return false;
+  const entries = Object.entries(value);
+  return entries.length <= 200000 && entries.every(([name, digest]) => name.length <= 4096 && (digest === 'directory' || /^[0-9a-f]{64}$/.test(digest)));
+}
 function readOperation(id) {
   if (!UUID.test(id)) throw fail('Invalid recovery operation');
   const row = db.prepare('SELECT * FROM pm_recovery_operations WHERE id=?').get(id);
   if (!row) throw fail('Recovery operation not found');
-  const plan = JSON.parse(row.plan_json);
-  if (plan.version !== 1 || !Array.isArray(plan.profileIds) || !Array.isArray(plan.moves)) throw fail('Unsupported recovery journal version');
-  for (const m of plan.moves) {
-    if (!/^(profiles|extensions|gecko-extensions)\/[0-9a-f-]{36}$/i.test(m.target) || !m.stage.startsWith(`recovery-operations/${id}/stage/`) || !m.park.startsWith(`recovery-operations/${id}/park/`)) throw fail('Recovery plan is invalid');
+  if (row.plan_json.length > 64 * 1024 * 1024) throw fail('Recovery journal exceeds limits');
+  let plan;
+  try { plan = JSON.parse(row.plan_json); } catch { throw fail('Recovery journal is corrupt. All copies are retained for manual review.'); }
+  if (!plan || plan.version !== 1 || !['restore', 'purge'].includes(row.kind) ||
+      !['staging', 'prepared', 'committed', 'rolled_back', 'partial_recovered', 'purge_staged', 'done'].includes(row.state) ||
+      !Array.isArray(plan.profileIds) || !plan.profileIds.length || plan.profileIds.length > 10000 || plan.profileIds.some(id => !UUID.test(id)) ||
+      new Set(plan.profileIds).size !== plan.profileIds.length || !Array.isArray(plan.moves) || plan.moves.length > 20000 ||
+      !/^[0-9a-f]{64}$/.test(plan.databaseBefore || '') || (row.kind === 'restore' && row.state === 'committed' && !/^[0-9a-f]{64}$/.test(plan.databaseAfter || ''))) throw fail('Recovery journal structure is invalid');
+  const targets = new Set();
+  if (row.kind === 'purge' && (plan.moves.length !== 1 || plan.profileIds.length !== 1)) throw fail('Purge journal structure is invalid');
+  for (const [index, m] of plan.moves.entries()) {
+    if (!m || !/^(profiles|extensions|gecko-extensions)\/[0-9a-f-]{36}$/i.test(m.target) || m.stage !== `recovery-operations/${id}/stage/${index}` || m.park !== `recovery-operations/${id}/park/${index}`) throw fail('Recovery plan is invalid');
+    if (targets.has(m.target.toLowerCase())) throw fail('Recovery journal repeats a destination');
+    targets.add(m.target.toLowerCase());
+    if (!validFingerprint(m.before) || !validFingerprint(m.after)) throw fail('Recovery fingerprints are invalid');
+    if (row.kind === 'restore' && ['prepared', 'committed'].includes(row.state) && m.after === null) throw fail('Prepared restore fingerprint is missing');
+    if (m.target.startsWith('profiles/') && !plan.profileIds.includes(m.target.slice(9))) throw fail('Recovery journal profile mapping is invalid');
+    if (row.kind === 'purge' && m.target !== `profiles/${plan.profileIds[0]}`) throw fail('Purge target is invalid');
     safePath(m.target); safePath(m.stage); safePath(m.park);
   }
   return { ...row, plan };
@@ -146,6 +167,7 @@ function verifyCommitted(op) {
 }
 function cleanup(op) {
   if (op.state === 'staging' || op.state === 'prepared' || op.state === 'purge_staged') throw fail('Incomplete operation cannot be cleaned');
+  if (['rolled_back', 'partial_recovered'].includes(op.state) && op.plan.moves.some(m => fs.existsSync(safePath(m.park)))) throw fail('Rollback still has parked original data; cleanup refused');
   fs.rmSync(safePath(`recovery-operations/${op.id}`), { recursive: true, force: true }); syncDir(root);
   db.transaction(() => { setState(op.id, 'done'); unlock(op.id); })();
 }
@@ -160,12 +182,20 @@ export function recoverOperation(id, { cleanup: removeCopies = false } = {}) {
   return { id, state: op.state, verified: ['done', 'rolled_back'].includes(op.state) };
 }
 export function recoveryDiagnostics() {
-  return db.prepare("SELECT id,kind,state,created_at,updated_at,error,plan_json FROM pm_recovery_operations WHERE state!='done' ORDER BY created_at").all().map(({ plan_json, ...row }) => ({ ...row, profileIds: JSON.parse(plan_json).profileIds }));
+  return db.prepare("SELECT id,kind,state,created_at,updated_at,error FROM pm_recovery_operations WHERE state!='done' ORDER BY created_at").all().map(row => {
+    try { const op = readOperation(row.id); return { ...row, profileIds: op.plan.profileIds, recoverable: true }; }
+    catch {
+      const profileIds = db.prepare('SELECT profile_id FROM pm_recovery_profile_locks WHERE operation_id=?').all(row.id).map(r => r.profile_id).filter(id => UUID.test(id));
+      return { ...row, kind: ['purge', 'restore'].includes(row.kind) ? row.kind : 'unknown', persistedState: row.state, state: 'needs_review', profileIds, recoverable: false,
+        error: 'Recovery journal is corrupt or unsafe. Profiles remain locked and all retained copies require manual review.' };
+    }
+  });
 }
 export function recoverDataOperationsAtStartup() {
   const results = [];
   for (const row of recoveryDiagnostics()) {
     try {
+      if (row.recoverable === false) { results.push({ id: row.id, requiresReview: true }); continue; }
       if (row.kind === 'restore' && ['staging', 'prepared'].includes(row.state)) results.push(recoverOperation(row.id));
       else results.push({ id: row.id, state: row.state, requiresConfirmation: true });
     } catch { setState(row.id, row.state, 'Recovery could not verify filesystem/database agreement. Retained copies require manual review.'); results.push({ id: row.id, requiresReview: true }); }
@@ -185,8 +215,13 @@ export function runRecoverableRestore({ profileIds, trees, applyDatabase, fault 
         if (!rel || path.isAbsolute(rel) || rel.split('/').some(p => !p || p === '..' || p === '.' || /[\\:\x00-\x1f]/.test(p))) throw fail('Unsafe staged file');
         const dest = path.join(stage, ...rel.split('/'));
         fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
-        const fd = fs.openSync(dest, 'wx', 0o600);
-        try { fs.writeFileSync(fd, f.data); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        if (f.source) {
+          if (fs.lstatSync(f.source).isSymbolicLink()) throw fail('Staging source must not be a symlink');
+          fs.copyFileSync(f.source, dest, fs.constants.COPYFILE_EXCL); fs.chmodSync(dest, 0o600);
+        } else fs.writeFileSync(dest, f.data, { flag: 'wx', mode: 0o600 });
+        const fd = fs.openSync(dest, 'r+');
+        try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+        if (f.sha256 && hashFileSync(dest) !== f.sha256) throw fail('Staged file checksum disagrees with archive');
         syncDir(path.dirname(dest)); fault(`staged-file:${i}:${f.path}`);
       }
       m.after = treeFingerprint(stage);
@@ -254,6 +289,7 @@ function recoverPurge(op, removeCopies) {
   const pid = op.plan.profileIds[0], m = op.plan.moves[0];
   if (op.state === 'committed') {
     if (db.prepare('SELECT id FROM profiles WHERE id=?').get(pid)) throw fail('Purge database state is inconsistent');
+    if (op.plan.moves.some(m => fs.existsSync(safePath(m.park)))) throw fail('Purge retained files disagree with committed state; cleanup refused');
     if (removeCopies) cleanup(op);
     return { id: op.id, state: removeCopies ? 'done' : 'committed', verified: true };
   }

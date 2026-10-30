@@ -50,9 +50,16 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const exportPortable = async (p, options) => {
     if (p.running) return toast('Stop the profile before exporting a portable backup', 'error');
     setBusy(b => ({ ...b, [p.id]: true }));
+    let writable;
     try {
-      const response = await fetch(`/api/profiles/${p.id}/backup/export`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(options) });
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({ suggestedName: `profile-${p.name.replace(/[^\w.-]+/g, '_')}.pmp`, types: [{ description: 'Encrypted profile backup', accept: { 'application/octet-stream': ['.pmp'] } }] });
+        writable = await handle.createWritable();
+      }
+      const response = await fetch(`/api/profiles/${p.id}/backup/export-stream`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(options) });
       if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || `HTTP ${response.status}`); }
+      if (writable) { await response.body.pipeTo(writable); writable = null; } else {
+      if (Number(response.headers.get('content-length')) > 64 * 1024 * 1024) { await response.body.cancel(); throw new Error('Large export requires a browser with Save File Picker support or the authenticated streaming API.'); }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -60,9 +67,10 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       link.download = `profile-${p.name.replace(/[^\w.-]+/g, '_')}.pmp`;
       link.click();
       URL.revokeObjectURL(url);
+      }
       toast(`Downloaded portable backup for ${p.name}`, 'success');
       setDialog(null);
-    } catch (e) { toast(e.message, 'error'); }
+    } catch (e) { if (writable) await writable.abort().catch(() => {}); toast(e.message, 'error'); }
     setBusy(b => ({ ...b, [p.id]: false }));
   };
   const act = async (id, label, fn) => {

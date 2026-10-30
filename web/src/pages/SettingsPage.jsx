@@ -124,12 +124,11 @@ function BackupPanel({ toast }) {
     if (!file) return;
     setBusy(true);
     try {
-      const response = await fetch('/api/backup/inspect', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...authHeaders(), ...(restorePassphrase ? { 'X-Backup-Passphrase': restorePassphrase } : {}) }, body: await file.arrayBuffer() });
+      const response = await fetch('/api/backup/inspect-stream', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...authHeaders(), ...(restorePassphrase ? { 'X-Backup-Passphrase': restorePassphrase } : {}) }, body: file });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       setListing(payload);
       setSelectedRestoreIds((payload.profiles || []).map(p => p.id).filter(Boolean));
-      setRestorePassphrase('');
     } catch (e) { toast(e.message, 'error'); }
     setBusy(false);
   };
@@ -139,10 +138,10 @@ function BackupPanel({ toast }) {
     if (!file) return;
     setBusy(true);
     try {
-      const body = await file.arrayBuffer();
+      const body = file;
       const qs = new URLSearchParams({ collision });
       if (selectedRestoreIds.length) qs.set('profileIds', selectedRestoreIds.join(','));
-      const response = await fetch(`/api/backup/restore?${qs}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...authHeaders(), ...(restorePassphrase ? { 'X-Backup-Passphrase': restorePassphrase } : {}) }, body });
+      const response = await fetch(`/api/backup/restore-stream?${qs}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...authHeaders(), ...(restorePassphrase ? { 'X-Backup-Passphrase': restorePassphrase } : {}) }, body });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw Object.assign(new Error(payload.error || payload.message || `HTTP ${response.status}`), { code: payload.code });
       setResult(payload);

@@ -55,12 +55,14 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
     relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
   }
+  const marionettePort = automation ? await freePort() : null;
   const managed = buildManagedGeckoPrefLines({
     proxy: p.proxy && !p.proxy.username ? p.proxy : null,
     relayUrl,
     regional,
     webrtcSettings: p.webrtcSettings,
   });
+  if (marionettePort) managed.push(`user_pref("marionette.port", ${marionettePort});`);
   writeManagedGeckoUserJs(profileDir, managed);
   materializeGeckoExtensions(profileDir, p.id);
 
@@ -79,11 +81,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   } else if (screen.width && screen.height) {
     args.push('-width', String(screen.width), '-height', String(screen.height));
   }
-  let marionettePort = null;
-  if (automation) {
-    marionettePort = await freePort();
-    args.push('-marionette');
-  }
+  if (automation) args.push('-marionette');
   if (regional.languages.length) args.push('-lang', regional.locale || regional.languages[0]);
   const openUrls = Array.isArray(opts.openUrls) ? opts.openUrls.slice(0, 20) : (opts.url ? [opts.url] : []);
   for (const u of openUrls) {

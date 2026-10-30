@@ -40,15 +40,15 @@ export function isEncryptedBackup(buffer) {
   return Buffer.isBuffer(buffer) && buffer.length >= 4 && buffer.subarray(0, 4).toString('ascii') === BACKUP_CRYPTO.magic;
 }
 
-function assertPassphrase(passphrase) {
+export function assertBackupPassphrase(passphrase) {
   if (typeof passphrase !== 'string' || passphrase.length < 8 || passphrase.length > 1024) {
     throw fail(400, 'Passphrase must be 8 to 1024 characters', 'INVALID_PASSPHRASE');
   }
   return passphrase;
 }
 
-function readHeader(buffer) {
-  if (!isEncryptedBackup(buffer) || buffer.length < BACKUP_CRYPTO.headerLen + BACKUP_CRYPTO.tagLen + 1) {
+export function readBackupHeader(buffer, { headerOnly = false } = {}) {
+  if (!isEncryptedBackup(buffer) || buffer.length < BACKUP_CRYPTO.headerLen + BACKUP_CRYPTO.tagLen + (headerOnly ? 0 : 1)) {
     throw fail(400, 'Encrypted backup header is invalid', 'CORRUPT_BACKUP');
   }
   const version = buffer.readUInt8(4);
@@ -70,7 +70,7 @@ function readHeader(buffer) {
   };
 }
 
-function deriveKey(passphrase, salt) {
+export function deriveBackupKey(passphrase, salt) {
   return crypto.scryptSync(passphrase, salt, BACKUP_CRYPTO.kdf.keyLen, {
     N: BACKUP_CRYPTO.kdf.N,
     r: BACKUP_CRYPTO.kdf.r,
@@ -79,9 +79,7 @@ function deriveKey(passphrase, salt) {
   });
 }
 
-export function encryptBackup(plain, passphrase) {
-  if (!Buffer.isBuffer(plain) || !plain.length) throw fail(400, 'Backup is empty', 'CORRUPT_BACKUP');
-  assertPassphrase(passphrase);
+export function createBackupHeader() {
   const salt = crypto.randomBytes(BACKUP_CRYPTO.kdf.saltLen);
   const iv = crypto.randomBytes(BACKUP_CRYPTO.ivLen);
   const header = Buffer.alloc(BACKUP_CRYPTO.headerLen);
@@ -94,7 +92,14 @@ export function encryptBackup(plain, passphrase) {
   header.writeUInt32BE(BACKUP_CRYPTO.kdf.r, 28);
   header.writeUInt32BE(BACKUP_CRYPTO.kdf.p, 32);
   iv.copy(header, 36);
-  const key = deriveKey(passphrase, salt);
+  return { header, salt, iv };
+}
+
+export function encryptBackup(plain, passphrase) {
+  if (!Buffer.isBuffer(plain) || !plain.length) throw fail(400, 'Backup is empty', 'CORRUPT_BACKUP');
+  assertBackupPassphrase(passphrase);
+  const { header, salt, iv } = createBackupHeader();
+  const key = deriveBackupKey(passphrase, salt);
   try {
     const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(header);
@@ -107,9 +112,9 @@ export function encryptBackup(plain, passphrase) {
 }
 
 export function decryptBackup(buffer, passphrase) {
-  assertPassphrase(passphrase);
-  const parts = readHeader(buffer);
-  const key = deriveKey(passphrase, parts.salt);
+  assertBackupPassphrase(passphrase);
+  const parts = readBackupHeader(buffer);
+  const key = deriveBackupKey(passphrase, parts.salt);
   try {
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, parts.iv);
     decipher.setAAD(parts.header);

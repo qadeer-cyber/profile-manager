@@ -50,7 +50,9 @@
     "test:e4": "node --test --test-timeout=180000 test/diagnostics-e4-merge-gate.test.js",
     "test:stabilization": "node --test --experimental-test-module-mocks --test-timeout=30000 test/gecko-xpi.test.js test/gecko-extensions.test.js test/backup.test.js test/backup-encrypted.test.js test/backup-selective.test.js test/profile-backup-export.test.js test/profile-lifecycle-purge.test.js test/profile-lifecycle-trash.test.js test/profile-lifecycle.test.js test/fixture-cleanup.test.js test/extensions.test.js test/extensions-api.test.js test/extensions-launch.test.js test/app-security.test.js",
     "test:webdriver:real": "node --test --test-timeout=180000 test/webdriver-real.test.js",
-    "test:data-recovery": "node --test --test-timeout=120000 test/portable-recovery.test.js test/portable-api.test.js test/profile-lifecycle-purge.test.js test/backup-selective.test.js test/backup.test.js test/recovery-locks.test.js"
+    "test:data-recovery": "node --test --test-timeout=120000 test/portable-recovery.test.js test/portable-restore-crash.test.js test/portable-purge-crash.test.js test/portable-api.test.js test/profile-lifecycle-purge.test.js test/backup-selective.test.js test/backup.test.js test/recovery-locks.test.js test/backup-stream.test.js test/backup-stream-api.test.js test/marionette-client.test.js",
+    "test:m8:acceptance": "node --test --test-timeout=180000 test/m8-browser-acceptance.test.js",
+    "test:integration:preflight": "node --test --test-timeout=30000 test/integration-preflight.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

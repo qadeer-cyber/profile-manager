@@ -22,11 +22,15 @@ jobs:
         shell: pwsh
         run: choco install firefox -y --no-progress
       - run: npm run build
+      - name: Source unit regression
+        run: npm run test:unit
       - name: Portable data and crash recovery
         timeout-minutes: 10
         run: npm run test:data-recovery
       - name: Browser runtime + P1 regression
         run: npm run test:browser-runtime
+      - name: M8 real browser and UI acceptance
+        run: npm run test:m8:acceptance
       - name: Firefox host spawn smoke
         run: node --test test/firefox-spawn-smoke.test.js
 

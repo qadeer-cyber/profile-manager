@@ -37,7 +37,18 @@ test('firefox launch plan uses -no-remote and -profile', async () => {
   assert.ok(autoPlan.marionettePort > 0);
   assert.ok(plan.args.some(a => a === '-profile' || String(a).includes('gecko')));
   assert.equal(plan.args.some(a => String(a).includes('--disable-webgl')), false);
-  db.close();
   fs.rmSync(dataDir, { recursive: true, force: true });
   delete process.env.PM_DATA_DIR;
+});
+
+test('automation writes its selected Marionette port into managed Firefox prefs', async () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-ff-port-'));
+  const { setSetting } = await import('../server/db.js');
+  const exe = path.join(dataDir, 'firefox-stub.exe'); fs.writeFileSync(exe, ''); setSetting('firefoxExecutablePath', exe);
+  try {
+    const id = randomUUID();
+    const plan = await buildFirefoxLaunchPlan({ id, browserSettings: { locale: '', languages: [], timezoneId: '' } }, { userDataDir: path.join(dataDir, id), opts: { automation: true } });
+    assert.ok(plan.marionettePort > 0); assert.ok(plan.args.includes('-marionette'));
+    assert.ok(fs.readFileSync(path.join(plan.profileDir, 'user.js'), 'utf8').includes(`user_pref("marionette.port", ${plan.marionettePort});`));
+  } finally { setSetting('firefoxExecutablePath', ''); fs.rmSync(dataDir, { recursive: true, force: true }); }
 });

@@ -118,8 +118,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Portable v2 dependency/encryption, API and crash tests pass on Linux. Native browser readback, Windows recovery and actual UI workflow gates remain pending; OS-bound browser encryption is explicitly unsupported across machines.",
-      "missing": "Portable v2 dependency/encryption, API and crash tests pass on Linux. Native browser readback, Windows recovery and actual UI workflow gates remain pending; OS-bound browser encryption is explicitly unsupported across machines.",
+      "implementation_evidence": "Stage 2 encrypted portable v2 plus Stage 3 bounded disk-backed streaming, 96 MiB fresh-install API round trip, integrity/crash tests and real-engine/UI acceptance harness. See STAGE3_RECOVERY_CHECKPOINT.md.",
+      "missing": "Actual Chromium/Firefox and Windows end-to-end acceptance pending; cross-machine OS-bound credential decryption is not claimed. Maximum-size/hardware interruption qualification pending.",
       "status": "INCOMPLETE",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },
