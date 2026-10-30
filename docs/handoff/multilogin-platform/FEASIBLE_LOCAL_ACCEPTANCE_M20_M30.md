@@ -2,6 +2,7 @@
 
 **Branch:** `feature/ultimate2-feasible-completion`  
 **Base SHA:** `1df952a1ee1c3fe59b87ee74fb4a4a22fc2bd478`  
+**Batch SHA:** `9675a96`  
 **Policy:** This scorecard is **separate** from the historical Multilogin matrix (`MULTILOGIN_COMPLETE_TECHNOLOGY_MATRIX.md`). Matrix rows M20–M30 stay **PARTIAL** until a custom engine proves masking claims. Here we only grade **stock-feasible** acceptance criteria.
 
 ## Formulas
