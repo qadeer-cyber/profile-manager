@@ -7,7 +7,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { validateAdvancedSettings } from '../server/advanced-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences } from '../server/advanced-launch.js';
-import { assertPrivateNetworkLaunchPolicy } from '../server/fingerprint-settings.js';
+import {
+  assertPrivateNetworkLaunchPolicy,
+  WEBGL_DISABLE_ARG,
+  FONT_ACCESS_DISABLE_FEATURE,
+  fingerprintLaunchArgs,
+} from '../server/fingerprint-settings.js';
+import { geolocationLaunchFacts, NATIVE_GEO_COORDINATE_OVERRIDE } from '../server/geolocation-launch.js';
+import { classifyMediaCaptureError } from '../server/media-capture.js';
+import { webglReadPixelsPrototypeInitScript, webglReadPrototypeSeed } from '../server/experimental/webgl-readpixels-prototype.js';
+import { launchRuntimeMode } from '../server/browser-runtime/launch-plan.js';
 import { compareEngineIdentity } from '../server/engine-identity.js';
 import { assessWindowPlacement, parseXrandr } from '../server/window-placement.js';
 import { canvasPrototypeInitScript, canvasPrototypeSeed, perturbRgba } from '../server/experimental/canvas-readback-prototype.js';
@@ -170,6 +179,7 @@ test('M28 and M29 persist deny content settings and M30 refuses weakening flags'
     assert.equal(prefs.profile.default_content_setting_values.local_fonts, 2);
     assert.equal(prefs.profile.default_content_setting_values.media_stream_camera, 2);
     assert.equal(prefs.profile.default_content_setting_values.media_stream_mic, 2);
+    assert.equal(prefs.profile.default_content_setting_values.local_network_access, 2);
     const opened = validateAdvancedSettings({
       fingerprint: { fonts: 'real', mediaDevices: 'real' },
     });
@@ -178,6 +188,7 @@ test('M28 and M29 persist deny content settings and M30 refuses weakening flags'
     const content = cleared.profile.default_content_setting_values || {};
     assert.equal(content.local_fonts, undefined);
     assert.equal(content.media_stream_camera, undefined);
+    assert.equal(content.local_network_access, 2, 'default portScan real keeps local_network_access deny pref');
     assert.throws(
       () => assertPrivateNetworkLaunchPolicy(['--disable-features=PrivateNetworkAccessSendPreflights']),
       error => error.code === 'PRIVATE_NETWORK_POLICY',
@@ -186,6 +197,36 @@ test('M28 and M29 persist deny content settings and M30 refuses weakening flags'
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('M21 native spawn is BLOCKED_SPAWN for coordinate override', () => {
+  assert.equal(NATIVE_GEO_COORDINATE_OVERRIDE.status, 'BLOCKED_SPAWN');
+  const coords = validateAdvancedSettings({
+    geolocation: { permission: 'allow', latitude: 1, longitude: 2, accuracy: 10 },
+  });
+  const nativeFacts = geolocationLaunchFacts({
+    runtime: launchRuntimeMode({ automation: false, headless: false }),
+    geolocation: coords.geolocation,
+    automation: false,
+  });
+  assert.equal(nativeFacts.coordinateOverride, 'BLOCKED_SPAWN');
+  assert.equal(nativeFacts.nativeBlocked, true);
+  const autoFacts = geolocationLaunchFacts({
+    runtime: launchRuntimeMode({ automation: true, headless: true }),
+    geolocation: coords.geolocation,
+    automation: true,
+  });
+  assert.equal(autoFacts.coordinateOverride, 'playwright_context');
+});
+
+test('M28 launch args disable FontAccess when fonts are restricted', () => {
+  const args = fingerprintLaunchArgs({ webgl: 'default', fonts: 'restricted', mediaDevices: 'real', canvas: 'real', audio: 'real', portScan: 'real' });
+  assert.ok(args.join(' ').includes(FONT_ACCESS_DISABLE_FEATURE));
+});
+
+test('M29 classifies permission denial separately from missing hardware', () => {
+  assert.equal(classifyMediaCaptureError('NotAllowedError', { cameraState: 'denied', microphoneState: 'denied' }).kind, 'permission_denied');
+  assert.equal(classifyMediaCaptureError('NotFoundError', { cameraState: 'denied', microphoneState: 'denied' }).kind, 'no_device');
 });
 
 test('M24 prototype is deterministic, opt-in, and does not claim a custom engine', () => {
@@ -214,4 +255,14 @@ test('M24 prototype is deterministic, opt-in, and does not claim a custom engine
     advancedSettings: { experimental: { canvasReadback: 'prototype' } },
   }, {}));
   assert.ok(warnings.some(item => item.code === 'CANVAS_PROTOTYPE_NOT_ENGINE'));
+});
+
+test('M26 readPixels prototype is opt-in and does not claim a custom engine', () => {
+  const seed = webglReadPrototypeSeed('33333333-3333-3333-3333-333333333333');
+  const script = webglReadPixelsPrototypeInitScript(seed);
+  assert.match(script, /customEngine: false/);
+  const enabled = validateAdvancedSettings({ experimental: { webglReadback: 'prototype', canvasReadback: 'off' } });
+  assert.equal(enabled.experimental.webglReadback, 'prototype');
+  const row = CUSTOM_ENGINE.rows.find(item => item.id === 'M26');
+  assert.equal(row.prototypeQualification, 'EXPERIMENTAL_NOT_ENGINE');
 });

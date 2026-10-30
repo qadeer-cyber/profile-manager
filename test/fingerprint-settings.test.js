@@ -24,8 +24,11 @@ test('stored profiles without a fingerprint section gain the defaults without dr
 
 test('WebGL restricted is the only graphics switch, and invented modes are rejected', () => {
   const restricted = validateAdvancedSettings({ fingerprint: { webgl: 'restricted', fonts: 'restricted', mediaDevices: 'restricted' } });
-  assert.deepEqual(fingerprintLaunchArgs(restricted.fingerprint), [WEBGL_DISABLE_ARG]);
-  assert.equal(verifyFingerprintLaunchArgs(['--disable-webgl', '--window-size=1280,800'], restricted.fingerprint), true);
+  assert.deepEqual(fingerprintLaunchArgs(restricted.fingerprint), [WEBGL_DISABLE_ARG, '--disable-features=FontAccess']);
+  assert.equal(
+    verifyFingerprintLaunchArgs(['--disable-webgl', '--disable-features=FontAccess', '--window-size=1280,800'], restricted.fingerprint),
+    true,
+  );
   assert.equal(verifyFingerprintLaunchArgs([], restricted.fingerprint), false);
   for (const fingerprint of [
     { webgl: 'masked' },

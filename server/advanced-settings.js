@@ -29,7 +29,7 @@ export const DEFAULT_ADVANCED_SETTINGS = Object.freeze({
     permissions: Object.freeze({ notifications: 'default', microphone: 'default', camera: 'default', clipboard: 'default', midi: 'default' }),
   }),
   fingerprint: DEFAULT_FINGERPRINT,
-  experimental: Object.freeze({ canvasReadback: 'off' }),
+  experimental: Object.freeze({ canvasReadback: 'off', webglReadback: 'off' }),
 });
 
 const invalid = (message, tab = 'identity') => {
@@ -57,11 +57,14 @@ function integerIn(value, min, max, tab, label) {
 }
 
 function validateExperimental(value) {
-  if (value == null) return { canvasReadback: 'off' };
-  const input = section(value, ['canvasReadback'], 'fingerprint');
-  const mode = input.canvasReadback ?? 'off';
-  if (mode !== 'off' && mode !== 'prototype') invalid('experimental.canvasReadback must be off or prototype', 'fingerprint');
-  return { canvasReadback: mode };
+  const base = { canvasReadback: 'off', webglReadback: 'off' };
+  if (value == null) return base;
+  const input = section(value, ['canvasReadback', 'webglReadback'], 'fingerprint');
+  const canvasReadback = input.canvasReadback ?? base.canvasReadback;
+  const webglReadback = input.webglReadback ?? base.webglReadback;
+  if (canvasReadback !== 'off' && canvasReadback !== 'prototype') invalid('experimental.canvasReadback must be off or prototype', 'fingerprint');
+  if (webglReadback !== 'off' && webglReadback !== 'prototype') invalid('experimental.webglReadback must be off or prototype', 'fingerprint');
+  return { canvasReadback, webglReadback };
 }
 function validateUserAgent(value) {
   const input = section(value, ['mode'], 'identity');
@@ -173,7 +176,7 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   if ('screen' in value) out.screen = validateScreen(value.screen);
   if ('preferences' in value) out.preferences = validatePreferences(value.preferences, out.preferences);
   if ('fingerprint' in value) out.fingerprint = value.fingerprint;
-  if ('experimental' in value) out.experimental = validateExperimental(value.experimental);
+  if ('experimental' in value) out.experimental = validateExperimental({ ...out.experimental, ...value.experimental });
   return finishAdvanced(out);
 }
 

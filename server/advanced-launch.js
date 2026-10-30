@@ -21,6 +21,7 @@ const CONTENT_KEYS = {
   midi: 'midi_sysex',
   geolocation: 'geolocation',
   'local-fonts': 'local_fonts',
+  'local-network-access': 'local_network_access',
 };
 const CONTENT_VALUES = { allow: 1, deny: 2, ask: 3 };
 const CDP_SETTING = { allow: 'granted', deny: 'denied', ask: 'prompt' };
@@ -118,6 +119,9 @@ function preferenceFile(dir) {
 function contentState(settings, key) {
   if (key === 'geolocation') return settings.geolocation.permission;
   if (key === 'local-fonts') return settings.fingerprint?.fonts === 'restricted' ? 'deny' : 'default';
+  if (key === 'local-network-access') {
+    return settings.fingerprint?.portScan === 'real' ? 'deny' : 'default';
+  }
   if ((key === 'camera' || key === 'microphone') && settings.fingerprint?.mediaDevices === 'restricted') return 'deny';
   return settings.preferences.permissions[key];
 }

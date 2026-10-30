@@ -100,11 +100,32 @@ async function observeInPage() {
       };
     } catch { clientHints = { availability: 'unavailable', reason: 'client_hints_failed' }; }
   }
+  let fontsQuery = { availability: 'unavailable', reason: 'queryLocalFonts_missing' };
+  if (typeof window.queryLocalFonts === 'function') {
+    try {
+      const list = await window.queryLocalFonts();
+      fontsQuery = { availability: 'observed', apiPresent: true, resolved: true, count: list.length };
+    } catch (error) {
+      fontsQuery = { availability: 'observed', apiPresent: true, resolved: false, errorName: error.name };
+    }
+  } else {
+    fontsQuery = { availability: 'observed', apiPresent: false, resolved: false };
+  }
+  let mediaCapture = { availability: 'unavailable', reason: 'getUserMedia_missing' };
+  if (navigator.mediaDevices?.getUserMedia) {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      mediaCapture = { availability: 'observed', errorName: 'granted' };
+    } catch (error) {
+      mediaCapture = { availability: 'observed', errorName: error.name || 'Error' };
+    }
+  }
   const permissions = {
     geolocation: await permission('geolocation'),
     camera: await permission('camera'),
     microphone: await permission('microphone'),
     'local-fonts': await permission('local-fonts'),
+    'local-network-access': await permission('local-network-access'),
     notifications: await permission('notifications'),
   };
   let geolocation = null;
@@ -124,7 +145,7 @@ async function observeInPage() {
   return {
     hardwareConcurrency: concurrency == null ? { availability: 'unavailable', reason: 'not_exposed' } : { availability: 'observed', source: 'browser', value: concurrency },
     deviceMemory: memory == null ? { availability: 'unavailable', reason: 'not_exposed' } : { availability: 'observed', source: 'browser', value: memory },
-    webgl, webgpu, canvas, audio, media, clientHints, permissions, geolocation,
+    webgl, webgpu, canvas, audio, media, mediaCapture, fontsQuery, clientHints, permissions, geolocation,
     userAgent: text(navigator.userAgent),
     platform: text(navigator.platform),
     locale: text(navigator.language),

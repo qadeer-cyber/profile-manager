@@ -2,6 +2,7 @@
 // Historical and stock-feasible denominators are frozen. New checks do not
 // promote PARTIAL rows and do not add stock-feasible PASS rows.
 import fs from 'node:fs';
+import { NATIVE_GEO_COORDINATE_OVERRIDE } from './geolocation-launch.js';
 
 export const HISTORICAL_MATRIX = Object.freeze({
   id: 'A',
@@ -51,10 +52,11 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
       'Out-of-range coordinates are rejected.',
       'Playwright launch reapplies saved coordinates. Allow without coordinates does not invent a position.',
       'The geolocation content setting is written into the profile preferences.',
+      'Native manual spawn is labeled BLOCKED_SPAWN for coordinate override (no stock CLI; CDP only).',
     ]),
     engineRequired: Object.freeze([
       'Concealing GPS, Wi-Fi, or IP location outside this browser.',
-      'Coordinate override on a native Chromium spawn that has no Playwright geolocation context.',
+      NATIVE_GEO_COORDINATE_OVERRIDE.reason,
     ]),
   }),
   M22: Object.freeze({
@@ -87,13 +89,16 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
     matrixStatus: 'PARTIAL',
     satisfied: Object.freeze([
       'Restricted denies the local-fonts permission query for opened pages.',
-      'The same deny is written to the profile content setting local_fonts so it is not only a live CDP call.',
-      'queryLocalFonts is called for real. On the pinned Linux CfT build it can still resolve while the permission query is denied, so that result is not described as a blocked font list.',
+      'The same deny is written to the profile content setting local_fonts (underscore key).',
+      'Launch adds --disable-features=FontAccess so queryLocalFonts is not exposed on pinned CfT.',
       'Canvas measureText is still the browser’s own measurement.',
     ]),
     engineRequired: Object.freeze([
       'Substituting the installed font list.',
       'Blocking canvas font measurement.',
+    ]),
+    stockQuirk: Object.freeze([
+      'Before FontAccess disable, queryLocalFonts could resolve with count 0 while permission was denied. FontAccess disable is the stock alignment path.',
     ]),
   }),
   M29: Object.freeze({
@@ -102,7 +107,7 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
       'Restricted denies camera and microphone in the launch permission set.',
       'Restricted also writes media_stream_camera and media_stream_mic deny into profile preferences.',
       'Allow capture cannot be combined with restricted media devices.',
-      'getUserMedia does not return a stream. A machine with no camera reports NotFoundError. That is the real device list, not a substitute.',
+      'getUserMedia does not return a stream. classifyMediaCaptureError separates permission_denied from no_device (NotFoundError on hosts without hardware).',
       'Device names and counts are not invented.',
     ]),
     engineRequired: Object.freeze([
@@ -114,6 +119,7 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
     satisfied: Object.freeze([
       'Launch arguments this app builds are refused when they disable private-network checks.',
       'A normal process command line is reported as not weakening those checks.',
+      'portScan real writes local_network_access deny in profile preferences; local-network-access permission query is denied in the browser.',
       'portScan masked and custom whitelist modes are rejected.',
     ]),
     engineRequired: Object.freeze([
@@ -161,9 +167,14 @@ export const CUSTOM_ENGINE = Object.freeze({
       missing: 'WebGL vendor and renderer replacement.',
       stockApiEnough: false,
       sourceChangeRequired: true,
-      prototype: null,
-      prototypeQualification: 'NOT_BUILT',
-      limits: Object.freeze(['--disable-webgl turns the context off. Disabling is not an identity mask.']),
+      prototype: 'opt-in page-world WebGL readPixels XOR hook',
+      prototypeQualification: 'EXPERIMENTAL_NOT_ENGINE',
+      limits: Object.freeze([
+        'Off unless experimental.webglReadback is prototype.',
+        'Detectable: window.__pmWebglReadPrototype.customEngine is false.',
+        'Does not change UNMASKED_VENDOR/RENDERER. --disable-webgl remains the only stock restriction.',
+        'Not installed on native Chromium launch.',
+      ]),
     }),
     Object.freeze({
       id: 'M27',
@@ -249,6 +260,7 @@ export function advancedPrivacyScorecards(markdown = null) {
     D: WINDOWS_QUALIFICATION,
     partial: PARTIAL_REQUIREMENTS,
     m42: M42_ACCEPTANCE,
+    geolocationNative: NATIVE_GEO_COORDINATE_OVERRIDE,
     policy: 'BLOCKED is reported instead of a fabricated PASS. PARTIAL rows stay PARTIAL. Denominator 43 is unchanged.',
   };
 }

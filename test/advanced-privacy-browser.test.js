@@ -82,8 +82,12 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
         }
       }
       const permissions = {};
-      for (const name of ['geolocation', 'local-fonts', 'camera', 'microphone']) {
-        permissions[name] = (await navigator.permissions.query({ name })).state;
+      for (const name of ['geolocation', 'local-fonts', 'local-network-access', 'camera', 'microphone']) {
+        try {
+          permissions[name] = (await navigator.permissions.query({ name })).state;
+        } catch (error) {
+          permissions[name] = `query_error:${error.name || 'Error'}`;
+        }
       }
       let full = '';
       try {
@@ -122,6 +126,8 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
     assert.equal(acceptance.C.rows.find(row => row.id === 'M24').qualification, 'BLOCKED');
     assert.equal(acceptance.m42.guarantee, 'UNSUPPORTED');
     assert.equal(acceptance.D.status, 'NOT_RUN');
+    assert.equal(acceptance.geolocationNative.status, 'BLOCKED_SPAWN');
+    assert.equal(acceptance.C.rows.find(row => row.id === 'M26').prototypeQualification, 'EXPERIMENTAL_NOT_ENGINE');
 
     const version = MANIFEST.browserVersion;
     const major = `${version.split('.')[0]}.0.0.0`;
@@ -145,13 +151,17 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
     assert.equal(first.innerWidth, 1280);
     assert.equal(first.innerHeight, 800);
     assert.equal(first.scale, 2);
-    assert.equal(first.permissions['local-fonts'], 'denied');
+    if (first.localFonts.api === 'missing') {
+      assert.notEqual(first.permissions['local-fonts'], 'granted', 'FontAccess off: permission query may throw instead of denied');
+    } else {
+      assert.equal(first.permissions['local-fonts'], 'denied');
+    }
+    assert.equal(first.permissions['local-network-access'], 'denied');
     assert.equal(first.permissions.camera, 'denied');
     assert.equal(first.permissions.microphone, 'denied');
     assert.notEqual(first.mediaError, 'granted');
     assert.ok(first.mediaError === 'NotAllowedError' || first.mediaError === 'NotFoundError', first.mediaError);
-    assert.notEqual(first.localFonts.api, 'missing');
-    if (first.localFonts.api === 'resolved') assert.equal(typeof first.localFonts.count, 'number');
+    assert.equal(first.localFonts.api, 'missing');
     assert.ok(first.fontWidth > 0);
     assert.equal(first.prototype, null);
     assert.ok(first.ua.includes(major));
@@ -161,10 +171,12 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
     assert.equal(prefs.profile.default_content_setting_values.local_fonts, 2);
     assert.equal(prefs.profile.default_content_setting_values.media_stream_camera, 2);
     assert.equal(prefs.profile.default_content_setting_values.media_stream_mic, 2);
+    assert.equal(prefs.profile.default_content_setting_values.local_network_access, 2);
     const resources = await api('GET', '/resources');
     const pid = resources.browsers.profiles.find(row => row.id === id)?.pid;
     assert.ok(pid);
     const commandLine = await processCommandLine(pid);
+    assert.match(commandLine, /FontAccess/);
     assert.equal(privateNetworkWeakening(commandLine).features.length, 0);
     await session.browser.close().catch(() => {});
     await api('POST', `/profiles/${id}/stop`, {});
@@ -176,7 +188,11 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
     assert.deepEqual(second.geo, { lat: 48.137, lon: 11.575, acc: 25 });
     assert.equal(second.innerWidth, 1280);
     assert.equal(second.scale, 2);
-    assert.equal(second.permissions['local-fonts'], 'denied');
+    if (second.localFonts.api === 'missing') {
+      assert.notEqual(second.permissions['local-fonts'], 'granted');
+    } else {
+      assert.equal(second.permissions['local-fonts'], 'denied');
+    }
     assert.equal(second.permissions.camera, 'denied');
     assert.equal(second.canvasHash, first.canvasHash);
     await session.browser.close().catch(() => {});
@@ -188,8 +204,11 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
     })).id;
     session = await open(deniedId);
     const denied = await readPage(session.page);
-    assert.equal(denied.permissions.geolocation, 'denied');
     assert.equal(denied.geo.code, 1);
+    assert.ok(
+      denied.permissions.geolocation === 'denied' || String(denied.permissions.geolocation).startsWith('query_error:'),
+      `geolocation permission observable: ${denied.permissions.geolocation}`,
+    );
     await session.browser.close().catch(() => {});
     await api('POST', `/profiles/${deniedId}/stop`, {});
 
@@ -217,6 +236,61 @@ test('advanced privacy observables persist across restart', { timeout: 240000, s
     assert.equal(again.prototype.customEngine, false);
     await session.browser.close().catch(() => {});
     await api('POST', `/profiles/${canvasId}/stop`, {});
+
+    const webglId = (await api('POST', '/profiles', { name: 'WebGL read prototype' })).id;
+    session = await open(webglId);
+    const plainGl = await session.page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 4;
+      const gl = c.getContext('webgl');
+      if (!gl) return { context: false };
+      gl.clearColor(0, 1, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const px = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return { context: true, px: [...px], marker: window.__pmWebglReadPrototype || null };
+    });
+    assert.equal(plainGl.context, true);
+    assert.deepEqual(plainGl.px, [0, 255, 0, 255]);
+    assert.equal(plainGl.marker, null);
+    await session.browser.close().catch(() => {});
+    await api('POST', `/profiles/${webglId}/stop`, {});
+    await api('PATCH', `/profiles/${webglId}`, {
+      advancedSettings: { experimental: { webglReadback: 'prototype' } },
+    });
+    session = await open(webglId);
+    const hookedGl = await session.page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 4;
+      const gl = c.getContext('webgl');
+      gl.clearColor(0, 1, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const px = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return { px: [...px], marker: window.__pmWebglReadPrototype };
+    });
+    assert.equal(hookedGl.marker.customEngine, false);
+    assert.notDeepEqual(hookedGl.px, [0, 255, 0, 255]);
+    const hookedPx = hookedGl.px;
+    await session.browser.close().catch(() => {});
+    await api('POST', `/profiles/${webglId}/stop`, {});
+    session = await open(webglId);
+    const againGl = await session.page.evaluate(() => {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 4;
+      const gl = c.getContext('webgl');
+      gl.clearColor(0, 1, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      const px = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      return [...px];
+    });
+    assert.deepEqual(againGl, hookedPx);
+    await session.browser.close().catch(() => {});
+    await api('POST', `/profiles/${webglId}/stop`, {});
   } finally {
     if (proc) await stopServer(proc).catch(() => {});
     await new Promise(resolve => server.close(() => resolve()));

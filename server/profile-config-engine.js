@@ -41,6 +41,9 @@ export function profileConfigWarnings(config) {
   if (config.advancedSettings?.experimental?.canvasReadback === 'prototype') {
     warnings.push({ code: 'CANVAS_PROTOTYPE_NOT_ENGINE', message: 'The canvas readback prototype is an opt-in page hook. It is not a custom engine, does not qualify M24, and is not a CAPTCHA bypass.' });
   }
+  if (config.advancedSettings?.experimental?.webglReadback === 'prototype') {
+    warnings.push({ code: 'WEBGL_READ_PROTOTYPE_NOT_ENGINE', message: 'The WebGL readPixels prototype is an opt-in page hook. It does not replace vendor or renderer strings and does not qualify M26.' });
+  }
   const fp = config.advancedSettings?.fingerprint || {};
   if (fp.canvas === 'noise' || fp.audio === 'noise') {
     warnings.push({ code: 'UNSUPPORTED_FINGERPRINT_NOISE', message: 'Canvas/audio noise is not implemented on stock browsers; setting is stored but has no effect.' });

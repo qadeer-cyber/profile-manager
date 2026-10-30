@@ -103,6 +103,11 @@ export function FingerprintFields({ settings, onChange }) {
       <option value="prototype">Opt-in page hook</option>
     </select></label>
     <p className="muted hint">Off by default. The page hook changes getImageData and toDataURL in the Playwright session only. It sets window.__pmCanvasPrototype with customEngine false. It does not qualify canvas noise, does not run on a native launch, and is not a CAPTCHA bypass.</p>
+    <label>WebGL readPixels prototype<select aria-label="WebGL readPixels prototype" value={settings.experimental?.webglReadback || 'off'} onChange={e => onChange({ ...settings, experimental: { ...settings.experimental, webglReadback: e.target.value } })}>
+      <option value="off">Off — real readPixels</option>
+      <option value="prototype">Opt-in page hook</option>
+    </select></label>
+    <p className="muted hint">Does not change GPU vendor or renderer strings. It only perturbs readPixels buffers in the Playwright session. window.__pmWebglReadPrototype.customEngine stays false. Restricted WebGL (--disable-webgl) turns the context off instead.</p>
   </div>;
 }
 
