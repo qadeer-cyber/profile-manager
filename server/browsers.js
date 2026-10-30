@@ -1,3 +1,4 @@
+import { assertProfileOperationAvailable } from './recovery-journal.js';
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
 import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
 import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
@@ -172,6 +173,7 @@ export function recoveryStatus() {
 }
 
 export function launch(p, opts = {}) {
+  assertProfileOperationAvailable(p.id);
   if (live.has(p.id) || settling.has(p.id)) return Promise.resolve(runInfo(p.id));
   if (launching.has(p.id)) return launching.get(p.id);
   const pr = runWithLaunchQueue(p.id, () => doLaunch(p, opts)).finally(() => {
@@ -255,6 +257,9 @@ async function reconcileOrphanRunningRows() {
 }
 
 async function doLaunch(p, opts = {}) {
+  assertProfileOperationAvailable(p.id);
+  const current = db.prepare('SELECT deleted_at,purge_error FROM profiles WHERE id=?').get(p.id);
+  if (!current || current.deleted_at || current.purge_error) throw httpErr(409, 'Profile was deleted or requires recovery', 'PROFILE_RECOVERY_REQUIRED');
   assertLaunchResources(live.size + launching.size + Math.max(0, pendingLaunchCount() - 1));
   const metricsHandle = beginLaunchMetrics(p.id);
   assertLaunchNotCancelled(p.id);

@@ -1,0 +1,603 @@
+{
+  "version": 1,
+  "frozen_at": "2026-10-30",
+  "scope_rule": "42 local capability groups, fixed denominator. M16/M39 cloud-only services and M42 impossible CAPTCHA-free guarantee excluded. Proprietary masking equivalence is excluded, but documented permissible engine privacy controls remain in scope. Do not remove or shrink difficult requirements later.",
+  "qualification_rule": "A group is fully VERIFIED only when every applicable gate passes on this revision. No inherited label is automatically promoted into this stricter scorecard. Zero qualified groups is an evidence inventory, not a claim existing functionality regressed.",
+  "totals": {
+    "fixed_total": 42,
+    "fully_verified": 0,
+    "incomplete_including_blocked": 42,
+    "blocked_subset": 3,
+    "verified_percent": 0
+  },
+  "requirements": [
+    {
+      "id": "M1",
+      "scope": "Isolated browser profiles (cookies/sessions)",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Per-profile `userDataDir`, locks, M1\u2013M17",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M2",
+      "scope": "Reproducible stock Chromium launch, isolation, updates and documented source-integration architecture; no Mimic equivalence.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Stock CfT + native spawn; **no custom Mimic compile**",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M3",
+      "scope": "Supported stock Firefox launch, isolation, settings and automation; no Stealthfox equivalence.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Stock Gecko; proxy\u2192direct + locale/TZ observables (`firefox-regional-observable.test.js`); **not** antidetect patches",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M4",
+      "scope": "Quick profiles",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "`POST /api/profiles/quick` + UI button",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M5",
+      "scope": "Profile templates",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Templates page + row actions; bulk `fromTemplate` job; lifecycle tests",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M6",
+      "scope": "Trash bin restore",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Journaled purge, quarantine, partial recovery, locks and SQLite/EBUSY tests pass on Linux. Windows and rendered Trash/Diagnostics workflow acceptance pending.",
+      "missing": "Journaled purge, quarantine, partial recovery, locks and SQLite/EBUSY tests pass on Linux. Windows and rendered Trash/Diagnostics workflow acceptance pending.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M7",
+      "scope": "Clone profile",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "`POST /profiles/:id/clone` + tests",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M8",
+      "scope": "Import/export profile",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Portable v2 dependency/encryption, API and crash tests pass on Linux. Native browser readback, Windows recovery and actual UI workflow gates remain pending; OS-bound browser encryption is explicitly unsupported across machines.",
+      "missing": "Portable v2 dependency/encryption, API and crash tests pass on Linux. Native browser readback, Windows recovery and actual UI workflow gates remain pending; OS-bound browser encryption is explicitly unsupported across machines.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M9",
+      "scope": "Folders/tags/bulk",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "UI + bulk jobs API",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M10",
+      "scope": "Running profiles manager",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Dashboard + stop/start + Focus (Win32 or CDP)",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M11",
+      "scope": "Startup URLs / tabs",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Opt-in `restoreTabs` + `.pm-tabs.json`; `tab-restore-browser.test.js` (CDP reopen + Example Domain titles); native launch plan tests",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M12",
+      "scope": "Window state / maximized",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Exact multi-display/DPI/maximized-state workflows and physical Windows evidence missing.",
+      "missing": "Exact multi-display/DPI/maximized-state workflows and physical Windows evidence missing.",
+      "status": "BLOCKED",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M13",
+      "scope": "Extension manager (Chromium)",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Unpacked MV2/MV3 library",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M14",
+      "scope": "Extension manager (Firefox)",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Safe library import and inventory only. Genuine signed extension installation/enable/disable/remove/restart/isolation through supported Firefox mechanisms remains incomplete.",
+      "missing": "Safe library import and inventory only. Genuine signed extension installation/enable/disable/remove/restart/isolation through supported Firefox mechanisms remains incomplete.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M15",
+      "scope": "Proxy: HTTP/HTTPS/SOCKS5 custom",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Library + relay auth",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M17",
+      "scope": "Proxy templates / traffic saver",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Template tag + duplicate API; library summary (templates/health counts) in Proxies UI; **no traffic saver** (not measured)",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M18",
+      "scope": "Provider Bright Data/Oxylabs/Webshare",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Provider mocks are not live subscription evidence; owner credentials unavailable.",
+      "missing": "Provider mocks are not live subscription evidence; owner credentials unavailable.",
+      "status": "BLOCKED",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M19",
+      "scope": "Fingerprint: WebRTC",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Policy flags + prefs",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M20",
+      "scope": "Fingerprint: timezone/locale/lang",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "CDP observable tests; Firefox regional observables + documented limits in `profile-config-engine` (`FIREFOX_FINGERPRINT_LIMITS`)",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M21",
+      "scope": "Fingerprint: geolocation",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Prefs + `fingerprint-gaps-browser.test.js`",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M22",
+      "scope": "Fingerprint: screen/DPR",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Launch plan + CDP inner dimensions observable test",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M23",
+      "scope": "Fingerprint: Navigator/UA/client hints",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "UA from pinned CfT; CDP `navigator.userAgent` test",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M24",
+      "scope": "Transparent user-controlled canvas privacy restrictions supported by the actual engine; no noise or bypass guarantees.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Stock Chromium",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M25",
+      "scope": "Transparent user-controlled audio privacy restrictions supported by the actual engine; no fabricated AudioContext output.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Stock Chromium",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M26",
+      "scope": "Supported WebGL privacy restrictions and accurate capability reporting; no fabricated vendor or renderer.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "`--disable-webgl` only",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M27",
+      "scope": "Supported WebGPU privacy restrictions and accurate capability reporting; no fabricated GPU identity.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Observation only",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M28",
+      "scope": "Fingerprint: Fonts enumeration mask",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "`fingerprint-privacy-launch.test.js` local-fonts deny in launch plan",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M29",
+      "scope": "Fingerprint: Media devices mask",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Restricted mediaDevices \u2192 camera/mic deny in launch plan",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M30",
+      "scope": "Port scan / local network protection",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "No PNA weakening flags; `privateNetworkWeakening()` in fingerprint-settings",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M31",
+      "scope": "Cookie import/export",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Chromium stopped SQLite; Firefox gecko **read/export** (`gecko-cookies.js`); import/clear Firefox **501**",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M32",
+      "scope": "CookieRobot / scripted warming",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot`",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M33",
+      "scope": "Human typing emulation",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Chromium CDP human input API + UI (`human-input.test.js`); authorized UI testing only",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M34",
+      "scope": "Local automation API",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "`/api/v1` + bearer token",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M35",
+      "scope": "CLI / Script runner",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "CLI remains assigned to the concurrent feature worker. No CLI file was changed by this safety checkpoint.",
+      "missing": "CLI remains assigned to the concurrent feature worker. No CLI file was changed by this safety checkpoint.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M36",
+      "scope": "Playwright/Puppeteer attach",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Playwright reconnect + puppeteer-core attach (`puppeteer-cdp-attach.test.js`)",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M37",
+      "scope": "Selenium/WebDriver",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Stub session tests always; real create/navigate/quit when `PM_REAL_WEBDRIVER=1` (`webdriver-real.test.js`); opt-in driver cache",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M38",
+      "scope": "Local workspaces, defaults, assignments, bulk operations, portability, vault behavior and recovery; no cloud teams.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Workspaces UI + local export bundle API; vault lock; no team cloud",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M40",
+      "scope": "Authorized local Android ADB discovery, connection/disconnection, metadata and diagnostics; no phone farms.",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "No real authorized Android device is available for qualification.",
+      "missing": "No real authorized Android device is available for qualification.",
+      "status": "BLOCKED",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M41",
+      "scope": "Core browser update / rollback",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Backup slot + rollback API + Diagnostics UI + update-manager report",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M43",
+      "scope": "Manual browse without automation pipe",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Native Chromium spawn",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M44",
+      "scope": "DPAPI / secret encryption",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Existing crypto backend",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    },
+    {
+      "id": "M45",
+      "scope": "Diagnostics / fingerprint check",
+      "acceptance": [
+        "Functional backend and app UI with persistent state, validation and safe error handling.",
+        "Unit and authenticated API integration tests including negative and restart scenarios.",
+        "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
+        "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
+      ],
+      "implementation_evidence": "Hardware + consistency reports",
+      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "status": "INCOMPLETE",
+      "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
+    }
+  ]
+}

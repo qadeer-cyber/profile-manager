@@ -68,8 +68,14 @@ test('purge keeps trash row when filesystem removal fails', async () => {
   );
   const row = db.prepare('SELECT deleted_at, purge_error FROM profiles WHERE id=?').get(id);
   assert.ok(row?.deleted_at);
-  assert.match(row.purge_error || '', /permission denied/i);
+  assert.match(row.purge_error || '', /remaining data is retained/i);
+  const { recoveryDiagnostics, recoverOperation } = await import('../server/recovery-journal.js');
+  const op = recoveryDiagnostics().find(o => o.profileIds.includes(id));
+  assert.ok(op);
+  assert.equal(fs.existsSync(userDataDir(id)), false);
+  assert.equal(recoverOperation(op.id).verified, true);
   assert.ok(fs.existsSync(userDataDir(id)));
+  assert.equal(fs.readFileSync(path.join(userDataDir(id), 'Default', 'marker.txt'), 'utf8'), id);
 });
 
 test('purge completes after interrupted filesystem cleanup', async () => {
@@ -113,7 +119,7 @@ test('database failure after filesystem purge retains durable interrupted-purge 
   const id = insertProfile('DB failure'); seedProfileDirs(id); await softDeleteProfile(id);
   db.exec(`CREATE TEMP TRIGGER refuse_purge BEFORE DELETE ON profiles WHEN OLD.id='${id}' BEGIN SELECT RAISE(ABORT, 'injected db failure'); END`);
   try {
-    await assert.rejects(() => purgeFromTrash(id, { confirmName: 'DB failure' }), /injected db failure/);
-    assert.match(db.prepare('SELECT purge_error FROM profiles WHERE id=?').get(id).purge_error, /Purge started/);
+    await assert.rejects(() => purgeFromTrash(id, { confirmName: 'DB failure' }), e => e.code === 'PURGE_FS_FAILED' && /injected db failure/.test(e.cause?.message));
+    assert.match(db.prepare('SELECT purge_error FROM profiles WHERE id=?').get(id).purge_error, /Purge incomplete/);
   } finally { db.exec('DROP TRIGGER refuse_purge'); }
 });

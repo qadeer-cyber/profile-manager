@@ -91,3 +91,18 @@ test('archives reject Windows aliases, alternate streams, and case-colliding ent
   ]);
   assert.throws(() => unpackArchive(archive), e => e.code === 'UNSAFE_ARCHIVE');
 });
+
+test('full snapshot includes committed WAL data while an older reader remains open', async () => {
+  const { default: Database } = await import('better-sqlite3');
+  const reader = new Database(path.join(dir, 'profiles.db'));
+  reader.exec('BEGIN'); reader.prepare('SELECT COUNT(*) FROM profiles').get();
+  const snapshotPath = path.join(dir, 'wal-snapshot.sqlite');
+  let snapshot;
+  try {
+    const p = await makeProfile('WAL snapshot fixture');
+    const files = unpackArchive(createBackup({ ids: [] }));
+    fs.writeFileSync(snapshotPath, files.find(f => f.path === 'profiles.db').data);
+    snapshot = new Database(snapshotPath, { readonly: true });
+    assert.equal(snapshot.prepare('SELECT name FROM profiles WHERE id=?').get(p.id).name, 'WAL snapshot fixture');
+  } finally { snapshot?.close(); reader.exec('ROLLBACK'); reader.close(); }
+});

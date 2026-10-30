@@ -1,4 +1,5 @@
 // Quick profiles, trash (soft delete), and profile templates.
+import { assertProfileOperationAvailable, runRecoverablePurge } from './recovery-journal.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import { db, userDataDir } from './db.js';
@@ -74,6 +75,7 @@ export function createQuickProfile({ name, folder = '', insertFn }) {
 
 export async function softDeleteProfile(id, { stopFn, isRunningFn } = {}) {
   if (trashLocks.has(id)) throw fail(409, 'Trash operation already in progress for this profile', 'TRASH_BUSY');
+  assertProfileOperationAvailable(id);
   trashLocks.add(id);
   try {
     const row = db.prepare('SELECT * FROM profiles WHERE id=? AND deleted_at IS NULL').get(id);
@@ -103,28 +105,21 @@ export function restoreFromTrash(id) {
   const row = db.prepare('SELECT id, purge_error FROM profiles WHERE id=? AND deleted_at IS NOT NULL').get(id);
   if (!row) throw fail(404, 'Profile not in trash', 'NOT_IN_TRASH');
   if (row.purge_error) throw fail(409, 'A purge was interrupted; profile files may be incomplete. Restore a backup or explicitly retry the purge.', 'PURGE_RECOVERY_REQUIRED');
+  assertProfileOperationAvailable(id);
   db.prepare('UPDATE profiles SET deleted_at=NULL, updated_at=? WHERE id=?').run(new Date().toISOString(), id);
   return { id, restored: true };
 }
 
-export async function purgeFromTrash(id, { confirmName, stopFn, isRunningFn, rmSyncImpl } = {}) {
+export async function purgeFromTrash(id, { confirmName, stopFn, isRunningFn, rmSyncImpl, fault } = {}) {
   if (trashLocks.has(id)) throw fail(409, 'Trash operation in progress', 'TRASH_BUSY');
   trashLocks.add(id);
   try {
     const row = db.prepare('SELECT name FROM profiles WHERE id=? AND deleted_at IS NOT NULL').get(id);
     if (!row) throw fail(404, 'Profile not in trash', 'NOT_IN_TRASH');
     if (String(confirmName || '') !== row.name) throw fail(400, 'confirmName must match the profile name exactly', 'CONFIRM_NAME_MISMATCH');
-    if (typeof stopFn === 'function') await stopFn(id).catch(() => {});
+    if (typeof stopFn === 'function') await stopFn(id);
     if (isRunningFn?.(id)) throw fail(409, 'Cannot purge a running profile', 'PROFILE_STILL_RUNNING');
-    recordPurgeError(id, 'Purge started; interrupted cleanup requires review');
-    try {
-      removeProfileDataFromDisk(id, { rmSyncImpl });
-    } catch (e) {
-      if (e.code === 'PURGE_FS_FAILED') recordPurgeError(id, e.message);
-      throw e;
-    }
-    db.prepare('DELETE FROM profiles WHERE id=?').run(id);
-    return { id, purged: true };
+    return runRecoverablePurge(id, { remove: rmSyncImpl, fault });
   } finally {
     trashLocks.delete(id);
   }

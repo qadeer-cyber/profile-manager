@@ -1,3 +1,4 @@
+import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
 import express from 'express';
 import crypto from 'crypto';
@@ -556,6 +557,7 @@ function rejectPassphraseQuery(req) {
   if (req.query && (Object.hasOwn(req.query, 'passphrase') || Object.hasOwn(req.query, 'password'))) throw err(400, 'Do not send a passphrase in the query string');
 }
 function applyUpdate(id, body) {
+  assertProfileOperationAvailable(id);
   const v = validate(body, must(id));
   db.prepare('UPDATE profiles SET name=?,tags=?,folder=?,notes=?,proxy_id=?,automation_enabled=?,browser_engine=?,browser_settings=?,webrtc_settings=?,advanced_settings=?,workspace_id=?,updated_at=? WHERE id=?')
     .run(v.name, JSON.stringify(v.tags), v.folder, v.notes, v.proxyId, v.automationEnabled ? 1 : 0, v.browserEngine || 'chromium', JSON.stringify(v.browserSettings), JSON.stringify(v.webrtcSettings), JSON.stringify(v.advancedSettings), v.workspaceId || null, new Date().toISOString(), id);
@@ -742,7 +744,8 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   }));
   router.post('/profiles/:id/backup/export', wrap((req, res) => {
     must(req.params.id);
-    const body = createProfileBackup(req.params.id);
+    rejectPassphraseQuery(req);
+    const body = createProfileBackup(req.params.id, { passphrase: req.body?.passphrase, confirmSensitive: req.body?.confirmSensitive === true });
     res.set({
       'Content-Type': 'application/octet-stream',
       'Content-Disposition': `attachment; filename="profile-${req.params.id.slice(0, 8)}.pmp"`,
@@ -1204,6 +1207,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   const ui = express.Router();
   // Token is accepted ONLY via the X-UI-Token header (never the query string, which leaks into logs/history).
   if (uiToken) ui.use((req, res, next) => tokenOk(req.get('x-ui-token'), uiToken) ? next() : res.status(401).json({ error: 'unauthorized' }));
+  ui.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
     const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
@@ -1296,6 +1300,15 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     if ('automationDriversOptIn' in b) setSetting('automationDriversOptIn', !!b.automationDriversOptIn);
     res.json(Object.fromEntries(Object.entries(SETTINGS_DEFAULTS).map(([k, d]) => [k, getSetting(k, d)])));
   }));
+  ui.use('/recovery', (req, res, next) => {
+    if ((uiToken && tokenOk(req.get('x-ui-token'), uiToken)) || tokenOk((req.get('authorization') || '').replace(/^Bearer /, ''), API_TOKEN)) return next();
+    res.status(401).json({ error: 'Recovery requires a desktop or API token' });
+  });
+  ui.get('/recovery/operations', wrap((req, res) => { res.set('Cache-Control', 'no-store'); res.json(recoveryDiagnostics()); }));
+  ui.post('/recovery/operations/:id/recover', wrap((req, res) => {
+    if (req.body?.confirm !== true) throw err(400, 'Explicit recovery confirmation is required');
+    res.json(recoverOperation(req.params.id, { cleanup: req.body?.cleanup === true }));
+  }));
   ui.get('/diagnostics', (req, res) => res.json(diagnostics()));
   ui.get('/browser', (req, res) => res.json(browserStatus()));
   ui.get('/browser/compatibility', wrap((req, res) => {
@@ -1325,6 +1338,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const t = h.startsWith('Bearer ') ? h.slice(7) : req.get('x-api-key');
     tokenOk(t, API_TOKEN) ? next() : res.status(401).json({ error: 'invalid or missing API token' });
   });
+  v1.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   v1.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   v1.post('/profiles', wrap((req, res) => res.status(201).json(publicP(get(insert(validate(req.body)))))));
   v1.get('/profiles/:id', wrap((req, res) => res.json(publicP(must(req.params.id)))));
@@ -1385,6 +1399,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
 // Start everything: recovery, secret migration, health monitor, HTTP listener.
 export async function startServer({ port = Number(process.env.PORT || 3000), host = process.env.HOST || '127.0.0.1', ...appOpts } = {}) {
   const recovery = await engine.recoverAfterRestart();
+  const dataRecovery = recoverDataOperationsAtStartup();
   const purgeRecovery = resumeIncompletePurges();
   const reencrypted = reencryptSecrets();
   // Secrets were rewritten (re-encryption, or migration v6 moved inline proxies): VACUUM once so old values don't survive in free pages/WAL.
@@ -1396,7 +1411,7 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const app = createApp(appOpts);
   const server = await new Promise((res, rej) => { const s = app.listen(port, host, () => res(s)).on('error', rej); });
   const actual = server.address().port;
-  return { server, port: actual, url: `http://${host}:${actual}`, recovery, purgeRecovery, reencrypted, scrubbed, migration, events: engine.events,
+  return { server, port: actual, url: `http://${host}:${actual}`, recovery, dataRecovery, purgeRecovery, reencrypted, scrubbed, migration, events: engine.events,
     close: async () => {
       stopSampler?.();
       await engine.shutdown();

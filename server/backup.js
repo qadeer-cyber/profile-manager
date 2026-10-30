@@ -12,6 +12,8 @@ import { DATA_COPY_SKIP } from './browsers.js';
 import { currentVersion } from './migrations.js';
 import { encrypt, decrypt } from './secrets.js';
 import { DEFAULT_ADVANCED_SETTINGS } from './advanced-settings.js';
+import { createPortableBackup, restorePortableV2, validatePortableV2 } from './portable-backup.js';
+import { runRecoverableRestore, assertProfileOperationAvailable } from './recovery-journal.js';
 import { packArchive, unpackArchive } from './archive.js';
 import { decryptBackup, describeEncryptedBackup, encryptBackup, isEncryptedBackup } from './backup-crypto.js';
 
@@ -43,9 +45,14 @@ function sha256Hex(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-export function createBackup({ ids = runningIds() } = {}) {
+export function createBackup(options = {}) {
+  return db.transaction(() => createBackupSnapshot(options)).immediate();
+}
+
+function createBackupSnapshot({ ids = runningIds() } = {}) {
+  if (db.prepare('SELECT id FROM running LIMIT 1').get()) throw fail(409, 'Stop every active session before backup', 'PROFILES_RUNNING');
+  if (db.prepare('SELECT profile_id FROM pm_recovery_profile_locks LIMIT 1').get()) throw fail(409, 'Finish pending data recovery before full backup', 'RECOVERY_REQUIRED');
   if (ids.length) throw fail(409, 'Stop every running profile before creating a backup. A live browser can leave its databases half-written.', 'PROFILES_RUNNING');
-  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* the main database file is still copied */ }
   const profiles = db.prepare('SELECT id, name FROM profiles ORDER BY created_at, rowid').all();
   const fileEntries = [];
   const pushFile = (relPath, data) => {
@@ -69,7 +76,7 @@ export function createBackup({ ids = runningIds() } = {}) {
       ...fileEntries.filter(entry => entry.path !== 'meta.json'),
     ];
   };
-  pushFile('profiles.db', fs.readFileSync(path.join(DATA_DIR, 'profiles.db')));
+  pushFile('profiles.db', db.serialize());
   const keyFile = path.join(DATA_DIR, 'secret.key');
   if (fs.existsSync(keyFile)) pushFile('secret.key', fs.readFileSync(keyFile));
   const walkInto = (root, prefix) => {
@@ -89,21 +96,23 @@ export function createBackup({ ids = runningIds() } = {}) {
     visit(root, '');
   };
   for (const profile of profiles) walkInto(userDataDir(profile.id), `profiles/${profile.id}`);
-  const extensions = path.join(DATA_DIR, 'extensions');
+  for (const engineRoot of ['extensions', 'gecko-extensions']) {
+  const extensions = path.join(DATA_DIR, engineRoot);
   if (fs.existsSync(extensions)) {
     for (const name of fs.readdirSync(extensions)) {
       if (!UUID.test(name)) continue;
       const abs = path.join(extensions, name);
       if (fs.lstatSync(abs).isSymbolicLink()) throw fail(400, 'Refusing to back up an extension symlink', 'UNSAFE_PROFILE_LINK');
-      walkInto(abs, `extensions/${name}`);
+      walkInto(abs, `${engineRoot}/${name}`);
     }
+  }
   }
   for (const entry of stageMeta()) files.push({ path: entry.path, data: entry.data });
   return packArchive(files);
 }
 
 /** Portable single-profile archive (subset of full backup manifest format). */
-export function createProfileBackup(profileId, { ids = runningIds() } = {}) {
+export function createLegacyProfileBackup(profileId, { ids = runningIds() } = {}) {
   if (!UUID.test(String(profileId || ''))) throw fail(400, 'profile id is invalid', 'INVALID_PROFILE');
   if (ids.includes(profileId)) throw fail(409, 'Stop the profile before exporting a portable backup.', 'PROFILES_RUNNING');
   const row = db.prepare('SELECT id, name FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
@@ -148,11 +157,16 @@ export function createProfileBackup(profileId, { ids = runningIds() } = {}) {
   return packArchive(files);
 }
 
+export function createProfileBackup(profileId, options = {}) {
+  return createPortableBackup(profileId, { ids: runningIds(), ...options });
+}
+
 export function createEncryptedBackup(passphrase, options) {
   return encryptBackup(createBackup(options), passphrase);
 }
 
 function plaintextArchive(buffer, passphrase) {
+  if (!Buffer.isBuffer(buffer) || buffer.length > 66 * 1024 * 1024 + 64) throw fail(400, 'Backup container exceeds size limits', 'UNSAFE_ARCHIVE');
   if (!isEncryptedBackup(buffer)) return { buffer, encrypted: false };
   if (typeof passphrase !== 'string' || !passphrase) throw fail(400, 'This backup is encrypted. A passphrase is required.', 'PASSPHRASE_REQUIRED');
   return { buffer: decryptBackup(buffer, passphrase), encrypted: true };
@@ -167,10 +181,12 @@ export function inspectBackup(buffer, { passphrase } = {}) {
   const metaFile = files.find(file => file.path === 'meta.json');
   if (!metaFile) throw fail(400, 'Backup is missing its manifest', 'CORRUPT_BACKUP');
   let meta;
+  if (metaFile.data.length > 1024 * 1024) throw fail(400, 'Backup manifest exceeds 1 MiB', 'CORRUPT_BACKUP');
   try { meta = JSON.parse(metaFile.data.toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
   if (!meta || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
-  if (meta.version !== 1 || !['profile-manager-backup', 'profile-manager-profile-backup'].includes(meta.format)) throw fail(400, 'Backup format is unsupported', 'UNSUPPORTED_BACKUP');
+  if (![1, 2].includes(meta.version) || !['profile-manager-backup', 'profile-manager-profile-backup'].includes(meta.format)) throw fail(400, 'Backup format is unsupported', 'UNSUPPORTED_BACKUP');
   assertManifestChecksums(meta, files);
+  if (meta.version === 2) validatePortableV2(files, meta, { encrypted: opened.encrypted });
   const fileCounts = {};
   if (meta.fileChecksums && typeof meta.fileChecksums === 'object') {
     for (const rel of Object.keys(meta.fileChecksums)) {
@@ -232,7 +248,7 @@ function parseProfileIdsFilter(profileIds) {
   return new Set(out);
 }
 
-export function restoreBackup(buffer, { collision = 'abort', failPoint = null, running = runningIds(), passphrase, profileIds } = {}) {
+export function restoreBackup(buffer, { collision = 'abort', failPoint = null, running = runningIds(), passphrase, profileIds, fault } = {}) {
   if (!['abort', 'rename', 'replace'].includes(collision)) throw fail(400, 'collision must be abort, rename, or replace', 'INVALID_RESTORE');
   const opened = plaintextArchive(buffer, passphrase);
   buffer = opened.buffer;
@@ -240,12 +256,17 @@ export function restoreBackup(buffer, { collision = 'abort', failPoint = null, r
   const byPath = new Map(files.map(file => [file.path, file.data]));
   if (!byPath.has('meta.json')) throw fail(400, 'Backup is missing its manifest', 'CORRUPT_BACKUP');
   let meta;
+  if (byPath.get('meta.json').length > 1024 * 1024) throw fail(400, 'Backup manifest exceeds 1 MiB', 'CORRUPT_BACKUP');
   try { meta = JSON.parse(byPath.get('meta.json').toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
-  if (!meta || meta.version !== 1 || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  if (!meta || ![1, 2].includes(meta.version) || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
   assertManifestChecksums(meta, files);
   const onlyIds = parseProfileIdsFilter(profileIds);
+  if (meta.format === 'profile-manager-profile-backup' && meta.version === 2) {
+    return restorePortableV2(files, meta, { encrypted: opened.encrypted, collision, running, onlyIds, fault });
+  }
+  if (meta.version !== 1) throw fail(400, 'Unsupported backup version', 'UNSUPPORTED_BACKUP');
   if (meta.format === 'profile-manager-profile-backup') {
-    return restorePortableProfileBackup(files, meta, { collision, running, onlyIds, failPoint });
+    return restorePortableProfileBackup(files, meta, { collision, running, onlyIds, failPoint, fault });
   }
   if (meta.format !== 'profile-manager-backup') throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
   if (!byPath.has('profiles.db')) throw fail(400, 'Backup is missing its database', 'CORRUPT_BACKUP');
@@ -290,30 +311,22 @@ export function restoreBackup(buffer, { collision = 'abort', failPoint = null, r
     });
     const archivedKey = byPath.has('secret.key') ? Buffer.from(byPath.get('secret.key').toString('utf8').trim(), 'base64') : null;
     const result = { added: [], replaced: [], renamed: [], proxyDetached: [], extensionsSkipped: 0 };
-    const ops = [];
-    const asides = [];
-    const relocate = (from, to) => {
-      fs.mkdirSync(path.dirname(to), { recursive: true });
-      fs.renameSync(from, to);
-      ops.push({ from, to });
-    };
-    const undo = () => {
-      for (const op of ops.reverse()) if (fs.existsSync(op.to)) fs.renameSync(op.to, op.from);
-    };
-    const sourceColumns = columnSet(source, 'profiles');
-    const destColumns = columnSet(db, 'profiles');
-    try {
-      db.transaction(() => {
-        for (const item of plan) applyProfile(source, item, archivedKey, result, sourceColumns, destColumns);
-        if (failPoint === 'before-files') throw fail(500, 'Restore stopped before files were moved', 'RESTORE_FAILED');
-        for (const item of plan) moveProfileDir(tmp, item, relocate, asides);
-        moveNewExtensions(tmp, source, relocate);
-      })();
-    } catch (error) {
-      try { undo(); } catch { throw fail(500, 'Restore failed and rolling the files back also failed. The database transaction was not committed.', 'RESTORE_ROLLBACK_FAILED'); }
-      throw error;
+    const trees = plan.map(item => {
+      if (item.action !== 'replace' && fs.existsSync(userDataDir(item.id))) throw fail(409, 'Profile directory already exists', 'COLLISION');
+      const prefix = `profiles/${item.row.id}/`;
+      return { target: `profiles/${item.id}`, files: files.filter(f => f.path.startsWith(prefix)).map(f => ({ path: f.path.slice(prefix.length), data: f.data })) };
+    });
+    if (tableExists(source, 'extensions')) for (const e of source.prepare('SELECT * FROM extensions').all()) {
+      if (!UUID.test(e.id) || !/^(extensions|gecko-extensions)\/[0-9a-f-]{36}$/i.test(e.storage_dir || '')) throw fail(400, 'Invalid extension storage', 'CORRUPT_BACKUP');
+      const prefix = e.storage_dir + '/';
+      if (!fs.existsSync(path.join(DATA_DIR, e.storage_dir))) trees.push({ target: e.storage_dir, files: files.filter(f => f.path.startsWith(prefix)).map(f => ({ path: f.path.slice(prefix.length), data: f.data })) });
     }
-    for (const aside of asides) fs.rmSync(aside, { recursive: true, force: true });
+    runRecoverableRestore({ profileIds: plan.map(p => p.id), trees,
+      fault: point => { fault?.(point); if (failPoint === 'before-files' && point === 'prepared') throw fail(500, 'Restore stopped before files were moved', 'RESTORE_FAILED'); },
+      applyDatabase: () => {
+        for (const item of plan) applyProfile(source, item, archivedKey, result, columnSet(source, 'profiles'), columnSet(db, 'profiles'));
+      },
+    });
     return result;
   } finally {
     try { source?.close(); } catch { /* the temp copy is discarded */ }
@@ -338,6 +351,11 @@ function applyProfile(source, item, archivedKey, result, sourceColumns, destColu
     folder: valueOf(row, 'folder', ''),
     notes: valueOf(row, 'notes', ''),
     proxy: null,
+    browser_engine: valueOf(row, 'browser_engine', 'chromium'),
+    workspace_id: importWorkspace(source, valueOf(row, 'workspace_id', null)),
+    is_quick: valueOf(row, 'is_quick', 0),
+    deleted_at: valueOf(row, 'deleted_at', null),
+    purge_error: valueOf(row, 'purge_error', null),
     created_at: valueOf(row, 'created_at', new Date().toISOString()),
     updated_at: new Date().toISOString(),
     last_launched_at: null,
@@ -359,6 +377,20 @@ function applyProfile(source, item, archivedKey, result, sourceColumns, destColu
     (item.action === 'rename' ? result.renamed : result.added).push({ id: item.id, sourceId: row.id, name: row.name });
   }
   linkExtensions(source, row.id, item.id, result);
+}
+
+function importWorkspace(source, id) {
+  if (!id) return null;
+  if (!tableExists(source, 'workspaces')) throw fail(400, 'Workspace dependency is missing', 'DEPENDENCY_MISSING');
+  const row = source.prepare('SELECT * FROM workspaces WHERE id=?').get(id);
+  if (!row || !UUID.test(id)) throw fail(400, 'Workspace dependency is invalid', 'DEPENDENCY_MISSING');
+  const local = db.prepare('SELECT * FROM workspaces WHERE id=?').get(id);
+  if (local) {
+    if (local.name !== row.name || local.notes !== row.notes || local.vault_locked !== row.vault_locked) throw fail(409, 'Workspace conflict requires a portable v2 restore with ID remapping', 'COLLISION');
+    return id;
+  }
+  db.prepare('INSERT INTO workspaces (id,name,notes,vault_locked,created_at,updated_at) VALUES (?,?,?,?,?,?)').run(id, row.name, row.notes, row.vault_locked, row.created_at, row.updated_at);
+  return id;
 }
 
 function importProxy(source, proxyId, archivedKey) {
@@ -389,42 +421,18 @@ function linkExtensions(source, sourceId, destId, result) {
 function ensureExtension(source, id) {
   if (db.prepare('SELECT id FROM extensions WHERE id=?').get(id)) return true;
   const row = source.prepare('SELECT * FROM extensions WHERE id=?').get(id);
-  if (!row || row.storage_dir !== `extensions/${row.id}`) return false;
+  if (!row || !/^(extensions|gecko-extensions)\/[0-9a-f-]{36}$/i.test(row.storage_dir || '')) return false;
   db.prepare(`INSERT INTO extensions (
     id, name, version, description, manifest_version, permissions, host_permissions,
-    optional_permissions, optional_host_permissions, storage_dir, created_at, updated_at
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+    optional_permissions, optional_host_permissions, storage_dir, created_at, updated_at, browser_engine, gecko_extension_id
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
     row.id, row.name, row.version, row.description || '', row.manifest_version, row.permissions || '[]', row.host_permissions || '[]',
-    row.optional_permissions || '[]', row.optional_host_permissions || '[]', row.storage_dir, row.created_at, row.updated_at,
+    row.optional_permissions || '[]', row.optional_host_permissions || '[]', row.storage_dir, row.created_at, row.updated_at, row.browser_engine || 'chromium', row.gecko_extension_id || null,
   );
   return true;
 }
 
-function moveProfileDir(tmp, item, relocate, asides) {
-  const from = path.join(tmp, 'profiles', item.row.id);
-  if (!fs.existsSync(from)) return;
-  const dest = userDataDir(item.id);
-  if (item.action === 'replace' && fs.existsSync(dest)) {
-    const aside = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-aside-'));
-    asides.push(aside);
-    const parked = path.join(aside, 'dir');
-    relocate(dest, parked);
-  }
-  if (fs.existsSync(dest)) throw fail(409, 'Profile directory already exists', 'COLLISION');
-  relocate(from, dest);
-}
-function moveNewExtensions(tmp, source, relocate) {
-  if (!tableExists(source, 'extensions')) return;
-  for (const row of source.prepare('SELECT id, storage_dir FROM extensions').all()) {
-    const dest = path.join(DATA_DIR, 'extensions', row.id);
-    const from = path.join(tmp, 'extensions', row.id);
-    if (!fs.existsSync(from) || fs.existsSync(dest)) continue;
-    if (row.storage_dir !== `extensions/${row.id}`) continue;
-    relocate(from, dest);
-  }
-}
-
-function restorePortableProfileBackup(files, meta, { collision, running, onlyIds, failPoint }) {
+function restorePortableProfileBackup(files, meta, { collision, running, onlyIds, failPoint, fault }) {
   if (!meta.profileSnapshot?.id) throw fail(400, 'Portable backup is missing profileSnapshot', 'CORRUPT_BACKUP');
   const row = meta.profileSnapshot;
   if (!UUID.test(String(row.id || '')) || typeof row.name !== 'string' || !row.name.trim() ||
@@ -444,39 +452,24 @@ function restorePortableProfileBackup(files, meta, { collision, running, onlyIds
     id: exists && collision === 'rename' ? crypto.randomUUID() : row.id,
   };
   const result = { added: [], replaced: [], renamed: [], proxyDetached: [], extensionsSkipped: 0 };
-  const ops = [];
-  const asides = [];
-  const relocate = (from, to) => {
-    fs.mkdirSync(path.dirname(to), { recursive: true });
-    fs.renameSync(from, to);
-    ops.push({ from, to });
-  };
-  const undo = () => { for (const op of ops.reverse()) if (fs.existsSync(op.to)) fs.renameSync(op.to, op.from); };
-  const destColumns = columnSet(db, 'profiles');
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-portable-restore-'));
-  let rollbackFailed = false;
-  try {
-    writeTree(tmp, files.filter(f => f.path.startsWith('profiles/')));
-    db.transaction(() => {
-      applyProfileFromRow(row, item, null, result, destColumns);
-      for (const link of meta.extensionLinks || []) {
-        if (!ensureExtensionRowInDb(link.extension_id)) { result.extensionsSkipped += 1; continue; }
-        db.prepare('INSERT OR REPLACE INTO profile_extensions (profile_id, extension_id, enabled, created_at, updated_at) VALUES (?,?,?,?,?)')
-          .run(item.id, link.extension_id, link.enabled ? 1 : 0, new Date().toISOString(), new Date().toISOString());
-      }
-      if (failPoint === 'before-files') throw fail(500, 'Restore stopped before files were moved', 'RESTORE_FAILED');
-      moveProfileDir(tmp, item, relocate, asides);
-      if (failPoint === 'after-files') throw fail(500, 'Restore stopped after files were moved', 'RESTORE_FAILED');
-    })();
-  } catch (error) {
-    try { undo(); } catch { rollbackFailed = true; throw fail(500, 'Portable restore failed and file rollback failed; recovery files were retained', 'RESTORE_ROLLBACK_FAILED'); }
-    throw error;
-  } finally {
-    if (!rollbackFailed) {
-      fs.rmSync(tmp, { recursive: true, force: true });
-      for (const aside of asides) fs.rmSync(aside, { recursive: true, force: true });
-    }
+  if (row.workspace_id && !db.prepare('SELECT id FROM workspaces WHERE id=?').get(row.workspace_id)) throw fail(400, 'Older portable backup lacks its workspace; use a full or v2 backup', 'DEPENDENCY_MISSING');
+  if (row.proxy_id && !db.prepare('SELECT id FROM proxies WHERE id=?').get(row.proxy_id)) throw fail(400, 'Older portable backup lacks its proxy; use a full or v2 backup', 'DEPENDENCY_MISSING');
+  for (const link of meta.extensionLinks || []) {
+    const e = db.prepare('SELECT storage_dir FROM extensions WHERE id=?').get(link.extension_id);
+    if (!e || !fs.existsSync(path.join(DATA_DIR, e.storage_dir, 'manifest.json'))) throw fail(400, 'Older portable backup lacks extension assets; use a full or v2 backup', 'DEPENDENCY_MISSING');
   }
+  if (!exists && fs.existsSync(userDataDir(item.id))) throw fail(409, 'Profile directory already exists', 'COLLISION');
+  const prefix = `profiles/${row.id}/`;
+  runRecoverableRestore({ profileIds: [item.id], trees: [{ target: `profiles/${item.id}`, files: files.filter(f => f.path.startsWith(prefix)).map(f => ({ path: f.path.slice(prefix.length), data: f.data })) }],
+    fault: point => {
+      fault?.(point);
+      if ((failPoint === 'before-files' && point === 'prepared') || (failPoint === 'after-files' && point === 'install:0')) throw fail(500, 'Injected restore failure', 'RESTORE_FAILED');
+    },
+    applyDatabase: () => {
+      applyProfileFromRow(row, item, null, result, columnSet(db, 'profiles'));
+      for (const link of meta.extensionLinks || []) db.prepare('INSERT OR REPLACE INTO profile_extensions (profile_id,extension_id,enabled,created_at,updated_at) VALUES (?,?,?,?,?)').run(item.id, link.extension_id, link.enabled ? 1 : 0, new Date().toISOString(), new Date().toISOString());
+    },
+  });
   return result;
 }
 

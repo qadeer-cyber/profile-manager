@@ -11,9 +11,9 @@
 | M3 | Stealthfox (Firefox engine) | PARTIAL | Stock Gecko; proxy→direct + locale/TZ observables (`firefox-regional-observable.test.js`); **not** antidetect patches |
 | M4 | Quick profiles | VERIFIED | `POST /api/profiles/quick` + UI button |
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
-| M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge; interrupted purge is reported without automatic deletion retry, and incomplete profiles require backup recovery |
+| M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge; quarantine, durable journal and explicit remaining-file recovery; no destructive startup retry; incomplete files require backup recovery |
 | M7 | Clone profile | VERIFIED | `POST /profiles/:id/clone` + tests |
-| M8 | Import/export profile | PARTIAL | Full/selective backups; portable row/tree rollback now tested after file movement and orphan-directory failures. Fresh-install proxy/extension/workspace portability and interrupted-process restore remain incomplete; no promotion |
+| M8 | Import/export profile | PARTIAL | Encrypted portable v2 restores workspace/proxy/extension dependencies with collision mapping on fresh installations. Journaled full/portable restores pass process-interruption tests. Native browser readback, Windows and rendered UI acceptance pending; no promotion |
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
 | M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; `tab-restore-browser.test.js` (CDP reopen + Example Domain titles); native launch plan tests |

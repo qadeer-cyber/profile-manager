@@ -1,3 +1,4 @@
+import { PortableExportDialog } from '../components/PortableExportDialog.jsx';
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
@@ -46,11 +47,11 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const selected = rows.filter(p => S.sel.has(p.id));
 
   const authHeaders = () => ({ ...(window.pm?.uiToken ? { 'X-UI-Token': window.pm.uiToken } : {}) });
-  const exportPortable = async p => {
+  const exportPortable = async (p, options) => {
     if (p.running) return toast('Stop the profile before exporting a portable backup', 'error');
     setBusy(b => ({ ...b, [p.id]: true }));
     try {
-      const response = await fetch(`/api/profiles/${p.id}/backup/export`, { method: 'POST', headers: authHeaders() });
+      const response = await fetch(`/api/profiles/${p.id}/backup/export`, { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(options) });
       if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || `HTTP ${response.status}`); }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -60,6 +61,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       link.click();
       URL.revokeObjectURL(url);
       toast(`Downloaded portable backup for ${p.name}`, 'success');
+      setDialog(null);
     } catch (e) { toast(e.message, 'error'); }
     setBusy(b => ({ ...b, [p.id]: false }));
   };
@@ -110,6 +112,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const sortBy = k => setSort(s => ({ k, dir: s.k === k ? -s.dir : 1 }));
 
   return <>
+    {dialog?.kind === 'portable' && <PortableExportDialog profile={dialog.data} busy={!!busy[dialog.data.id]} onClose={() => setDialog(null)} onExport={options => exportPortable(dialog.data, options)} />}
     <header className="page-head">
       <div><h1>{folder === '__all' ? 'All profiles' : folder || 'No folder'}</h1>
         <div className="muted">{plural(total, 'profile')} · {meta.running.length} running</div></div>
@@ -169,7 +172,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
             <button disabled={busy[p.id]} onClick={() => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }))}><Icon name="stop" /> Stop</button>
           </> : <button className="primary" disabled={busy[p.id]} onClick={() => act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name="play" /> {busy[p.id] ? 'Starting…' : 'Launch'}</button>}
           <button className="icon-btn" title="Storage" aria-label={'Storage ' + p.name} onClick={() => setDialog({ kind: 'storage', data: p })}><Icon name="storage" /></button>
-          <button className="icon-btn" title="Export portable .pmp backup" aria-label={'Export ' + p.name} disabled={busy[p.id] || p.running} onClick={() => exportPortable(p)}><Icon name="download" /></button>
+          <button className="icon-btn" title="Export portable .pmp backup" aria-label={'Export ' + p.name} disabled={busy[p.id] || p.running} onClick={() => setDialog({ kind: 'portable', data: p })}><Icon name="download" /></button>
           <button className="icon-btn" title="Edit" aria-label={'Edit ' + p.name} onClick={() => setDialog({ kind: 'edit', data: toForm(p) })}><Icon name="edit" /></button>
           <button className="icon-btn" title="Clone" aria-label={'Clone ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `Cloned ${p.name}`, () => api(`/api/profiles/${p.id}/clone`, { method: 'POST' }))}><Icon name="copy" /></button>
           {p.isQuick && <button className="icon-btn" title="Save as regular profile" aria-label={'Save as regular ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `${p.name} saved as regular`, () => api(`/api/profiles/${p.id}/save-regular`, { method: 'POST' }))}><Icon name="check" /></button>}

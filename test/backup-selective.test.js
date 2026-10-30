@@ -8,7 +8,7 @@ import { randomUUID } from 'crypto';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-backup-sel-'));
 process.env.PM_DATA_DIR = dataDir;
 const { db, userDataDir } = await import('../server/db.js');
-const { createBackup, restoreBackup, createProfileBackup } = await import('../server/backup.js');
+const { createBackup, restoreBackup, createLegacyProfileBackup } = await import('../server/backup.js');
 
 after(() => {
   db.close();
@@ -43,7 +43,7 @@ test('restoreBackup restores only selected profileIds from full backup', () => {
 test('portable .pmp backup restores profile row and files', () => {
   const id = insertProfile('Portable');
   const row = db.prepare('SELECT name FROM profiles WHERE id=?').get(id);
-  const archive = createProfileBackup(id);
+  const archive = createLegacyProfileBackup(id);
   db.prepare('DELETE FROM profiles WHERE id=?').run(id);
   fs.rmSync(userDataDir(id), { recursive: true, force: true });
   const result = restoreBackup(archive);
@@ -55,7 +55,7 @@ test('portable .pmp backup restores profile row and files', () => {
 test('portable restore rolls back row and replaced tree when failure follows file movement', () => {
   const id = insertProfile('Rollback');
   const marker = path.join(userDataDir(id), 'Default', 'Rollback.txt');
-  const archive = createProfileBackup(id);
+  const archive = createLegacyProfileBackup(id);
   db.prepare('UPDATE profiles SET name=? WHERE id=?').run('Current name', id);
   fs.writeFileSync(marker, 'current bytes');
   assert.throws(() => restoreBackup(archive, { collision: 'replace', failPoint: 'after-files' }), e => e.code === 'RESTORE_FAILED');
@@ -65,7 +65,7 @@ test('portable restore rolls back row and replaced tree when failure follows fil
 
 test('portable restore cannot commit a row when an orphan destination blocks its files', () => {
   const id = insertProfile('Orphan');
-  const archive = createProfileBackup(id);
+  const archive = createLegacyProfileBackup(id);
   db.prepare('DELETE FROM profiles WHERE id=?').run(id);
   assert.throws(() => restoreBackup(archive), e => e.code === 'COLLISION');
   assert.equal(db.prepare('SELECT id FROM profiles WHERE id=?').get(id), undefined);
@@ -75,7 +75,7 @@ test('portable restore cannot commit a row when an orphan destination blocks its
 test('portable restore rejects mismatched identity, unrelated files, and future schema', async () => {
   const { packArchive, unpackArchive } = await import('../server/archive.js');
   const id = insertProfile('Invalid manifest');
-  const archive = createProfileBackup(id);
+  const archive = createLegacyProfileBackup(id);
   for (const mutate of [
     meta => { meta.profileSnapshot.id = randomUUID(); },
     meta => { meta.schemaVersion = 9999; },
@@ -96,6 +96,6 @@ test('portable export refuses a symlink profile root', { skip: process.platform 
   try {
     fs.writeFileSync(path.join(outside, 'private'), 'outside');
     fs.symlinkSync(outside, profile, 'dir');
-    assert.throws(() => createProfileBackup(id), e => e.code === 'UNSAFE_PROFILE_LINK');
+    assert.throws(() => createLegacyProfileBackup(id), e => e.code === 'UNSAFE_PROFILE_LINK');
   } finally { fs.rmSync(profile, { force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
 });

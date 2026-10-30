@@ -1,3 +1,4 @@
+import { RecoveryPanel } from '../components/RecoveryPanel.jsx';
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
@@ -33,6 +34,7 @@ export function DiagnosticsPage({ eventsLog }) {
       <button type="button" onClick={exportGoogleCompat} aria-label="Export Google compatibility diagnostic">Export Google compatibility (local JSON)</button>
       <button onClick={load} aria-label="Refresh app information">Refresh</button></header>
     <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Profile Manager servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
+    <RecoveryPanel />
     <ProfileDiagnostics />
     <div className="cols">
       <section className="panel"><h2>App</h2><table className="kv"><tbody>

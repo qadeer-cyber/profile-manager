@@ -16,7 +16,7 @@ export function assertArchivePath(value) {
   if (value === 'profiles.db' || value === 'secret.key' || value === 'meta.json') return value;
   const id = segments[1];
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if ((segments[0] === 'profiles' || segments[0] === 'extensions') && uuid.test(id || '')) return value;
+  if ((segments[0] === 'profiles' || segments[0] === 'extensions' || segments[0] === 'gecko-extensions') && uuid.test(id || '')) return value;
   throw bad('Backup path is not allowed');
 }
 
@@ -43,6 +43,7 @@ export function packArchive(files) {
 
 export function unpackArchive(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 12 || !buffer.subarray(0, 4).equals(MAGIC)) throw bad('Backup archive is corrupt');
+  if (buffer.length > 66 * 1024 * 1024) throw bad('Backup archive is too large');
   let offset = 4;
   const read = size => {
     if (offset + size > buffer.length) throw bad('Backup archive is corrupt');
