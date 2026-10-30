@@ -6,14 +6,16 @@ import { ProfileDiagnostics } from '../components/ProfileDiagnostics.jsx';
 export function DiagnosticsPage({ eventsLog }) {
   const toast = useToast();
   const [d, setD] = useState(null), [b, setB] = useState(null), [upd, setUpd] = useState(null), [backups, setBackups] = useState(null);
+  const [stock, setStock] = useState(null), [stockError, setStockError] = useState('');
   const load = useCallback(() => {
     api('/api/diagnostics').then(setD);
     api('/api/browser').then(setB);
     api('/api/browser-engine/update-manager').then(setUpd).catch(() => {});
     api('/api/browser/backups').then(setBackups).catch(() => {});
+    api('/api/browser-engine/stock-report').then(r => { setStock(r); setStockError(''); }).catch(e => setStockError(e.message));
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t); }, [load]);
-  if (!d || !b) return null;
+  if (!d || !b) return <p className="muted" aria-busy="true">Loading diagnostics…</p>;
   const install = async () => { try { await api('/api/browser/install', { method: 'POST' }); toast('Downloading Chromium…'); load(); } catch (e) { toast(e.message, 'error'); } };
   const exportGoogleCompat = async () => {
     try {
@@ -34,6 +36,19 @@ export function DiagnosticsPage({ eventsLog }) {
       <button onClick={load} aria-label="Refresh app information">Refresh</button></header>
     <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Profile Manager servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
     <ProfileDiagnostics />
+    <section className="panel"><h2>Stock browser engines (M2 / M3)</h2>
+      {stockError && <p className="err-text">{stockError}</p>}
+      {!stock && !stockError && <p className="muted" aria-busy="true">Loading engine report…</p>}
+      {stock && <div className="cols">
+        <table className="kv"><tbody>
+          <Row k="Chromium (M2)" v={<><span className="pill unavailable">Not Mimic</span> {stock.m2.productLabel} · {stock.m2.installed ? <span className="ok-text">installed</span> : <span className="err-text">not installed</span>} · v{stock.m2.browserVersion || '?'}</>} />
+          <Row k="Chromium manual launch" v={stock.m2.manualLaunchRuntime} />
+          <Row k="Firefox (M3)" v={<><span className="pill unavailable">Not Stealthfox</span> {stock.m3.productLabel} · {stock.m3.installed ? <span className="ok-text">found</span> : <span className="muted">not on PATH</span>}</>} />
+          <Row k="Firefox prefs" v={stock.m3.prefsSurface} />
+        </tbody></table>
+        <p className="muted small">{stock.m2.note} {stock.m3.note}</p>
+      </div>}
+    </section>
     <div className="cols">
       <section className="panel"><h2>App</h2><table className="kv"><tbody>
         <Row k="Version" v={`${d.app.version} (${d.app.mode})`} /><Row k="Platform" v={d.platform} />

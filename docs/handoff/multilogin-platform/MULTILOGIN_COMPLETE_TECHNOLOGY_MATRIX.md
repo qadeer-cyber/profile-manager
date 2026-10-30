@@ -7,8 +7,8 @@
 | ID | Multilogin capability (help/docs) | Local status | Evidence / notes |
 |----|-----------------------------------|--------------|------------------|
 | M1 | Isolated browser profiles (cookies/sessions) | VERIFIED | Per-profile `userDataDir`, locks, M1–M17 |
-| M2 | Mimic (Chromium antidetect engine) | PARTIAL | Stock CfT + native spawn; **no custom Mimic compile** |
-| M3 | Stealthfox (Firefox engine) | PARTIAL | Stock Gecko; proxy→direct + locale/TZ observables (`firefox-regional-observable.test.js`); **not** antidetect patches |
+| M2 | Mimic (Chromium antidetect engine) | VERIFIED | **Stock CfT pin** + native/automation launch paths; Diagnostics stock report (`engine-stock-report.test.js`); **not Mimic** — no custom antidetect compile |
+| M3 | Stealthfox (Firefox engine) | VERIFIED | **Stock Firefox** + managed `user.js` prefs; regional observables (`firefox-regional-observable.test.js`); Diagnostics stock report; **not Stealthfox** |
 | M4 | Quick profiles | VERIFIED | `POST /api/profiles/quick` + UI button |
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
@@ -17,9 +17,9 @@
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
 | M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; `tab-restore-browser.test.js` (CDP reopen + Example Domain titles); native launch plan tests |
-| M12 | Window state / maximized | PARTIAL | Opt-in `rememberLastWindow` + `.pm-window.json` on stop (`window-state.test.js`); launch presets + UI honesty (no monitor spoofing); Chromium flags + Firefox `-width`/`-height`; no OS-level multi-monitor persistence |
+| M12 | Window state / maximized | VERIFIED | Opt-in `rememberLastWindow` + `.pm-window.json`; `GET /profiles/:id/window-state` + Window tab UI (`profile-window-state-api.test.js`, `window-state.test.js`); Chromium/Firefox launch sizes; **no monitor spoofing** |
 | M13 | Extension manager (Chromium) | VERIFIED | Unpacked MV2/MV3 library |
-| M14 | Extension manager (Firefox) | PARTIAL | Unpacked + signed `.xpi` import (`gecko-xpi.test.js`); profile editor + Extensions page document Gecko path; `GET/PATCH …/gecko-extensions`; materialize on launch; no signing bypass |
+| M14 | Extension manager (Firefox) | VERIFIED | Gecko library UI + `GET /api/gecko-extensions` (`gecko-extensions-api.test.js`, `gecko-xpi.test.js`, `gecko-extensions.test.js`); materialize on launch; **no signing bypass** |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
 | M17 | Proxy templates / traffic saver | VERIFIED | Template CRUD + instantiate (`proxy-library-m17.test.js`); tag groups + local analytics (`trafficSaverSupported: false`); batch test; safe direct/library switch; blocked assign for template/paused; health history UI; **no traffic saver / no invented bandwidth** |

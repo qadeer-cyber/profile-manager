@@ -162,7 +162,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     {tab === 'identity' && <IdentityFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'fingerprint' && <FingerprintFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'location' && <LocationFields settings={advanced} onChange={setAdvanced} />}
-    {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} profileId={initial.id} />}
     {tab === 'preferences' && <PreferenceFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'cookies' && (initial.id ? <CookieManager profileId={initial.id} browserEngine={f.browserEngine || 'chromium'} /> : <p className="muted">Save the profile before managing its cookies.</p>)}
     {tab === 'hardware' && <HardwarePanel profileId={initial.id} />}

@@ -7,8 +7,12 @@ import { plural } from '../lib.js';
 
 export function ExtensionsPage() {
   const toast = useToast();
-  const [list, setList] = useState([]), [loaded, setLoaded] = useState(false), [dialog, setDialog] = useState(null);
-  const load = () => api('/api/extensions').then(setList).catch(e => toast(e.message, 'error')).finally(() => setLoaded(true));
+  const [list, setList] = useState([]), [gecko, setGecko] = useState({ items: [], report: null });
+  const [loaded, setLoaded] = useState(false), [geckoLoaded, setGeckoLoaded] = useState(false), [dialog, setDialog] = useState(null);
+  const load = () => {
+    api('/api/extensions').then(setList).catch(e => toast(e.message, 'error')).finally(() => setLoaded(true));
+    api('/api/gecko-extensions').then(setGecko).catch(e => toast(e.message, 'error')).finally(() => setGeckoLoaded(true));
+  };
   useEffect(() => { load(); }, []);
   const remove = async (ext, force) => {
     try { await api(`/api/extensions/${ext.id}${force ? '?force=1' : ''}`, { method: 'DELETE' }); toast(`Removed ${ext.name}`, 'success'); load(); }
@@ -35,6 +39,13 @@ export function ExtensionsPage() {
       {loaded && !list.length && <tr><td colSpan="5" className="empty">No extensions yet. Import a folder that contains a manifest.json.</td></tr>}
     </tbody></table></div>
     {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
+    <section className="panel"><h2>Firefox / Gecko library</h2>
+      <p className="muted small">{gecko.report?.signingPolicy || 'Mozilla signed extensions only; no signing bypass.'}</p>
+      <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Gecko ID</th><th>Version</th><th>Profiles</th></tr></thead><tbody>
+        {gecko.items.map(ext => <tr key={ext.id}><td className="name">{ext.name}</td><td className="mono-sm">{ext.geckoExtensionId || '—'}</td><td>{ext.version}</td><td>{ext.assignedProfiles || 0}</td></tr>)}
+        {geckoLoaded && !gecko.items.length && <tr><td colSpan="4" className="empty">No Firefox extensions yet. Import an unpacked folder or signed .xpi.</td></tr>}
+        {!geckoLoaded && <tr><td colSpan="4" className="empty">Loading Gecko extensions…</td></tr>}
+      </tbody></table></div></section>
     {dialog?.kind === 'importGecko' && <ImportGeckoDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
     {dialog?.kind === 'assign' && <AssignDialog extension={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); load(); }} />}
     {dialog?.kind === 'force' && <Confirm title="Extension is assigned" danger confirmLabel="Unassign and remove" message={`${dialog.msg} Removing it also drops those assignments. The copied files are deleted.`} onConfirm={() => remove(dialog.data, true)} onClose={() => setDialog(null)} />}

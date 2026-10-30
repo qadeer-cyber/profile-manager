@@ -44,10 +44,16 @@ export function LocationFields({ settings, onChange }) {
   </div>;
 }
 
-export function WindowFields({ settings, onChange }) {
+export function WindowFields({ settings, onChange, profileId }) {
   const screen = settings.screen;
+  const [savedWindow, setSavedWindow] = useState(null);
+  const [winError, setWinError] = useState('');
   const set = patch => onChange({ ...settings, screen: { ...screen, ...patch } });
   const custom = screen.preset === 'custom';
+  useEffect(() => {
+    if (!profileId) return;
+    api(`/api/profiles/${profileId}/window-state`).then(setSavedWindow).catch(e => setWinError(e.message));
+  }, [profileId]);
   return <div className="form">
     <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs for antidetect, and they do not remember which monitor a window was on — only width, height, and optional X/Y offsets below.</div>
     <label>Screen preset<select value={screen.preset} onChange={e => {
@@ -77,6 +83,9 @@ export function WindowFields({ settings, onChange }) {
       <label>Window Y<input inputMode="numeric" disabled={!!screen.startMaximized} value={screen.windowY ?? ''} onChange={e => set({ windowY: e.target.value })} placeholder="Default" /></label>
     </div>
     <p className="muted hint">Invalid sizes, a viewport larger than the screen, an unknown scale, or a window position together with maximized are rejected and not saved.</p>
+    {profileId && savedWindow?.rememberLastWindow && savedWindow.saved && <p className="muted">Saved bounds for next launch: {savedWindow.saved.width}×{savedWindow.saved.height}{savedWindow.saved.maximized ? ' (maximized)' : ''}{savedWindow.saved.savedAt ? ` · ${new Date(savedWindow.saved.savedAt).toLocaleString()}` : ''}</p>}
+    {profileId && savedWindow?.rememberLastWindow && !savedWindow.saved && <p className="muted">Remember last window is on; bounds will be saved on the next graceful stop.</p>}
+    {winError && <p className="err-text">{winError}</p>}
   </div>;
 }
 

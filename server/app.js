@@ -25,6 +25,8 @@ import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
+import { buildEngineStockReport } from './engine-stock-report.js';
+import { readWindowState } from './window-state.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
@@ -602,6 +604,20 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/browser-engine/capability-matrix', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(browserEngineCapabilityMatrix());
+  }));
+  router.get('/browser-engine/stock-report', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(buildEngineStockReport());
+  }));
+  router.get('/profiles/:id/window-state', wrap((req, res) => {
+    const p = must(req.params.id);
+    const remember = p.advancedSettings?.preferences?.rememberLastWindow === true;
+    const saved = readWindowState(p.id);
+    res.json({
+      rememberLastWindow: remember,
+      saved: saved ? { width: saved.width, height: saved.height, left: saved.left, top: saved.top, maximized: !!saved.maximized, savedAt: saved.savedAt || null } : null,
+      note: 'Local .pm-window.json only; no multi-monitor identity or antidetect screen spoofing.',
+    });
   }));
   router.get('/browser-engine/update-manager', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
