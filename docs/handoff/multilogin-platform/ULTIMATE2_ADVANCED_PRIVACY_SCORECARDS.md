@@ -2,6 +2,7 @@
 
 **Branch:** `feature/ultimate2-advanced-privacy`  
 **Base:** `feature/ultimate2-feasible-completion` @ `8251394d27bda34fc4625a276e109752a419bec5`  
+**Implementation checkpoint:** `1a42352ff84275079cf9699f330f6a86b27aa71f`  
 **No pull request, no merge, no installer, no Windows workflow dispatch.**
 
 Historical matrix rows are not edited by this branch. M20–M23 and M28–M30 stay **PARTIAL**. M24–M27 and M42 stay **UNSUPPORTED**. Stock-feasible PASS rows are not added to the frozen baseline.
@@ -63,8 +64,18 @@ A full Chromium rebuild was not started. Research notes and the page hook are no
 
 The CAPTCHA-free guarantee stays **UNSUPPORTED**. Diagnostics and CookieRobot URL refusal are unchanged. Nothing in this branch reports a solved challenge.
 
-## Evidence
+## Evidence at `1a42352`
 
-- Unit: `test/advanced-privacy-acceptance.test.js`
-- Real browser: `test/advanced-privacy-browser.test.js` (skip when pinned Chromium is absent)
+Linux host, pinned Chromium for Testing `156.0.8078.4` (revision 1248), Playwright CDP. Not mocked.
+
+| Check | Result |
+|-------|--------|
+| `test/advanced-privacy-acceptance.test.js` | PASS (9) |
+| `test/advanced-privacy-browser.test.js` | PASS — locale `de-DE`, timezone `Europe/Berlin`, coordinates, 1280×800 at scale 2, permission denies, preference keys, clean private-network argv, restart, canvas hook hash change and restart stability |
+| `test/fingerprint-feasible-local-browser.test.js` | PASS |
+| `test/fingerprint-observable-api.test.js` | PASS |
+| `test/fingerprint-browser.test.js` | PASS |
+| `test/fingerprint-feasible-local-negative.test.js` | PASS |
+| Windows qualification | **NOT_RUN** |
+
 - API: `GET /api/privacy-acceptance`
