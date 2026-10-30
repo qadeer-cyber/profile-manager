@@ -10,6 +10,8 @@ test('pm-cli help exits 0', () => {
   assert.match(r.stdout, /bridges/);
   assert.match(r.stdout, /workspaces/);
   assert.match(r.stdout, /human-input/);
+  assert.match(r.stdout, /workspace-import/);
+  assert.match(r.stdout, /trash-restore/);
 });
 
 test('pm-cli without token exits non-zero', () => {

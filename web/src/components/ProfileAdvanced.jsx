@@ -44,11 +44,18 @@ export function LocationFields({ settings, onChange }) {
   </div>;
 }
 
-export function WindowFields({ settings, onChange }) {
+export function WindowFields({ settings, onChange, profileId }) {
   const screen = settings.screen;
+  const [savedWindow, setSavedWindow] = useState(null);
+  const [winError, setWinError] = useState('');
   const set = patch => onChange({ ...settings, screen: { ...screen, ...patch } });
   const custom = screen.preset === 'custom';
+  useEffect(() => {
+    if (!profileId) return;
+    api(`/api/profiles/${profileId}/window-state`).then(setSavedWindow).catch(e => setWinError(e.message));
+  }, [profileId]);
   return <div className="form">
+    <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs for antidetect, and they do not remember which monitor a window was on — only width, height, and optional X/Y offsets below.</div>
     <label>Screen preset<select value={screen.preset} onChange={e => {
       const preset = e.target.value;
       const known = SCREEN_PRESETS[preset];
@@ -76,6 +83,9 @@ export function WindowFields({ settings, onChange }) {
       <label>Window Y<input inputMode="numeric" disabled={!!screen.startMaximized} value={screen.windowY ?? ''} onChange={e => set({ windowY: e.target.value })} placeholder="Default" /></label>
     </div>
     <p className="muted hint">Invalid sizes, a viewport larger than the screen, an unknown scale, or a window position together with maximized are rejected and not saved.</p>
+    {profileId && savedWindow?.rememberLastWindow && savedWindow.saved && <p className="muted">Saved bounds for next launch: {savedWindow.saved.width}×{savedWindow.saved.height}{savedWindow.saved.maximized ? ' (maximized)' : ''}{savedWindow.saved.savedAt ? ` · ${new Date(savedWindow.saved.savedAt).toLocaleString()}` : ''}</p>}
+    {profileId && savedWindow?.rememberLastWindow && !savedWindow.saved && <p className="muted">Remember last window is on; bounds will be saved on the next graceful stop.</p>}
+    {winError && <p className="err-text">{winError}</p>}
   </div>;
 }
 
@@ -83,7 +93,7 @@ export function FingerprintFields({ settings, onChange }) {
   const fingerprint = settings.fingerprint || { webgl: 'default', fonts: 'real', mediaDevices: 'real', canvas: 'real', audio: 'real', portScan: 'real' };
   const set = (key, value) => onChange({ ...settings, fingerprint: { ...fingerprint, [key]: value } });
   return <div className="form">
-    <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Custom values are accepted only when you type a real setting, such as a timezone or a screen size, elsewhere in this editor. Nothing here invents a GPU, font list, device, or browser version, and nothing here makes a profile undetectable.</div>
+    <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Canvas, AudioContext, and WebGPU vendor masking are <strong>not</strong> available on stock Chromium (see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> in the repo). Nothing here makes a profile undetectable.</div>
     {FINGERPRINT_CONTROLS.map(control => <label key={control.id}>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)}>
       {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
     </select><span className="muted hint">{control.note}</span></label>)}

@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { adbAvailability, ADB_ADAPTER_NOTE } from '../server/adb-adapter.js';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-adb-adapter-'));
+process.env.PM_DATA_DIR = dir;
+const { adbAvailability, ADB_ADAPTER_NOTE } = await import('../server/adb-adapter.js');
 
 test('adb adapter reports farm-equivalent false and optional availability', () => {
   const report = adbAvailability();

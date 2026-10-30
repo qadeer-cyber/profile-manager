@@ -16,4 +16,12 @@
 | 12 | [WINDOWS_TEST_STRATEGY.md](./WINDOWS_TEST_STRATEGY.md) | §18 scenarios |
 | 13 | [RELEASE_GATES_SECTION19.md](./RELEASE_GATES_SECTION19.md) | Preview installer gates |
 
+**Phase Six closeout (local handoff, no publish):**
+
+- [PHASE_SIX_DUAL_SCORECARDS.md](./PHASE_SIX_DUAL_SCORECARDS.md) — Stock-honest vs Multilogin ambition  
+- [ULTIMATE_2_0_ENGINEERING_PROGRESS.md](./ULTIMATE_2_0_ENGINEERING_PROGRESS.md) — Phase Zero→Six + key SHAs  
+- [PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md](./PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md) — M20–M30 blockers  
+- [FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md](./FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md) — stock-feasible PASS/FAIL/BLOCKED (separate from matrix %)  
+- [FEASIBLE_LOCAL_CLOSEOUT.md](./FEASIBLE_LOCAL_CLOSEOUT.md) — branch closeout, BLOCKED inventory, residual notes  
+
 Code is authoritative when docs disagree.

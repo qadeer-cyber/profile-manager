@@ -60,7 +60,7 @@ export function ProviderPanel({ onChanged }) {
     setBusy(false);
   };
   return <section className="panel"><h2>Proxy providers</h2>
-    <p className="muted">These adapters use the provider’s published proxy or account API. Manual host, port, username, and password remain available. Credentials are stored encrypted and are not shown again.</p>
+    <p className="muted">These adapters use the provider’s published proxy or account API. Manual host, port, username, and password remain available. Credentials are stored encrypted and are not shown again. Usage/traffic numbers come only from each provider’s documented API when you click Usage — there is no invented bandwidth savings or traffic saver.</p>
     {error && <p className="err-text" role="alert">{error}</p>}
     <div className="provider-list">{catalog.map(item => <article key={item.id}><strong>{item.name}</strong><p className="muted">{item.notes}</p><a href={item.docs} target="_blank" rel="noreferrer">Documentation</a></article>)}</div>
     <div className="two">

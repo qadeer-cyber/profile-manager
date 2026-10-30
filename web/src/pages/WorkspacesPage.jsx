@@ -6,18 +6,33 @@ import { Dialog } from '../components/Dialog.jsx';
 export function WorkspacesPage({ onOpenProfiles }) {
   const toast = useToast();
   const [items, setItems] = useState([]);
+  const [q, setQ] = useState('');
   const [vault, setVault] = useState(null);
   const [dialog, setDialog] = useState(null);
   const load = useCallback(async () => {
     try {
-      setItems(await api('/api/workspaces'));
+      const qs = q.trim() ? `?q=${encodeURIComponent(q.trim())}` : '';
+      setItems(await api(`/api/workspaces${qs}`));
       setVault(await api('/api/workspaces/vault-status'));
     } catch (e) { toast(e.message, 'error'); }
-  }, [toast]);
+  }, [toast, q]);
   useEffect(() => { load(); }, [load]);
   return <>
     <header className="page-head"><div><h1>Workspaces</h1><p className="muted">Local project folders. No cloud sync. Optional vault lock when OS secure storage is available ({vault?.backend || '…'}).</p></div>
-      <button className="primary" onClick={() => setDialog({ kind: 'new' })}>New workspace</button></header>
+      <div className="row">
+        <label className="file-btn">Import JSON<input type="file" accept="application/json,.json" onChange={async e => {
+          const file = e.target.files?.[0];
+          e.target.value = '';
+          if (!file) return;
+          try {
+            const payload = JSON.parse(await file.text());
+            await api('/api/workspaces/import', { method: 'POST', body: payload });
+            toast('Workspace import applied (existing profiles re-linked by id)', 'success');
+            load();
+          } catch (err) { toast(err.message, 'error'); }
+        }} /></label>
+        <button className="primary" onClick={() => setDialog({ kind: 'new' })}>New workspace</button></div></header>
+    <div className="toolbar"><input type="search" placeholder="Search name or notes…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search workspaces" /></div>
     <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Profiles</th><th>Vault</th><th></th></tr></thead><tbody>
       {items.map(w => <tr key={w.id}><td>{w.name}{w.notes && <div className="muted small">{w.notes}</div>}</td><td>{w.profileCount}</td>
         <td>{w.vaultLocked ? 'Locked' : '—'}</td>

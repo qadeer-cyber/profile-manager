@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_ADVANCED_SETTINGS, normalizeAdvancedSettings, validateAdvancedSettings } from '../server/advanced-settings.js';
-import { fingerprintLaunchArgs, validateFingerprint, verifyFingerprintLaunchArgs, WEBGL_DISABLE_ARG } from '../server/fingerprint-settings.js';
+import { fingerprintLaunchArgs, privateNetworkWeakening, validateFingerprint, verifyFingerprintLaunchArgs, WEBGL_DISABLE_ARG } from '../server/fingerprint-settings.js';
 
 test('fingerprint defaults are real or browser-default and round-trip in advanced settings', () => {
   const settings = validateAdvancedSettings({});
@@ -43,6 +43,11 @@ test('WebGL restricted is the only graphics switch, and invented modes are rejec
   ]) {
     assert.throws(() => validateFingerprint(fingerprint, DEFAULT_ADVANCED_SETTINGS.preferences), error => error.code === 'INVALID_ADVANCED_SETTINGS' && error.tab === 'fingerprint');
   }
+});
+
+test('M30 privateNetworkWeakening stays unavailable without a command line', () => {
+  assert.deepEqual(privateNetworkWeakening(null), { availability: 'unavailable', features: [] });
+  assert.deepEqual(privateNetworkWeakening('   '), { availability: 'unavailable', features: [] });
 });
 
 test('media restriction cannot be combined with allowing capture', () => {

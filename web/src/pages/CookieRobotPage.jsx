@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
+import { HumanInputPanel } from '../components/HumanInputPanel.jsx';
 
 export function CookieRobotPage() {
   const toast = useToast();
@@ -12,13 +13,14 @@ export function CookieRobotPage() {
   const [delayMs, setDelayMs] = useState(1500);
   const [expanded, setExpanded] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [reportError, setReportError] = useState('');
   const load = useCallback(async () => {
     try {
       setJobs(await api('/api/cookie-robot/jobs'));
     } catch (e) { toast(e.message, 'error'); }
   }, [toast]);
   useEffect(() => {
-    api('/api/cookie-robot').then(setReport).catch(() => {});
+    api('/api/cookie-robot').then(r => { setReport(r); setReportError(''); }).catch(e => setReportError(e.message));
     api('/api/profiles').then(list => {
       setProfiles(list);
       if (!profileId && list.length) {
@@ -44,6 +46,8 @@ export function CookieRobotPage() {
   return <>
     <header className="page-head"><h1>CookieRobot (local)</h1></header>
     <section className="panel">
+      {reportError && <p className="err-text" role="alert">{reportError}</p>}
+      {!report && !reportError && <p className="muted" aria-busy="true">Loading CookieRobot capability…</p>}
       <p className="muted">{report?.note || 'User-authorized URL batches only.'} {report?.firefox?.supported === false && <span>Firefox: {report.firefox.reason}</span>}</p>
       <label>Profile
         <select value={profileId} onChange={e => setProfileId(e.target.value)} aria-label="Profile">
@@ -57,7 +61,7 @@ export function CookieRobotPage() {
       <label>Delay between URLs (ms, 500–10000)<input type="number" min={500} max={10000} value={delayMs} onChange={e => setDelayMs(Number(e.target.value))} /></label>
       <button className="primary" disabled={busy || !profileId.trim() || isFirefox} onClick={start}>Start job</button>
     </section>
-    <HumanInputPanel profileId={profileId} profiles={profiles} toast={toast} isFirefox={isFirefox} />
+    <HumanInputPanel profileId={profileId} profiles={profiles} toast={toast} />
     <div className="table-wrap"><table className="grid"><thead><tr><th>Status</th><th>Profile</th><th>Tasks</th><th>Error</th><th></th></tr></thead><tbody>
       {jobs.map(j => {
         const ok = j.tasks.filter(t => t.status === 'ok').length;
@@ -84,26 +88,4 @@ export function CookieRobotPage() {
       })}
     </tbody></table></div>
   </>;
-}
-
-function HumanInputPanel({ profileId, profiles, toast, isFirefox }) {
-  const [text, setText] = useState('Hello world');
-  const [wpm, setWpm] = useState(180);
-  const [busy, setBusy] = useState(false);
-  const selected = profiles.find(p => p.id === profileId);
-  const canType = selected?.running && selected?.browserEngine !== 'firefox' && !isFirefox;
-  return <section className="panel"><h2>Human input (UI testing)</h2>
-    <p className="muted">Authorized keystroke emulation over Chromium CDP. Profile must be running with automation enabled. Not for CAPTCHA or account bypass.</p>
-    <label>Text<textarea rows={2} value={text} onChange={e => setText(e.target.value)} /></label>
-    <label>Speed (WPM, 20–600)<input type="number" min={20} max={600} value={wpm} onChange={e => setWpm(Number(e.target.value))} /></label>
-    <button className="primary" disabled={busy || !canType || !text.trim()} onClick={async () => {
-      setBusy(true);
-      try {
-        const r = await api(`/api/profiles/${profileId}/human-input`, { method: 'POST', body: { text, wpm } });
-        toast(`Typed ${r.typed} characters`, 'success');
-      } catch (e) { toast(e.message, 'error'); }
-      setBusy(false);
-    }}>Type into focused page</button>
-    {!canType && profileId && <p className="muted">Launch this Chromium profile with automation and keep it running to use human input.</p>}
-  </section>;
 }

@@ -21,6 +21,7 @@ export function SettingsPage() {
       <p className="muted">Latitude 5480 / 8 GiB defaults: 4 running profiles, 1 GiB free-memory guard, 2 parallel launches.</p>
     </section>
     <AutomationDriversPanel toast={toast} settings={s} onSettingsChange={setS} />
+    <AutomationCliPanel />
     <AdbDevicesPanel toast={toast} />
     <section className="panel"><h2>Automation API</h2>
       {token ? <><p className="muted">Use this token with <code>/api/v1</code> (header <code>Authorization: Bearer …</code>). Base URL changes each launch in the desktop app; see Diagnostics.</p>
@@ -36,26 +37,100 @@ export function SettingsPage() {
   </>;
 }
 
+function AutomationCliPanel() {
+  const [caps, setCaps] = useState(null);
+  const [wd, setWd] = useState(null);
+  const [wdError, setWdError] = useState('');
+  useEffect(() => {
+    api('/api/human-input').then(setCaps).catch(() => setCaps(null));
+    api('/api/webdriver').then(setWd).catch(e => setWdError(e.message));
+  }, []);
+  return <section className="panel"><h2>CLI &amp; automation</h2>
+    <p className="muted">Local-only automation via <code>npm run pm-cli -- help</code> and bearer-token <code>/api/v1</code>. Enable automation on a profile, launch it, then attach Playwright/Puppeteer to the CDP HTTP/WebSocket endpoints (Profiles → automation icon, or the profile row when running). Manual native launches without automation do not expose CDP.</p>
+    {caps && <ul className="muted small">
+      <li>Human input: Chromium CDP + Firefox geckodriver ({caps.specialKeySyntax})</li>
+      <li>Cancel: <code>POST /api/profiles/:id/human-input/cancel</code></li>
+      <li>Engines: {(caps.supportedEngines || []).join(', ')}</li>
+    </ul>}
+    {!caps && !wdError && <p className="muted" aria-busy="true">Loading capability report…</p>}
+    <h3 className="h3">Playwright / Puppeteer (CDP)</h3>
+    <p className="muted small">Connect to <code>wsEndpoint</code> from a running profile with automation enabled. Manual native launches without CDP cannot attach.</p>
+    <h3 className="h3">WebDriver bridge (optional)</h3>
+    {wdError && <p className="err-text">{wdError}</p>}
+    {wd && <ul className="muted small">
+      <li>Report: <code>GET /api/webdriver</code> · Chromium: <code>POST /api/profiles/:id/webdriver/start</code> (requires CDP) · Firefox: <code>POST /api/profiles/:id/geckodriver/start</code></li>
+      <li>Status: {(wd.activeSessions || []).length} active bridge session{(wd.activeSessions || []).length === 1 ? '' : 's'} · ChromeDriver {wd.requiresChromedriverOnPath ? 'must be on PATH or cached below' : 'available from cache/PATH'} · real navigate/quit when <code>PM_REAL_WEBDRIVER=1</code> in tests or driver installed</li>
+    </ul>}
+    {!wd && !wdError && <p className="muted">Loading WebDriver report…</p>}
+  </section>;
+}
+
 function AdbDevicesPanel({ toast }) {
   const [report, setReport] = useState(null);
+  const [diag, setDiag] = useState(null);
+  const [info, setInfo] = useState(null);
   const [connectTarget, setConnectTarget] = useState('');
-  const load = useCallback(() => { api('/api/adb/devices').then(setReport).catch(e => toast(e.message, 'error')); }, [toast]);
-  useEffect(load, [load]);
+  const load = useCallback(async () => {
+    try {
+      const [devices, diagnostics] = await Promise.all([
+        api('/api/adb/devices'),
+        api('/api/adb/diagnostics'),
+      ]);
+      setReport(devices);
+      setDiag(diagnostics);
+    } catch (e) { toast(e.message, 'error'); }
+  }, [toast]);
+  useEffect(() => { load(); }, [load]);
+  const selectSerial = async serial => {
+    try {
+      await api('/api/adb/selection', { method: 'PUT', body: { serial } });
+      toast(serial ? `Selected ${serial}` : 'Cleared device selection', 'success');
+      load();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  const showInfo = async serial => {
+    try { setInfo(await api(`/api/adb/devices/${encodeURIComponent(serial)}/info`)); }
+    catch (e) { toast(e.message, 'error'); }
+  };
   return <section className="panel"><h2>Local Android devices (ADB)</h2>
-    <p className="muted">{report?.note || 'Lists USB devices when the host adb tool is on PATH. This is not a cloud phone farm and cannot replace Multilogin Android farms.'}</p>
-    {!report?.available && <p className="muted">Status: {report?.reason || 'unavailable'} — install Android platform tools and ensure <code>adb</code> is on PATH to list your own devices.</p>}
+    <p className="muted">{report?.note || 'User-owned USB/network devices via host adb. Not a cloud phone farm.'}</p>
+    {diag?.mockMode && <p className="notice warn">Mock adb (PM_MOCK_ADB) — CI/dev only. Real USB behavior is not verified until adb is on PATH with a physical device.</p>}
+    {diag && <p className="muted small">{diag.versionLine || 'adb version unknown'} · {diag.counts?.device || 0} ready, {diag.counts?.unauthorized || 0} unauthorized, {diag.counts?.offline || 0} offline
+      {diag.selectedSerial && <> · Selected <code>{diag.selectedSerial}</code>{diag.selectedPresent ? '' : ' (missing)'}</>}</p>}
+    {diag?.recoveryHints?.length > 0 && <ul className="muted small">{diag.recoveryHints.map(h => <li key={h}>{h}</li>)}</ul>}
+    {!report?.available && !report?.mockMode && <p className="muted">Status: {report?.reason || 'unavailable'} — install Android platform-tools and ensure <code>adb</code> is on PATH.</p>}
     {report?.available && <>
-      <div className="row"><input placeholder="host:port for adb connect" value={connectTarget} onChange={e => setConnectTarget(e.target.value)} />
+      <div className="row"><input placeholder="host:port for adb connect" value={connectTarget} onChange={e => setConnectTarget(e.target.value)} aria-label="ADB connect target" />
         <button type="button" onClick={async () => {
           try {
             const r = await api('/api/adb/connect', { method: 'POST', body: { serial: connectTarget.trim() } });
             toast(r.ok ? `Connected: ${r.target}` : (r.message || r.error), r.ok ? 'success' : 'error');
             load();
           } catch (e) { toast(e.message, 'error'); }
-        }}>Connect</button></div>
-      <button type="button" onClick={load}>Refresh</button>
-      {report.devices?.length ? <ul>{report.devices.map(d => <li key={d.serial}><code>{d.serial}</code> — {d.state}{d.model ? ` · ${d.model}` : ''}</li>)}</ul>
+        }}>Connect</button>
+        <button type="button" className="ghost" onClick={load}>Refresh</button></div>
+      {report.devices?.length ? <div className="table-wrap"><table className="grid"><thead><tr><th></th><th>Serial</th><th>State</th><th>Model</th><th></th></tr></thead><tbody>
+        {report.devices.map(d => <tr key={d.serial}>
+          <td><input type="radio" name="adb-select" aria-label={'Select ' + d.serial} checked={report.selectedSerial === d.serial} onChange={() => selectSerial(d.serial)} disabled={d.state !== 'device'} /></td>
+          <td className="mono-sm">{d.serial}</td>
+          <td>{d.state}{d.state === 'unauthorized' && <span className="err-text"> — accept USB debugging on device</span>}</td>
+          <td>{d.model || '—'}</td>
+          <td className="actions">
+            <button type="button" disabled={d.state !== 'device'} onClick={() => showInfo(d.serial)}>Info</button>
+            <button type="button" className="ghost-danger" onClick={async () => {
+              try {
+                const r = await api('/api/adb/disconnect', { method: 'POST', body: { serial: d.serial } });
+                toast(r.ok ? 'Disconnected' : (r.message || r.error), r.ok ? 'success' : 'error');
+                load();
+              } catch (e) { toast(e.message, 'error'); }
+            }}>Disconnect</button></td>
+        </tr>)}
+      </tbody></table></div>
         : <p className="muted">No devices attached.</p>}
+      {info?.ok && <div className="panel nested"><h3>Device info · <code>{info.serial}</code></h3>
+        <p className="muted">Read-only getprop snapshot{info.mockMode ? ' (mock)' : ''}.</p>
+        <ul>{Object.entries(info.properties || {}).map(([k, v]) => <li key={k}><code>{k}</code>: {v || '—'}</li>)}</ul>
+        <button type="button" className="ghost" onClick={() => setInfo(null)}>Close</button></div>}
     </>}
   </section>;
 }
@@ -163,10 +238,14 @@ function BackupPanel({ toast }) {
     </div>
     {listing?.profiles?.length > 0 && <div className="panel nested"><h3>Restore preview</h3>
       <p className="muted">{listing.format || 'backup'} · schema v{listing.schemaVersion ?? '?'} · {listing.fileChecksumCount || 0} checksums{listing.containsDatabase === false ? ' · portable (no full DB)' : ''}</p>
+      <div className="row"><button type="button" className="ghost" onClick={() => setSelectedRestoreIds(listing.profiles.map(p => p.id).filter(Boolean))}>Select all</button>
+        <button type="button" className="ghost" onClick={() => setSelectedRestoreIds([])}>Select none</button>
+        <span className="muted">{selectedRestoreIds.length} of {listing.profiles.length} selected for selective restore</span></div>
       <ul>{listing.profiles.map(p => <li key={p.id}>
         <label className="check"><input type="checkbox" checked={selectedRestoreIds.includes(p.id)} onChange={e => setSelectedRestoreIds(ids => e.target.checked ? [...ids, p.id] : ids.filter(x => x !== p.id))} />
           <strong>{p.name}</strong> <span className="mono-sm">{p.id?.slice(0, 8)}…</span> · {p.fileCount ?? 0} files</label>
-      </li>)}</ul></div>}
+      </li>)}</ul>
+      <p className="muted">With none checked, restore imports the whole archive. Check one or more rows for selective restore (collision policy still applies). Not Multilogin’s cloud format.</p></div>}
     {listing && !listing.profiles?.length && <p className="muted">{listing.encrypted ? 'Encrypted backup — enter passphrase and inspect again to preview profiles.' : 'No profiles listed in manifest.'}</p>}
     {result && <p className="muted">Added {result.added.length}, replaced {result.replaced.length}, renamed {result.renamed.length}{result.proxyDetached.length ? `, proxy detached on ${result.proxyDetached.length}` : ''}.</p>}
   </section>;

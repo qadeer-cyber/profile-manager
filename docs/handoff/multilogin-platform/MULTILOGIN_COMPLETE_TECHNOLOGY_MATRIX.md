@@ -57,3 +57,7 @@
 ## Codex stabilization checkpoint — 2026-10-30
 
 Counts remain **18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 0 MISSING / 2 NOT_APPLICABLE_CLOUD**. Historical weighted score: **65.1% → 65.1% (+0.0 percentage points)**. No features promoted. Existing VERIFIED labels are inherited evidence classifications, not a claim that this Linux checkpoint requalified every category. See `CODEX_STABILIZATION_CHECKPOINT.md` for current test limitations.
+
+## Integration note (`integration/ultimate2-stock-secure`)
+
+Historical statuses stay at the Codex checkpoint: **18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 2 NOT_APPLICABLE_CLOUD**, weighted **65.1%**. Grok `8251394` promotions of M2, M3, M8, M12, M14, M17, M18, M33, M35, M36, M37, M38, and M40 to VERIFIED are **not adopted**. **M8 is not VERIFIED** — real Windows browser acceptance was not run. Feasible-local stock criteria are a separate scorecard in `FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md` (**23/23 PASS**; BLOCKED_CUSTOM_ENGINE excluded). That scorecard does not change this historical denominator.

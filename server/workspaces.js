@@ -2,6 +2,7 @@
 import crypto from 'crypto';
 import { db } from './db.js';
 import { encryptionStatus } from './secrets.js';
+import { assertProfileOperationAvailable } from './recovery-journal.js';
 
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
 
@@ -10,8 +11,9 @@ export function vaultStorageAvailable() {
   return backend === 'electron-safeStorage' || backend === 'test-os';
 }
 
-export function listWorkspaces() {
-  return db.prepare(`
+export function listWorkspaces({ q } = {}) {
+  const needle = q != null && String(q).trim() ? String(q).trim().toLowerCase() : '';
+  const rows = db.prepare(`
     SELECT w.*, (SELECT COUNT(*) FROM profiles p WHERE p.workspace_id=w.id AND p.deleted_at IS NULL) AS profile_count
     FROM workspaces w ORDER BY w.updated_at DESC`).all().map(row => ({
     id: row.id,
@@ -22,6 +24,8 @@ export function listWorkspaces() {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }));
+  if (!needle) return rows;
+  return rows.filter(ws => ws.name.toLowerCase().includes(needle) || (ws.notes || '').toLowerCase().includes(needle));
 }
 
 export function getWorkspace(id) {
@@ -76,18 +80,72 @@ export function updateWorkspace(id, { name, notes, vaultLocked }) {
   return getWorkspace(id);
 }
 
+function guardProfileMutation(profileId) {
+  const row = db.prepare('SELECT id FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
+  if (row) assertProfileOperationAvailable(profileId);
+  return row;
+}
+
 export function deleteWorkspace(id) {
   const row = db.prepare('SELECT id FROM workspaces WHERE id=?').get(id);
   if (!row) throw fail(404, 'Workspace not found', 'NOT_FOUND');
+  const profiles = db.prepare('SELECT id FROM profiles WHERE workspace_id=? AND deleted_at IS NULL').all(id);
+  for (const profile of profiles) assertProfileOperationAvailable(profile.id);
   db.prepare('UPDATE profiles SET workspace_id=NULL, updated_at=? WHERE workspace_id=?').run(new Date().toISOString(), id);
   db.prepare('DELETE FROM workspaces WHERE id=?').run(id);
   return { id, deleted: true };
 }
 
 export function assignProfileWorkspace(profileId, workspaceId) {
+  if (profileId) guardProfileMutation(profileId);
   if (workspaceId) assertWorkspaceAccess(workspaceId);
   db.prepare('UPDATE profiles SET workspace_id=?, updated_at=? WHERE id=? AND deleted_at IS NULL')
     .run(workspaceId || null, new Date().toISOString(), profileId);
+}
+
+export function bulkAssignProfilesToWorkspace(workspaceId, profileIds) {
+  assertWorkspaceAccess(workspaceId);
+  if (!Array.isArray(profileIds) || !profileIds.length || profileIds.length > 100) {
+    throw fail(400, 'profileIds must be an array of 1-100 profile ids', 'INVALID_WORKSPACE');
+  }
+  const ids = profileIds.map(profileId => {
+    const row = db.prepare('SELECT id FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
+    if (!row) throw fail(404, `Profile ${profileId} not found`, 'NOT_FOUND');
+    assertProfileOperationAvailable(profileId);
+    return profileId;
+  });
+  const results = [];
+  for (const profileId of ids) {
+    assignProfileWorkspace(profileId, workspaceId);
+    results.push({ id: profileId, ok: true });
+  }
+  return { workspaceId, assigned: results.length, results };
+}
+
+/** Import local workspace metadata export; re-links profiles that still exist by id. */
+export function importWorkspaceBundle(payload) {
+  if (!payload || payload.format !== 'profile-manager-workspace' || !payload.workspace) {
+    throw fail(400, 'Expected profile-manager-workspace export JSON', 'INVALID_WORKSPACE_IMPORT');
+  }
+  const src = payload.workspace;
+  const assigned = [];
+  for (const profile of payload.profiles || []) {
+    if (!profile?.id) continue;
+    if (guardProfileMutation(profile.id)) assigned.push(profile.id);
+  }
+  const ws = db.transaction(() => {
+    const byId = src.id ? getWorkspace(src.id) : null;
+    const next = byId
+      ? updateWorkspace(byId.id, { name: src.name || byId.name, notes: src.notes ?? byId.notes })
+      : createWorkspace({ name: src.name || 'Imported workspace', notes: src.notes || '' });
+    for (const id of assigned) assignProfileWorkspace(id, next.id);
+    return next;
+  })();
+  return {
+    workspace: ws,
+    assignedProfileIds: assigned,
+    skippedProfiles: Math.max(0, (payload.profiles || []).filter(profile => profile?.id).length - assigned.length),
+  };
 }
 
 export function exportWorkspaceBundle(workspaceId) {

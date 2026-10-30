@@ -28,12 +28,14 @@ import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
+import { buildEngineStockReport } from './engine-stock-report.js';
+import { readWindowState } from './window-state.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
   listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
-  assertWorkspaceAccess, vaultStorageAvailable, exportWorkspaceBundle,
+  assertWorkspaceAccess, vaultStorageAvailable, exportWorkspaceBundle, bulkAssignProfilesToWorkspace, importWorkspaceBundle,
 } from './workspaces.js';
 import {
   configureCookieRobot, createCookieRobotJob, getCookieRobotJob, listCookieRobotJobs, cancelCookieRobotJob, retryCookieRobotJob, cookieRobotReport,
@@ -56,8 +58,13 @@ import {
   assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
 } from './profile-browser-export.js';
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
-import { adbAdapterReport, connectAdbTarget, listAdbDevices } from './adb-adapter.js';
-import { humanInputReport, typeHumanTextForProfile } from './human-input.js';
+import {
+  adbAdapterReport, adbDiagnostics, connectAdbTarget, disconnectAdbTarget, getAdbDeviceInfo,
+  getSelectedAdbSerial, listAdbDevices, setSelectedAdbSerial,
+} from './adb-adapter.js';
+import {
+  cancelHumanInput, getHumanInputStatus, humanInputReport, typeHumanTextForProfile,
+} from './human-input.js';
 import {
   geckoExtensionReport, importUnpackedGeckoExtension, importXpiGeckoExtension, listGeckoExtensions,
   readGeckoProfileExtensions, setGeckoProfileExtensionEnabled,
@@ -84,6 +91,7 @@ import {
   setExtensionEnabled, unassignExtension,
 } from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
+import { assertNotPausedTemplate, proxyHealthAnalytics, proxyTagGroups } from './proxy-library.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
 const browserInstall = { state: 'idle', log: '', error: null, code: null };
@@ -601,6 +609,20 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     res.json(browserEngineCapabilityMatrix());
   }));
+  router.get('/browser-engine/stock-report', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(buildEngineStockReport());
+  }));
+  router.get('/profiles/:id/window-state', wrap((req, res) => {
+    const p = must(req.params.id);
+    const remember = p.advancedSettings?.preferences?.rememberLastWindow === true;
+    const saved = readWindowState(p.id);
+    res.json({
+      rememberLastWindow: remember,
+      saved: saved ? { width: saved.width, height: saved.height, left: saved.left, top: saved.top, maximized: !!saved.maximized, savedAt: saved.savedAt || null } : null,
+      note: 'Local .pm-window.json only; no multi-monitor identity or antidetect screen spoofing.',
+    });
+  }));
   router.get('/browser-engine/update-manager', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(browserUpdateManagerReport());
@@ -696,9 +718,29 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     res.json(listAdbDevices());
   }));
+  router.get('/adb/diagnostics', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(adbDiagnostics());
+  }));
+  router.get('/adb/selection', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ selectedSerial: getSelectedAdbSerial() });
+  }));
+  router.put('/adb/selection', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(setSelectedAdbSerial(req.body?.serial ?? null));
+  }));
+  router.get('/adb/devices/:serial/info', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(getAdbDeviceInfo(req.params.serial));
+  }));
   router.post('/adb/connect', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(connectAdbTarget(req.body?.serial || req.body?.target));
+  }));
+  router.post('/adb/disconnect', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(disconnectAdbTarget(req.body?.serial || req.body?.target || ''));
   }));
   router.get('/automation-drivers', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -768,6 +810,8 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
       'Content-Disposition': `attachment; filename="profile-${req.params.id.slice(0, 8)}.pmp"`,
       'Cache-Control': 'no-store',
       'X-Backup-Contains': 'profile-user-data',
+      'X-Backup-Encrypted': 'aes-256-gcm',
+      'X-Backup-Format': 'portable-v2',
     });
     res.send(body);
   }));
@@ -857,11 +901,12 @@ function deleteProxy(id, force) {
   if (assigned.length && !force) throw Object.assign(err(409, `Proxy is assigned to ${assigned.length} profile(s). Unassign it first or pass ?force=1.`), { code: 'PROXY_IN_USE', extra: { assignedProfiles: assigned } });
   db.transaction(() => { db.prepare('UPDATE profiles SET proxy_id=NULL WHERE proxy_id=?').run(id); db.prepare('DELETE FROM proxies WHERE id=?').run(id); })();
 }
-function duplicateProxy(id, { name, asTemplate = false } = {}) {
+function duplicateProxy(id, { name, asTemplate = false, stripTemplate = false } = {}) {
   const r = mustProxy(id);
   let password = '';
   try { password = decrypt(r.password); } catch { password = ''; }
-  const tags = [...JSON.parse(r.tags || '[]')];
+  let tags = [...JSON.parse(r.tags || '[]')];
+  if (stripTemplate) tags = tags.filter(t => t !== 'template');
   if (asTemplate && !tags.includes('template')) tags.push('template');
   const label = String(name || `${r.name} (copy)`).trim().slice(0, 200) || `${r.type}://${r.host}:${r.port}`;
   const newId = createProxyRow({
@@ -881,7 +926,10 @@ function duplicateProxy(id, { name, asTemplate = false } = {}) {
 function assignProxy(profileId, proxyId) {
   const p = must(profileId);
   if (proxyId !== null && typeof proxyId !== 'string') throw err(400, 'proxyId must be a string or null');
-  if (proxyId) mustProxy(proxyId);
+  if (proxyId) {
+    const px = mustProxy(proxyId);
+    assertNotPausedTemplate(JSON.parse(px.tags || '[]'));
+  }
   db.prepare('UPDATE profiles SET proxy_id=?, updated_at=? WHERE id=?').run(proxyId, new Date().toISOString(), profileId);
   const out = publicP(get(profileId));
   if (p.running) out.appliesOnNextLaunch = true;
@@ -1031,6 +1079,14 @@ function mountExtensionRoutes(r) {
     res.set('Cache-Control', 'no-store');
     res.json(humanInputReport());
   }));
+  r.get('/profiles/:id/human-input/status', wrap((req, res) => {
+    must(req.params.id);
+    res.json(getHumanInputStatus(req.params.id));
+  }));
+  r.post('/profiles/:id/human-input/cancel', wrap((req, res) => {
+    must(req.params.id);
+    res.json(cancelHumanInput(req.params.id));
+  }));
   r.post('/profiles/:id/human-input', wrap(async (req, res) => {
     must(req.params.id);
     const text = req.body?.text;
@@ -1039,6 +1095,7 @@ function mountExtensionRoutes(r) {
       wpm: req.body?.wpm,
       jitterMs: req.body?.jitterMs,
       selector: req.body?.selector,
+      deterministic: req.body?.deterministic,
     }));
   }));
   r.post('/extensions/import', wrap((req, res) => res.status(201).json(importUnpackedExtension(req.body?.path ?? req.body?.sourcePath))));
@@ -1074,6 +1131,47 @@ function mountExtensionRoutes(r) {
   }));
 }
 function mountProxyRoutes(r) {
+  r.get('/proxies/groups', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(proxyTagGroups());
+  }));
+  r.get('/proxies/library/analytics', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(proxyHealthAnalytics());
+  }));
+  r.get('/proxies/templates', wrap((req, res) => {
+    res.json(listProxies({ ...req.query, tag: 'template' }));
+  }));
+  r.post('/proxies/templates', wrap((req, res) => {
+    const body = { ...(req.body || {}), tags: cleanTags([...(Array.isArray(req.body?.tags) ? req.body.tags : []), 'template']) };
+    res.status(201).json(publicProxy(proxyRow(createProxyRow(body))));
+  }));
+  r.patch('/proxies/templates/:id', wrap((req, res) => {
+    const row = mustProxy(req.params.id);
+    if (!JSON.parse(row.tags || '[]').includes('template')) throw err(400, 'Proxy is not a template preset', 'NOT_TEMPLATE');
+    res.json(patchProxy(req.params.id, req.body));
+  }));
+  r.delete('/proxies/templates/:id', wrap((req, res) => {
+    const row = mustProxy(req.params.id);
+    if (!JSON.parse(row.tags || '[]').includes('template')) throw err(400, 'Proxy is not a template preset', 'NOT_TEMPLATE');
+    deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true');
+    res.status(204).end();
+  }));
+  r.post('/proxies/templates/:id/instantiate', wrap((req, res) => {
+    const row = mustProxy(req.params.id);
+    if (!JSON.parse(row.tags || '[]').includes('template')) throw err(400, 'Proxy is not a template preset', 'NOT_TEMPLATE');
+    res.status(201).json(duplicateProxy(req.params.id, { name: req.body?.name, stripTemplate: true }));
+  }));
+  r.post('/proxies/test-batch', wrap(async (req, res) => {
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || !ids.length || ids.length > 50) throw err(400, 'ids must be an array of 1-50 proxy ids');
+    const results = [];
+    for (const id of ids) {
+      try { results.push({ id, ok: true, ...(await testLibraryProxy(id)) }); }
+      catch (e) { results.push({ id, ok: false, error: e.message, code: e.code || null }); }
+    }
+    res.json({ tested: ids.length, ok: results.filter(r => r.ok && r.status !== 'failed').length, results });
+  }));
   r.get('/proxies/library/summary', wrap((req, res) => {
     const rows = db.prepare('SELECT tags, last_test_status, provider FROM proxies').all();
     let templates = 0;
@@ -1105,11 +1203,26 @@ function mountProxyRoutes(r) {
     if (!('proxyId' in req.body)) throw err(400, 'proxyId is required (string or null)');
     res.json(assignProxy(req.params.id, req.body.proxyId));
   }));
+  r.post('/profiles/:id/proxy/switch', wrap((req, res) => {
+    must(req.params.id);
+    const mode = req.body?.mode;
+    if (mode === 'direct') return res.json(assignProxy(req.params.id, null));
+    if (mode === 'library') {
+      if (!req.body?.proxyId) throw err(400, 'proxyId is required for library mode');
+      return res.json(assignProxy(req.params.id, req.body.proxyId));
+    }
+    throw err(400, 'mode must be direct or library');
+  }));
 }
 function mountWorkspace(router) {
   router.get('/workspaces/vault-status', wrap((req, res) => res.json({ vaultStorageAvailable: vaultStorageAvailable(), backend: encryptionStatus().backend })));
-  router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces())));
+  router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces({ q: req.query.q }))));
   router.post('/workspaces', wrap((req, res) => res.status(201).json(createWorkspace(req.body || {}))));
+  router.post('/workspaces/import', wrap((req, res) => res.status(201).json(importWorkspaceBundle(req.body || {}))));
+  router.post('/workspaces/:id/assign-profiles', wrap((req, res) => {
+    const ids = req.body?.profileIds;
+    res.json(bulkAssignProfilesToWorkspace(req.params.id, ids));
+  }));
   router.patch('/workspaces/:id', wrap((req, res) => res.json(updateWorkspace(req.params.id, req.body || {}))));
   router.delete('/workspaces/:id', wrap((req, res) => { deleteWorkspace(req.params.id); res.status(204).end(); }));
   router.get('/workspaces/:id/export', wrap((req, res) => {
@@ -1228,7 +1341,19 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
     const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
-    res.json({ tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(), folders: [...new Set(all.map(r => r.folder))].sort(), running: engine.runningIds() });
+    res.json({
+      tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(),
+      folders: [...new Set(all.map(r => r.folder))].sort(),
+      running: engine.runningIds(),
+      features: {
+        proxyLibrary: true,
+        cookieRobotChromiumOnly: true,
+        webDriverBridge: true,
+        nativeManualLaunch: true,
+        geckoExtensionLibrary: true,
+        fingerprintStockOnly: true,
+      },
+    });
   });
   ui.post('/profiles/quick', wrap((req, res) => {
     const id = createQuickProfile({ name: req.body?.name, folder: req.body?.folder, insertFn: v => insert({ ...validate(v), isQuick: true }) });

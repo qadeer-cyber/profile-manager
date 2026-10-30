@@ -5,10 +5,12 @@ import { useToast } from '../components/Toasts.jsx';
 import { Confirm, Dialog } from '../components/Dialog.jsx';
 import { ProfileDialog, emptyForm } from '../components/ProfileDialog.jsx';
 import { StorageDialog } from '../components/StorageDialog.jsx';
+import { ProfileAutomationDialog } from '../components/ProfileAutomationDialog.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useSelection } from '../hooks/useSelection.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
-import { rowStatus, crashSummary, plural } from '../lib.js';
+import { rowStatus, crashSummary, plural, runAll } from '../lib.js';
+import { assignableLibraryProxies, switchProfileProxy } from '../lib/proxySwitch.js';
 
 const COLS = [['status', 'Status'], ['name', 'Name'], ['folder', 'Folder'], ['tags', 'Tags'], ['proxy', 'Proxy'], ['updated_at', 'Updated']];
 
@@ -78,6 +80,18 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     try { await fn(); if (label) toast(label, 'success'); } catch (e) { toast(e.message, 'error'); }
     setBusy(b => ({ ...b, [id]: false })); load(); reloadMeta();
   };
+  const bulkProxySwitch = async proxyId => {
+    const ids = selected.map(p => p.id);
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      const r = await runAll(ids, id => switchProfileProxy(id, { proxyId: proxyId || null }), 4);
+      toast(`${proxyId ? 'Assigned library proxy on' : 'Switched to direct on'} ${ids.length - r.failed.length} of ${ids.length} profile${ids.length === 1 ? '' : 's'}`, r.failed.length ? 'error' : 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    setBulkBusy(false);
+    load();
+    reloadMeta();
+  };
   const serverBulk = async (verb, body) => {
     if (Array.isArray(body.ids) && !body.ids.length) return;
     setBulkBusy(true); setBulkJob(null);
@@ -103,8 +117,11 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     if (f.proxyMode !== 'library') body.proxy = f.proxyMode === 'custom' ? { ...f.proxy, port: Number(f.proxy.port) } : null;
     const p = await api(f.id ? `/api/profiles/${f.id}` : '/api/profiles', { method: f.id ? 'PUT' : 'POST', body });
     if (f.proxyMode === 'library' && f.proxyId !== (f.id ? initialProxyId(f) : null)) {
-      const r = await api(`/api/profiles/${p.id}/proxy`, { method: 'POST', body: { proxyId: f.proxyId } });
+      const r = await switchProfileProxy(p.id, { proxyId: f.proxyId });
       if (r?.appliesOnNextLaunch) toast('Proxy change applies on the next launch');
+    } else if (f.proxyMode === 'none' && f.id && initialProxyId(f)) {
+      const r = await switchProfileProxy(p.id, { proxyId: null });
+      if (r?.appliesOnNextLaunch) toast('Switched to direct connection on next launch');
     }
     if (p.appliesOnNextLaunch) toast('Saved. Regional settings, WebRTC policy, browser configuration, and extensions apply on the next launch.');
     setDialog(null);
@@ -169,7 +186,8 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
           {p.cdp && <div className="mono" title="Automation (CDP) endpoint">{p.cdp.wsEndpoint}</div>}</td>
         <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>
         <td className="col-tags">{p.tags.map(t => <button key={t} className="tag" onClick={() => setTag(t)}>{t}</button>)}</td>
-        <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}</td>
+        <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}
+          <div><button type="button" className="link small" onClick={() => setDialog({ kind: 'proxy-switch', data: p })}>{p.proxy ? 'Switch…' : 'Set library proxy…'}</button></div></td>
         <td className="col-updated muted">{p.updated_at ? new Date(p.updated_at).toLocaleDateString() : ''}</td>
         <td className="actions col-actions">
           {p.running ? <>
@@ -179,6 +197,8 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
             })} title="Bring browser window to front">Focus</button>
             <button disabled={busy[p.id]} onClick={() => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }))}><Icon name="stop" /> Stop</button>
           </> : <button className="primary" disabled={busy[p.id]} onClick={() => act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name="play" /> {busy[p.id] ? 'Starting…' : 'Launch'}</button>}
+          {p.automationEnabled && <button className="icon-btn" title="Automation (CDP / WebDriver)" aria-label={'Automation ' + p.name} onClick={() => setDialog({ kind: 'automation', data: p })}><Icon name="bolt" size={14} /></button>}
+          <button className="icon-btn" title="Proxy connection" aria-label={'Proxy ' + p.name} onClick={() => setDialog({ kind: 'proxy-switch', data: p })}><Icon name="proxies" size={14} /></button>
           <button className="icon-btn" title="Storage" aria-label={'Storage ' + p.name} onClick={() => setDialog({ kind: 'storage', data: p })}><Icon name="storage" /></button>
           <button className="icon-btn" title="Export portable .pmp backup" aria-label={'Export ' + p.name} disabled={busy[p.id] || p.running} onClick={() => setDialog({ kind: 'portable', data: p })}><Icon name="download" /></button>
           <button className="icon-btn" title="Edit" aria-label={'Edit ' + p.name} onClick={() => setDialog({ kind: 'edit', data: toForm(p) })}><Icon name="edit" /></button>
@@ -203,7 +223,9 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     {dialog?.kind === 'bulk-tag' && <BulkTags count={selected.length} tags={meta.tags} onClose={() => setDialog(null)}
       onApply={(add, remove) => serverBulk('Updated tags on', { action: 'assign', ids: selected.map(p => p.id), addTags: add, removeTags: remove })} />}
     {dialog?.kind === 'bulk-proxy' && <BulkProxy count={selected.length} onClose={() => setDialog(null)}
-      onApply={proxyId => serverBulk('Assigned proxy on', { action: 'assign', ids: selected.map(p => p.id), proxyId })} />}
+      onApply={proxyId => bulkProxySwitch(proxyId || null)} />}
+    {dialog?.kind === 'proxy-switch' && <ProfileProxySwitch profile={dialog.data} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
+    {dialog?.kind === 'automation' && <ProfileAutomationDialog profile={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}
   </>;
@@ -236,10 +258,47 @@ function BulkMove({ count, folders, onApply, onClose }) {
 function BulkProxy({ count, onApply, onClose }) {
   const lib = useProxyLibrary();
   const [proxyId, setProxyId] = useState('');
-  return <Dialog title={`Proxy for ${plural(count, 'profile')}`} onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" onClick={() => { onApply(proxyId || null); onClose(); }}>Apply</button></>}>
-    {lib.available === false && <p className="muted">The proxy library is not available on this server.</p>}
-    <label>Proxy<select value={proxyId} onChange={e => setProxyId(e.target.value)}><option value="">Direct connection</option>{lib.list.map(proxy => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</select></label>
-    <p className="muted">A running profile keeps its current proxy until the next launch.</p>
+  const options = assignableLibraryProxies(lib.list);
+  return <Dialog title={`Proxy for ${plural(count, 'profile')}`} onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={lib.available === false} onClick={() => { onApply(proxyId || null); onClose(); }}>Apply</button></>}>
+    {lib.available === false && <p className="notice warn">The proxy library is not available on this server.</p>}
+    {lib.loading && <p className="muted" aria-busy="true">Loading proxy library…</p>}
+    {lib.error && <p className="err-text">{lib.error}</p>}
+    <label>Connection<select value={proxyId} onChange={e => setProxyId(e.target.value)} disabled={lib.available === false}>
+      <option value="">Direct connection</option>
+      {options.map(px => <option key={px.id} value={px.id}>{px.name} ({px.type}://{px.host}:{px.port}){px.lastTest?.status === 'failed' ? ' · failing' : ''}</option>)}
+    </select></label>
+    {!options.length && lib.available && !lib.loading && <p className="muted">No assignable proxies in the library. Add a live proxy on the Proxies page (templates cannot be assigned).</p>}
+    <p className="muted">Uses the safe switch API. Running profiles keep the current proxy until the next launch.</p>
+  </Dialog>;
+}
+
+function ProfileProxySwitch({ profile, onClose, onDone }) {
+  const toast = useToast();
+  const lib = useProxyLibrary();
+  const [proxyId, setProxyId] = useState(profile.proxyId || '');
+  const [busy, setBusy] = useState(false);
+  const options = assignableLibraryProxies(lib.list);
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const r = await switchProfileProxy(profile.id, { proxyId: proxyId || null });
+      if (r?.appliesOnNextLaunch) toast('Proxy change applies on the next launch', 'success');
+      else toast(proxyId ? 'Library proxy assigned' : 'Direct connection set', 'success');
+      onDone();
+      onClose();
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return <Dialog title={`Proxy · ${profile.name}`} onClose={onClose} footer={<><button onClick={onClose} disabled={busy}>Cancel</button><button className="primary" disabled={busy || lib.available === false} onClick={apply}>{busy ? 'Saving…' : 'Apply'}</button></>}>
+    {lib.available === false && <p className="notice warn">Proxy library unavailable — edit the profile to set a custom proxy.</p>}
+    {lib.loading && <p className="muted" aria-busy="true">Loading proxies…</p>}
+    {lib.error && <p className="err-text">{lib.error}</p>}
+    <p className="muted">Current: {profile.proxy ? `${profile.proxy.name || profile.proxy.host}:${profile.proxy.port}` : 'Direct'}</p>
+    <label>Connection<select value={proxyId} onChange={e => setProxyId(e.target.value)} disabled={lib.available === false || busy}>
+      <option value="">Direct connection</option>
+      {options.map(px => <option key={px.id} value={px.id}>{px.name} ({px.type}://{px.host}:{px.port})</option>)}
+    </select></label>
+    {profile.running && <p className="notice">This profile is running. The browser keeps the current proxy until you stop and launch again.</p>}
   </Dialog>;
 }
 function ImportProfiles({ onApply, onClose, onDone }) {

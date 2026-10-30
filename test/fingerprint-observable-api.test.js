@@ -5,11 +5,11 @@ import os from 'os';
 import path from 'path';
 import { chromium } from 'playwright';
 import { spawnServer, stopServer } from './_ports.mjs';
+import { withBrowserTestEnv, chromiumAvailableForTests } from './_browser-env.mjs';
 import { MANIFEST } from '../server/chromium.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-fp-obs-'));
-const env = { ...process.env, PM_DATA_DIR: dir, PM_API_TOKEN: 'fp-obs' };
-delete env.PM_SECRET;
+const env = withBrowserTestEnv({ PM_DATA_DIR: dir, PM_API_TOKEN: 'fp-obs' });
 let proc;
 
 after(async () => {
@@ -17,7 +17,7 @@ after(async () => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-test('M20–M23 observable facts in live Chromium session match profile settings', { timeout: 120000 }, async () => {
+test('M20–M23 observable facts in live Chromium session match profile settings', { timeout: 120000, skip: chromiumAvailableForTests() ? false : 'Chromium not installed for browser tests' }, async () => {
   proc = await spawnServer(env);
   const auth = { Authorization: 'Bearer fp-obs', 'Content-Type': 'application/json' };
   await fetch(`${proc.url}/api/settings`, { method: 'PUT', headers: auth, body: JSON.stringify({ minFreeMemoryGiB: 0, maxRunningProfiles: 4 }) });

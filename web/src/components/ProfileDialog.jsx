@@ -7,6 +7,7 @@ import { useToast } from './Toasts.jsx';
 import { Drawer, Tabs } from './Drawer.jsx';
 import { ProxyTestResult } from './ProxyTestResult.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
+import { assignableLibraryProxies } from '../lib/proxySwitch.js';
 import { FingerprintFields, IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
@@ -111,7 +112,10 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
         <button key={k} className={f.proxyMode === k ? 'sel' : ''} onClick={() => { setTest(null); set('proxyMode', k); }}>{l}</button>)}</div>
       {lib.available === false && <p className="muted">The reusable proxy library isn't available on this server yet, so proxies are set per profile.</p>}
       {f.proxyMode === 'library' && <label>Proxy<select value={f.proxyId} onChange={e => { setTest(null); set('proxyId', e.target.value); }}>
-        <option value="">Select a proxy…</option>{lib.list.map(p => <option key={p.id} value={p.id}>{p.name} ({p.type}://{p.host}:{p.port}){p.lastTest?.status === 'failed' ? ' · failing' : ''}</option>)}</select></label>}
+        <option value="">Select a proxy…</option>{assignableLibraryProxies(lib.list).map(p => <option key={p.id} value={p.id}>{p.name} ({p.type}://{p.host}:{p.port}){p.lastTest?.status === 'failed' ? ' · failing' : ''}</option>)}</select></label>}
+      {lib.loading && <p className="muted" aria-busy="true">Loading proxy library…</p>}
+      {lib.error && <p className="err-text">{lib.error}</p>}
+      {!assignableLibraryProxies(lib.list).length && lib.available && !lib.loading && <p className="muted">No live library proxies yet (templates must be instantiated on the Proxies page).</p>}
       {f.proxyMode === 'custom' && <div className="proxy-grid">
         <label>Type<select value={f.proxy.type} onChange={e => setP('type', e.target.value)}><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option></select></label>
         <label>Host<input value={f.proxy.host} onChange={e => setP('host', e.target.value)} placeholder="proxy.example.com" /></label>
@@ -137,7 +141,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     </div>}
     {tab === 'extensions' && <div className="form">
       {(f.browserEngine || 'chromium') === 'firefox'
-        ? <div className="notice warn">Extension assignments apply to Chromium profiles only. Switch the browser engine to Chromium on the General tab to load unpacked extensions.</div>
+        ? <div className="notice warn">Chromium extension assignments do not apply on Firefox. Manage signed or unpacked Gecko extensions on the Extensions page (import <code>.xpi</code> or folder); launch materializes enabled entries into the Firefox profile. No signing bypass — only Mozilla-trusted or locally imported add-ons.</div>
         : <div className="notice warn">Assigned extensions are copied unpacked extensions from the library. Chromium loads the enabled ones with --load-extension and does not load the others. Headless launches use a shell that often ignores extensions; use a visible window when an extension must run. This app does not review extension code, and loading one does not sandbox it beyond Chromium.</div>}
       {(f.browserEngine || 'chromium') === 'firefox' ? null : <>
       {libraryLoading && <p className="muted">Loading extensions…</p>}
@@ -158,7 +162,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     {tab === 'identity' && <IdentityFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'fingerprint' && <FingerprintFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'location' && <LocationFields settings={advanced} onChange={setAdvanced} />}
-    {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} />}
+    {tab === 'window' && <WindowFields settings={advanced} onChange={setAdvanced} profileId={initial.id} />}
     {tab === 'preferences' && <PreferenceFields settings={advanced} onChange={setAdvanced} />}
     {tab === 'cookies' && (initial.id ? <CookieManager profileId={initial.id} browserEngine={f.browserEngine || 'chromium'} /> : <p className="muted">Save the profile before managing its cookies.</p>)}
     {tab === 'hardware' && <HardwarePanel profileId={initial.id} />}

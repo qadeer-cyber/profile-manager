@@ -6,7 +6,7 @@ import { startLocalHttpFixture } from './_local-http-fixture.mjs';
 import { startChromiumCdpFixture } from './_chromium-cdp-fixture.mjs';
 import { typeHumanTextOverCdp, humanInputReport } from '../server/human-input.js';
 
-test('typeHumanTextOverCdp fills an input on a local fixture page', { timeout: 120000 }, async t => {
+async function typeOnFixture(t, text) {
   const fixture = await startLocalHttpFixture({ body: '<!doctype html><html><body><input id="t" /></body></html>' });
   t.after(() => fixture.close());
   const { port, endpoint } = await startChromiumCdpFixture(t);
@@ -15,11 +15,24 @@ test('typeHumanTextOverCdp fills an input on a local fixture page', { timeout: 1
   const page = browser.contexts()[0].pages()[0];
   await page.goto(fixture.origin, { waitUntil: 'domcontentloaded' });
   await page.locator('#t').waitFor();
-  const result = await typeHumanTextOverCdp(port, 'hello', { wpm: 600, selector: '#t', jitterMs: 0 });
+  const result = await typeHumanTextOverCdp(port, text, { wpm: 600, selector: '#t', jitterMs: 0, deterministic: true });
+  assert.equal(await page.inputValue('#t'), text);
+  return result;
+}
+
+test('typeHumanTextOverCdp fills an input on a local fixture page', { timeout: 120000 }, async t => {
+  const result = await typeOnFixture(t, 'hello');
   assert.equal(result.typed, 5);
-  assert.equal(await page.inputValue('#t'), 'hello');
+  assert.equal(result.deterministic, true);
 });
 
-test('humanInputReport documents Firefox unsupported', () => {
-  assert.equal(humanInputReport().firefox.supported, false);
+test('typeHumanTextOverCdp types Unicode into input', { timeout: 120000 }, async t => {
+  const result = await typeOnFixture(t, 'café');
+  assert.equal(result.typed, 4);
+});
+
+test('humanInputReport documents Firefox geckodriver path', () => {
+  const report = humanInputReport();
+  assert.equal(report.firefox.supported, true);
+  assert.equal(report.firefox.transport, 'geckodriver');
 });

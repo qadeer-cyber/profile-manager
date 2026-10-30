@@ -54,3 +54,23 @@ test('workspace API CRUD, profile assignment, and list filter', async () => {
   const del = await call('DELETE', `/api/v1/workspaces/${wsId}`);
   assert.equal(del.status, 204);
 });
+
+test('workspace search, bulk assign, and import', async () => {
+  const a = await call('POST', '/api/v1/workspaces', { name: 'Alpha team' });
+  const b = await call('POST', '/api/v1/workspaces', { name: 'Beta team' });
+  const filtered = await call('GET', '/api/v1/workspaces?q=alpha');
+  assert.equal(filtered.status, 200);
+  assert.equal(filtered.body.length, 1);
+  const p1 = await call('POST', '/api/v1/profiles', { name: 'One' });
+  const p2 = await call('POST', '/api/v1/profiles', { name: 'Two' });
+  const bulk = await call('POST', `/api/v1/workspaces/${a.body.id}/assign-profiles`, { profileIds: [p1.body.id, p2.body.id] });
+  assert.equal(bulk.status, 200);
+  assert.equal(bulk.body.assigned, 2);
+  const exported = await call('GET', `/api/v1/workspaces/${a.body.id}/export`);
+  await call('DELETE', `/api/v1/workspaces/${a.body.id}`);
+  const imported = await call('POST', '/api/v1/workspaces/import', exported.body);
+  assert.equal(imported.status, 201);
+  assert.ok(imported.body.assignedProfileIds.length >= 1);
+  await call('DELETE', `/api/v1/workspaces/${imported.body.workspace.id}`);
+  await call('DELETE', `/api/v1/workspaces/${b.body.id}`);
+});
