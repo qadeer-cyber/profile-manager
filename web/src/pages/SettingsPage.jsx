@@ -159,8 +159,8 @@ function BackupPanel({ toast }) {
       <button className="primary" disabled={busy} onClick={download}>Download backup</button>
       <label>If a profile id already exists<select aria-label="Restore collision" value={collision} onChange={e => setCollision(e.target.value)}><option value="abort">Abort</option><option value="rename">Import as new profiles</option><option value="replace">Replace stopped profiles</option></select></label>
       <label>Restore passphrase<input type="password" value={restorePassphrase} onChange={e => setRestorePassphrase(e.target.value)} autoComplete="current-password" placeholder="Only for an encrypted file" /></label>
-      <label className="file-btn">Inspect archive<input type="file" accept=".pmb,.pmbe,application/octet-stream" onChange={inspect} disabled={busy} /></label>
-      <label className="file-btn">Restore archive<input type="file" accept=".pmb,.pmbe,application/octet-stream" onChange={restore} disabled={busy} /></label>
+      <label className="file-btn">Inspect archive<input type="file" accept=".pmb,.pmbe,.pmp,application/octet-stream" onChange={inspect} disabled={busy} /></label>
+      <label className="file-btn">Restore archive<input type="file" accept=".pmb,.pmbe,.pmp,application/octet-stream" onChange={restore} disabled={busy} /></label>
     </div>
     {listing?.profiles?.length > 0 && <div className="panel nested"><h3>Restore preview</h3>
       <p className="muted">{listing.format || 'backup'} · schema v{listing.schemaVersion ?? '?'} · {listing.fileChecksumCount || 0} checksums{listing.containsDatabase === false ? ' · portable (no full DB)' : ''}</p>
