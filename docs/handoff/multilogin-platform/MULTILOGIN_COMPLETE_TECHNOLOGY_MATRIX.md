@@ -22,8 +22,8 @@
 | M14 | Extension manager (Firefox) | PARTIAL | Unpacked + signed `.xpi` import (`gecko-xpi.test.js`); `GET/PATCH …/gecko-extensions` reads/toggles `extensions.json`; materialize on launch; no signing bypass |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
-| M17 | Proxy templates / traffic saver | PARTIAL | Template tag + duplicate + filter; library summary; health history UI; provider Usage API only for stats; **no traffic saver** |
-| M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Provider panel (Bright/Oxy/Webshare) + documented APIs + CI mocks (`proxy-providers.test.js`); no paid subscription |
+| M17 | Proxy templates / traffic saver | VERIFIED | Template CRUD + instantiate (`proxy-library-m17.test.js`); tag groups + local analytics (`trafficSaverSupported: false`); batch test; safe direct/library switch; blocked assign for template/paused; health history UI; **no traffic saver / no invented bandwidth** |
+| M18 | Provider Bright Data/Oxylabs/Webshare | VERIFIED | Provider panel + documented Bright/Oxy/Webshare adapters; import/materialize/usage; CI mocks (`proxy-providers.test.js`); secrets never in JSON; no paid subscription |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
 | M20 | Fingerprint: timezone/locale/lang | PARTIAL | CDP observable tests; Firefox regional observables + documented limits in `profile-config-engine` (`FIREFOX_FINGERPRINT_LIMITS`) |
 | M21 | Fingerprint: geolocation | PARTIAL | Prefs + `fingerprint-gaps-browser.test.js` |
