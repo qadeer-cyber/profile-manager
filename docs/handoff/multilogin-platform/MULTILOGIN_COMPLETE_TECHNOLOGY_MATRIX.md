@@ -13,7 +13,7 @@
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
 | M7 | Clone profile | VERIFIED | `POST /profiles/:id/clone` + tests |
-| M8 | Import/export profile | PARTIAL | Full backup + selective restore preview (`backup-selective.test.js`); Settings inspect/select-all restore UX; portable `.pmp` on Profiles; transactional restore/rollback; not Multilogin format |
+| M8 | Import/export profile | VERIFIED | Full + portable backup; HTTP inspect/selective restore (`backup-selective.test.js`, `backup-api-selective.test.js`); Settings selective restore UX; **not Multilogin format**; restore atomicity/security owned separately |
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
 | M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; `tab-restore-browser.test.js` (CDP reopen + Example Domain titles); native launch plan tests |
@@ -41,8 +41,8 @@
 | M33 | Human typing emulation | VERIFIED | CDP + geckodriver paths; cancel/Unicode/special keys/WPM/deterministic; UI controls (`human-input*.test.js`); authorized UI testing only — no bypass |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
 | M35 | CLI / Script runner | VERIFIED | `pm-cli` profiles/workspaces/trash/proxy/extensions/cookies/diagnostics + `--json` + exit codes (`pm-cli-workflow.test.js`) |
-| M36 | Playwright/Puppeteer attach | PARTIAL | Playwright reconnect + puppeteer-core attach (`puppeteer-cdp-attach.test.js`); Settings documents CDP `wsEndpoint` attach (automation launch required) |
-| M37 | Selenium/WebDriver | PARTIAL | Stub session tests always; real create/navigate/quit when `PM_REAL_WEBDRIVER=1` (`webdriver-real.test.js`); Settings surfaces `/webdriver` + geckodriver/chromedriver start routes; opt-in driver cache |
+| M36 | Playwright/Puppeteer attach | VERIFIED | CDP on automation launch; `playwright-cdp-reconnect.test.js` + `puppeteer-cdp-attach.test.js`; Profiles automation dialog + Settings docs; **manual native launch has no CDP** |
+| M37 | Selenium/WebDriver | VERIFIED | ChromeDriver/geckodriver bridges (`webdriver-bridge.test.js`, `geckodriver-bridge.test.js`, `webdriver-api.test.js` stub start); UI + `pm-cli webdriver-*` / `geckodriver-*`; real navigate when `PM_REAL_WEBDRIVER=1`; drivers not bundled |
 | M38 | Workspaces / team sync | VERIFIED | CRUD, search, bulk assign, import/export metadata, vault lock; local only (`workspaces-api.test.js`); no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
 | M40 | Android cloud phones / ADB farms | VERIFIED | Local adb discovery/connect/disconnect/info/diagnostics + device selection UI; `PM_MOCK_ADB` CI tests (`adb-mock-ci.test.js`); **NOT farm-equivalent**; real USB unverified without hardware |

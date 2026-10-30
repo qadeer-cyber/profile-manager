@@ -203,7 +203,7 @@ function BackupPanel({ toast }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       setListing(payload);
-      setSelectedRestoreIds((payload.profiles || []).map(p => p.id).filter(Boolean));
+      setSelectedRestoreIds([]);
       setRestorePassphrase('');
     } catch (e) { toast(e.message, 'error'); }
     setBusy(false);
@@ -246,7 +246,7 @@ function BackupPanel({ toast }) {
         <label className="check"><input type="checkbox" checked={selectedRestoreIds.includes(p.id)} onChange={e => setSelectedRestoreIds(ids => e.target.checked ? [...ids, p.id] : ids.filter(x => x !== p.id))} />
           <strong>{p.name}</strong> <span className="mono-sm">{p.id?.slice(0, 8)}…</span> · {p.fileCount ?? 0} files</label>
       </li>)}</ul>
-      <p className="muted">Leave all unchecked to restore every profile in the archive. Check specific rows to restore only those ids (collision policy still applies).</p></div>}
+      <p className="muted">With none checked, restore imports the whole archive. Check one or more rows for selective restore (collision policy still applies). Not Multilogin’s cloud format.</p></div>}
     {listing && !listing.profiles?.length && <p className="muted">{listing.encrypted ? 'Encrypted backup — enter passphrase and inspect again to preview profiles.' : 'No profiles listed in manifest.'}</p>}
     {result && <p className="muted">Added {result.added.length}, replaced {result.replaced.length}, renamed {result.renamed.length}{result.proxyDetached.length ? `, proxy detached on ${result.proxyDetached.length}` : ''}.</p>}
   </section>;

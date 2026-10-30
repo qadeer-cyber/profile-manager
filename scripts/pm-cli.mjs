@@ -47,6 +47,7 @@ Proxy & extensions (v1):
   proxies [tag]                List library proxies
   proxy-summary                Library health summary
   proxy-assign <profileId> <proxyId|null>
+  proxy-switch <profileId> direct|library <proxyId>
   extensions                   List extension library
   extension-assign <profileId> <extensionId> [true|false enabled]
 
@@ -62,6 +63,10 @@ Automation & diagnostics:
   cookie-robot                 CookieRobot capability report
   human-input                  Human input capability report
   bridges                      WebDriver + geckodriver reports
+  webdriver-start <profileId>  Start ChromeDriver bridge (CDP required)
+  webdriver-stop <profileId>   Stop ChromeDriver bridge
+  geckodriver-start <profileId>  Start geckodriver bridge (Firefox automation)
+  geckodriver-stop <profileId>   Stop geckodriver bridge
   automation-drivers           Cached driver install report
   diagnostics                  Server diagnostics (/api)
   dashboard                    Dashboard stats (v1)
@@ -229,6 +234,18 @@ try {
   } else if (cmd === 'proxy-assign') {
     const proxyId = arg2 === 'null' || arg2 === '' ? null : arg2;
     out(await api('POST', `/profiles/${arg}/proxy`, { proxyId }));
+  } else if (cmd === 'proxy-switch') {
+    if (arg2 === 'direct') out(await api('POST', `/profiles/${arg}/proxy/switch`, { mode: 'direct' }));
+    else if (arg2 === 'library') out(await api('POST', `/profiles/${arg}/proxy/switch`, { mode: 'library', proxyId: arg3 }));
+    else throw Object.assign(new Error('proxy-switch requires direct or library'), { exitCode: EXIT.USAGE });
+  } else if (cmd === 'webdriver-start') {
+    out(await api('POST', `/profiles/${arg}/webdriver/start`, {}));
+  } else if (cmd === 'webdriver-stop') {
+    out(await api('POST', `/profiles/${arg}/webdriver/stop`, {}));
+  } else if (cmd === 'geckodriver-start') {
+    out(await api('POST', `/profiles/${arg}/geckodriver/start`, {}));
+  } else if (cmd === 'geckodriver-stop') {
+    out(await api('POST', `/profiles/${arg}/geckodriver/stop`, {}));
   } else if (cmd === 'extensions') {
     out(await api('GET', '/extensions'));
   } else if (cmd === 'extension-assign') {

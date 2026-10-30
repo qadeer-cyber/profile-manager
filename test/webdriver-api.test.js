@@ -32,6 +32,45 @@ test('webdriver start rejects profiles without CDP automation port', async () =>
   assert.equal(report.body.bundled, false);
 });
 
+test('webdriver start succeeds when CDP port is recorded and chromedriver stub is configured', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-wd-api-stub-'));
+  const script = path.join(tmp, 'fake-chromedriver.mjs');
+  const stub = path.join(tmp, process.platform === 'win32' ? 'chromedriver-stub.cmd' : 'chromedriver-stub.sh');
+  if (process.platform === 'win32') {
+    fs.writeFileSync(stub, `@echo off\r\n"${process.execPath.replace(/"/g, '""')}" "${script.replace(/"/g, '""')}" %*\r\n`);
+  } else {
+    fs.writeFileSync(stub, `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`);
+    fs.chmodSync(stub, 0o755);
+  }
+  fs.writeFileSync(script, `
+import http from 'node:http';
+const portArg = process.argv.find(a => a.startsWith('--port='));
+const port = Number(portArg?.slice(7) || 0);
+http.createServer((req, res) => {
+  if (req.method === 'GET' && req.url === '/status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ value: { ready: true } }));
+    return;
+  }
+  res.writeHead(404); res.end();
+}).listen(port, '127.0.0.1');
+`);
+  process.env.PM_CHROMEDRIVER_PATH = stub;
+  const created = await call('POST', '/api/v1/profiles', { name: 'With CDP row', automationEnabled: true });
+  const { db } = await import('../server/db.js');
+  const now = new Date().toISOString();
+  db.prepare('INSERT INTO running (id, pid, cdp_port, ws_endpoint, relay_url, started_at) VALUES (?,?,?,?,?,?)')
+    .run(created.body.id, 99999, 59999, 'ws://127.0.0.1:59999/devtools', null, now);
+  const started = await call('POST', `/api/v1/profiles/${created.body.id}/webdriver/start`, {});
+  assert.equal(started.status, 200);
+  assert.match(started.body.webdriverUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
+  const stopped = await call('POST', `/api/v1/profiles/${created.body.id}/webdriver/stop`, {});
+  assert.equal(stopped.status, 200);
+  db.prepare('DELETE FROM running WHERE id=?').run(created.body.id);
+  delete process.env.PM_CHROMEDRIVER_PATH;
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test('automation bridges are engine-specific', async () => {
   const gecko = await call('GET', '/api/v1/geckodriver');
   assert.equal(gecko.status, 200);

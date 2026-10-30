@@ -4,6 +4,7 @@ import { useToast } from '../components/Toasts.jsx';
 import { Confirm, Dialog } from '../components/Dialog.jsx';
 import { ProfileDialog, emptyForm } from '../components/ProfileDialog.jsx';
 import { StorageDialog } from '../components/StorageDialog.jsx';
+import { ProfileAutomationDialog } from '../components/ProfileAutomationDialog.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { useSelection } from '../hooks/useSelection.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
@@ -184,6 +185,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
             })} title="Bring browser window to front">Focus</button>
             <button disabled={busy[p.id]} onClick={() => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }))}><Icon name="stop" /> Stop</button>
           </> : <button className="primary" disabled={busy[p.id]} onClick={() => act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name="play" /> {busy[p.id] ? 'Starting…' : 'Launch'}</button>}
+          {p.automationEnabled && <button className="icon-btn" title="Automation (CDP / WebDriver)" aria-label={'Automation ' + p.name} onClick={() => setDialog({ kind: 'automation', data: p })}><Icon name="bolt" size={14} /></button>}
           <button className="icon-btn" title="Proxy connection" aria-label={'Proxy ' + p.name} onClick={() => setDialog({ kind: 'proxy-switch', data: p })}><Icon name="proxies" size={14} /></button>
           <button className="icon-btn" title="Storage" aria-label={'Storage ' + p.name} onClick={() => setDialog({ kind: 'storage', data: p })}><Icon name="storage" /></button>
           <button className="icon-btn" title="Export portable .pmp backup" aria-label={'Export ' + p.name} disabled={busy[p.id] || p.running} onClick={() => exportPortable(p)}><Icon name="download" /></button>
@@ -211,6 +213,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     {dialog?.kind === 'bulk-proxy' && <BulkProxy count={selected.length} onClose={() => setDialog(null)}
       onApply={proxyId => bulkProxySwitch(proxyId || null)} />}
     {dialog?.kind === 'proxy-switch' && <ProfileProxySwitch profile={dialog.data} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
+    {dialog?.kind === 'automation' && <ProfileAutomationDialog profile={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}
   </>;
