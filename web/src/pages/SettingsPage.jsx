@@ -39,15 +39,29 @@ export function SettingsPage() {
 
 function AutomationCliPanel() {
   const [caps, setCaps] = useState(null);
-  useEffect(() => { api('/api/human-input').then(setCaps).catch(() => {}); }, []);
+  const [wd, setWd] = useState(null);
+  const [wdError, setWdError] = useState('');
+  useEffect(() => {
+    api('/api/human-input').then(setCaps).catch(() => setCaps(null));
+    api('/api/webdriver').then(setWd).catch(e => setWdError(e.message));
+  }, []);
   return <section className="panel"><h2>CLI &amp; automation</h2>
-    <p className="muted">Local-only automation via <code>npm run pm-cli -- help</code> and <code>/api/v1</code>. Requires <code>PM_API_TOKEN</code>.</p>
+    <p className="muted">Local-only automation via <code>npm run pm-cli -- help</code> and bearer-token <code>/api/v1</code>. Enable automation on a profile, launch it, then attach Playwright/Puppeteer to the published CDP WebSocket URL (shown on the profile row).</p>
     {caps && <ul className="muted small">
       <li>Human input: Chromium CDP + Firefox geckodriver ({caps.specialKeySyntax})</li>
       <li>Cancel: <code>POST /api/profiles/:id/human-input/cancel</code></li>
       <li>Engines: {(caps.supportedEngines || []).join(', ')}</li>
     </ul>}
-    {!caps && <p className="muted">Loading capability report…</p>}
+    {!caps && !wdError && <p className="muted" aria-busy="true">Loading capability report…</p>}
+    <h3 className="h3">Playwright / Puppeteer (CDP)</h3>
+    <p className="muted small">Connect to <code>wsEndpoint</code> from a running profile with automation enabled. Manual native launches without CDP cannot attach.</p>
+    <h3 className="h3">WebDriver bridge (optional)</h3>
+    {wdError && <p className="err-text">{wdError}</p>}
+    {wd && <ul className="muted small">
+      <li>Report: <code>GET /api/webdriver</code> · Chromium: <code>POST /api/profiles/:id/webdriver/start</code> (requires CDP) · Firefox: <code>POST /api/profiles/:id/geckodriver/start</code></li>
+      <li>Status: {(wd.activeSessions || []).length} active bridge session{(wd.activeSessions || []).length === 1 ? '' : 's'} · real navigate/quit when drivers are on PATH or cached below</li>
+    </ul>}
+    {!wd && !wdError && <p className="muted">Loading WebDriver report…</p>}
   </section>;
 }
 
@@ -225,10 +239,14 @@ function BackupPanel({ toast }) {
     </div>
     {listing?.profiles?.length > 0 && <div className="panel nested"><h3>Restore preview</h3>
       <p className="muted">{listing.format || 'backup'} · schema v{listing.schemaVersion ?? '?'} · {listing.fileChecksumCount || 0} checksums{listing.containsDatabase === false ? ' · portable (no full DB)' : ''}</p>
+      <div className="row"><button type="button" className="ghost" onClick={() => setSelectedRestoreIds(listing.profiles.map(p => p.id).filter(Boolean))}>Select all</button>
+        <button type="button" className="ghost" onClick={() => setSelectedRestoreIds([])}>Select none</button>
+        <span className="muted">{selectedRestoreIds.length} of {listing.profiles.length} selected for selective restore</span></div>
       <ul>{listing.profiles.map(p => <li key={p.id}>
         <label className="check"><input type="checkbox" checked={selectedRestoreIds.includes(p.id)} onChange={e => setSelectedRestoreIds(ids => e.target.checked ? [...ids, p.id] : ids.filter(x => x !== p.id))} />
           <strong>{p.name}</strong> <span className="mono-sm">{p.id?.slice(0, 8)}…</span> · {p.fileCount ?? 0} files</label>
-      </li>)}</ul></div>}
+      </li>)}</ul>
+      <p className="muted">Leave all unchecked to restore every profile in the archive. Check specific rows to restore only those ids (collision policy still applies).</p></div>}
     {listing && !listing.profiles?.length && <p className="muted">{listing.encrypted ? 'Encrypted backup — enter passphrase and inspect again to preview profiles.' : 'No profiles listed in manifest.'}</p>}
     {result && <p className="muted">Added {result.added.length}, replaced {result.replaced.length}, renamed {result.renamed.length}{result.proxyDetached.length ? `, proxy detached on ${result.proxyDetached.length}` : ''}.</p>}
   </section>;

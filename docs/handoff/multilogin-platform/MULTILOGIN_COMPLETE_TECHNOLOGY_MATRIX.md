@@ -13,13 +13,13 @@
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
 | M7 | Clone profile | VERIFIED | `POST /profiles/:id/clone` + tests |
-| M8 | Import/export profile | PARTIAL | Full backup + selective restore preview (`backup-selective.test.js`); portable `.pmp` download on Profiles; transactional restore/rollback; not Multilogin format |
+| M8 | Import/export profile | PARTIAL | Full backup + selective restore preview (`backup-selective.test.js`); Settings inspect/select-all restore UX; portable `.pmp` on Profiles; transactional restore/rollback; not Multilogin format |
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
 | M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; `tab-restore-browser.test.js` (CDP reopen + Example Domain titles); native launch plan tests |
-| M12 | Window state / maximized | PARTIAL | Opt-in `rememberLastWindow` + `.pm-window.json` on stop (`window-state.test.js`); Chromium flags + Firefox `-width`/`-height`; no OS-level multi-monitor persistence |
+| M12 | Window state / maximized | PARTIAL | Opt-in `rememberLastWindow` + `.pm-window.json` on stop (`window-state.test.js`); launch presets + UI honesty (no monitor spoofing); Chromium flags + Firefox `-width`/`-height`; no OS-level multi-monitor persistence |
 | M13 | Extension manager (Chromium) | VERIFIED | Unpacked MV2/MV3 library |
-| M14 | Extension manager (Firefox) | PARTIAL | Unpacked + signed `.xpi` import (`gecko-xpi.test.js`); `GET/PATCH …/gecko-extensions` reads/toggles `extensions.json`; materialize on launch; no signing bypass |
+| M14 | Extension manager (Firefox) | PARTIAL | Unpacked + signed `.xpi` import (`gecko-xpi.test.js`); profile editor + Extensions page document Gecko path; `GET/PATCH …/gecko-extensions`; materialize on launch; no signing bypass |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
 | M17 | Proxy templates / traffic saver | VERIFIED | Template CRUD + instantiate (`proxy-library-m17.test.js`); tag groups + local analytics (`trafficSaverSupported: false`); batch test; safe direct/library switch; blocked assign for template/paused; health history UI; **no traffic saver / no invented bandwidth** |
@@ -41,8 +41,8 @@
 | M33 | Human typing emulation | VERIFIED | CDP + geckodriver paths; cancel/Unicode/special keys/WPM/deterministic; UI controls (`human-input*.test.js`); authorized UI testing only — no bypass |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
 | M35 | CLI / Script runner | VERIFIED | `pm-cli` profiles/workspaces/trash/proxy/extensions/cookies/diagnostics + `--json` + exit codes (`pm-cli-workflow.test.js`) |
-| M36 | Playwright/Puppeteer attach | PARTIAL | Playwright reconnect + puppeteer-core attach (`puppeteer-cdp-attach.test.js`) |
-| M37 | Selenium/WebDriver | PARTIAL | Stub session tests always; real create/navigate/quit when `PM_REAL_WEBDRIVER=1` (`webdriver-real.test.js`); opt-in driver cache |
+| M36 | Playwright/Puppeteer attach | PARTIAL | Playwright reconnect + puppeteer-core attach (`puppeteer-cdp-attach.test.js`); Settings documents CDP `wsEndpoint` attach (automation launch required) |
+| M37 | Selenium/WebDriver | PARTIAL | Stub session tests always; real create/navigate/quit when `PM_REAL_WEBDRIVER=1` (`webdriver-real.test.js`); Settings surfaces `/webdriver` + geckodriver/chromedriver start routes; opt-in driver cache |
 | M38 | Workspaces / team sync | VERIFIED | CRUD, search, bulk assign, import/export metadata, vault lock; local only (`workspaces-api.test.js`); no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
 | M40 | Android cloud phones / ADB farms | VERIFIED | Local adb discovery/connect/disconnect/info/diagnostics + device selection UI; `PM_MOCK_ADB` CI tests (`adb-mock-ci.test.js`); **NOT farm-equivalent**; real USB unverified without hardware |

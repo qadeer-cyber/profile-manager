@@ -29,10 +29,20 @@ export function ProxiesPage() {
   if (lib.available === false) return <LegacySummary />;
 
   const test = async ids => {
+    if (!ids.length) return;
     setTesting(t => ({ ...t, ...Object.fromEntries(ids.map(i => [i, true])) }));
-    const r = await runAll(ids, id => api(`/api/proxies/${id}/test`, { method: 'POST' }), 4);
-    setTesting(t => ({ ...t, ...Object.fromEntries(ids.map(i => [i, false])) })); lib.reload();
-    if (ids.length > 1) toast(`Tested ${plural(ids.length, 'proxy')}${r.failed.length ? `, ${r.failed.length} request errors` : ''}`, r.failed.length ? 'error' : 'success');
+    try {
+      if (ids.length === 1) {
+        await api(`/api/proxies/${ids[0]}/test`, { method: 'POST' });
+        toast('Proxy test finished', 'success');
+      } else {
+        const batch = await api('/api/proxies/test-batch', { method: 'POST', body: { ids: ids.slice(0, 50) } });
+        const failed = (batch.results || []).filter(r => !r.ok || r.status === 'failed');
+        toast(`Tested ${batch.tested} prox${batch.tested === 1 ? 'y' : 'ies'} · ${batch.ok} ok${failed.length ? ` · ${failed.length} failed` : ''}`, failed.length ? 'error' : 'success');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+    setTesting(t => ({ ...t, ...Object.fromEntries(ids.map(i => [i, false])) }));
+    lib.reload();
   };
   const remove = async (p, force) => {
     try { await api(`/api/proxies/${p.id}${force ? '?force=1' : ''}`, { method: 'DELETE' }); toast(`Deleted ${p.name}`, 'success'); lib.reload(); }

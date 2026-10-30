@@ -1302,7 +1302,17 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
     const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
-    res.json({ tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(), folders: [...new Set(all.map(r => r.folder))].sort(), running: engine.runningIds() });
+    res.json({
+      tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(),
+      folders: [...new Set(all.map(r => r.folder))].sort(),
+      running: engine.runningIds(),
+      features: {
+        proxyLibrary: true,
+        cookieRobotChromiumOnly: true,
+        webDriverBridge: true,
+        nativeManualLaunch: true,
+      },
+    });
   });
   ui.post('/profiles/quick', wrap((req, res) => {
     const id = createQuickProfile({ name: req.body?.name, folder: req.body?.folder, insertFn: v => insert({ ...validate(v), isQuick: true }) });

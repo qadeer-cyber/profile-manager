@@ -77,7 +77,7 @@ export function App() {
     <nav className="side" aria-label="Main">
       <div className="brand"><span className="logo"><Icon name="profiles" size={18} /></span>Profile Manager</div>
       {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} onClick={() => { setPage(k); if (k === 'profiles') setFolder('__all'); }}>
-        <Icon name={k} />{label}{k === 'profiles' && meta.running.length > 0 && <span className="badge" title="Running">{meta.running.length}</span>}</button>)}
+        <Icon name={k} />{label}{k === 'profiles' && meta.running.length > 0 && <span className="badge" title="Running">{meta.running.length}</span>}{k === 'cookie-robot' && meta.features?.cookieRobotChromiumOnly && <span className="pill unavailable" title="Chromium + CDP only">Chromium</span>}</button>)}
       <div className="side-section">Folders</div>
       <div className="folders">
         {named.map(f => <button key={f} className={'nav sub' + (page === 'profiles' && folder === f ? ' sel' : '')} onClick={() => openFolder(f)}><Icon name="folder" />{f}</button>)}

@@ -49,6 +49,7 @@ export function WindowFields({ settings, onChange }) {
   const set = patch => onChange({ ...settings, screen: { ...screen, ...patch } });
   const custom = screen.preset === 'custom';
   return <div className="form">
+    <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs for antidetect, and they do not remember which monitor a window was on — only width, height, and optional X/Y offsets below.</div>
     <label>Screen preset<select value={screen.preset} onChange={e => {
       const preset = e.target.value;
       const known = SCREEN_PRESETS[preset];
