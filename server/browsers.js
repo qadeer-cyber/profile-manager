@@ -779,7 +779,12 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   }
   // 1) graceful: close the context  2) force: kill the process tree
   if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
-  if (e.browserPid && isAlive(e.browserPid)) await killTree(e.browserPid, { expect: userDataDir(id) });
+  if (e.browserPid && isAlive(e.browserPid)) {
+    const killOpts = { expect: userDataDir(id) };
+    // Stock Firefox needs time to flush cookies/localStorage into the gecko profile on SIGTERM.
+    if (e.engine === 'firefox' && e.runtime === 'native') Object.assign(killOpts, { graceMs: 8000, waitMs: 15000 });
+    await killTree(e.browserPid, killOpts);
+  }
   if (e.done) await e.done;
   else await onClosed(id, e.ctx);
 }

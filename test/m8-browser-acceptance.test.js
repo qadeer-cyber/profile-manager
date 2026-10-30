@@ -8,12 +8,34 @@ import { spawnServer, stopServer } from './_ports.mjs';
 import { startLocalHttpFixture } from './_local-http-fixture.mjs';
 import { connectMarionette } from './_marionette-client.mjs';
 
+function discoverStockFirefoxExecutable() {
+  const configured = process.env.PM_FIREFOX_EXECUTABLE;
+  if (configured && fs.existsSync(configured)) return configured;
+  for (const c of ['/usr/bin/firefox', '/usr/bin/firefox-esr', '/Applications/Firefox.app/Contents/MacOS/firefox']) {
+    if (fs.existsSync(c)) return c;
+  }
+  const cacheRoot = path.join(os.homedir(), '.cache/ms-playwright');
+  if (fs.existsSync(cacheRoot)) {
+    for (const name of fs.readdirSync(cacheRoot).filter(n => n.startsWith('firefox-')).sort().reverse()) {
+      const exe = path.join(cacheRoot, name, 'firefox', process.platform === 'win32' ? 'firefox.exe' : 'firefox');
+      if (fs.existsSync(exe)) return exe;
+    }
+  }
+  return null;
+}
+
 for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/configure/browse/stop/encrypted export/fresh restore/restart/readback`, { timeout: 120000 }, async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m8-browser-'));
   const fixture = await startLocalHttpFixture(); let a, b;
   t.after(async () => { if (a) assert.equal(await stopServer(a), true); if (b) assert.equal(await stopServer(b), true); await fixture.close(); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });
   const token = 'disposable-m8-browser', headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-  const env = dir => { const e = { ...process.env, PM_DATA_DIR: dir, PM_API_TOKEN: token, MOZ_HEADLESS: '1' }; delete e.PM_SECRET; return e; };
+  const env = dir => {
+    const e = { ...process.env, PM_DATA_DIR: dir, PM_API_TOKEN: token, MOZ_HEADLESS: '1' };
+    delete e.PM_SECRET;
+    const firefoxExe = discoverStockFirefoxExecutable();
+    if (firefoxExe) e.PM_FIREFOX_EXECUTABLE = firefoxExe;
+    return e;
+  };
   const call = async (server, route, body) => {
     const response = await fetch(server.url + '/api/v1' + route, { method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(45000) });
     const result = await response.json(); assert.ok(response.ok, JSON.stringify(result)); return result;
@@ -37,6 +59,7 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
         const result = await client.command('WebDriver:ExecuteScript', { script, args: [], newSandbox: false, sandbox: 'default' });
         value = result?.value ?? result;
         try { await client.command('Marionette:Quit', { flags: ['eAttemptQuit'] }); } catch (e) { if (!/connection closed/.test(e.message)) throw e; }
+        await new Promise(r => setTimeout(r, 500));
       } finally { client.close(); }
     }
     assert.equal(value.storage, 'persistent-value'); assert.match(value.cookie, /m8=persistent-cookie/);
@@ -71,13 +94,15 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
   if (uiPage) {
     await uiPage.goto(b.url); await uiPage.locator('[data-nav="settings"]').click();
     await uiPage.getByLabel('Restore passphrase', { exact: true }).fill('disposable browser passphrase');
-    const inspected = uiPage.waitForResponse(r => r.url().includes('/backup/inspect-stream'));
     await uiPage.getByLabel('Inspect archive', { exact: true }).setInputFiles(archivePath);
-    assert.equal((await inspected).status(), 200);
     await uiPage.getByText('Restore preview', { exact: true }).waitFor();
-    const restored = uiPage.waitForResponse(r => r.url().includes('/backup/restore-stream'));
+    // Playwright cannot read restore-stream bodies after the SPA handles the upload (inspector cache eviction).
+    // Validate the encrypted restore via UI completion plus API/readback instead of response.json().
     await uiPage.getByLabel('Restore archive', { exact: true }).setInputFiles(archivePath);
-    const response = await restored; assert.equal(response.status(), 200); assert.equal((await response.json()).added[0].id, profile.id);
+    await uiPage.locator('.toast.success').filter({ hasText: /Restored \d+ profiles/ }).waitFor({ timeout: 120000 });
+    const restoredRow = await call(b, `/profiles/${profile.id}`);
+    assert.equal(restoredRow.id, profile.id);
+    assert.equal(restoredRow.name, profile.name);
   } else {
     const restored = await fetch(b.url + '/api/v1/backup/restore-stream', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/octet-stream', 'X-Backup-Passphrase': 'disposable browser passphrase' }, body: bytes });
     const result = await restored.json(); assert.equal(restored.status, 200, JSON.stringify(result)); assert.equal(result.added[0].id, profile.id);
