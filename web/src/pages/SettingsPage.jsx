@@ -38,24 +38,70 @@ export function SettingsPage() {
 
 function AdbDevicesPanel({ toast }) {
   const [report, setReport] = useState(null);
+  const [diag, setDiag] = useState(null);
+  const [info, setInfo] = useState(null);
   const [connectTarget, setConnectTarget] = useState('');
-  const load = useCallback(() => { api('/api/adb/devices').then(setReport).catch(e => toast(e.message, 'error')); }, [toast]);
-  useEffect(load, [load]);
+  const load = useCallback(async () => {
+    try {
+      const [devices, diagnostics] = await Promise.all([
+        api('/api/adb/devices'),
+        api('/api/adb/diagnostics'),
+      ]);
+      setReport(devices);
+      setDiag(diagnostics);
+    } catch (e) { toast(e.message, 'error'); }
+  }, [toast]);
+  useEffect(() => { load(); }, [load]);
+  const selectSerial = async serial => {
+    try {
+      await api('/api/adb/selection', { method: 'PUT', body: { serial } });
+      toast(serial ? `Selected ${serial}` : 'Cleared device selection', 'success');
+      load();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  const showInfo = async serial => {
+    try { setInfo(await api(`/api/adb/devices/${encodeURIComponent(serial)}/info`)); }
+    catch (e) { toast(e.message, 'error'); }
+  };
   return <section className="panel"><h2>Local Android devices (ADB)</h2>
-    <p className="muted">{report?.note || 'Lists USB devices when the host adb tool is on PATH. This is not a cloud phone farm and cannot replace Multilogin Android farms.'}</p>
-    {!report?.available && <p className="muted">Status: {report?.reason || 'unavailable'} — install Android platform tools and ensure <code>adb</code> is on PATH to list your own devices.</p>}
+    <p className="muted">{report?.note || 'User-owned USB/network devices via host adb. Not a cloud phone farm.'}</p>
+    {diag?.mockMode && <p className="notice warn">Mock adb (PM_MOCK_ADB) — CI/dev only. Real USB behavior is not verified until adb is on PATH with a physical device.</p>}
+    {diag && <p className="muted small">{diag.versionLine || 'adb version unknown'} · {diag.counts?.device || 0} ready, {diag.counts?.unauthorized || 0} unauthorized, {diag.counts?.offline || 0} offline
+      {diag.selectedSerial && <> · Selected <code>{diag.selectedSerial}</code>{diag.selectedPresent ? '' : ' (missing)'}</>}</p>}
+    {diag?.recoveryHints?.length > 0 && <ul className="muted small">{diag.recoveryHints.map(h => <li key={h}>{h}</li>)}</ul>}
+    {!report?.available && !report?.mockMode && <p className="muted">Status: {report?.reason || 'unavailable'} — install Android platform-tools and ensure <code>adb</code> is on PATH.</p>}
     {report?.available && <>
-      <div className="row"><input placeholder="host:port for adb connect" value={connectTarget} onChange={e => setConnectTarget(e.target.value)} />
+      <div className="row"><input placeholder="host:port for adb connect" value={connectTarget} onChange={e => setConnectTarget(e.target.value)} aria-label="ADB connect target" />
         <button type="button" onClick={async () => {
           try {
             const r = await api('/api/adb/connect', { method: 'POST', body: { serial: connectTarget.trim() } });
             toast(r.ok ? `Connected: ${r.target}` : (r.message || r.error), r.ok ? 'success' : 'error');
             load();
           } catch (e) { toast(e.message, 'error'); }
-        }}>Connect</button></div>
-      <button type="button" onClick={load}>Refresh</button>
-      {report.devices?.length ? <ul>{report.devices.map(d => <li key={d.serial}><code>{d.serial}</code> — {d.state}{d.model ? ` · ${d.model}` : ''}</li>)}</ul>
+        }}>Connect</button>
+        <button type="button" className="ghost" onClick={load}>Refresh</button></div>
+      {report.devices?.length ? <div className="table-wrap"><table className="grid"><thead><tr><th></th><th>Serial</th><th>State</th><th>Model</th><th></th></tr></thead><tbody>
+        {report.devices.map(d => <tr key={d.serial}>
+          <td><input type="radio" name="adb-select" aria-label={'Select ' + d.serial} checked={report.selectedSerial === d.serial} onChange={() => selectSerial(d.serial)} disabled={d.state !== 'device'} /></td>
+          <td className="mono-sm">{d.serial}</td>
+          <td>{d.state}{d.state === 'unauthorized' && <span className="err-text"> — accept USB debugging on device</span>}</td>
+          <td>{d.model || '—'}</td>
+          <td className="actions">
+            <button type="button" disabled={d.state !== 'device'} onClick={() => showInfo(d.serial)}>Info</button>
+            <button type="button" className="ghost-danger" onClick={async () => {
+              try {
+                const r = await api('/api/adb/disconnect', { method: 'POST', body: { serial: d.serial } });
+                toast(r.ok ? 'Disconnected' : (r.message || r.error), r.ok ? 'success' : 'error');
+                load();
+              } catch (e) { toast(e.message, 'error'); }
+            }}>Disconnect</button></td>
+        </tr>)}
+      </tbody></table></div>
         : <p className="muted">No devices attached.</p>}
+      {info?.ok && <div className="panel nested"><h3>Device info · <code>{info.serial}</code></h3>
+        <p className="muted">Read-only getprop snapshot{info.mockMode ? ' (mock)' : ''}.</p>
+        <ul>{Object.entries(info.properties || {}).map(([k, v]) => <li key={k}><code>{k}</code>: {v || '—'}</li>)}</ul>
+        <button type="button" className="ghost" onClick={() => setInfo(null)}>Close</button></div>}
     </>}
   </section>;
 }

@@ -40,7 +40,7 @@ export function ProxiesPage() {
     <div className="toolbar">
       <div className="search"><Icon name="search" /><input type="search" placeholder="Search name, host, username, tags…" value={q} onChange={e => setQ(e.target.value)} /></div>
       <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status filter"><option value="">Any status</option><option value="ok">Working</option><option value="failed">Failing</option><option value="untested">Untested</option></select>
-      <select value={tag} onChange={e => setTag(e.target.value)} aria-label="Tag filter"><option value="">All tags</option>{tags.map(t => <option key={t}>{t}</option>)}</select>
+      <select value={tag} onChange={e => setTag(e.target.value)} aria-label="Tag filter"><option value="">All tags</option><option value="template">Templates only</option>{tags.filter(t => t !== 'template').map(t => <option key={t}>{t}</option>)}</select>
     </div>
     {S.sel.size > 0 && <div className="bulkbar"><strong>{S.sel.size} selected</strong>
       <button onClick={() => test([...S.sel])}><Icon name="bolt" /> Test</button>

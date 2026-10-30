@@ -22,8 +22,8 @@
 | M14 | Extension manager (Firefox) | PARTIAL | Unpacked + signed `.xpi` import (`gecko-xpi.test.js`); `GET/PATCH …/gecko-extensions` reads/toggles `extensions.json`; materialize on launch; no signing bypass |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
-| M17 | Proxy templates / traffic saver | PARTIAL | Template tag + duplicate API; library summary (templates/health counts) in Proxies UI; **no traffic saver** (not measured) |
-| M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Provider panel + mocks **CI-only** (`test/proxy-providers.test.js`); no live subscription required |
+| M17 | Proxy templates / traffic saver | PARTIAL | Template tag + duplicate + filter; library summary; health history UI; provider Usage API only for stats; **no traffic saver** |
+| M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Provider panel (Bright/Oxy/Webshare) + documented APIs + CI mocks (`proxy-providers.test.js`); no paid subscription |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
 | M20 | Fingerprint: timezone/locale/lang | PARTIAL | CDP observable tests; Firefox regional observables + documented limits in `profile-config-engine` (`FIREFOX_FINGERPRINT_LIMITS`) |
 | M21 | Fingerprint: geolocation | PARTIAL | Prefs + `fingerprint-gaps-browser.test.js` |
@@ -45,7 +45,7 @@
 | M37 | Selenium/WebDriver | PARTIAL | Stub session tests always; real create/navigate/quit when `PM_REAL_WEBDRIVER=1` (`webdriver-real.test.js`); opt-in driver cache |
 | M38 | Workspaces / team sync | VERIFIED | CRUD, search, bulk assign, import/export metadata, vault lock; local only (`workspaces-api.test.js`); no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
-| M40 | Android cloud phones / ADB farms | PARTIAL | Settings ADB list + `POST /api/adb/connect`; parse tests; **NOT farm-equivalent** |
+| M40 | Android cloud phones / ADB farms | VERIFIED | Local adb discovery/connect/disconnect/info/diagnostics + device selection UI; `PM_MOCK_ADB` CI tests (`adb-mock-ci.test.js`); **NOT farm-equivalent**; real USB unverified without hardware |
 | M41 | Core browser update / rollback | VERIFIED | Backup slot + rollback API + Diagnostics UI + update-manager report |
 | M42 | Google Search CAPTCHA-free | UNSUPPORTED | P1 findings; no bypass |
 | M43 | Manual browse without automation pipe | VERIFIED | Native Chromium spawn |

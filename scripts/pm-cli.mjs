@@ -68,6 +68,11 @@ Automation & diagnostics:
 
 Other:
   adb-devices                  List adb devices (/api)
+  adb-diagnostics              Connection diagnostics + recovery hints
+  adb-info <serial>            Read-only device getprop snapshot
+  adb-connect <host:port>      Network adb connect
+  adb-disconnect [serial]      Disconnect target or all
+  adb-select <serial|null>     Persist selected device for UI
   type <id> <text...>          Human-input keystrokes (Chromium, running)
   help                         This help
 
@@ -260,6 +265,18 @@ try {
     out(await api('GET', '/dashboard'));
   } else if (cmd === 'adb-devices') {
     out(await api('GET', '/adb/devices', null, { ui: true }));
+  } else if (cmd === 'adb-diagnostics') {
+    out(await api('GET', '/adb/diagnostics', null, { ui: true }));
+  } else if (cmd === 'adb-info') {
+    if (!arg) throw Object.assign(new Error('adb-info requires serial'), { exitCode: EXIT.USAGE });
+    out(await api('GET', `/adb/devices/${encodeURIComponent(arg)}/info`, null, { ui: true }));
+  } else if (cmd === 'adb-connect') {
+    if (!arg) throw Object.assign(new Error('adb-connect requires host:port'), { exitCode: EXIT.USAGE });
+    out(await api('POST', '/adb/connect', { serial: arg }, { ui: true }));
+  } else if (cmd === 'adb-disconnect') {
+    out(await api('POST', '/adb/disconnect', { serial: arg || '' }, { ui: true }));
+  } else if (cmd === 'adb-select') {
+    out(await api('PUT', '/adb/selection', { serial: arg === 'null' || !arg ? null : arg }, { ui: true }));
   } else if (cmd === 'type') {
     if (!arg || !arg2) throw Object.assign(new Error('type requires profile id and text'), { exitCode: EXIT.USAGE });
     out(await api('POST', `/profiles/${arg}/human-input`, {

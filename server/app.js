@@ -53,7 +53,10 @@ import {
   assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
 } from './profile-browser-export.js';
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
-import { adbAdapterReport, connectAdbTarget, listAdbDevices } from './adb-adapter.js';
+import {
+  adbAdapterReport, adbDiagnostics, connectAdbTarget, disconnectAdbTarget, getAdbDeviceInfo,
+  getSelectedAdbSerial, listAdbDevices, setSelectedAdbSerial,
+} from './adb-adapter.js';
 import { humanInputReport, typeHumanTextForProfile } from './human-input.js';
 import {
   geckoExtensionReport, importUnpackedGeckoExtension, importXpiGeckoExtension, listGeckoExtensions,
@@ -692,9 +695,29 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     res.json(listAdbDevices());
   }));
+  router.get('/adb/diagnostics', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(adbDiagnostics());
+  }));
+  router.get('/adb/selection', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ selectedSerial: getSelectedAdbSerial() });
+  }));
+  router.put('/adb/selection', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(setSelectedAdbSerial(req.body?.serial ?? null));
+  }));
+  router.get('/adb/devices/:serial/info', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(getAdbDeviceInfo(req.params.serial));
+  }));
   router.post('/adb/connect', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(connectAdbTarget(req.body?.serial || req.body?.target));
+  }));
+  router.post('/adb/disconnect', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(disconnectAdbTarget(req.body?.serial || req.body?.target || ''));
   }));
   router.get('/automation-drivers', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
