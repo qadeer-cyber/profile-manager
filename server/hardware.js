@@ -48,7 +48,10 @@ async function observeInPage() {
   let webgpu = { availability: 'unavailable', reason: 'webgpu_unavailable', apiPresent: typeof navigator.gpu === 'object' };
   if (navigator.gpu) {
     try {
-      const adapter = await navigator.gpu.requestAdapter();
+      const adapter = await Promise.race([
+        navigator.gpu.requestAdapter(),
+        new Promise(resolve => setTimeout(() => resolve(null), 3000)),
+      ]);
       if (!adapter) webgpu = { availability: 'unavailable', reason: 'no_adapter', apiPresent: true };
       else {
         const info = adapter.info || {};
@@ -188,9 +191,9 @@ export async function observeBrowser(ctx, { permissions } = {}) {
   let probe;
   try {
     probe = await withObservationPage(ctx);
-    await probe.page.goto(probe.url);
+    await probe.page.goto(probe.url, { timeout: 15000, waitUntil: 'domcontentloaded' });
     if (permissions && Object.keys(permissions).length) await applyDocumentPermissions(probe.page, probe.url, permissions);
-    const facts = summarize(await probe.page.evaluate(observeInPage));
+    const facts = summarize(await probe.page.evaluate(observeInPage, { timeout: 20000 }));
     const iceRaw = await gatherIceInPage(probe.page);
     facts.webrtcIce = iceRaw.availability === 'observed' ? summarizeIceCandidates(iceRaw.lines) : iceRaw;
     return { availability: 'observed', source: 'browser', ...facts };

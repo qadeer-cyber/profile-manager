@@ -109,3 +109,9 @@ Full table: `MULTILOGIN_COMPLETE_TECHNOLOGY_MATRIX.md`.
 - `RELEASE_GATES_SECTION19.md` — owner gate checklist  
 
 **End of Phase Six documentation closeout.** Further feature work awaits Lead instruction.
+
+---
+
+## Ultimate 2.0 feasible-local batch (`feature/ultimate2-feasible-completion`)
+
+Stock-feasible acceptance for **M20–M30** (separate from matrix PARTIAL rows): see `FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md`. Matrix coverage remains **≈ 80.2%**; feasible-local criteria target **100% PASS** on stock controls only.

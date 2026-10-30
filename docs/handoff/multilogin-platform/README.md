@@ -21,5 +21,6 @@
 - [PHASE_SIX_DUAL_SCORECARDS.md](./PHASE_SIX_DUAL_SCORECARDS.md) — Stock-honest vs Multilogin ambition  
 - [ULTIMATE_2_0_ENGINEERING_PROGRESS.md](./ULTIMATE_2_0_ENGINEERING_PROGRESS.md) — Phase Zero→Six + key SHAs  
 - [PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md](./PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md) — M20–M30 blockers  
+- [FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md](./FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md) — stock-feasible PASS/FAIL/BLOCKED (separate from matrix %)  
 
 Code is authoritative when docs disagree.

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateAdvancedSettings } from '../server/advanced-settings.js';
 import { advancedLaunchPlan } from '../server/advanced-launch.js';
-import { fingerprintLaunchArgs, WEBGL_DISABLE_ARG } from '../server/fingerprint-settings.js';
+import { fingerprintLaunchArgs, privateNetworkWeakening, WEBGL_DISABLE_ARG } from '../server/fingerprint-settings.js';
 import { MANIFEST } from '../server/chromium.js';
 
 test('M28–M30 stock-supported launch plan denies local-fonts and media when restricted', () => {
@@ -22,4 +22,6 @@ test('M28–M30 stock-supported launch plan denies local-fonts and media when re
     }),
     err => err.code === 'INVALID_ADVANCED_SETTINGS',
   );
+  const joined = plan.args.join(' ');
+  assert.equal(privateNetworkWeakening(joined).features.length, 0);
 });

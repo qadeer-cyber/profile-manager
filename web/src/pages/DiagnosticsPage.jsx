@@ -51,7 +51,7 @@ export function DiagnosticsPage({ eventsLog }) {
         <p className="muted small">{stock.m2.note} {stock.m3.note}</p>
         {stock.capabilityMatrix?.rows && <details className="muted small"><summary>Engine capability rows ({stock.capabilityMatrix.rows.length})</summary>
           <ul>{stock.capabilityMatrix.rows.filter(r => /fingerprint|canvas|webgl|webgpu|audio|font|media|port|google|custom/i.test(r.id + r.title)).map(r => <li key={r.id}><strong>{r.state}</strong> — {r.title}{r.note ? ` · ${r.note}` : ''}</li>)}</ul>
-          <p>Fingerprint masking limits (M20–M30): stock CfT/Firefox only — see repo doc <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code>.</p>
+          <p>Fingerprint masking limits (M20–M30): stock CfT/Firefox only — see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> and feasible-local acceptance <code>FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md</code>.</p>
         </details>}
       </div>}
     </section>
