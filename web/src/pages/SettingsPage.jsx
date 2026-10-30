@@ -46,7 +46,7 @@ function AutomationCliPanel() {
     api('/api/webdriver').then(setWd).catch(e => setWdError(e.message));
   }, []);
   return <section className="panel"><h2>CLI &amp; automation</h2>
-    <p className="muted">Local-only automation via <code>npm run pm-cli -- help</code> and bearer-token <code>/api/v1</code>. Enable automation on a profile, launch it, then attach Playwright/Puppeteer to the published CDP WebSocket URL (shown on the profile row).</p>
+    <p className="muted">Local-only automation via <code>npm run pm-cli -- help</code> and bearer-token <code>/api/v1</code>. Enable automation on a profile, launch it, then attach Playwright/Puppeteer to the CDP HTTP/WebSocket endpoints (Profiles → automation icon, or the profile row when running). Manual native launches without automation do not expose CDP.</p>
     {caps && <ul className="muted small">
       <li>Human input: Chromium CDP + Firefox geckodriver ({caps.specialKeySyntax})</li>
       <li>Cancel: <code>POST /api/profiles/:id/human-input/cancel</code></li>
@@ -59,7 +59,7 @@ function AutomationCliPanel() {
     {wdError && <p className="err-text">{wdError}</p>}
     {wd && <ul className="muted small">
       <li>Report: <code>GET /api/webdriver</code> · Chromium: <code>POST /api/profiles/:id/webdriver/start</code> (requires CDP) · Firefox: <code>POST /api/profiles/:id/geckodriver/start</code></li>
-      <li>Status: {(wd.activeSessions || []).length} active bridge session{(wd.activeSessions || []).length === 1 ? '' : 's'} · real navigate/quit when drivers are on PATH or cached below</li>
+      <li>Status: {(wd.activeSessions || []).length} active bridge session{(wd.activeSessions || []).length === 1 ? '' : 's'} · ChromeDriver {wd.requiresChromedriverOnPath ? 'must be on PATH or cached below' : 'available from cache/PATH'} · real navigate/quit when <code>PM_REAL_WEBDRIVER=1</code> in tests or driver installed</li>
     </ul>}
     {!wd && !wdError && <p className="muted">Loading WebDriver report…</p>}
   </section>;

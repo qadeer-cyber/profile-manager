@@ -1327,6 +1327,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
         cookieRobotChromiumOnly: true,
         webDriverBridge: true,
         nativeManualLaunch: true,
+        geckoExtensionLibrary: true,
+        fingerprintStockOnly: true,
       },
     });
   });

@@ -25,17 +25,17 @@
 | M17 | Proxy templates / traffic saver | VERIFIED | Template CRUD + instantiate (`proxy-library-m17.test.js`); tag groups + local analytics (`trafficSaverSupported: false`); batch test; safe direct/library switch; blocked assign for template/paused; health history UI; **no traffic saver / no invented bandwidth** |
 | M18 | Provider Bright Data/Oxylabs/Webshare | VERIFIED | Provider panel + documented Bright/Oxy/Webshare adapters; import/materialize/usage; CI mocks (`proxy-providers.test.js`); secrets never in JSON; no paid subscription |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
-| M20 | Fingerprint: timezone/locale/lang | PARTIAL | CDP observable tests; Firefox regional observables + documented limits in `profile-config-engine` (`FIREFOX_FINGERPRINT_LIMITS`) |
-| M21 | Fingerprint: geolocation | PARTIAL | Prefs + `fingerprint-gaps-browser.test.js` |
-| M22 | Fingerprint: screen/DPR | PARTIAL | Launch plan + CDP inner dimensions observable test |
-| M23 | Fingerprint: Navigator/UA/client hints | PARTIAL | UA from pinned CfT; CDP `navigator.userAgent` test |
-| M24 | Fingerprint: Canvas noise | UNSUPPORTED | Stock Chromium |
-| M25 | Fingerprint: AudioContext noise | UNSUPPORTED | Stock Chromium |
-| M26 | Fingerprint: WebGL vendor/renderer mask | UNSUPPORTED | `--disable-webgl` only |
-| M27 | Fingerprint: WebGPU mask | UNSUPPORTED | Observation only |
-| M28 | Fingerprint: Fonts enumeration mask | PARTIAL | `fingerprint-privacy-launch.test.js` local-fonts deny in launch plan |
-| M29 | Fingerprint: Media devices mask | PARTIAL | Restricted mediaDevices → camera/mic deny in launch plan |
-| M30 | Port scan / local network protection | PARTIAL | No PNA weakening flags; `privateNetworkWeakening()` in fingerprint-settings |
+| M20 | Fingerprint: timezone/locale/lang | PARTIAL | Stock prefs/CDP observables only; **not** Mimic-class spoof — blockers in `PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md` |
+| M21 | Fingerprint: geolocation | PARTIAL | Chromium permission/coords override; `fingerprint-gaps-browser.test.js`; no GPS/IP lie — Phase Two doc |
+| M22 | Fingerprint: screen/DPR | PARTIAL | Launch window presets + CDP inner dimensions; **no** monitor/antidetect mask — Phase Two doc |
+| M23 | Fingerprint: Navigator/UA/client hints | PARTIAL | UA tied to real CfT pin; CDP tests; cannot invent version — Phase Two doc |
+| M24 | Fingerprint: Canvas noise | UNSUPPORTED | Stock CfT: no noise API — `PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md` §Canvas |
+| M25 | Fingerprint: AudioContext noise | UNSUPPORTED | Stock: no noise API — Phase Two doc §AudioContext |
+| M26 | Fingerprint: WebGL vendor/renderer mask | UNSUPPORTED | Restrict (`--disable-webgl`) only; no vendor spoof — Phase Two doc §WebGL |
+| M27 | Fingerprint: WebGPU mask | UNSUPPORTED | Observe only; no supported mask switch — Phase Two doc §WebGPU |
+| M28 | Fingerprint: Fonts enumeration mask | PARTIAL | Local-fonts **deny** only (`fingerprint-privacy-launch.test.js`); no font-list spoof — Phase Two doc |
+| M29 | Fingerprint: Media devices mask | PARTIAL | Camera/mic **deny** in launch plan; no fake devices — Phase Two doc |
+| M30 | Port scan / local network protection | PARTIAL | No PNA weakening; `privateNetworkWeakening()`; no masked port-scan results — Phase Two doc |
 | M31 | Cookie import/export | VERIFIED | Chromium stopped SQLite; Firefox gecko **read/export** (`gecko-cookies.js`); import/clear Firefox **501** |
 | M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
 | M33 | Human typing emulation | VERIFIED | CDP + geckodriver paths; cancel/Unicode/special keys/WPM/deterministic; UI controls (`human-input*.test.js`); authorized UI testing only — no bypass |
@@ -47,7 +47,7 @@
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
 | M40 | Android cloud phones / ADB farms | VERIFIED | Local adb discovery/connect/disconnect/info/diagnostics + device selection UI; `PM_MOCK_ADB` CI tests (`adb-mock-ci.test.js`); **NOT farm-equivalent**; real USB unverified without hardware |
 | M41 | Core browser update / rollback | VERIFIED | Backup slot + rollback API + Diagnostics UI + update-manager report |
-| M42 | Google Search CAPTCHA-free | UNSUPPORTED | P1 findings; no bypass |
+| M42 | Google Search CAPTCHA-free | UNSUPPORTED | P1 findings; no bypass; local JSON export only (`GOOGLE_COMPATIBILITY_LOCAL.md`) — not antidetect/fingerprint |
 | M43 | Manual browse without automation pipe | VERIFIED | Native Chromium spawn |
 | M44 | DPAPI / secret encryption | VERIFIED | Existing crypto backend |
 | M45 | Diagnostics / fingerprint check | VERIFIED | Hardware + consistency reports |

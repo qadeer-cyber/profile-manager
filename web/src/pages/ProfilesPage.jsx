@@ -175,7 +175,8 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
           {p.cdp && <div className="mono" title="Automation (CDP) endpoint">{p.cdp.wsEndpoint}</div>}</td>
         <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>
         <td className="col-tags">{p.tags.map(t => <button key={t} className="tag" onClick={() => setTag(t)}>{t}</button>)}</td>
-        <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}</td>
+        <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}
+          <div><button type="button" className="link small" onClick={() => setDialog({ kind: 'proxy-switch', data: p })}>{p.proxy ? 'Switch…' : 'Set library proxy…'}</button></div></td>
         <td className="col-updated muted">{p.updated_at ? new Date(p.updated_at).toLocaleDateString() : ''}</td>
         <td className="actions col-actions">
           {p.running ? <>

@@ -93,7 +93,7 @@ export function FingerprintFields({ settings, onChange }) {
   const fingerprint = settings.fingerprint || { webgl: 'default', fonts: 'real', mediaDevices: 'real', canvas: 'real', audio: 'real', portScan: 'real' };
   const set = (key, value) => onChange({ ...settings, fingerprint: { ...fingerprint, [key]: value } });
   return <div className="form">
-    <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Custom values are accepted only when you type a real setting, such as a timezone or a screen size, elsewhere in this editor. Nothing here invents a GPU, font list, device, or browser version, and nothing here makes a profile undetectable.</div>
+    <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Canvas, AudioContext, and WebGPU vendor masking are <strong>not</strong> available on stock Chromium (see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> in the repo). Nothing here makes a profile undetectable.</div>
     {FINGERPRINT_CONTROLS.map(control => <label key={control.id}>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)}>
       {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
     </select><span className="muted hint">{control.note}</span></label>)}

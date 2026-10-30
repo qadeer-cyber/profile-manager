@@ -8,6 +8,7 @@ import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { useSelection } from '../hooks/useSelection.js';
 import { ProviderPanel } from '../components/ProviderPanel.jsx';
 import { runAll, plural } from '../lib.js';
+import { PageError } from '../components/PageStatus.jsx';
 
 // Proxy library manager (docs/proxy-api.md). Falls back to a read-only summary of
 // per-profile proxies when the server doesn't provide /api/proxies yet.
@@ -65,7 +66,7 @@ export function ProxiesPage() {
       <button onClick={() => test([...S.sel])}><Icon name="bolt" /> Test</button>
       <button className="ghost-danger" onClick={() => setDialog({ kind: 'bulk-delete' })}><Icon name="trash" /> Delete</button>
       <button className="ghost" onClick={S.clear}>Clear</button></div>}
-    {lib.error && lib.available && <div className="notice warn">{lib.error}</div>}
+    <PageError message={lib.available && lib.error ? lib.error : null} />
     <div className="table-wrap"><table className="grid"><thead><tr>
       <th className="cb"><input type="checkbox" aria-label="Select all" checked={S.all} ref={el => el && (el.indeterminate = S.some)} onChange={S.toggleAll} /></th>
       <th>Status</th><th>Name</th><th>Address</th><th>Auth</th><th>Tags</th><th>Profiles</th><th>Last test</th><th></th></tr></thead><tbody>

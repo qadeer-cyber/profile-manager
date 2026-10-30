@@ -45,8 +45,14 @@ export function DiagnosticsPage({ eventsLog }) {
           <Row k="Chromium manual launch" v={stock.m2.manualLaunchRuntime} />
           <Row k="Firefox (M3)" v={<><span className="pill unavailable">Not Stealthfox</span> {stock.m3.productLabel} · {stock.m3.installed ? <span className="ok-text">found</span> : <span className="muted">not on PATH</span>}</>} />
           <Row k="Firefox prefs" v={stock.m3.prefsSurface} />
+          {stock.m2.executablePath && <Row k="Chromium path" v={<code className="small">{stock.m2.executablePath}</code>} />}
+          {stock.m3.executablePath && <Row k="Firefox path" v={<code className="small">{stock.m3.executablePath}</code>} />}
         </tbody></table>
         <p className="muted small">{stock.m2.note} {stock.m3.note}</p>
+        {stock.capabilityMatrix?.rows && <details className="muted small"><summary>Engine capability rows ({stock.capabilityMatrix.rows.length})</summary>
+          <ul>{stock.capabilityMatrix.rows.filter(r => /fingerprint|canvas|webgl|webgpu|audio|font|media|port|google|custom/i.test(r.id + r.title)).map(r => <li key={r.id}><strong>{r.state}</strong> — {r.title}{r.note ? ` · ${r.note}` : ''}</li>)}</ul>
+          <p>Fingerprint masking limits (M20–M30): stock CfT/Firefox only — see repo doc <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code>.</p>
+        </details>}
       </div>}
     </section>
     <div className="cols">

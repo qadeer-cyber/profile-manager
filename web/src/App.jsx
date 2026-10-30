@@ -13,6 +13,7 @@ import { CookieRobotPage } from './pages/CookieRobotPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
 import { MonitoringPage } from './pages/MonitoringPage.jsx';
 import { Icon } from './components/Icon.jsx';
+import { FeaturePill } from './components/FeaturePill.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
@@ -77,7 +78,13 @@ export function App() {
     <nav className="side" aria-label="Main">
       <div className="brand"><span className="logo"><Icon name="profiles" size={18} /></span>Profile Manager</div>
       {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} onClick={() => { setPage(k); if (k === 'profiles') setFolder('__all'); }}>
-        <Icon name={k} />{label}{k === 'profiles' && meta.running.length > 0 && <span className="badge" title="Running">{meta.running.length}</span>}{k === 'cookie-robot' && meta.features?.cookieRobotChromiumOnly && <span className="pill unavailable" title="Chromium + CDP only">Chromium</span>}</button>)}
+        <Icon name={k} />{label}{k === 'profiles' && meta.running.length > 0 && <span className="badge" title="Running">{meta.running.length}</span>}
+        {k === 'cookie-robot' && meta.features?.cookieRobotChromiumOnly && <FeaturePill title="Chromium profiles with automation (CDP) only">Chromium</FeaturePill>}
+        {k === 'extensions' && <FeaturePill title="Chromium unpacked library + separate Firefox Gecko imports">Dual</FeaturePill>}
+        {k === 'proxies' && meta.features?.proxyLibrary && <FeaturePill variant="observed" title="Local proxy library; no cloud pools">Local</FeaturePill>}
+        {k === 'monitoring' && <FeaturePill title="Host/process metrics when profiles run; not cloud telemetry">Local</FeaturePill>}
+        {k === 'diagnostics' && <FeaturePill title="Stock M2/M3 report + profile locale diagnostics">Stock</FeaturePill>}
+      </button>)}
       <div className="side-section">Folders</div>
       <div className="folders">
         {named.map(f => <button key={f} className={'nav sub' + (page === 'profiles' && folder === f ? ' sel' : '')} onClick={() => openFolder(f)}><Icon name="folder" />{f}</button>)}
