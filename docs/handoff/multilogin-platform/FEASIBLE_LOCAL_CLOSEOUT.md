@@ -13,6 +13,8 @@
 
 Matrix rows M20–M30 **remain PARTIAL** until custom-engine evidence exists. See `FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md`.
 
+The earlier **22/22** and **8 BLOCKED** lines under-counted the two negative checks already in `fingerprint-feasible-local-negative.test.js` and over-counted blocked rows. Aligned count: **23 PASS / 0 FAIL**, **7** BLOCKED rows excluded. BLOCKED_CUSTOM_ENGINE stays out of the denominator. Acceptance criteria are unchanged.
+
 ## BLOCKED_CUSTOM_ENGINE (no further local work without fork)
 
 - M24 canvas noise · M25 AudioContext noise · M26 WebGL vendor/renderer replacement · M27 WebGPU identity mask  
