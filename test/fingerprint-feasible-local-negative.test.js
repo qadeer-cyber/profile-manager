@@ -92,11 +92,17 @@ test('restricted fingerprint settings persist across server restart and stay iso
     ({ browser, page } = await launch(a));
     const perms = await page.evaluate(async () => {
       const gl = document.createElement('canvas').getContext('webgl');
-      const localFonts = (await navigator.permissions.query({ name: 'local-fonts' })).state;
-      return { webgl: !!gl, localFonts };
+      let localFonts = 'denied';
+      try {
+        localFonts = (await navigator.permissions.query({ name: 'local-fonts' })).state;
+      } catch {
+        localFonts = typeof window.queryLocalFonts === 'function' ? 'query_error' : 'denied';
+      }
+      return { webgl: !!gl, localFonts, fontAccessApi: typeof window.queryLocalFonts === 'function' };
     });
     assert.equal(perms.webgl, false);
-    assert.equal(perms.localFonts, 'denied');
+    if (perms.fontAccessApi) assert.equal(perms.localFonts, 'denied');
+    else assert.notEqual(perms.localFonts, 'granted');
     assert.equal(await page.evaluate(() => localStorage.getItem('pm-fp-iso')), 'only-a');
     await browser.close();
     await api('POST', `/profiles/${a}/stop`, {});

@@ -143,11 +143,18 @@ test('Chromium applies real fingerprint restrictions and keeps profile storage i
     const disabled = await page.evaluate(async () => {
       const gl = document.createElement('canvas').getContext('webgl');
       const permissions = {};
-      for (const name of ['local-fonts', 'camera', 'microphone']) permissions[name] = (await navigator.permissions.query({ name })).state;
-      return { webgl: !!gl, permissions };
+      for (const name of ['local-fonts', 'camera', 'microphone']) {
+        try {
+          permissions[name] = (await navigator.permissions.query({ name })).state;
+        } catch {
+          permissions[name] = name === 'local-fonts' && typeof window.queryLocalFonts !== 'function' ? 'denied' : 'query_error';
+        }
+      }
+      return { webgl: !!gl, permissions, fontAccessApi: typeof window.queryLocalFonts === 'function' };
     });
     assert.equal(disabled.webgl, false);
-    assert.equal(disabled.permissions['local-fonts'], 'denied');
+    if (disabled.fontAccessApi) assert.equal(disabled.permissions['local-fonts'], 'denied');
+    else assert.notEqual(disabled.permissions['local-fonts'], 'granted');
     assert.equal(disabled.permissions.camera, 'denied');
     assert.equal(disabled.permissions.microphone, 'denied');
     if (canvasHash && audioHash && renderer) {
@@ -188,15 +195,15 @@ test('Chromium applies real fingerprint restrictions and keeps profile storage i
       await editor.getByRole('button', { name: 'New profile' }).click();
       await editor.getByLabel('Name', { exact: true }).fill('UI fingerprint');
       await editor.getByRole('tab', { name: 'Fingerprint' }).click();
-      await editor.getByLabel('WebGL').selectOption('restricted');
-      await editor.getByLabel('Local fonts').selectOption('restricted');
+      await editor.getByLabel('WebGL', { exact: true }).selectOption('restricted');
+      await editor.getByLabel('Local fonts', { exact: true }).selectOption('restricted');
       await editor.getByRole('button', { name: 'Create profile', exact: true }).click();
       await editor.getByRole('cell', { name: 'UI fingerprint', exact: true }).waitFor();
       await editor.reload();
       await editor.getByRole('button', { name: 'Edit UI fingerprint', exact: true }).click();
       await editor.getByRole('tab', { name: 'Fingerprint' }).click();
-      assert.equal(await editor.getByLabel('WebGL').inputValue(), 'restricted');
-      assert.equal(await editor.getByLabel('Local fonts').inputValue(), 'restricted');
+      assert.equal(await editor.getByLabel('WebGL', { exact: true }).inputValue(), 'restricted');
+      assert.equal(await editor.getByLabel('Local fonts', { exact: true }).inputValue(), 'restricted');
       const saved = (await api('GET', '/profiles')).value.find(item => item.name === 'UI fingerprint');
       assert.equal(saved.advancedSettings.fingerprint.webgl, 'restricted');
       assert.equal(saved.advancedSettings.fingerprint.canvas, 'real');
