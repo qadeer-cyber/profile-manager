@@ -2,7 +2,7 @@
 
 **Branch:** `feature/ultimate2-advanced-privacy`  
 **Base:** `feature/ultimate2-feasible-completion` @ `8251394d27bda34fc4625a276e109752a419bec5`  
-**Implementation checkpoint:** _(see latest commit on branch; prior: `363b572`, `1a42352`)_  
+**Implementation checkpoint:** `bd84f19` (prior: `363b572`, `1a42352`)  
 **No pull request, no merge, no installer, no Windows workflow dispatch.**
 
 Historical matrix rows are not edited by this branch. M20–M23 and M28–M30 stay **PARTIAL**. M24–M27 and M42 stay **UNSUPPORTED**. Stock-feasible PASS rows are not added to the frozen baseline.
