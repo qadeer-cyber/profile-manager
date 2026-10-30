@@ -2,7 +2,11 @@
 
 **No pull request.** This branch was not merged to `main`. No installer-smoke, preview, release, or Windows CI dispatch.
 
-The branch tip is the commit that adds this file. A commit cannot store its own hash. Parent integration merge: `abf10757eaccf9e5c5f5088efe07d3a58a94ef4c`. Resolve the tip with `git rev-parse HEAD` on `integration/ultimate2-stock-secure`.
+**Checkpoint commit:** `be48117972f615a16a5d0936118420e8a8105a8a` (parent of the commit that records this line).
+
+**Branch tip:** child of that checkpoint commit on `integration/ultimate2-stock-secure`. A commit cannot contain its own hash; resolve the tip with `git rev-parse HEAD`.
+
+Parent integration merge: `abf10757eaccf9e5c5f5088efe07d3a58a94ef4c`.
 
 ## Parents and preserved commits
 
