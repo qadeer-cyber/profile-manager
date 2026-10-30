@@ -30,7 +30,7 @@ import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
   listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
-  assertWorkspaceAccess, vaultStorageAvailable, exportWorkspaceBundle,
+  assertWorkspaceAccess, vaultStorageAvailable, exportWorkspaceBundle, bulkAssignProfilesToWorkspace, importWorkspaceBundle,
 } from './workspaces.js';
 import {
   configureCookieRobot, createCookieRobotJob, getCookieRobotJob, listCookieRobotJobs, cancelCookieRobotJob, retryCookieRobotJob, cookieRobotReport,
@@ -1088,8 +1088,13 @@ function mountProxyRoutes(r) {
 }
 function mountWorkspace(router) {
   router.get('/workspaces/vault-status', wrap((req, res) => res.json({ vaultStorageAvailable: vaultStorageAvailable(), backend: encryptionStatus().backend })));
-  router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces())));
+  router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces({ q: req.query.q }))));
   router.post('/workspaces', wrap((req, res) => res.status(201).json(createWorkspace(req.body || {}))));
+  router.post('/workspaces/import', wrap((req, res) => res.status(201).json(importWorkspaceBundle(req.body || {}))));
+  router.post('/workspaces/:id/assign-profiles', wrap((req, res) => {
+    const ids = req.body?.profileIds;
+    res.json(bulkAssignProfilesToWorkspace(req.params.id, ids));
+  }));
   router.patch('/workspaces/:id', wrap((req, res) => res.json(updateWorkspace(req.params.id, req.body || {}))));
   router.delete('/workspaces/:id', wrap((req, res) => { deleteWorkspace(req.params.id); res.status(204).end(); }));
   router.get('/workspaces/:id/export', wrap((req, res) => {
