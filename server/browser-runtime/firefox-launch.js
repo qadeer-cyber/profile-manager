@@ -9,6 +9,9 @@ import { getSetting } from '../db.js';
 import { pidMatches, isAlive } from '../proc.js';
 import { automationDefault } from '../testflags.js';
 import { buildManagedGeckoPrefLines, writeManagedGeckoUserJs } from '../firefox-gecko-userjs.js';
+import { materializeGeckoExtensions } from '../gecko-extensions.js';
+import { validateAdvancedSettings } from '../advanced-settings.js';
+import { SCREEN_PRESETS } from '../advanced-settings.js';
 import { geckoTimezoneEnv } from '../firefox-gecko-prefs.js';
 
 const automationEnabled = opts => !!opts?.automation || automationDefault();
@@ -59,8 +62,19 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     webrtcSettings: p.webrtcSettings,
   });
   writeManagedGeckoUserJs(profileDir, managed);
+  materializeGeckoExtensions(profileDir, p.id);
 
+  const advanced = validateAdvancedSettings(p.advancedSettings || {});
   const args = ['-no-remote', '-profile', profileDir];
+  const screen = advanced.screen || {};
+  if (screen.startMaximized) {
+    // Firefox uses -width/-height; maximized is best-effort via large window on manual launch.
+  } else if (screen.preset && screen.preset !== 'native' && SCREEN_PRESETS[screen.preset]) {
+    const dim = SCREEN_PRESETS[screen.preset];
+    args.push('-width', String(dim.width), '-height', String(dim.height));
+  } else if (screen.width && screen.height) {
+    args.push('-width', String(screen.width), '-height', String(screen.height));
+  }
   let marionettePort = null;
   if (automation) {
     marionettePort = await freePort();

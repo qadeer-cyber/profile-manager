@@ -23,6 +23,18 @@ export function WorkspacesPage({ onOpenProfiles }) {
         <td>{w.vaultLocked ? 'Locked' : '—'}</td>
         <td className="actions">
           {w.profileCount > 0 && onOpenProfiles && <button onClick={() => onOpenProfiles(w.id)}>View profiles</button>}
+          <button onClick={async () => {
+            try {
+              const bundle = await api(`/api/workspaces/${w.id}/export`);
+              const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+              const a = document.createElement('a');
+              a.href = URL.createObjectURL(blob);
+              a.download = `workspace-${w.name.replace(/[^\w.-]+/g, '_')}.json`;
+              a.click();
+              URL.revokeObjectURL(a.href);
+              toast('Workspace export downloaded', 'success');
+            } catch (e) { toast(e.message, 'error'); }
+          }}>Export</button>
           <button onClick={() => setDialog({ kind: 'edit', data: w })}>Edit</button>
           <button className="ghost-danger" onClick={async () => { try { await api(`/api/workspaces/${w.id}`, { method: 'DELETE' }); toast('Deleted', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Delete</button></td></tr>)}
       {!items.length && <tr><td colSpan="4" className="empty">No workspaces yet.</td></tr>}

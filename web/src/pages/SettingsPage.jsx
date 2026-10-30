@@ -38,12 +38,21 @@ export function SettingsPage() {
 
 function AdbDevicesPanel({ toast }) {
   const [report, setReport] = useState(null);
+  const [connectTarget, setConnectTarget] = useState('');
   const load = useCallback(() => { api('/api/adb/devices').then(setReport).catch(e => toast(e.message, 'error')); }, [toast]);
   useEffect(load, [load]);
   return <section className="panel"><h2>Local Android devices (ADB)</h2>
     <p className="muted">{report?.note || 'Lists USB devices when the host adb tool is on PATH. This is not a cloud phone farm and cannot replace Multilogin Android farms.'}</p>
     {!report?.available && <p className="muted">Status: {report?.reason || 'unavailable'} — install Android platform tools and ensure <code>adb</code> is on PATH to list your own devices.</p>}
     {report?.available && <>
+      <div className="row"><input placeholder="host:port for adb connect" value={connectTarget} onChange={e => setConnectTarget(e.target.value)} />
+        <button type="button" onClick={async () => {
+          try {
+            const r = await api('/api/adb/connect', { method: 'POST', body: { serial: connectTarget.trim() } });
+            toast(r.ok ? `Connected: ${r.target}` : (r.message || r.error), r.ok ? 'success' : 'error');
+            load();
+          } catch (e) { toast(e.message, 'error'); }
+        }}>Connect</button></div>
       <button type="button" onClick={load}>Refresh</button>
       {report.devices?.length ? <ul>{report.devices.map(d => <li key={d.serial}><code>{d.serial}</code> — {d.state}{d.model ? ` · ${d.model}` : ''}</li>)}</ul>
         : <p className="muted">No devices attached.</p>}

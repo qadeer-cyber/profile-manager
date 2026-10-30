@@ -30,7 +30,7 @@ import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
   listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
-  assertWorkspaceAccess, vaultStorageAvailable,
+  assertWorkspaceAccess, vaultStorageAvailable, exportWorkspaceBundle,
 } from './workspaces.js';
 import {
   configureCookieRobot, createCookieRobotJob, getCookieRobotJob, listCookieRobotJobs, cancelCookieRobotJob, retryCookieRobotJob, cookieRobotReport,
@@ -53,10 +53,12 @@ import {
   assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
 } from './profile-browser-export.js';
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
-import { adbAdapterReport, listAdbDevices } from './adb-adapter.js';
+import { adbAdapterReport, connectAdbTarget, listAdbDevices } from './adb-adapter.js';
+import { humanInputReport, typeHumanTextForProfile } from './human-input.js';
+import { geckoExtensionReport, importUnpackedGeckoExtension, listGeckoExtensions } from './gecko-extensions.js';
 import { automationDriversReport, installAutomationDrivers } from './automation-drivers.js';
 import { readSavedTabs } from './tab-restore.js';
-import { createBackup, createEncryptedBackup, inspectBackup, restoreBackup } from './backup.js';
+import { createBackup, createEncryptedBackup, createProfileBackup, inspectBackup, restoreBackup } from './backup.js';
 import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
 import { dashboardStats } from './dashboard.js';
 import { createView, deleteView, listViews, queryProfiles, updateView } from './profile-table.js';
@@ -687,6 +689,10 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     res.set('Cache-Control', 'no-store');
     res.json(listAdbDevices());
   }));
+  router.post('/adb/connect', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(connectAdbTarget(req.body?.serial || req.body?.target));
+  }));
   router.get('/automation-drivers', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(automationDriversReport());
@@ -725,6 +731,17 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     rejectPassphraseQuery(req);
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw err(400, 'backup body is required');
     res.json(restoreBackup(req.body, { collision: String(req.query.collision || 'abort'), passphrase: req.get('x-backup-passphrase') || undefined }));
+  }));
+  router.post('/profiles/:id/backup/export', wrap((req, res) => {
+    must(req.params.id);
+    const body = createProfileBackup(req.params.id);
+    res.set({
+      'Content-Type': 'application/octet-stream',
+      'Content-Disposition': `attachment; filename="profile-${req.params.id.slice(0, 8)}.pmp"`,
+      'Cache-Control': 'no-store',
+      'X-Backup-Contains': 'profile-user-data',
+    });
+    res.send(body);
   }));
   router.post('/bulk/jobs', wrap((req, res) => res.status(202).json(startBulkJob(req.body, allowOverride))));
   router.get('/bulk/jobs', wrap((req, res) => res.json(listJobs(req.query.limit))));
@@ -958,6 +975,25 @@ async function testProxy(px) {
 // Routes shared by /api and /api/v1
 function mountExtensionRoutes(r) {
   r.get('/extensions', (req, res) => res.json(listExtensions()));
+  r.get('/gecko-extensions', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ report: geckoExtensionReport(), items: listGeckoExtensions().map(row => publicExtension(row)) });
+  }));
+  r.post('/gecko-extensions/import', wrap((req, res) => res.status(201).json(publicExtension(importUnpackedGeckoExtension(req.body?.path ?? req.body?.sourcePath)))));
+  r.get('/human-input', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(humanInputReport());
+  }));
+  r.post('/profiles/:id/human-input', wrap(async (req, res) => {
+    must(req.params.id);
+    const text = req.body?.text;
+    if (typeof text !== 'string' || !text.trim()) throw err(400, 'text is required');
+    res.json(await typeHumanTextForProfile(req.params.id, text, {
+      wpm: req.body?.wpm,
+      jitterMs: req.body?.jitterMs,
+      selector: req.body?.selector,
+    }));
+  }));
   r.post('/extensions/import', wrap((req, res) => res.status(201).json(importUnpackedExtension(req.body?.path ?? req.body?.sourcePath))));
   r.get('/extensions/:id', wrap((req, res) => res.json(publicExtension(mustExtension(req.params.id)))));
   r.delete('/extensions/:id', wrap((req, res) => {
@@ -1014,6 +1050,10 @@ function mountWorkspace(router) {
   router.post('/workspaces', wrap((req, res) => res.status(201).json(createWorkspace(req.body || {}))));
   router.patch('/workspaces/:id', wrap((req, res) => res.json(updateWorkspace(req.params.id, req.body || {}))));
   router.delete('/workspaces/:id', wrap((req, res) => { deleteWorkspace(req.params.id); res.status(204).end(); }));
+  router.get('/workspaces/:id/export', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(exportWorkspaceBundle(req.params.id));
+  }));
   router.post('/profiles/:id/workspace', wrap((req, res) => {
     must(req.params.id);
     assignProfileWorkspace(req.params.id, req.body?.workspaceId ?? null);

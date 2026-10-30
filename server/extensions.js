@@ -159,6 +159,8 @@ export function publicExtension(row, extra = {}) {
     optionalPermissions: parseJsonList(row.optional_permissions),
     optionalHostPermissions: parseJsonList(row.optional_host_permissions),
     assignedProfiles: db.prepare('SELECT COUNT(*) n FROM profile_extensions WHERE extension_id=?').get(row.id).n,
+    browserEngine: row.browser_engine || 'chromium',
+    geckoExtensionId: row.gecko_extension_id || null,
     createdAt: row.created_at, updatedAt: row.updated_at, ...extra,
   };
 }
@@ -235,7 +237,14 @@ function assignment(profileId, extensionId) {
 }
 
 export function assignExtension(profileId, extensionId, enabled) {
-  mustExtension(extensionId);
+  const ext = mustExtension(extensionId);
+  const profile = db.prepare('SELECT browser_engine FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
+  if (!profile) throw Object.assign(new Error('profile not found'), { status: 404, code: 'NOT_FOUND' });
+  const extEngine = ext.browser_engine || 'chromium';
+  const profEngine = profile.browser_engine === 'firefox' ? 'firefox' : 'chromium';
+  if (extEngine !== profEngine) {
+    invalid(`This extension is for ${extEngine}; profile uses ${profEngine}.`, 400, 'EXTENSION_ENGINE_MISMATCH');
+  }
   if (typeof enabled !== 'boolean') invalid('enabled must be a boolean');
   const now = new Date().toISOString();
   if (assignment(profileId, extensionId)) {
@@ -279,7 +288,7 @@ export function extensionLaunchPlan(profileId) {
   if (typeof profileId !== 'string' || !/^[0-9a-f-]{36}$/i.test(profileId)) return extensionCommandArgs([]);
   const rows = db.prepare(`SELECT e.* FROM extensions e
     JOIN profile_extensions pe ON pe.extension_id = e.id
-    WHERE pe.profile_id = ? AND pe.enabled = 1 ORDER BY e.id`).all(profileId);
+    WHERE pe.profile_id = ? AND pe.enabled = 1 AND COALESCE(e.browser_engine, 'chromium') = 'chromium' ORDER BY e.id`).all(profileId);
   if (!rows.length) return extensionCommandArgs([]);
   const paths = rows.map(row => {
     const dir = storagePath(row.storage_dir);

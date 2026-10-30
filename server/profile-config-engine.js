@@ -27,7 +27,7 @@ export function normalizeProfileConfigInput(body = {}, previous = {}) {
 export function profileConfigWarnings(config) {
   const warnings = [];
   if (config.browserEngine === 'firefox') {
-    warnings.push({ code: 'FIREFOX_EXTENSIONS_UNSUPPORTED', message: 'Chromium extension assignments are not loaded on the Firefox engine path.' });
+    warnings.push({ code: 'FIREFOX_CHROMIUM_EXTENSIONS_IGNORED', message: 'Chromium unpacked extensions are not loaded on Firefox. Use gecko extension import (signed XPI/unpacked with gecko.id) instead.' });
     warnings.push({ code: 'FIREFOX_CHROMIUM_FLAGS_IGNORED', message: 'Chromium-only launch flags (WebGL disable, force-DPR) are not applied to Firefox.' });
     warnings.push({ code: 'FIREFOX_COOKIES_READ_ONLY', message: 'Stopped-profile Gecko cookies can be listed and exported (cookies.sqlite). Import and clear are not implemented for Firefox.' });
     if (config.webrtcSettings?.mode && config.webrtcSettings.mode !== 'browser_default') {

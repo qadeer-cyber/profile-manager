@@ -8,6 +8,8 @@ test('pm-cli help exits 0', () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /list/);
   assert.match(r.stdout, /bridges/);
+  assert.match(r.stdout, /workspaces/);
+  assert.match(r.stdout, /human-input/);
 });
 
 test('pm-cli without token exits non-zero', () => {

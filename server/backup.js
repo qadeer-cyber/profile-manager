@@ -101,6 +101,47 @@ export function createBackup({ ids = runningIds() } = {}) {
   return packArchive(files);
 }
 
+/** Portable single-profile archive (subset of full backup manifest format). */
+export function createProfileBackup(profileId, { ids = runningIds() } = {}) {
+  if (!UUID.test(String(profileId || ''))) throw fail(400, 'profile id is invalid', 'INVALID_PROFILE');
+  if (ids.includes(profileId)) throw fail(409, 'Stop the profile before exporting a portable backup.', 'PROFILES_RUNNING');
+  const row = db.prepare('SELECT id, name FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
+  if (!row) throw fail(404, 'Profile not found', 'NOT_FOUND');
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* continue */ }
+  const fileEntries = [];
+  const pushFile = (relPath, data) => {
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    fileEntries.push({ path: relPath, data: buf, sha256: sha256Hex(buf) });
+  };
+  const walkInto = (root, prefix) => {
+    if (!fs.existsSync(root)) return;
+    const visit = (dir, rel) => {
+      for (const name of fs.readdirSync(dir)) {
+        if (DATA_COPY_SKIP.has(name)) continue;
+        const abs = path.join(dir, name);
+        const stat = fs.lstatSync(abs);
+        if (stat.isSymbolicLink()) throw fail(400, 'Refusing to export a profile that contains a symlink', 'UNSAFE_PROFILE_LINK');
+        const child = rel ? `${rel}/${name}` : name;
+        if (stat.isDirectory()) visit(abs, child);
+        else if (stat.isFile()) pushFile(`${prefix}/${child}`, fs.readFileSync(abs));
+      }
+    };
+    visit(root, '');
+  };
+  walkInto(userDataDir(profileId), `profiles/${profileId}`);
+  const meta = {
+    format: 'profile-manager-profile-backup',
+    version: 1,
+    createdAt: new Date().toISOString(),
+    schemaVersion: currentVersion(db),
+    profiles: [row],
+    fileChecksums: Object.fromEntries(fileEntries.map(entry => [entry.path, entry.sha256])),
+  };
+  const metaBuf = Buffer.from(JSON.stringify(meta));
+  const files = [{ path: 'meta.json', data: metaBuf }, ...fileEntries];
+  return packArchive(files);
+}
+
 export function createEncryptedBackup(passphrase, options) {
   return encryptBackup(createBackup(options), passphrase);
 }

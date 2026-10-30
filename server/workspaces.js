@@ -89,3 +89,26 @@ export function assignProfileWorkspace(profileId, workspaceId) {
   db.prepare('UPDATE profiles SET workspace_id=?, updated_at=? WHERE id=? AND deleted_at IS NULL')
     .run(workspaceId || null, new Date().toISOString(), profileId);
 }
+
+export function exportWorkspaceBundle(workspaceId) {
+  const ws = getWorkspace(workspaceId);
+  if (!ws) throw fail(404, 'Workspace not found', 'NOT_FOUND');
+  const profiles = db.prepare(`
+    SELECT id, name, browser_engine, folder, tags, workspace_id, created_at, updated_at
+    FROM profiles WHERE workspace_id=? AND deleted_at IS NULL ORDER BY name`).all(workspaceId)
+    .map(r => ({
+      id: r.id,
+      name: r.name,
+      browserEngine: r.browser_engine,
+      folder: r.folder,
+      tags: JSON.parse(r.tags || '[]'),
+    }));
+  return {
+    format: 'profile-manager-workspace',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    workspace: ws,
+    profiles,
+    note: 'Local workspace metadata only. Profile user-data is exported separately via profile backup.',
+  };
+}

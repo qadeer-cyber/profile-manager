@@ -13,13 +13,13 @@
 | M5 | Profile templates | VERIFIED | Templates page + row actions; bulk `fromTemplate` job; lifecycle tests |
 | M6 | Trash bin restore | VERIFIED | Soft delete + Trash page + confirm purge |
 | M7 | Clone profile | VERIFIED | `POST /profiles/:id/clone` + tests |
-| M8 | Import/export profile | PARTIAL | Backup manifest `fileChecksums` + archive SHA256; encrypted restore; bookmarks/history export API; not Multilogin format |
+| M8 | Import/export profile | PARTIAL | Full + per-profile `.pmp` portable export (`createProfileBackup`); backup UI inspect/restore; bookmarks/history export; not Multilogin format |
 | M9 | Folders/tags/bulk | VERIFIED | UI + bulk jobs API |
 | M10 | Running profiles manager | VERIFIED | Dashboard + stop/start + Focus (Win32 or CDP) |
 | M11 | Startup URLs / tabs | VERIFIED | Opt-in `restoreTabs` + `.pm-tabs.json`; `tab-restore-browser.test.js` (CDP reopen + Example Domain titles); native launch plan tests |
-| M12 | Window state / maximized | PARTIAL | Chromium `--window-size` / `--window-position` / maximized; `1366x768` preset; Firefox PARTIAL |
+| M12 | Window state / maximized | PARTIAL | Chromium launch flags + Firefox `-width`/`-height` from presets (`firefox-launch-window.test.js`); no OS-level multi-monitor persistence |
 | M13 | Extension manager (Chromium) | VERIFIED | Unpacked MV2/MV3 library |
-| M14 | Extension manager (Firefox) | UNSUPPORTED | Chromium-only extension loader |
+| M14 | Extension manager (Firefox) | PARTIAL | Gecko unpacked import with `gecko.id`, profile materialize on launch; Mozilla signing not bypassed (`gecko-extensions.test.js`) |
 | M15 | Proxy: HTTP/HTTPS/SOCKS5 custom | VERIFIED | Library + relay auth |
 | M16 | Built-in Multilogin proxy pools | NOT_APPLICABLE_CLOUD | User-owned proxies + provider APIs |
 | M17 | Proxy templates / traffic saver | PARTIAL | Duplicate-as-template API + Proxies UI; no traffic saver |
@@ -38,14 +38,14 @@
 | M30 | Port scan / local network protection | PARTIAL | No PNA weakening flags; `privateNetworkWeakening()` in fingerprint-settings |
 | M31 | Cookie import/export | VERIFIED | Chromium stopped SQLite; Firefox gecko **read/export** (`gecko-cookies.js`); import/clear Firefox **501** |
 | M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
-| M33 | Human typing emulation | MISSING | Not implemented |
+| M33 | Human typing emulation | PARTIAL | Chromium CDP human input API + UI (`human-input.test.js`); authorized UI testing only |
 | M34 | Local automation API | VERIFIED | `/api/v1` + bearer token |
-| M35 | CLI / Script runner | PARTIAL | `pm-cli` list/launch/stop/config/bridges/proxies + examples |
-| M36 | Playwright/Puppeteer attach | PARTIAL | CDP reconnect without killing browser (`playwright-cdp-reconnect.test.js`) |
-| M37 | Selenium/WebDriver | PARTIAL | ChromeDriver + GeckoDriver stub session/navigate tests; opt-in driver cache |
-| M38 | Workspaces / team sync | PARTIAL | Workspaces UI (edit, view profiles filter); profile editor assignment; `workspaces-api.test.js`; no team cloud |
+| M35 | CLI / Script runner | PARTIAL | `pm-cli` workspaces/trash/clone/type/adb + JSON mode + examples |
+| M36 | Playwright/Puppeteer attach | PARTIAL | Playwright reconnect + puppeteer-core attach (`puppeteer-cdp-attach.test.js`) |
+| M37 | Selenium/WebDriver | PARTIAL | ChromeDriver + GeckoDriver stub session + navigate tests; opt-in driver cache |
+| M38 | Workspaces / team sync | PARTIAL | Workspaces UI + local export bundle API; vault lock; no team cloud |
 | M39 | Cloud profile storage | NOT_APPLICABLE_CLOUD | Local `PM_DATA_DIR` only |
-| M40 | Android cloud phones / ADB farms | PARTIAL | Settings → ADB panel + `GET /api/adb/devices`; parse tests; **NOT farm-equivalent** |
+| M40 | Android cloud phones / ADB farms | PARTIAL | Settings ADB list + `POST /api/adb/connect`; parse tests; **NOT farm-equivalent** |
 | M41 | Core browser update / rollback | VERIFIED | Backup slot + rollback API + Diagnostics UI + update-manager report |
 | M42 | Google Search CAPTCHA-free | UNSUPPORTED | P1 findings; no bypass |
 | M43 | Manual browse without automation pipe | VERIFIED | Native Chromium spawn |

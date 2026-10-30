@@ -34,6 +34,17 @@ const server = http.createServer((req, res) => {
     res.end(JSON.stringify({ value: { sessionId: 'stub-session', capabilities: {} } }));
     return;
   }
+  const nav = req.url?.match(/^\\/session\\/([^/]+)\\/url$/);
+  if (req.method === 'POST' && nav) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ value: null }));
+    return;
+  }
+  if (req.method === 'GET' && nav) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ value: 'https://example.com/' }));
+    return;
+  }
   res.writeHead(404); res.end();
 });
 server.listen(port, '127.0.0.1');
@@ -67,6 +78,15 @@ test('startWebDriverBridge listens when chromedriver stub is configured', async 
   assert.equal(session.status, 200);
   const body = await session.json();
   assert.equal(body.value.sessionId, 'stub-session');
+  const sid = body.value.sessionId;
+  const nav = await fetch(`${info.webdriverUrl}/session/${sid}/url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: 'https://example.com/' }),
+  });
+  assert.equal(nav.status, 200);
+  const current = await fetch(`${info.webdriverUrl}/session/${sid}/url`);
+  assert.equal((await current.json()).value, 'https://example.com/');
   stopWebDriverBridge(id);
   delete process.env.PM_CHROMEDRIVER_PATH;
 });

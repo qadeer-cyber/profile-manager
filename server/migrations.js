@@ -167,6 +167,13 @@ export const migrations = [
       const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
       if (!cols.includes('purge_error')) db.exec('ALTER TABLE profiles ADD COLUMN purge_error TEXT');
     } },
+  { version: 18, name: 'extensions browser_engine and gecko id', up: db => {
+      const cols = db.prepare('PRAGMA table_info(extensions)').all().map(c => c.name);
+      if (!cols.includes('browser_engine')) {
+        db.exec(`ALTER TABLE extensions ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium' CHECK (browser_engine IN ('chromium','firefox'))`);
+      }
+      if (!cols.includes('gecko_extension_id')) db.exec('ALTER TABLE extensions ADD COLUMN gecko_extension_id TEXT');
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

@@ -45,3 +45,19 @@ export function listAdbDevices() {
 export function adbAdapterReport() {
   return { generatedAt: new Date().toISOString(), ...listAdbDevices() };
 }
+
+/** Connect to an explicitly authorized network ADB endpoint (user-owned). */
+export function connectAdbTarget(serialOrHost) {
+  const target = String(serialOrHost || '').trim();
+  if (!target || target.length > 120) {
+    return { ok: false, error: 'invalid_serial', message: 'serial or host:port is required' };
+  }
+  const base = adbAvailability();
+  if (!base.available) return { ok: false, error: base.reason, message: 'adb is not available on PATH' };
+  try {
+    const out = execFileSync('adb', ['connect', target], { encoding: 'utf8', timeout: 15000, windowsHide: true });
+    return { ok: true, target, output: out.trim(), devices: listAdbDevices().devices };
+  } catch (e) {
+    return { ok: false, target, error: 'adb_connect_failed', message: String(e.message || e).slice(0, 300) };
+  }
+}

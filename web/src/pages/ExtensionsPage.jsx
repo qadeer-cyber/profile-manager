@@ -16,7 +16,8 @@ export function ExtensionsPage() {
   };
   return <>
     <header className="page-head"><div><h1>Extensions</h1><div className="muted">{plural(list.length, 'unpacked extension')} in the library</div></div>
-      <button className="primary" onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import unpacked</button></header>
+      <button className="primary" onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import Chromium</button>
+      <button onClick={() => setDialog({ kind: 'importGecko' })}>Import Firefox (gecko)</button></header>
     <div className="notice warn">Import copies a local unpacked extension after checking its manifest. The library shows the version and the permissions the manifest declares. Assigning an extension to a profile does not make it private, and removing it here deletes the copied files.</div>
     <div className="table-wrap"><table className="grid"><thead><tr>
       <th>Name</th><th>Version</th><th>Permissions</th><th>Profiles</th><th></th>
@@ -34,6 +35,7 @@ export function ExtensionsPage() {
       {loaded && !list.length && <tr><td colSpan="5" className="empty">No extensions yet. Import a folder that contains a manifest.json.</td></tr>}
     </tbody></table></div>
     {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
+    {dialog?.kind === 'importGecko' && <ImportGeckoDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
     {dialog?.kind === 'assign' && <AssignDialog extension={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); load(); }} />}
     {dialog?.kind === 'force' && <Confirm title="Extension is assigned" danger confirmLabel="Unassign and remove" message={`${dialog.msg} Removing it also drops those assignments. The copied files are deleted.`} onConfirm={() => remove(dialog.data, true)} onClose={() => setDialog(null)} />}
   </>;
@@ -44,6 +46,26 @@ function permissionText(ext) {
   const optional = [...(ext.optionalPermissions || []), ...(ext.optionalHostPermissions || [])];
   if (!declared.length && !optional.length) return <span className="muted">None declared</span>;
   return <>{declared.join(', ') || 'None declared'}{optional.length ? <div className="muted">Optional: {optional.join(', ')}</div> : null}</>;
+}
+
+function ImportGeckoDialog({ onClose, onDone }) {
+  const toast = useToast();
+  const [source, setSource] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!source.trim()) return toast('Enter the absolute path of the unpacked gecko extension', 'error');
+    setBusy(true);
+    try {
+      const r = await api('/api/gecko-extensions/import', { method: 'POST', body: { path: source.trim() } });
+      toast(`Imported Firefox extension ${r.name}`, 'success');
+      onDone();
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return <Dialog title="Import Firefox extension" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={submit}>Import</button></>}>
+    <p className="muted">Unpacked directory with manifest.json and browser_specific_settings.gecko.id (Mozilla signed distribution). Signing is not bypassed.</p>
+    <label>Extension folder<input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder="Absolute path" /></label>
+  </Dialog>;
 }
 
 function ImportDialog({ onClose, onDone }) {
