@@ -13,13 +13,14 @@ export function CookieRobotPage() {
   const [delayMs, setDelayMs] = useState(1500);
   const [expanded, setExpanded] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [reportError, setReportError] = useState('');
   const load = useCallback(async () => {
     try {
       setJobs(await api('/api/cookie-robot/jobs'));
     } catch (e) { toast(e.message, 'error'); }
   }, [toast]);
   useEffect(() => {
-    api('/api/cookie-robot').then(setReport).catch(() => {});
+    api('/api/cookie-robot').then(r => { setReport(r); setReportError(''); }).catch(e => setReportError(e.message));
     api('/api/profiles').then(list => {
       setProfiles(list);
       if (!profileId && list.length) {
@@ -45,6 +46,8 @@ export function CookieRobotPage() {
   return <>
     <header className="page-head"><h1>CookieRobot (local)</h1></header>
     <section className="panel">
+      {reportError && <p className="err-text" role="alert">{reportError}</p>}
+      {!report && !reportError && <p className="muted" aria-busy="true">Loading CookieRobot capability…</p>}
       <p className="muted">{report?.note || 'User-authorized URL batches only.'} {report?.firefox?.supported === false && <span>Firefox: {report.firefox.reason}</span>}</p>
       <label>Profile
         <select value={profileId} onChange={e => setProfileId(e.target.value)} aria-label="Profile">
