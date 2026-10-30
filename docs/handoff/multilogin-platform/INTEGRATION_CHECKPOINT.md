@@ -2,17 +2,20 @@
 
 **No pull request.** This branch was not merged to `main`. No installer-smoke, preview, release, or Windows CI dispatch.
 
-**Checkpoint commit:** `be48117972f615a16a5d0936118420e8a8105a8a` (parent of the commit that records this line).
+**Integration merge:** `abf10757eaccf9e5c5f5088efe07d3a58a94ef4c`
 
-**Branch tip:** child of that checkpoint commit on `integration/ultimate2-stock-secure`. A commit cannot contain its own hash; resolve the tip with `git rev-parse HEAD`.
+**Checkpoint body:** `be48117972f615a16a5d0936118420e8a8105a8a`
 
-Parent integration merge: `abf10757eaccf9e5c5f5088efe07d3a58a94ef4c`.
+**Parent of this tip commit:** `8553a00131f32407b9b25528e32b27d09b80ae92`
+
+**Branch tip:** this commit on `integration/ultimate2-stock-secure`. A commit cannot store its own hash. `git rev-parse HEAD` is the tip.
 
 ## Parents and preserved commits
 
 | Role | SHA | Reachable |
 |------|-----|-----------|
-| Integration merge | `abf10757eaccf9e5c5f5088efe07d3a58a94ef4c` | tip parent |
+| Integration merge | `abf10757eaccf9e5c5f5088efe07d3a58a94ef4c` | yes |
+| Parent of this tip commit | `8553a00131f32407b9b25528e32b27d09b80ae92` | yes |
 | Merge first parent (docs alignment on Codex) | `d10b7396e59f257e9d5c56e13583467b8b526662` | yes |
 | Merge second parent (Grok feasible tip) | `8251394d27bda34fc4625a276e109752a419bec5` | yes |
 | Codex security checkpoint (branch start) | `0723c54251c33732b6c6f45fdf91ac990f831bd3` | yes |
