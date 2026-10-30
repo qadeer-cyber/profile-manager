@@ -44,11 +44,10 @@ try {
 
   # This test gate explicitly refuses 0-failure/2-skip false positives.
   $m8Evidence = Join-Path $EvidenceRoot 'm8'
-  if ($SkipDeps) {
-    & (Join-Path $PSScriptRoot 'Run-M8-Qualification.ps1') -EvidenceRoot $m8Evidence -SkipDeps
-  } else {
-    & (Join-Path $PSScriptRoot 'Run-M8-Qualification.ps1') -EvidenceRoot $m8Evidence
-  }
+  $m8Script = Join-Path $PSScriptRoot 'Run-M8-Qualification.ps1'
+  $m8Args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$m8Script,'-EvidenceRoot',$m8Evidence)
+  if ($SkipDeps) { $m8Args += '-SkipDeps' }
+  Invoke-Checked 'Isolated real Windows M8 gate' 'powershell.exe' $m8Args
   if (-not (Test-Path (Join-Path $m8Evidence 'm8-acceptance.result')) -or
       (Get-Content (Join-Path $m8Evidence 'm8-acceptance.result') -Raw).Trim() -ne 'PASS') {
     throw 'Real Windows Chromium + Firefox M8 acceptance did not pass'
