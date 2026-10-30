@@ -18,8 +18,9 @@ after(async () => {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 });
 
-test('puppeteer-core connects over CDP without closing the profile browser', { timeout: 120000 }, async () => {
+test('puppeteer-core connects over CDP without closing the profile browser', { timeout: 120000 }, async t => {
   const fixture = await startLocalHttpFixture();
+  t.after(() => fixture.close());
   proc = await spawnServer(env);
   const auth = { Authorization: 'Bearer puppeteer-attach', 'Content-Type': 'application/json' };
   const created = await fetch(`${proc.url}/api/v1/profiles`, {
@@ -33,6 +34,7 @@ test('puppeteer-core connects over CDP without closing the profile browser', { t
   const { cdp } = await launched.json();
   const exe = chromium.executablePath();
   const browser = await puppeteer.connect({ browserURL: cdp.httpEndpoint, defaultViewport: null });
+  t.after(() => browser.disconnect());
   const pages = await browser.pages();
   const title = await pages[0].title();
   assert.match(title, /pm-fixture|ok/i);

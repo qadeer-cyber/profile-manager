@@ -79,3 +79,15 @@ test('restore validates collisions, rolls back a failed apply, and refuses symli
   assert.equal(corrupt.status, 400);
   assert.equal(corrupt.body.code, 'UNSAFE_ARCHIVE');
 });
+
+test('archives reject Windows aliases, alternate streams, and case-colliding entries', () => {
+  const id = '11111111-1111-4111-8111-111111111111';
+  for (const suffix of ['aux.txt', 'x:stream', 'file.', 'dir /file', 'nul']) {
+    assert.throws(() => assertArchivePath(`profiles/${id}/${suffix}`), e => e.code === 'UNSAFE_ARCHIVE');
+  }
+  const archive = packArchive([
+    { path: `profiles/${id}/Data`, data: Buffer.from('a') },
+    { path: `profiles/${id}/data`, data: Buffer.from('b') },
+  ]);
+  assert.throws(() => unpackArchive(archive), e => e.code === 'UNSAFE_ARCHIVE');
+});

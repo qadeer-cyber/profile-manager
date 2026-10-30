@@ -15,8 +15,9 @@ after(() => {
   for (const proc of children) hardKill(proc?.pid);
 });
 
-test('runCookieRobotTasksOverCdp visits URLs over real Chromium CDP', { timeout: 120000 }, async () => {
+test('runCookieRobotTasksOverCdp visits URLs over real Chromium CDP', { timeout: 120000 }, async t => {
   const fixture = await startLocalHttpFixture();
+  t.after(() => fixture.close());
   let exe;
   try {
     exe = chromium.executablePath();
@@ -29,10 +30,13 @@ test('runCookieRobotTasksOverCdp visits URLs over real Chromium CDP', { timeout:
   const proc = trackProcess(spawn(exe, [
     `--remote-debugging-port=${port}`,
     `--user-data-dir=${userDataDir}`,
+    '--headless=new',
+    ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []),
     '--no-first-run',
     '--no-default-browser-check',
     'about:blank',
   ], { stdio: 'ignore', detached: process.platform !== 'win32' }));
+  proc.on('error', () => {});
   children.push(proc);
 
   const deadline = Date.now() + 45000;

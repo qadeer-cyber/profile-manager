@@ -12,7 +12,7 @@ export function assertArchivePath(value) {
   if (typeof value !== 'string' || !value || value.length > 512) throw bad('Backup path is not allowed');
   if (value.includes('\0') || value.includes('\\') || value.startsWith('/') || /^[A-Za-z]:/.test(value)) throw bad('Backup path is not allowed');
   const segments = value.split('/');
-  if (segments.some(segment => !segment || segment === '.' || segment === '..' || segment.length > 255 || /[\u0000-\u001f\u007f]/.test(segment))) throw bad('Backup path is not allowed');
+  if (segments.some(segment => !segment || segment === '.' || segment === '..' || segment.length > 255 || /[:]/.test(segment) || /[. ]$/.test(segment) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(segment) || /[\u0000-\u001f\u007f]/.test(segment))) throw bad('Backup path is not allowed');
   if (value === 'profiles.db' || value === 'secret.key' || value === 'meta.json') return value;
   const id = segments[1];
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -60,8 +60,9 @@ export function unpackArchive(buffer) {
   for (let index = 0; index < count; index += 1) {
     const pathLength = read(2).readUInt16BE(0);
     const rel = assertArchivePath(read(pathLength).toString('utf8'));
-    if (seen.has(rel)) throw bad('Backup archive repeats a path');
-    seen.add(rel);
+    const canonical = rel.normalize('NFC').toLowerCase();
+    if (seen.has(canonical)) throw bad('Backup archive repeats a path');
+    seen.add(canonical);
     const size = Number(read(8).readBigUInt64BE(0));
     if (!Number.isSafeInteger(size) || size < 0 || size > MAX_FILE) throw bad('A backup file is too large');
     total += size;

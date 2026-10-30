@@ -182,8 +182,11 @@ export function deleteExtension(id, force = false) {
   if (assigned && !force) {
     throw Object.assign(new Error(`Extension is assigned to ${assigned} profile(s). Unassign it first or pass ?force=1.`), { status: 409, code: 'EXTENSION_IN_USE' });
   }
+  const rel = row.storage_dir;
+  const dir = row.browser_engine === 'firefox' && /^gecko-extensions\/[0-9a-f-]{36}$/i.test(rel)
+    ? path.join(DATA_DIR, rel) : storagePath(rel);
+  fs.rmSync(dir, { recursive: true, force: true });
   db.prepare('DELETE FROM extensions WHERE id=?').run(id);
-  fs.rmSync(storagePath(row.storage_dir), { recursive: true, force: true });
 }
 
 export function profileExtensions(profileId) {

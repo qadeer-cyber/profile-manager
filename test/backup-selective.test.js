@@ -51,3 +51,51 @@ test('portable .pmp backup restores profile row and files', () => {
   assert.equal(db.prepare('SELECT name FROM profiles WHERE id=?').get(id).name, row.name);
   assert.ok(fs.existsSync(path.join(userDataDir(id), 'Default', 'Portable.txt')));
 });
+
+test('portable restore rolls back row and replaced tree when failure follows file movement', () => {
+  const id = insertProfile('Rollback');
+  const marker = path.join(userDataDir(id), 'Default', 'Rollback.txt');
+  const archive = createProfileBackup(id);
+  db.prepare('UPDATE profiles SET name=? WHERE id=?').run('Current name', id);
+  fs.writeFileSync(marker, 'current bytes');
+  assert.throws(() => restoreBackup(archive, { collision: 'replace', failPoint: 'after-files' }), e => e.code === 'RESTORE_FAILED');
+  assert.equal(db.prepare('SELECT name FROM profiles WHERE id=?').get(id).name, 'Current name');
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'current bytes');
+});
+
+test('portable restore cannot commit a row when an orphan destination blocks its files', () => {
+  const id = insertProfile('Orphan');
+  const archive = createProfileBackup(id);
+  db.prepare('DELETE FROM profiles WHERE id=?').run(id);
+  assert.throws(() => restoreBackup(archive), e => e.code === 'COLLISION');
+  assert.equal(db.prepare('SELECT id FROM profiles WHERE id=?').get(id), undefined);
+  assert.equal(fs.readFileSync(path.join(userDataDir(id), 'Default', 'Orphan.txt'), 'utf8'), 'Orphan');
+});
+
+test('portable restore rejects mismatched identity, unrelated files, and future schema', async () => {
+  const { packArchive, unpackArchive } = await import('../server/archive.js');
+  const id = insertProfile('Invalid manifest');
+  const archive = createProfileBackup(id);
+  for (const mutate of [
+    meta => { meta.profileSnapshot.id = randomUUID(); },
+    meta => { meta.schemaVersion = 9999; },
+  ]) {
+    const files = unpackArchive(archive), manifest = files.find(f => f.path === 'meta.json');
+    const meta = JSON.parse(manifest.data.toString()); mutate(meta); manifest.data = Buffer.from(JSON.stringify(meta));
+    assert.throws(() => restoreBackup(packArchive(files), { collision: 'replace' }), e => ['CORRUPT_BACKUP', 'UNSUPPORTED_BACKUP'].includes(e.code));
+  }
+  const files = unpackArchive(archive);
+  files.push({ path: `profiles/${randomUUID()}/unrelated`, data: Buffer.from('bad') });
+  assert.throws(() => restoreBackup(packArchive(files), { collision: 'replace' }), e => e.code === 'CORRUPT_BACKUP');
+});
+
+test('portable export refuses a symlink profile root', { skip: process.platform === 'win32' && 'symlink creation requires Windows privileges' }, () => {
+  const id = insertProfile('Root link');
+  const profile = userDataDir(id), outside = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-outside-'));
+  fs.rmSync(profile, { recursive: true, force: true });
+  try {
+    fs.writeFileSync(path.join(outside, 'private'), 'outside');
+    fs.symlinkSync(outside, profile, 'dir');
+    assert.throws(() => createProfileBackup(id), e => e.code === 'UNSAFE_PROFILE_LINK');
+  } finally { fs.rmSync(profile, { force: true }); fs.rmSync(outside, { recursive: true, force: true }); }
+});

@@ -204,7 +204,7 @@ test('upgrade from 0.5.0-alpha.1 schema 10 keeps profiles, proxies, secrets, and
   const db2 = new Database(file);
   const upgraded = migrate(db2);
   assert.equal(upgraded.from, 10);
-  assert.deepEqual(upgraded.applied, [11, 12]);
+  assert.deepEqual(upgraded.applied, migrations.filter(m => m.version > 10).map(m => m.version));
   assert.equal(upgraded.to, migrations.at(-1).version);
   assert.ok(upgraded.backup && fs.existsSync(upgraded.backup));
   const profile = db2.prepare('SELECT name, tags, folder, notes, proxy_id, browser_settings, webrtc_settings, advanced_settings, automation_enabled FROM profiles WHERE id=?').get(profileId);
@@ -321,7 +321,7 @@ test('migrations: v6 moves inline proxies into the library (dedupe identical, ke
   ins.run('a', 'A', px('enc:v1:SAME')); ins.run('b', 'B', px('enc:v1:SAME')); ins.run('c', 'C', px('enc:v1:OTHER'));
   ins.run('d', 'D', null); ins.run('e', 'E', JSON.stringify({ type: 'ftp', host: 'h', port: 1 }));
   const r = migrate(db);
-  assert.deepEqual(r.applied, [6, 7, 8, 9, 10, 11, 12]);
+  assert.deepEqual(r.applied, migrations.filter(m => m.version > 5).map(m => m.version));
   const rows = db.prepare('SELECT * FROM proxies ORDER BY password').all();
   assert.equal(rows.length, 2, 'identical endpoint+ciphertext deduped; different password kept separate');
   assert.equal(rows[1].password, 'enc:v1:SAME'); assert.equal(rows[1].name, 'socks5://h:1080');

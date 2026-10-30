@@ -74,6 +74,7 @@ export function createBackup({ ids = runningIds() } = {}) {
   if (fs.existsSync(keyFile)) pushFile('secret.key', fs.readFileSync(keyFile));
   const walkInto = (root, prefix) => {
     if (!fs.existsSync(root)) return;
+    if (fs.lstatSync(root).isSymbolicLink()) throw fail(400, 'Refusing to back up a symlink root', 'UNSAFE_PROFILE_LINK');
     const visit = (dir, rel) => {
       for (const name of fs.readdirSync(dir)) {
         if (DATA_COPY_SKIP.has(name)) continue;
@@ -115,6 +116,7 @@ export function createProfileBackup(profileId, { ids = runningIds() } = {}) {
   };
   const walkInto = (root, prefix) => {
     if (!fs.existsSync(root)) return;
+    if (fs.lstatSync(root).isSymbolicLink()) throw fail(400, 'Refusing to back up a symlink root', 'UNSAFE_PROFILE_LINK');
     const visit = (dir, rel) => {
       for (const name of fs.readdirSync(dir)) {
         if (DATA_COPY_SKIP.has(name)) continue;
@@ -167,6 +169,8 @@ export function inspectBackup(buffer, { passphrase } = {}) {
   let meta;
   try { meta = JSON.parse(metaFile.data.toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
   if (!meta || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  if (meta.version !== 1 || !['profile-manager-backup', 'profile-manager-profile-backup'].includes(meta.format)) throw fail(400, 'Backup format is unsupported', 'UNSUPPORTED_BACKUP');
+  assertManifestChecksums(meta, files);
   const fileCounts = {};
   if (meta.fileChecksums && typeof meta.fileChecksums === 'object') {
     for (const rel of Object.keys(meta.fileChecksums)) {
@@ -241,7 +245,7 @@ export function restoreBackup(buffer, { collision = 'abort', failPoint = null, r
   assertManifestChecksums(meta, files);
   const onlyIds = parseProfileIdsFilter(profileIds);
   if (meta.format === 'profile-manager-profile-backup') {
-    return restorePortableProfileBackup(files, meta, { collision, running, onlyIds });
+    return restorePortableProfileBackup(files, meta, { collision, running, onlyIds, failPoint });
   }
   if (meta.format !== 'profile-manager-backup') throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
   if (!byPath.has('profiles.db')) throw fail(400, 'Backup is missing its database', 'CORRUPT_BACKUP');
@@ -420,9 +424,15 @@ function moveNewExtensions(tmp, source, relocate) {
   }
 }
 
-function restorePortableProfileBackup(files, meta, { collision, running, onlyIds }) {
+function restorePortableProfileBackup(files, meta, { collision, running, onlyIds, failPoint }) {
   if (!meta.profileSnapshot?.id) throw fail(400, 'Portable backup is missing profileSnapshot', 'CORRUPT_BACKUP');
   const row = meta.profileSnapshot;
+  if (!UUID.test(String(row.id || '')) || typeof row.name !== 'string' || !row.name.trim() ||
+      meta.profiles.length !== 1 || meta.profiles[0]?.id !== row.id) throw fail(400, 'Portable profile identity is invalid', 'CORRUPT_BACKUP');
+  if (!Number.isInteger(meta.schemaVersion) || meta.schemaVersion > currentVersion(db)) throw fail(400, 'Portable backup schema is unsupported', 'UNSUPPORTED_BACKUP');
+  try { if (!Array.isArray(JSON.parse(row.tags || '[]'))) throw new Error('tags'); }
+  catch { throw fail(400, 'Backup profile tags are invalid', 'CORRUPT_BACKUP'); }
+  if (files.some(f => f.path !== 'meta.json' && !f.path.startsWith(`profiles/${row.id}/`))) throw fail(400, 'Portable backup contains unrelated files', 'CORRUPT_BACKUP');
   if (onlyIds && !onlyIds.has(row.id)) throw fail(400, 'Selected profileIds do not match this portable backup', 'INVALID_RESTORE');
   if (running.includes(row.id) && collision === 'replace') throw fail(409, 'Stop the profile before replacing it from a backup.', 'PROFILES_RUNNING');
   const localIds = new Set(db.prepare('SELECT id FROM profiles').all().map(r => r.id));
@@ -444,6 +454,7 @@ function restorePortableProfileBackup(files, meta, { collision, running, onlyIds
   const undo = () => { for (const op of ops.reverse()) if (fs.existsSync(op.to)) fs.renameSync(op.to, op.from); };
   const destColumns = columnSet(db, 'profiles');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-portable-restore-'));
+  let rollbackFailed = false;
   try {
     writeTree(tmp, files.filter(f => f.path.startsWith('profiles/')));
     db.transaction(() => {
@@ -453,14 +464,18 @@ function restorePortableProfileBackup(files, meta, { collision, running, onlyIds
         db.prepare('INSERT OR REPLACE INTO profile_extensions (profile_id, extension_id, enabled, created_at, updated_at) VALUES (?,?,?,?,?)')
           .run(item.id, link.extension_id, link.enabled ? 1 : 0, new Date().toISOString(), new Date().toISOString());
       }
+      if (failPoint === 'before-files') throw fail(500, 'Restore stopped before files were moved', 'RESTORE_FAILED');
+      moveProfileDir(tmp, item, relocate, asides);
+      if (failPoint === 'after-files') throw fail(500, 'Restore stopped after files were moved', 'RESTORE_FAILED');
     })();
-    moveProfileDir(tmp, item, relocate, asides);
   } catch (error) {
-    try { undo(); } catch { throw fail(500, 'Portable restore failed and file rollback failed', 'RESTORE_ROLLBACK_FAILED'); }
+    try { undo(); } catch { rollbackFailed = true; throw fail(500, 'Portable restore failed and file rollback failed; recovery files were retained', 'RESTORE_ROLLBACK_FAILED'); }
     throw error;
   } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-    for (const aside of asides) fs.rmSync(aside, { recursive: true, force: true });
+    if (!rollbackFailed) {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      for (const aside of asides) fs.rmSync(aside, { recursive: true, force: true });
+    }
   }
   return result;
 }
@@ -487,7 +502,7 @@ function applyProfileFromRow(row, item, archivedKey, result, destColumns) {
     webrtc_settings: valueOf(row, 'webrtc_settings', '{"mode":"browser_default"}'),
     advanced_settings: valueOf(row, 'advanced_settings', ADVANCED_DEFAULT),
     browser_engine: valueOf(row, 'browser_engine', 'chromium'),
-    workspace_id: valueOf(row, 'workspace_id', null),
+    workspace_id: row.workspace_id && db.prepare('SELECT id FROM workspaces WHERE id=?').get(row.workspace_id) ? row.workspace_id : null,
     is_quick: valueOf(row, 'is_quick', 0),
     deleted_at: null,
     purge_error: null,

@@ -14,7 +14,10 @@ export function startLocalHttpFixture({ body = '<!doctype html><html><head><titl
       resolve({
         origin: `http://127.0.0.1:${port}/`,
         port,
-        close: () => new Promise(r => server.close(() => r())),
+        close: () => new Promise(r => {
+          server.close(() => r());
+          server.closeAllConnections();
+        }),
       });
     });
   });

@@ -16,6 +16,7 @@ const running = new Set();
 mock.module(new URL('../server/browsers.js', import.meta.url).href, { namedExports: {
   events: new (await import('events')).EventEmitter(), DATA_COPY_SKIP: new Set(),
   isRunning: id => running.has(id), runningIds: () => [...running], runInfo: () => stubRun.info,
+  resourceSnapshot: () => ({ running: running.size, sessions: [] }),
   launch: async (p, opts) => { if (stubRun.fail) throw stubRun.fail; launches.push({ id: p.id, opts }); running.add(p.id); return {}; },
   stop: async id => { running.delete(id); }, shutdown: async () => {}, recoverAfterRestart: async () => ({}), startHealthMonitor: () => {},
 } });

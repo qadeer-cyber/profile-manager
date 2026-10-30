@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - feature/dedicated-browser-engine
+      - codex/ultimate2-local-completion*
   workflow_dispatch:
 
 jobs:

@@ -16,8 +16,8 @@ function source(name, body) {
   fs.writeFileSync(path.join(root, 'page.js'), '/* fixture */\n');
   return root;
 }
-async function req(method, url, body, auth = true) {
-  const r = await fetch(proc.url + '/api/v1' + url, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: 'Bearer m5-local-test-token' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
+async function req(method, url, body, auth = true, ui = false) {
+  const r = await fetch(proc.url + (ui ? '/api' : '/api/v1') + url, { method, headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: 'Bearer m5-local-test-token' } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) });
   const text = await r.text();
   return { status: r.status, body: text ? JSON.parse(text) : null };
 }
@@ -60,6 +60,7 @@ test('assignments are isolated per profile and survive restart', async () => {
   assert.deepEqual(clone.body.extensions.map(item => [item.id, item.enabled]), again.body.extensions.map(item => [item.id, item.enabled]));
   assert.notEqual(clone.body.id, alpha.id);
   assert.equal((await req('DELETE', `/profiles/${clone.body.id}`)).status, 204);
+  assert.equal((await req('DELETE', `/trash/${clone.body.id}`, { confirmName: clone.body.name }, true, true)).status, 200);
 });
 
 test('cleanup removes assignments and copied files without deleting the other extension', async () => {
@@ -75,6 +76,9 @@ test('cleanup removes assignments and copied files without deleting the other ex
   assert.deepEqual(bravoNow.body.extensions.map(item => item.id), [ads.id]);
   assert.equal((await req('DELETE', `/profiles/${alpha.id}`)).status, 204);
   assert.equal((await req('DELETE', `/profiles/${bravo.id}`)).status, 204);
+  // Trash retains assignments for recovery; only a confirmed purge removes them.
+  assert.equal((await req('DELETE', `/trash/${alpha.id}`, { confirmName: alpha.name }, true, true)).status, 200);
+  assert.equal((await req('DELETE', `/trash/${bravo.id}`, { confirmName: bravo.name }, true, true)).status, 200);
   const adsRow = await req('GET', `/extensions/${ads.id}`);
   assert.equal(adsRow.body.assignedProfiles, 0);
   assert.equal(fs.existsSync(path.join(dir, 'extensions', ads.id, 'manifest.json')), true);

@@ -82,15 +82,38 @@ test('purge completes after interrupted filesystem cleanup', async () => {
   assert.equal(db.prepare('SELECT id FROM profiles WHERE id=?').get(id), undefined);
 });
 
-test('resumeIncompletePurges clears purge_error when dirs are removable', async () => {
+test('startup reports interrupted purge without deleting files or clearing evidence', async () => {
   const id = insertProfile('Recover');
   seedProfileDirs(id);
   await softDeleteProfile(id, { stopFn: async () => {} });
   db.prepare('UPDATE profiles SET purge_error=? WHERE id=?').run('simulated partial purge', id);
-  removeProfileDataFromDisk(id);
-  const results = resumeIncompletePurges();
+  const results = resumeIncompletePurges({ rmSyncImpl: () => assert.fail('startup must not delete') });
   const mine = results.find(r => r.id === id);
-  assert.equal(mine?.recovered, true);
+  assert.equal(mine?.recovered, false);
+  assert.equal(mine?.requiresConfirmation, true);
+  assert.ok(fs.existsSync(userDataDir(id)));
   const row = db.prepare('SELECT purge_error FROM profiles WHERE id=?').get(id);
-  assert.equal(row.purge_error, null);
+  assert.equal(row.purge_error, 'simulated partial purge');
+});
+
+test('partially failed purge is not silently restored or retried at startup', async () => {
+  const { restoreFromTrash } = await import('../server/profile-lifecycle.js');
+  const id = insertProfile('Partial'); seedProfileDirs(id);
+  await softDeleteProfile(id);
+  await assert.rejects(() => purgeFromTrash(id, {
+    confirmName: 'Partial',
+    rmSyncImpl: target => { fs.rmSync(path.join(target, 'Default', 'marker.txt'), { force: true }); throw new Error('interrupted'); },
+  }), e => e.code === 'PURGE_FS_FAILED');
+  assert.throws(() => restoreFromTrash(id), e => e.code === 'PURGE_RECOVERY_REQUIRED');
+  assert.equal(resumeIncompletePurges().find(r => r.id === id).requiresConfirmation, true);
+  assert.ok(db.prepare('SELECT deleted_at FROM profiles WHERE id=?').get(id).deleted_at);
+});
+
+test('database failure after filesystem purge retains durable interrupted-purge evidence', async () => {
+  const id = insertProfile('DB failure'); seedProfileDirs(id); await softDeleteProfile(id);
+  db.exec(`CREATE TEMP TRIGGER refuse_purge BEFORE DELETE ON profiles WHEN OLD.id='${id}' BEGIN SELECT RAISE(ABORT, 'injected db failure'); END`);
+  try {
+    await assert.rejects(() => purgeFromTrash(id, { confirmName: 'DB failure' }), /injected db failure/);
+    assert.match(db.prepare('SELECT purge_error FROM profiles WHERE id=?').get(id).purge_error, /Purge started/);
+  } finally { db.exec('DROP TRIGGER refuse_purge'); }
 });

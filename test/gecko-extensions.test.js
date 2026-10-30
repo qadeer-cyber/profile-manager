@@ -27,19 +27,19 @@ test('importUnpackedGeckoExtension requires gecko id in manifest', () => {
   fs.rmSync(src, { recursive: true, force: true });
 });
 
-test('setGeckoProfileExtensionEnabled toggles userDisabled in extensions.json', () => {
+test('offline toggle returns a capability error and leaves Firefox metadata unchanged', () => {
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-gecko-json-'));
   fs.writeFileSync(path.join(profileDir, 'extensions.json'), JSON.stringify({
     schemaVersion: 35,
     addons: [{ id: 'demo@test', version: '1.0', active: true, userDisabled: false, type: 'extension' }],
   }));
-  setGeckoProfileExtensionEnabled(profileDir, 'demo@test', false);
-  const read = readGeckoProfileExtensions(profileDir);
-  assert.equal(read.addons[0].userDisabled, true);
+  const original = fs.readFileSync(path.join(profileDir, 'extensions.json'));
+  assert.throws(() => setGeckoProfileExtensionEnabled(profileDir, 'demo@test', false), e => e.status === 501 && e.code === 'GECKO_EXTENSION_TOGGLE_UNSUPPORTED');
+  assert.deepEqual(fs.readFileSync(path.join(profileDir, 'extensions.json')), original);
   fs.rmSync(profileDir, { recursive: true, force: true });
 });
 
-test('materializeGeckoExtensions copies enabled assignments into profile tree', () => {
+test('Firefox assignments remain inventory and never mutate browser files', () => {
   const src = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-gecko-good-'));
   fs.writeFileSync(path.join(src, 'manifest.json'), JSON.stringify({
     manifest_version: 2,
@@ -56,8 +56,25 @@ test('materializeGeckoExtensions copies enabled assignments into profile tree', 
   assignExtension(pid, row.id, true);
   const profileDir = path.join(dataDir, 'profiles', pid, 'gecko');
   fs.mkdirSync(profileDir, { recursive: true });
-  const { count } = materializeGeckoExtensions(profileDir, pid);
-  assert.equal(count, 1);
-  assert.ok(fs.existsSync(path.join(profileDir, 'extensions', 'demo@profile-manager.test', 'manifest.json')));
+  const result = materializeGeckoExtensions(profileDir, pid);
+  assert.equal(result.count, 0);
+  assert.deepEqual(result.pendingManualInstallation, [row.id]);
+  assert.equal(fs.existsSync(path.join(profileDir, 'extensions')), false);
   fs.rmSync(src, { recursive: true, force: true });
+});
+
+test('removing a Firefox library item uses its engine-specific storage directory', () => {
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-gecko-delete-'));
+  try {
+    fs.writeFileSync(path.join(src, 'manifest.json'), JSON.stringify({ manifest_version: 2, name: 'Remove', version: '1.0', browser_specific_settings: { gecko: { id: 'remove@test' } } }));
+    const row = importUnpackedGeckoExtension(src);
+    const target = path.join(dataDir, row.storage_dir);
+    assert.equal(fs.existsSync(target), true);
+    // Loaded dynamically to share the same isolated DB.
+    return import('../server/extensions.js').then(({ deleteExtension }) => {
+      deleteExtension(row.id);
+      assert.equal(fs.existsSync(target), false);
+      assert.equal(db.prepare('SELECT id FROM extensions WHERE id=?').get(row.id), undefined);
+    });
+  } finally { fs.rmSync(src, { recursive: true, force: true }); }
 });

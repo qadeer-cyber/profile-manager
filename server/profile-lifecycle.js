@@ -40,22 +40,12 @@ export function recordPurgeError(id, message) {
   db.prepare('UPDATE profiles SET purge_error=?, updated_at=? WHERE id=?').run(String(message || 'purge failed').slice(0, 500), new Date().toISOString(), id);
 }
 
-/** Retry filesystem cleanup for trashed profiles that previously failed purge (dirs may already be gone). */
-export function resumeIncompletePurges({ rmSyncImpl = fs.rmSync } = {}) {
+/** Startup reports interrupted purges. Retrying destructive cleanup requires explicit confirmation. */
+export function resumeIncompletePurges() {
   const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
   if (!cols.includes('purge_error')) return [];
-  const rows = db.prepare('SELECT id FROM profiles WHERE deleted_at IS NOT NULL AND purge_error IS NOT NULL').all();
-  const out = [];
-  for (const { id } of rows) {
-    try {
-      removeProfileDataFromDisk(id, { rmSyncImpl });
-      clearPurgeError(id);
-      out.push({ id, recovered: true });
-    } catch (e) {
-      out.push({ id, recovered: false, error: e.message });
-    }
-  }
-  return out;
+  return db.prepare('SELECT id, purge_error FROM profiles WHERE deleted_at IS NOT NULL AND purge_error IS NOT NULL').all()
+    .map(row => ({ id: row.id, recovered: false, requiresConfirmation: true, error: row.purge_error }));
 }
 
 export function activeProfileFilterSql(alias = '') {
@@ -110,8 +100,9 @@ export function listTrash(mapRow) {
 
 export function restoreFromTrash(id) {
   if (trashLocks.has(id)) throw fail(409, 'Trash operation in progress', 'TRASH_BUSY');
-  const row = db.prepare('SELECT id FROM profiles WHERE id=? AND deleted_at IS NOT NULL').get(id);
+  const row = db.prepare('SELECT id, purge_error FROM profiles WHERE id=? AND deleted_at IS NOT NULL').get(id);
   if (!row) throw fail(404, 'Profile not in trash', 'NOT_IN_TRASH');
+  if (row.purge_error) throw fail(409, 'A purge was interrupted; profile files may be incomplete. Restore a backup or explicitly retry the purge.', 'PURGE_RECOVERY_REQUIRED');
   db.prepare('UPDATE profiles SET deleted_at=NULL, updated_at=? WHERE id=?').run(new Date().toISOString(), id);
   return { id, restored: true };
 }
@@ -125,9 +116,9 @@ export async function purgeFromTrash(id, { confirmName, stopFn, isRunningFn, rmS
     if (String(confirmName || '') !== row.name) throw fail(400, 'confirmName must match the profile name exactly', 'CONFIRM_NAME_MISMATCH');
     if (typeof stopFn === 'function') await stopFn(id).catch(() => {});
     if (isRunningFn?.(id)) throw fail(409, 'Cannot purge a running profile', 'PROFILE_STILL_RUNNING');
+    recordPurgeError(id, 'Purge started; interrupted cleanup requires review');
     try {
       removeProfileDataFromDisk(id, { rmSyncImpl });
-      clearPurgeError(id);
     } catch (e) {
       if (e.code === 'PURGE_FS_FAILED') recordPurgeError(id, e.message);
       throw e;

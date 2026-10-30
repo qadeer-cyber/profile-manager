@@ -15,7 +15,7 @@ export function ExtensionsPage() {
     catch (e) { if (/assigned/i.test(e.message) && !force) setDialog({ kind: 'force', data: ext, msg: e.message }); else toast(e.message, 'error'); }
   };
   return <>
-    <header className="page-head"><div><h1>Extensions</h1><div className="muted">{plural(list.length, 'unpacked extension')} in the library</div></div>
+    <header className="page-head"><div><h1>Extensions</h1><div className="muted">{plural(list.length, 'extension')} in the library</div></div>
       <button className="primary" onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import Chromium</button>
       <button onClick={() => setDialog({ kind: 'importGecko' })}>Import Firefox (gecko)</button></header>
     <div className="notice warn">Import copies a local unpacked extension after checking its manifest. The library shows the version and the permissions the manifest declares. Assigning an extension to a profile does not make it private, and removing it here deletes the copied files.</div>
@@ -23,7 +23,7 @@ export function ExtensionsPage() {
       <th>Name</th><th>Version</th><th>Permissions</th><th>Profiles</th><th></th>
     </tr></thead><tbody>
       {list.map(ext => <tr key={ext.id}>
-        <td className="name">{ext.name}{ext.description ? <div className="muted">{ext.description}</div> : null}</td>
+        <td className="name">{ext.name} <span className="muted">{ext.browserEngine === 'firefox' ? 'Firefox · manual installation' : 'Chromium'}</span>{ext.description ? <div className="muted">{ext.description}</div> : null}</td>
         <td className="mono-sm">{ext.version} <span className="muted">MV{ext.manifestVersion}</span></td>
         <td className="small">{permissionText(ext)}</td>
         <td>{ext.assignedProfiles || <span className="muted">0</span>}</td>
@@ -53,7 +53,7 @@ function ImportGeckoDialog({ onClose, onDone }) {
   const [source, setSource] = useState('');
   const [busy, setBusy] = useState(false);
   const submit = async () => {
-    if (!source.trim()) return toast('Enter the absolute path of the unpacked gecko extension', 'error');
+    if (!source.trim()) return toast('Enter the absolute path of a Firefox extension folder or XPI', 'error');
     setBusy(true);
     try {
       const r = await api('/api/gecko-extensions/import', { method: 'POST', body: { path: source.trim() } });
@@ -63,7 +63,7 @@ function ImportGeckoDialog({ onClose, onDone }) {
     setBusy(false);
   };
   return <Dialog title="Import Firefox extension" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={submit}>Import</button></>}>
-    <p className="muted">Unpacked folder or signed <code>.xpi</code> path. Manifest must include browser_specific_settings.gecko.id. Mozilla signature is required for XPI; signing is not bypassed.</p>
+    <p className="muted">Import an unpacked development folder or a <code>.xpi</code> into the local library. Import checks archive safety, not Mozilla signatures. Firefox verifies signing and compatibility during installation.</p><p className="notice warn">Firefox assignments are inventory only. In the chosen Firefox profile, open about:addons and use Install Add-on From File with your original XPI. Manage enable, disable, and removal there. Unpacked extensions use about:debugging and last until restart.</p>
     <label>Extension path<input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder="Absolute path to folder or .xpi" /></label>
   </Dialog>;
 }
@@ -94,6 +94,7 @@ function AssignDialog({ extension, onClose, onSaved }) {
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     api('/api/profiles').then(list => {
+      list = list.filter(p => (p.browserEngine || 'chromium') === (extension.browserEngine || 'chromium'));
       setProfiles(list);
       setChosen(Object.fromEntries(list.map(p => {
         const hit = (p.extensions || []).find(item => item.id === extension.id);
@@ -118,13 +119,13 @@ function AssignDialog({ extension, onClose, onSaved }) {
   };
   return <Dialog title={`Assign ${extension.name}`} onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy || !profiles} onClick={save}>Save assignments</button></>}>
     <p className="muted">{extension.version} · {permissionText(extension)}</p>
-    <p className="muted">One extension can be assigned to several profiles. Each profile loads only its own enabled extensions. A running profile keeps the previous set until the next launch. Headless Chromium often does not load unpacked extensions.</p>
+    <p className="muted">{extension.browserEngine === 'firefox' ? 'Firefox assignments record inventory only; they do not install or toggle add-ons. Install and manage each add-on in that profile using about:addons.' : 'One extension can be assigned to several profiles. Each profile loads only its own enabled extensions after relaunch. Headless Chromium may not load unpacked extensions.'}</p>
     {profiles && !profiles.length && <p className="muted">Create a profile first.</p>}
     {(profiles || []).map(profile => {
       const row = chosen[profile.id] || { assigned: false, enabled: true };
       return <div key={profile.id} className="ext-row">
         <label className="check"><input type="checkbox" checked={row.assigned} onChange={e => setChosen({ ...chosen, [profile.id]: { ...row, assigned: e.target.checked } })} /> {profile.name}</label>
-        {row.assigned && <label className="check"><input type="checkbox" checked={row.enabled} onChange={e => setChosen({ ...chosen, [profile.id]: { ...row, enabled: e.target.checked } })} /> Enabled</label>}
+        {row.assigned && <label className="check"><input type="checkbox" checked={row.enabled} onChange={e => setChosen({ ...chosen, [profile.id]: { ...row, enabled: e.target.checked } })} /> {extension.browserEngine === 'firefox' ? 'Included in inventory' : 'Enabled'}</label>}
       </div>;
     })}
   </Dialog>;

@@ -40,3 +40,7 @@ Prior green @ `98dbc0c` (run 40934718409). Failed attempts: `4a39ccb` (409449064
 ## Current status
 
 **NO-GO preview publish** — automated gates **1–6** and **8** are green on final candidate **`b3349af`**; **gate 7 (owner sign-off)** remains. ChromeDriver/geckodriver: **opt-in cache** under data dir (`AUTOMATION_DRIVERS.md`), not bundled in the offline EXE. Custom Chromium **BLOCKED**.
+
+## Codex branch checkpoint — 2026-10-30
+
+The new Codex source is **not installer-qualified**. The green `b3349af0fd236cb7a4898dd5083eca5e2210840b` installer remains an untouched historical recovery reference. No new installer-smoke dispatch, release, preview tag, PR, or merge is authorized by this checkpoint. Owner sign-off remains **NOT GRANTED**. Source-only CI on `codex/ultimate2-local-completion*` is enabled; the installer job conditions were not expanded.

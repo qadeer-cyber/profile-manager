@@ -37,8 +37,9 @@ after(() => {
   delete process.env.PM_DATA_DIR;
 });
 
-test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000 }, async () => {
+test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000 }, async t => {
   const fixture = await startLocalHttpFixture();
+  t.after(() => fixture.close());
   let exe;
   try { exe = chromium.executablePath(); } catch (e) {
     await fixture.close();
@@ -51,11 +52,14 @@ test('CookieRobot job runs queued URLs to done over live CDP', { timeout: 120000
       const proc = trackProcess(spawn(exe, [
         `--remote-debugging-port=${port}`,
         `--user-data-dir=${userDataDir}`,
-        '--no-first-run',
+        '--headless=new',
+    ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []),
+    '--no-first-run',
         '--no-default-browser-check',
         'about:blank',
       ], { stdio: 'ignore', detached: process.platform !== 'win32' }));
-      children.push(proc);
+      proc.on('error', () => {});
+  children.push(proc);
       const deadline = Date.now() + 45000;
       while (Date.now() < deadline) {
         try {
