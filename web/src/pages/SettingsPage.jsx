@@ -99,6 +99,7 @@ function BackupPanel({ toast }) {
   const [passphraseAgain, setPassphraseAgain] = useState('');
   const [restorePassphrase, setRestorePassphrase] = useState('');
   const [listing, setListing] = useState(null);
+  const [selectedRestoreIds, setSelectedRestoreIds] = useState([]);
   const authHeaders = () => ({ ...(window.pm?.uiToken ? { 'X-UI-Token': window.pm.uiToken } : {}) });
   const download = async () => {
     if (encrypt && (passphrase.length < 8 || passphrase !== passphraseAgain)) return toast('Use the same passphrase twice, at least 8 characters', 'error');
@@ -127,6 +128,7 @@ function BackupPanel({ toast }) {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       setListing(payload);
+      setSelectedRestoreIds((payload.profiles || []).map(p => p.id).filter(Boolean));
       setRestorePassphrase('');
     } catch (e) { toast(e.message, 'error'); }
     setBusy(false);
@@ -138,7 +140,9 @@ function BackupPanel({ toast }) {
     setBusy(true);
     try {
       const body = await file.arrayBuffer();
-      const response = await fetch(`/api/backup/restore?collision=${encodeURIComponent(collision)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...authHeaders(), ...(restorePassphrase ? { 'X-Backup-Passphrase': restorePassphrase } : {}) }, body });
+      const qs = new URLSearchParams({ collision });
+      if (selectedRestoreIds.length) qs.set('profileIds', selectedRestoreIds.join(','));
+      const response = await fetch(`/api/backup/restore?${qs}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', ...authHeaders(), ...(restorePassphrase ? { 'X-Backup-Passphrase': restorePassphrase } : {}) }, body });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw Object.assign(new Error(payload.error || payload.message || `HTTP ${response.status}`), { code: payload.code });
       setResult(payload);
@@ -158,7 +162,13 @@ function BackupPanel({ toast }) {
       <label className="file-btn">Inspect archive<input type="file" accept=".pmb,.pmbe,application/octet-stream" onChange={inspect} disabled={busy} /></label>
       <label className="file-btn">Restore archive<input type="file" accept=".pmb,.pmbe,application/octet-stream" onChange={restore} disabled={busy} /></label>
     </div>
-    {listing && <p className="muted">{listing.encrypted ? 'Encrypted' : 'Unencrypted'} backup{listing.requiresPassphrase && !listing.profiles ? '. A passphrase is required before profile names can be listed.' : ''}{listing.profiles ? `: ${listing.profiles.map(profile => profile.name).join(', ') || 'no profiles'}` : ''}{listing.fileChecksumCount ? ` · ${listing.fileChecksumCount} manifest checksums` : ''}. {listing.containsSecretKey ? 'The file contains a secret key; this list does not show it.' : ''}</p>}
+    {listing?.profiles?.length > 0 && <div className="panel nested"><h3>Restore preview</h3>
+      <p className="muted">{listing.format || 'backup'} · schema v{listing.schemaVersion ?? '?'} · {listing.fileChecksumCount || 0} checksums{listing.containsDatabase === false ? ' · portable (no full DB)' : ''}</p>
+      <ul>{listing.profiles.map(p => <li key={p.id}>
+        <label className="check"><input type="checkbox" checked={selectedRestoreIds.includes(p.id)} onChange={e => setSelectedRestoreIds(ids => e.target.checked ? [...ids, p.id] : ids.filter(x => x !== p.id))} />
+          <strong>{p.name}</strong> <span className="mono-sm">{p.id?.slice(0, 8)}…</span> · {p.fileCount ?? 0} files</label>
+      </li>)}</ul></div>}
+    {listing && !listing.profiles?.length && <p className="muted">{listing.encrypted ? 'Encrypted backup — enter passphrase and inspect again to preview profiles.' : 'No profiles listed in manifest.'}</p>}
     {result && <p className="muted">Added {result.added.length}, replaced {result.replaced.length}, renamed {result.renamed.length}{result.proxyDetached.length ? `, proxy detached on ${result.proxyDetached.length}` : ''}.</p>}
   </section>;
 }

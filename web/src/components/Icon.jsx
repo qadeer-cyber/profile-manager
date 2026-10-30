@@ -18,7 +18,7 @@ const P = {
   'cookie-robot': 'M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8',
   sun: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
   moon: 'M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z', x: 'M6 6l12 12M18 6L6 18', check: 'M5 12l5 5L20 7',
-  up: 'M6 15l6-6 6 6', down: 'M6 9l6 6 6-6', bolt: 'M13 2L4 14h7l-1 8 9-12h-7z', upload: 'M12 16V4M6 10l6-6 6 6M4 20h16', lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4',
+  up: 'M6 15l6-6 6 6', down: 'M6 9l6 6 6-6', bolt: 'M13 2L4 14h7l-1 8 9-12h-7z', upload: 'M12 16V4M6 10l6-6 6 6M4 20h16', download: 'M12 4v12M6 10l6 6 6-6M4 20h16', lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4',
 };
 export function Icon({ name, size = 16, className = '' }) {
   return <svg className={'i ' + className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={P[name]} /></svg>;

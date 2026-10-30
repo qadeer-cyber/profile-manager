@@ -25,6 +25,7 @@ export const DEFAULT_ADVANCED_SETTINGS = Object.freeze({
   preferences: Object.freeze({
     startupUrls: Object.freeze([]),
     restoreTabs: false,
+    rememberLastWindow: false,
     permissions: Object.freeze({ notifications: 'default', microphone: 'default', camera: 'default', clipboard: 'default', midi: 'default' }),
   }),
   fingerprint: DEFAULT_FINGERPRINT,
@@ -118,13 +119,18 @@ function validateUrl(value) {
   return url.href;
 }
 function validatePreferences(value, previous) {
-  const input = section(value, ['startupUrls', 'restoreTabs', 'permissions'], 'preferences');
+  const input = section(value, ['startupUrls', 'restoreTabs', 'rememberLastWindow', 'permissions'], 'preferences');
   const out = clone(previous);
   if ('restoreTabs' in input) {
     if (typeof input.restoreTabs !== 'boolean') invalid('restoreTabs must be a boolean', 'preferences');
     out.restoreTabs = input.restoreTabs;
   }
   if (typeof out.restoreTabs !== 'boolean') out.restoreTabs = false;
+  if ('rememberLastWindow' in input) {
+    if (typeof input.rememberLastWindow !== 'boolean') invalid('rememberLastWindow must be a boolean', 'preferences');
+    out.rememberLastWindow = input.rememberLastWindow;
+  }
+  if (typeof out.rememberLastWindow !== 'boolean') out.rememberLastWindow = false;
   if ('startupUrls' in input) {
     if (!Array.isArray(input.startupUrls) || input.startupUrls.length > 8) invalid('startupUrls must contain at most 8 URLs', 'preferences');
     const urls = input.startupUrls.map(validateUrl);

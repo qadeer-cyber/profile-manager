@@ -129,12 +129,16 @@ export function createProfileBackup(profileId, { ids = runningIds() } = {}) {
     visit(root, '');
   };
   walkInto(userDataDir(profileId), `profiles/${profileId}`);
+  const profileSnapshot = db.prepare('SELECT * FROM profiles WHERE id=?').get(profileId);
+  const extensionLinks = db.prepare('SELECT extension_id, enabled FROM profile_extensions WHERE profile_id=?').all(profileId);
   const meta = {
     format: 'profile-manager-profile-backup',
     version: 1,
     createdAt: new Date().toISOString(),
     schemaVersion: currentVersion(db),
     profiles: [row],
+    profileSnapshot,
+    extensionLinks,
     fileChecksums: Object.fromEntries(fileEntries.map(entry => [entry.path, entry.sha256])),
   };
   const metaBuf = Buffer.from(JSON.stringify(meta));
@@ -163,14 +167,26 @@ export function inspectBackup(buffer, { passphrase } = {}) {
   let meta;
   try { meta = JSON.parse(metaFile.data.toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
   if (!meta || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  const fileCounts = {};
+  if (meta.fileChecksums && typeof meta.fileChecksums === 'object') {
+    for (const rel of Object.keys(meta.fileChecksums)) {
+      const m = rel.match(/^profiles\/([^/]+)\//);
+      if (m) fileCounts[m[1]] = (fileCounts[m[1]] || 0) + 1;
+    }
+  }
   return {
     encrypted: opened.encrypted,
     ...(opened.encrypted ? describeEncryptedBackup() : { format: meta.format, version: meta.version, requiresPassphrase: false }),
     createdAt: meta.createdAt || null,
     schemaVersion: meta.schemaVersion ?? null,
     fileChecksumCount: meta.fileChecksums && typeof meta.fileChecksums === 'object' ? Object.keys(meta.fileChecksums).length : 0,
-    profiles: meta.profiles.map(profile => ({ id: profile && profile.id, name: profile && profile.name })),
+    profiles: meta.profiles.map(profile => ({
+      id: profile && profile.id,
+      name: profile && profile.name,
+      fileCount: fileCounts[profile?.id] || 0,
+    })),
     containsSecretKey: files.some(file => file.path === 'secret.key'),
+    containsDatabase: files.some(file => file.path === 'profiles.db'),
   };
 }
 
@@ -204,17 +220,31 @@ function columnSet(database, table) {
   return new Set(database.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
 }
 
-export function restoreBackup(buffer, { collision = 'abort', failPoint = null, running = runningIds(), passphrase } = {}) {
+function parseProfileIdsFilter(profileIds) {
+  if (profileIds == null) return null;
+  const list = Array.isArray(profileIds) ? profileIds : String(profileIds).split(',').map(s => s.trim()).filter(Boolean);
+  const out = list.filter(id => UUID.test(id));
+  if (!out.length) throw fail(400, 'profileIds must list at least one valid profile id', 'INVALID_RESTORE');
+  return new Set(out);
+}
+
+export function restoreBackup(buffer, { collision = 'abort', failPoint = null, running = runningIds(), passphrase, profileIds } = {}) {
   if (!['abort', 'rename', 'replace'].includes(collision)) throw fail(400, 'collision must be abort, rename, or replace', 'INVALID_RESTORE');
   const opened = plaintextArchive(buffer, passphrase);
   buffer = opened.buffer;
   const files = unpackArchive(buffer);
   const byPath = new Map(files.map(file => [file.path, file.data]));
-  if (!byPath.has('meta.json') || !byPath.has('profiles.db')) throw fail(400, 'Backup is missing its manifest or database', 'CORRUPT_BACKUP');
+  if (!byPath.has('meta.json')) throw fail(400, 'Backup is missing its manifest', 'CORRUPT_BACKUP');
   let meta;
   try { meta = JSON.parse(byPath.get('meta.json').toString('utf8')); } catch { throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP'); }
-  if (!meta || meta.format !== 'profile-manager-backup' || meta.version !== 1 || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  if (!meta || meta.version !== 1 || !Array.isArray(meta.profiles)) throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
   assertManifestChecksums(meta, files);
+  const onlyIds = parseProfileIdsFilter(profileIds);
+  if (meta.format === 'profile-manager-profile-backup') {
+    return restorePortableProfileBackup(files, meta, { collision, running, onlyIds });
+  }
+  if (meta.format !== 'profile-manager-backup') throw fail(400, 'Backup manifest is corrupt', 'CORRUPT_BACKUP');
+  if (!byPath.has('profiles.db')) throw fail(400, 'Backup is missing its database', 'CORRUPT_BACKUP');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-restore-'));
   let source;
   try {
@@ -224,13 +254,25 @@ export function restoreBackup(buffer, { collision = 'abort', failPoint = null, r
     if (!tableExists(source, 'schema_version') || !tableExists(source, 'profiles')) throw fail(400, 'Backup database is missing its schema', 'CORRUPT_BACKUP');
     const version = source.prepare('SELECT COALESCE(MAX(version), 0) v FROM schema_version').get().v;
     if (version > currentVersion(db)) throw fail(400, 'Backup was created by a newer Profile Manager', 'UNSUPPORTED_BACKUP');
-    const archived = source.prepare('SELECT * FROM profiles').all();
+    let archived = source.prepare('SELECT * FROM profiles').all();
     const metaIds = meta.profiles.map(profile => profile && profile.id);
     const rowIds = archived.map(profile => profile.id);
-    if (metaIds.length !== rowIds.length || metaIds.some(id => !rowIds.includes(id))) throw fail(400, 'Backup manifest does not match its database', 'CORRUPT_BACKUP');
+    if (!onlyIds) {
+      if (metaIds.length !== rowIds.length || metaIds.some(id => !rowIds.includes(id))) throw fail(400, 'Backup manifest does not match its database', 'CORRUPT_BACKUP');
+    }
+    if (onlyIds) {
+      archived = archived.filter(row => onlyIds.has(row.id));
+      if (!archived.length) throw fail(400, 'Selected profiles were not found in the backup database', 'INVALID_RESTORE');
+      for (const id of onlyIds) {
+        if (!metaIds.includes(id)) throw fail(400, `Profile ${id} is not listed in the backup manifest`, 'INVALID_RESTORE');
+      }
+    }
+    const activeRowIds = archived.map(r => r.id);
     for (const file of files) {
       const profile = file.path.match(/^profiles\/([^/]+)\//);
-      if (profile && !rowIds.includes(profile[1])) throw fail(400, 'Backup contains files for a profile that is not in the database', 'CORRUPT_BACKUP');
+      if (profile && onlyIds && !onlyIds.has(profile[1])) continue;
+      if (profile && !activeRowIds.includes(profile[1]) && !rowIds.includes(profile[1])) throw fail(400, 'Backup contains files for a profile that is not in the database', 'CORRUPT_BACKUP');
+      if (profile && !onlyIds && !rowIds.includes(profile[1])) throw fail(400, 'Backup contains files for a profile that is not in the database', 'CORRUPT_BACKUP');
     }
     const localIds = new Set(db.prepare('SELECT id FROM profiles').all().map(row => row.id));
     const active = new Set(running);
@@ -376,4 +418,92 @@ function moveNewExtensions(tmp, source, relocate) {
     if (row.storage_dir !== `extensions/${row.id}`) continue;
     relocate(from, dest);
   }
+}
+
+function restorePortableProfileBackup(files, meta, { collision, running, onlyIds }) {
+  if (!meta.profileSnapshot?.id) throw fail(400, 'Portable backup is missing profileSnapshot', 'CORRUPT_BACKUP');
+  const row = meta.profileSnapshot;
+  if (onlyIds && !onlyIds.has(row.id)) throw fail(400, 'Selected profileIds do not match this portable backup', 'INVALID_RESTORE');
+  if (running.includes(row.id) && collision === 'replace') throw fail(409, 'Stop the profile before replacing it from a backup.', 'PROFILES_RUNNING');
+  const localIds = new Set(db.prepare('SELECT id FROM profiles').all().map(r => r.id));
+  const exists = localIds.has(row.id);
+  if (exists && collision === 'abort') throw fail(409, `Profile ${row.id} already exists. Choose rename or replace.`, 'COLLISION');
+  const item = {
+    row,
+    action: exists && collision === 'rename' ? 'rename' : exists ? 'replace' : 'add',
+    id: exists && collision === 'rename' ? crypto.randomUUID() : row.id,
+  };
+  const result = { added: [], replaced: [], renamed: [], proxyDetached: [], extensionsSkipped: 0 };
+  const ops = [];
+  const asides = [];
+  const relocate = (from, to) => {
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.renameSync(from, to);
+    ops.push({ from, to });
+  };
+  const undo = () => { for (const op of ops.reverse()) if (fs.existsSync(op.to)) fs.renameSync(op.to, op.from); };
+  const destColumns = columnSet(db, 'profiles');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-portable-restore-'));
+  try {
+    writeTree(tmp, files.filter(f => f.path.startsWith('profiles/')));
+    db.transaction(() => {
+      applyProfileFromRow(row, item, null, result, destColumns);
+      for (const link of meta.extensionLinks || []) {
+        if (!ensureExtensionRowInDb(link.extension_id)) { result.extensionsSkipped += 1; continue; }
+        db.prepare('INSERT OR REPLACE INTO profile_extensions (profile_id, extension_id, enabled, created_at, updated_at) VALUES (?,?,?,?,?)')
+          .run(item.id, link.extension_id, link.enabled ? 1 : 0, new Date().toISOString(), new Date().toISOString());
+      }
+    })();
+    moveProfileDir(tmp, item, relocate, asides);
+  } catch (error) {
+    try { undo(); } catch { throw fail(500, 'Portable restore failed and file rollback failed', 'RESTORE_ROLLBACK_FAILED'); }
+    throw error;
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    for (const aside of asides) fs.rmSync(aside, { recursive: true, force: true });
+  }
+  return result;
+}
+
+function applyProfileFromRow(row, item, archivedKey, result, destColumns) {
+  let proxyId = row.proxy_id || null;
+  if (proxyId && !db.prepare('SELECT id FROM proxies WHERE id=?').get(proxyId)) {
+    result.proxyDetached.push(item.id);
+    proxyId = null;
+  }
+  const record = {
+    id: item.id,
+    name: row.name,
+    tags: valueOf(row, 'tags', '[]'),
+    folder: valueOf(row, 'folder', ''),
+    notes: valueOf(row, 'notes', ''),
+    created_at: valueOf(row, 'created_at', new Date().toISOString()),
+    updated_at: new Date().toISOString(),
+    last_launched_at: null,
+    last_error: null,
+    automation_enabled: valueOf(row, 'automation_enabled', 0),
+    proxy_id: proxyId,
+    browser_settings: valueOf(row, 'browser_settings', '{"locale":"","timezoneId":"","languages":[]}'),
+    webrtc_settings: valueOf(row, 'webrtc_settings', '{"mode":"browser_default"}'),
+    advanced_settings: valueOf(row, 'advanced_settings', ADVANCED_DEFAULT),
+    browser_engine: valueOf(row, 'browser_engine', 'chromium'),
+    workspace_id: valueOf(row, 'workspace_id', null),
+    is_quick: valueOf(row, 'is_quick', 0),
+    deleted_at: null,
+    purge_error: null,
+  };
+  const names = [...destColumns].filter(name => Object.hasOwn(record, name));
+  if (item.action === 'replace') {
+    db.prepare('DELETE FROM profile_extensions WHERE profile_id=?').run(item.id);
+    const assignments = names.filter(name => name !== 'id').map(name => `${name}=@${name}`).join(',');
+    db.prepare(`UPDATE profiles SET ${assignments} WHERE id=@id`).run(Object.fromEntries(names.map(name => [name, record[name]])));
+    result.replaced.push({ id: item.id, name: row.name });
+  } else {
+    db.prepare(`INSERT INTO profiles (${names.join(',')}) VALUES (${names.map(name => '@' + name).join(',')})`).run(Object.fromEntries(names.map(name => [name, record[name]])));
+    (item.action === 'rename' ? result.renamed : result.added).push({ id: item.id, sourceId: row.id, name: row.name });
+  }
+}
+
+function ensureExtensionRowInDb(id) {
+  return !!db.prepare('SELECT id FROM extensions WHERE id=?').get(id);
 }

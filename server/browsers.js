@@ -280,7 +280,8 @@ async function doLaunch(p, opts = {}) {
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline: readPreferences(dir), closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
-        requestedArgs: native.argv, restoreTabs: fxPlan.restoreTabs, tabUrls: [], geckoDir: fxPlan.profileDir,
+        requestedArgs: native.argv, restoreTabs: fxPlan.restoreTabs, rememberWindow: adv.preferences.rememberLastWindow === true,
+        tabUrls: [], geckoDir: fxPlan.profileDir,
         marionettePort: fxPlan.marionettePort || null, automation: !!fxPlan.automation,
       };
       captureTermination(entry, native.proc);
@@ -312,7 +313,7 @@ async function doLaunch(p, opts = {}) {
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
-        requestedArgs: native.argv, restoreTabs: launchPlan.restoreTabs, tabUrls: [],
+        requestedArgs: native.argv, restoreTabs: launchPlan.restoreTabs, rememberWindow: launchPlan.rememberWindow, tabUrls: [],
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, dir);
@@ -396,6 +397,7 @@ async function doLaunch(p, opts = {}) {
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
     entry.restoreTabs = launchPlan.restoreTabs;
+    entry.rememberWindow = launchPlan.rememberWindow;
     entry.tabUrls = [];
     const openUrls = launchPlan.openUrls;
     if (openUrls.length) {
@@ -764,6 +766,12 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
     } catch { /* best effort */ }
   }
   if (!live.has(id)) { if (e.done) await e.done; return; }
+  if (e.rememberWindow) {
+    try {
+      const { captureWindowStateForSession } = await import('./window-state.js');
+      await captureWindowStateForSession(id, e);
+    } catch { /* best effort */ }
+  }
   // 1) graceful: close the context  2) force: kill the process tree
   if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
   if (e.browserPid && isAlive(e.browserPid)) await killTree(e.browserPid, { expect: userDataDir(id) });

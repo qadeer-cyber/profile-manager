@@ -10,8 +10,8 @@ import { pidMatches, isAlive } from '../proc.js';
 import { automationDefault } from '../testflags.js';
 import { buildManagedGeckoPrefLines, writeManagedGeckoUserJs } from '../firefox-gecko-userjs.js';
 import { materializeGeckoExtensions } from '../gecko-extensions.js';
-import { validateAdvancedSettings } from '../advanced-settings.js';
-import { SCREEN_PRESETS } from '../advanced-settings.js';
+import { validateAdvancedSettings, SCREEN_PRESETS } from '../advanced-settings.js';
+import { screenFromRememberedWindow } from '../window-state.js';
 import { geckoTimezoneEnv } from '../firefox-gecko-prefs.js';
 
 const automationEnabled = opts => !!opts?.automation || automationDefault();
@@ -64,7 +64,11 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   writeManagedGeckoUserJs(profileDir, managed);
   materializeGeckoExtensions(profileDir, p.id);
 
-  const advanced = validateAdvancedSettings(p.advancedSettings || {});
+  const rememberedScreen = screenFromRememberedWindow(p.id, p.advancedSettings || {});
+  const mergedAdvanced = { ...(p.advancedSettings || {}) };
+  const screenOverride = rememberedScreen ?? mergedAdvanced.screen;
+  if (screenOverride != null) mergedAdvanced.screen = screenOverride;
+  const advanced = validateAdvancedSettings(mergedAdvanced);
   const args = ['-no-remote', '-profile', profileDir];
   const screen = advanced.screen || {};
   if (screen.startMaximized) {

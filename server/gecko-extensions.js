@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { db, DATA_DIR } from './db.js';
+import { listZipEntries, readZipEntry, xpiHasMozillaSignature } from './gecko-xpi.js';
 
 const invalid = (message, status = 400, code = 'INVALID_GECKO_EXTENSION') => {
   throw Object.assign(new Error(message), { status, code });
@@ -34,21 +35,88 @@ export function readGeckoManifestFromDir(dir) {
   };
 }
 
-export function importUnpackedGeckoExtension(sourcePath) {
-  if (typeof sourcePath !== 'string' || !path.isAbsolute(sourcePath)) invalid('path must be an absolute directory');
-  const root = fs.realpathSync(sourcePath);
-  if (!fs.statSync(root).isDirectory()) invalid('path must be a directory');
-  const meta = readGeckoManifestFromDir(root);
+function insertGeckoExtensionRow(meta, rel) {
   const id = crypto.randomUUID();
-  const rel = `gecko-extensions/${id}`;
-  const dest = geckoStoragePath(rel);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.cpSync(root, dest, { recursive: true, errorOnExist: true });
   const now = new Date().toISOString();
   db.prepare(`INSERT INTO extensions (id,name,version,description,manifest_version,permissions,host_permissions,optional_permissions,optional_host_permissions,storage_dir,created_at,updated_at,browser_engine,gecko_extension_id)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, meta.name, meta.version, '', meta.manifestVersion, '[]', '[]', '[]', '[]', rel, now, now, 'firefox', meta.geckoId);
   return extensionRow(id);
+}
+
+export function importXpiGeckoExtension(xpiPath) {
+  if (typeof xpiPath !== 'string' || !path.isAbsolute(xpiPath)) invalid('path must be an absolute .xpi file');
+  if (!xpiPath.toLowerCase().endsWith('.xpi')) invalid('path must end with .xpi');
+  const buf = fs.readFileSync(xpiPath);
+  if (!xpiHasMozillaSignature(buf)) invalid('XPI must include META-INF/mozilla.rsa or mozilla.sf (Mozilla signing metadata)', 400, 'GECKO_UNSIGNED');
+  const manifestBuf = readZipEntry(buf, 'manifest.json');
+  const manifest = JSON.parse(manifestBuf.toString('utf8'));
+  const gecko = manifest.browser_specific_settings?.gecko || manifest.applications?.gecko;
+  if (!gecko?.id) invalid('manifest must include gecko.id');
+  const meta = {
+    geckoId: String(gecko.id),
+    name: String(manifest.name || gecko.id).slice(0, 128),
+    version: String(manifest.version || '0.0.0').slice(0, 32),
+    manifestVersion: manifest.manifest_version === 3 ? 3 : 2,
+  };
+  const rel = `gecko-extensions/${crypto.randomUUID()}`;
+  const dest = geckoStoragePath(rel);
+  fs.mkdirSync(dest, { recursive: true });
+  fs.writeFileSync(path.join(dest, 'extension.xpi'), buf);
+  fs.writeFileSync(path.join(dest, 'manifest.json'), manifestBuf);
+  return insertGeckoExtensionRow(meta, rel);
+}
+
+export function importUnpackedGeckoExtension(sourcePath) {
+  if (typeof sourcePath !== 'string' || !path.isAbsolute(sourcePath)) invalid('path must be an absolute directory');
+  const root = fs.realpathSync(sourcePath);
+  if (!fs.statSync(root).isDirectory()) invalid('path must be a directory');
+  const meta = readGeckoManifestFromDir(root);
+  const rel = `gecko-extensions/${crypto.randomUUID()}`;
+  const dest = geckoStoragePath(rel);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.cpSync(root, dest, { recursive: true, errorOnExist: true });
+  return insertGeckoExtensionRow(meta, rel);
+}
+
+export function readGeckoProfileExtensions(profileDir) {
+  const file = path.join(profileDir, 'extensions.json');
+  if (!fs.existsSync(file)) return { schemaVersion: null, addons: [] };
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const addons = Array.isArray(data.addons) ? data.addons : [];
+    return {
+      schemaVersion: data.schemaVersion ?? null,
+      addons: addons.map(a => ({
+        id: a.id,
+        version: a.version,
+        active: a.active !== false,
+        userDisabled: !!a.userDisabled,
+        appDisabled: !!a.appDisabled,
+        type: a.type || 'extension',
+      })),
+    };
+  } catch {
+    return { schemaVersion: null, addons: [], corrupt: true };
+  }
+}
+
+export function setGeckoProfileExtensionEnabled(profileDir, geckoId, enabled) {
+  const file = path.join(profileDir, 'extensions.json');
+  if (!fs.existsSync(file)) invalid('extensions.json not found in gecko profile (launch Firefox once)', 404, 'GECKO_EXTENSIONS_JSON_MISSING');
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  const addons = Array.isArray(data.addons) ? data.addons : [];
+  let found = false;
+  for (const addon of addons) {
+    if (addon.id === geckoId) {
+      addon.userDisabled = !enabled;
+      addon.active = enabled;
+      found = true;
+    }
+  }
+  if (!found) invalid('Extension id not found in extensions.json', 404, 'GECKO_EXTENSION_NOT_FOUND');
+  fs.writeFileSync(file, JSON.stringify({ ...data, addons }, null, 2));
+  return { id: geckoId, enabled };
 }
 
 export function extensionRow(id) {
@@ -63,7 +131,7 @@ export function geckoExtensionReport() {
   return {
     generatedAt: new Date().toISOString(),
     signingPolicy: 'Mozilla signed extensions only; xpinstall signatures are not disabled.',
-    importFormats: ['unpacked directory with manifest.json'],
+    importFormats: ['unpacked directory with manifest.json', 'signed .xpi (store/uncompressed manifest in test fixtures)'],
     note: 'Assign to Firefox profiles; copies are materialized into the gecko profile tree on launch.',
   };
 }

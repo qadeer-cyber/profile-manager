@@ -13,6 +13,7 @@ test('firefox config emits honest warnings', () => {
   assert.ok(w.some(x => x.code === 'FIREFOX_CHROMIUM_EXTENSIONS_IGNORED'));
   assert.ok(w.some(x => x.code === 'FIREFOX_COOKIES_READ_ONLY'));
   assert.ok(w.some(x => x.code === 'FIREFOX_WEBRTC_GECKO_PREFS'));
+  assert.ok(w.some(x => x.code === 'FIREFOX_FINGERPRINT_LIMITS'));
 });
 
 test('rejects invalid browserEngine', () => {

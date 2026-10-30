@@ -63,8 +63,8 @@ function ImportGeckoDialog({ onClose, onDone }) {
     setBusy(false);
   };
   return <Dialog title="Import Firefox extension" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={submit}>Import</button></>}>
-    <p className="muted">Unpacked directory with manifest.json and browser_specific_settings.gecko.id (Mozilla signed distribution). Signing is not bypassed.</p>
-    <label>Extension folder<input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder="Absolute path" /></label>
+    <p className="muted">Unpacked folder or signed <code>.xpi</code> path. Manifest must include browser_specific_settings.gecko.id. Mozilla signature is required for XPI; signing is not bypassed.</p>
+    <label>Extension path<input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder="Absolute path to folder or .xpi" /></label>
   </Dialog>;
 }
 

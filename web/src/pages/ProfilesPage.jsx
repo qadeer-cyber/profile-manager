@@ -45,6 +45,24 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const S = useSelection(rows.map(p => p.id));
   const selected = rows.filter(p => S.sel.has(p.id));
 
+  const authHeaders = () => ({ ...(window.pm?.uiToken ? { 'X-UI-Token': window.pm.uiToken } : {}) });
+  const exportPortable = async p => {
+    if (p.running) return toast('Stop the profile before exporting a portable backup', 'error');
+    setBusy(b => ({ ...b, [p.id]: true }));
+    try {
+      const response = await fetch(`/api/profiles/${p.id}/backup/export`, { method: 'POST', headers: authHeaders() });
+      if (!response.ok) { const payload = await response.json().catch(() => ({})); throw new Error(payload.error || `HTTP ${response.status}`); }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `profile-${p.name.replace(/[^\w.-]+/g, '_')}.pmp`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast(`Downloaded portable backup for ${p.name}`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(b => ({ ...b, [p.id]: false }));
+  };
   const act = async (id, label, fn) => {
     setBusy(b => ({ ...b, [id]: true }));
     try { await fn(); if (label) toast(label, 'success'); } catch (e) { toast(e.message, 'error'); }
@@ -151,6 +169,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
             <button disabled={busy[p.id]} onClick={() => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }))}><Icon name="stop" /> Stop</button>
           </> : <button className="primary" disabled={busy[p.id]} onClick={() => act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name="play" /> {busy[p.id] ? 'Starting…' : 'Launch'}</button>}
           <button className="icon-btn" title="Storage" aria-label={'Storage ' + p.name} onClick={() => setDialog({ kind: 'storage', data: p })}><Icon name="storage" /></button>
+          <button className="icon-btn" title="Export portable .pmp backup" aria-label={'Export ' + p.name} disabled={busy[p.id] || p.running} onClick={() => exportPortable(p)}><Icon name="download" /></button>
           <button className="icon-btn" title="Edit" aria-label={'Edit ' + p.name} onClick={() => setDialog({ kind: 'edit', data: toForm(p) })}><Icon name="edit" /></button>
           <button className="icon-btn" title="Clone" aria-label={'Clone ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `Cloned ${p.name}`, () => api(`/api/profiles/${p.id}/clone`, { method: 'POST' }))}><Icon name="copy" /></button>
           {p.isQuick && <button className="icon-btn" title="Save as regular profile" aria-label={'Save as regular ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `${p.name} saved as regular`, () => api(`/api/profiles/${p.id}/save-regular`, { method: 'POST' }))}><Icon name="check" /></button>}

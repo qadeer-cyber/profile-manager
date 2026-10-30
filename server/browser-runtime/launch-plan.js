@@ -16,6 +16,7 @@ import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
 const automationEnabled = opts => !!opts.automation || automationDefault();
 import { chooseLaunchUrls, readSavedTabs } from '../tab-restore.js';
+import { screenFromRememberedWindow } from '../window-state.js';
 import { chromium } from 'playwright';
 
 const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
@@ -85,7 +86,11 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   }
 
   const identity = chromiumIdentity(executablePath && fs.existsSync(executablePath) ? executablePath : '');
-  const plan = advancedLaunchPlan(p.advancedSettings || {}, { headless: !!headless, version: identity.version, platform: process.platform });
+  const rememberedScreen = screenFromRememberedWindow(p.id, p.advancedSettings || {});
+  const mergedAdvanced = { ...(p.advancedSettings || {}) };
+  const screenOverride = rememberedScreen ?? mergedAdvanced.screen;
+  if (screenOverride != null) mergedAdvanced.screen = screenOverride;
+  const plan = advancedLaunchPlan(mergedAdvanced, { headless: !!headless, version: identity.version, platform: process.platform });
   for (const flag of plan.args) args.push(flag);
   if (!verifyFingerprintLaunchArgs(args, plan.settings.fingerprint)) {
     throw httpErr(500, 'Refusing to launch because the WebGL restriction does not match the saved fingerprint settings.', 'FINGERPRINT_LAUNCH_MISMATCH');
@@ -96,6 +101,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   applyAdvancedPreferences(dir, p.advancedSettings || {});
 
   const restoreTabs = plan.settings.preferences.restoreTabs === true;
+  const rememberWindow = plan.settings.preferences.rememberLastWindow === true;
   const saved = restoreTabs ? readSavedTabs(dir) : { urls: [], corrupt: false };
   const openUrls = chooseLaunchUrls({
     explicitUrl: url,
@@ -139,6 +145,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     regional,
     openUrls,
     restoreTabs,
+    rememberWindow,
     playwrightOpts,
     identity,
   };

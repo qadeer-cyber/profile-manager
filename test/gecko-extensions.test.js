@@ -10,6 +10,7 @@ process.env.PM_DATA_DIR = dataDir;
 const { db } = await import('../server/db.js');
 const {
   importUnpackedGeckoExtension, materializeGeckoExtensions, readGeckoManifestFromDir,
+  setGeckoProfileExtensionEnabled, readGeckoProfileExtensions,
 } = await import('../server/gecko-extensions.js');
 const { assignExtension } = await import('../server/extensions.js');
 
@@ -24,6 +25,18 @@ test('importUnpackedGeckoExtension requires gecko id in manifest', () => {
   fs.writeFileSync(path.join(src, 'manifest.json'), JSON.stringify({ manifest_version: 2, name: 'Bad', version: '1.0' }));
   assert.throws(() => importUnpackedGeckoExtension(src), /gecko\.id/);
   fs.rmSync(src, { recursive: true, force: true });
+});
+
+test('setGeckoProfileExtensionEnabled toggles userDisabled in extensions.json', () => {
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-gecko-json-'));
+  fs.writeFileSync(path.join(profileDir, 'extensions.json'), JSON.stringify({
+    schemaVersion: 35,
+    addons: [{ id: 'demo@test', version: '1.0', active: true, userDisabled: false, type: 'extension' }],
+  }));
+  setGeckoProfileExtensionEnabled(profileDir, 'demo@test', false);
+  const read = readGeckoProfileExtensions(profileDir);
+  assert.equal(read.addons[0].userDisabled, true);
+  fs.rmSync(profileDir, { recursive: true, force: true });
 });
 
 test('materializeGeckoExtensions copies enabled assignments into profile tree', () => {

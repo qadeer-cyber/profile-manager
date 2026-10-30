@@ -28,7 +28,8 @@ export function profileConfigWarnings(config) {
   const warnings = [];
   if (config.browserEngine === 'firefox') {
     warnings.push({ code: 'FIREFOX_CHROMIUM_EXTENSIONS_IGNORED', message: 'Chromium unpacked extensions are not loaded on Firefox. Use gecko extension import (signed XPI/unpacked with gecko.id) instead.' });
-    warnings.push({ code: 'FIREFOX_CHROMIUM_FLAGS_IGNORED', message: 'Chromium-only launch flags (WebGL disable, force-DPR) are not applied to Firefox.' });
+    warnings.push({ code: 'FIREFOX_CHROMIUM_FLAGS_IGNORED', message: 'Chromium-only launch flags (WebGL disable, force-DPR, CDP locale probes) are not applied to Firefox.' });
+    warnings.push({ code: 'FIREFOX_FINGERPRINT_LIMITS', message: 'Timezone/locale/screen on Firefox use gecko prefs and -width/-height only; canvas/audio/WebGL noise and client-hint masking remain Chromium-only or UNSUPPORTED on stock engines.' });
     warnings.push({ code: 'FIREFOX_COOKIES_READ_ONLY', message: 'Stopped-profile Gecko cookies can be listed and exported (cookies.sqlite). Import and clear are not implemented for Firefox.' });
     if (config.webrtcSettings?.mode && config.webrtcSettings.mode !== 'browser_default') {
       warnings.push({ code: 'FIREFOX_WEBRTC_GECKO_PREFS', message: 'WebRTC policy is mapped to stock Firefox ICE prefs (user.js), not Chromium --force-webrtc-ip-handling-policy.' });

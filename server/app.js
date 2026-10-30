@@ -55,7 +55,10 @@ import {
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
 import { adbAdapterReport, connectAdbTarget, listAdbDevices } from './adb-adapter.js';
 import { humanInputReport, typeHumanTextForProfile } from './human-input.js';
-import { geckoExtensionReport, importUnpackedGeckoExtension, listGeckoExtensions } from './gecko-extensions.js';
+import {
+  geckoExtensionReport, importUnpackedGeckoExtension, importXpiGeckoExtension, listGeckoExtensions,
+  readGeckoProfileExtensions, setGeckoProfileExtensionEnabled,
+} from './gecko-extensions.js';
 import { automationDriversReport, installAutomationDrivers } from './automation-drivers.js';
 import { readSavedTabs } from './tab-restore.js';
 import { createBackup, createEncryptedBackup, createProfileBackup, inspectBackup, restoreBackup } from './backup.js';
@@ -730,7 +733,12 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.post('/backup/restore', express.raw({ limit: '64mb', type: () => true }), wrap((req, res) => {
     rejectPassphraseQuery(req);
     if (!Buffer.isBuffer(req.body) || !req.body.length) throw err(400, 'backup body is required');
-    res.json(restoreBackup(req.body, { collision: String(req.query.collision || 'abort'), passphrase: req.get('x-backup-passphrase') || undefined }));
+    const profileIds = req.query.profileIds || req.get('x-backup-profile-ids') || undefined;
+    res.json(restoreBackup(req.body, {
+      collision: String(req.query.collision || 'abort'),
+      passphrase: req.get('x-backup-passphrase') || undefined,
+      profileIds,
+    }));
   }));
   router.post('/profiles/:id/backup/export', wrap((req, res) => {
     must(req.params.id);
@@ -979,7 +987,26 @@ function mountExtensionRoutes(r) {
     res.set('Cache-Control', 'no-store');
     res.json({ report: geckoExtensionReport(), items: listGeckoExtensions().map(row => publicExtension(row)) });
   }));
-  r.post('/gecko-extensions/import', wrap((req, res) => res.status(201).json(publicExtension(importUnpackedGeckoExtension(req.body?.path ?? req.body?.sourcePath)))));
+  r.post('/gecko-extensions/import', wrap((req, res) => {
+    const p = req.body?.path ?? req.body?.sourcePath;
+    const row = String(p || '').toLowerCase().endsWith('.xpi')
+      ? importXpiGeckoExtension(p)
+      : importUnpackedGeckoExtension(p);
+    res.status(201).json(publicExtension(row));
+  }));
+  r.get('/profiles/:id/gecko-extensions', wrap((req, res) => {
+    const p = must(req.params.id);
+    if (p.browserEngine !== 'firefox') throw err(400, 'Profile is not Firefox');
+    const profileDir = geckoUserDataDir(p.id, userDataDir);
+    res.json({ profileId: p.id, ...readGeckoProfileExtensions(profileDir) });
+  }));
+  r.patch('/profiles/:id/gecko-extensions/:geckoId', wrap((req, res) => {
+    const p = must(req.params.id);
+    if (p.browserEngine !== 'firefox') throw err(400, 'Profile is not Firefox');
+    if (!('enabled' in req.body) || typeof req.body.enabled !== 'boolean') throw err(400, 'enabled boolean required');
+    const profileDir = geckoUserDataDir(p.id, userDataDir);
+    res.json(setGeckoProfileExtensionEnabled(profileDir, req.params.geckoId, req.body.enabled));
+  }));
   r.get('/human-input', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(humanInputReport());
@@ -1027,6 +1054,21 @@ function mountExtensionRoutes(r) {
   }));
 }
 function mountProxyRoutes(r) {
+  r.get('/proxies/library/summary', wrap((req, res) => {
+    const rows = db.prepare('SELECT tags, last_test_status, provider FROM proxies').all();
+    let templates = 0;
+    let testedOk = 0;
+    let testedFailed = 0;
+    const providers = new Set();
+    for (const row of rows) {
+      const tags = JSON.parse(row.tags || '[]');
+      if (tags.includes('template')) templates += 1;
+      if (row.last_test_status === 'ok') testedOk += 1;
+      if (row.last_test_status === 'failed') testedFailed += 1;
+      if (row.provider) providers.add(row.provider);
+    }
+    res.json({ total: rows.length, templates, testedOk, testedFailed, providerAccounts: providers.size });
+  }));
   r.get('/proxies', (req, res) => res.json(listProxies(req.query)));
   r.post('/proxies', wrap((req, res) => res.status(201).json(publicProxy(proxyRow(createProxyRow(req.body))))));
   r.post('/proxies/import', wrap((req, res) => res.json(importProxies(req.body))));

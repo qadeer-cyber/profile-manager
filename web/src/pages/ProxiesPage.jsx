@@ -16,6 +16,8 @@ export function ProxiesPage() {
   const [q, setQ] = useState(''), [status, setStatus] = useState(''), [tag, setTag] = useState('');
   const lib = useProxyLibrary({ q, status, tag });
   const [dialog, setDialog] = useState(null), [testing, setTesting] = useState({});
+  const [summary, setSummary] = useState(null);
+  useEffect(() => { api('/api/proxies/library/summary').then(setSummary).catch(() => {}); }, [lib.list.length]);
   const S = useSelection(lib.list.map(p => p.id));
   const tags = useMemo(() => [...new Set(lib.list.flatMap(p => p.tags))].sort(), [lib.list]);
   if (lib.available === false) return <LegacySummary />;
@@ -32,7 +34,7 @@ export function ProxiesPage() {
   };
   const selected = lib.list.filter(p => S.sel.has(p.id));
   return <>
-    <header className="page-head"><div><h1>Proxies</h1><div className="muted">{plural(lib.list.length, 'proxy')} in library</div></div>
+    <header className="page-head"><div><h1>Proxies</h1><div className="muted">{plural(lib.list.length, 'proxy')} in library{summary ? <> · {summary.templates} template{summary.templates === 1 ? '' : 's'} · {summary.testedOk} ok / {summary.testedFailed} failed · {summary.providerAccounts} provider account{summary.providerAccounts === 1 ? '' : 's'}</> : null}</div></div>
       <div className="row"><button onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import</button>
         <button className="primary" onClick={() => setDialog({ kind: 'edit', data: null })}><Icon name="plus" /> Add proxy</button></div></header>
     <div className="toolbar">

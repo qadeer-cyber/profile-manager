@@ -47,6 +47,10 @@ test('workspace API CRUD, profile assignment, and list filter', async () => {
   await call('POST', `/api/v1/profiles/${profile.body.id}/workspace`, { workspaceId: null });
   const unassigned = await call('GET', `/api/v1/profiles?workspaceId=${wsId}`);
   assert.equal(unassigned.body.length, 0);
+  await call('POST', `/api/v1/profiles/${profile.body.id}/workspace`, { workspaceId: wsId });
+  const exported = await call('GET', `/api/v1/workspaces/${wsId}/export`);
+  assert.equal(exported.status, 200);
+  assert.equal(exported.body.format, 'profile-manager-workspace');
   const del = await call('DELETE', `/api/v1/workspaces/${wsId}`);
   assert.equal(del.status, 204);
 });
