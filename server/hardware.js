@@ -186,8 +186,9 @@ export const UNSUPPORTED_OVERRIDES = Object.freeze([
   { fact: 'portScan', availability: 'unsupported', reason: 'Masked port-scan results and a port whitelist are not available. Chromium’s own private-network behavior is left in place.' },
 ]);
 
-export async function observeBrowser(ctx, { permissions } = {}) {
-  if (!ctx) return { availability: 'unavailable', reason: 'not_running' };
+const OBSERVE_DEADLINE_MS = 35000;
+
+async function collectBrowserObservation(ctx, permissions) {
   let probe;
   try {
     probe = await withObservationPage(ctx);
@@ -197,9 +198,19 @@ export async function observeBrowser(ctx, { permissions } = {}) {
     const iceRaw = await gatherIceInPage(probe.page);
     facts.webrtcIce = iceRaw.availability === 'observed' ? summarizeIceCandidates(iceRaw.lines) : iceRaw;
     return { availability: 'observed', source: 'browser', ...facts };
-  } catch {
-    return { availability: 'unavailable', reason: 'collection_failed' };
   } finally {
     await probe?.close();
+  }
+}
+
+export async function observeBrowser(ctx, { permissions } = {}) {
+  if (!ctx) return { availability: 'unavailable', reason: 'not_running' };
+  try {
+    return await Promise.race([
+      collectBrowserObservation(ctx, permissions),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('observe_deadline')), OBSERVE_DEADLINE_MS)),
+    ]);
+  } catch {
+    return { availability: 'unavailable', reason: 'collection_failed' };
   }
 }

@@ -29,6 +29,7 @@
 | **M21** | Geolocation **ask** → prompt | **PASS** | `test/fingerprint-gaps-browser.test.js` | Real CfT |
 | **M21** | **Allow** + coordinates override | **PASS** | `test/fingerprint-browser.test.js`, `test/m6-browser.test.js` | Real CfT |
 | **M21** | Invalid / incoherent geo rejected | **PASS** | `test/advanced-settings.test.js`, `test/fingerprint-feasible-local-acceptance.test.js` | Unit |
+| **M20–M30** | Invalid fingerprint rejected; isolation + restart persistence | **PASS** | `test/fingerprint-feasible-local-negative.test.js` | API + real CfT |
 | **M21** | GPS / IP hide for other apps | **BLOCKED** | Phase Two | N/A |
 | **M22** | Window preset → inner width/height | **PASS** | `test/fingerprint-observable-api.test.js` | Real CfT |
 | **M22** | Device scale factor applied | **PASS** | `test/fingerprint-browser.test.js` | Real CfT |
