@@ -31,7 +31,7 @@ export function LocationFields({ settings, onChange }) {
   const set = patch => onChange({ ...settings, geolocation: { ...geo, ...patch } });
   const allow = geo.permission === 'allow';
   return <div className="form">
-    <div className="notice">Allow with coordinates uses Chromium's geolocation override. Deny and Ask use Chromium's permission state for each site you open. Default leaves the browser's own prompt alone. These are not a GPS spoof that other apps cannot see, and they do not change your IP address.</div>
+    <div className="notice">Allow with coordinates uses Chromium's geolocation override on the Playwright launch path and is applied again on the next launch. Deny and Ask use Chromium's permission state for each site you open. Default leaves the browser's own prompt alone. A native launch stores the permission and does not apply that coordinate override. These settings do not conceal GPS, Wi-Fi, or IP location outside this browser.</div>
     <label>Geolocation<select value={geo.permission} onChange={e => set({ permission: e.target.value, ...(e.target.value !== 'allow' ? { latitude: null, longitude: null, accuracy: null } : {}) })}>
       {STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
     </select></label>
@@ -55,7 +55,7 @@ export function WindowFields({ settings, onChange, profileId }) {
     api(`/api/profiles/${profileId}/window-state`).then(setSavedWindow).catch(e => setWinError(e.message));
   }, [profileId]);
   return <div className="form">
-    <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs for antidetect, and they do not remember which monitor a window was on — only width, height, and optional X/Y offsets below.</div>
+    <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs or multi-monitor layout. On a headed Chromium launch, a position that sits fully outside known displays is moved to the primary origin. Firefox does not receive device scale or window position.</div>
     <label>Screen preset<select value={screen.preset} onChange={e => {
       const preset = e.target.value;
       const known = SCREEN_PRESETS[preset];
@@ -98,6 +98,11 @@ export function FingerprintFields({ settings, onChange }) {
       {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
     </select><span className="muted hint">{control.note}</span></label>)}
     {FINGERPRINT_FIXED.map(item => <p key={item.id}><span className="label">{item.label}</span><br />{item.reason}</p>)}
+    <label>Canvas readback prototype<select aria-label="Canvas readback prototype" value={settings.experimental?.canvasReadback || 'off'} onChange={e => onChange({ ...settings, experimental: { canvasReadback: e.target.value } })}>
+      <option value="off">Off — real readback</option>
+      <option value="prototype">Opt-in page hook</option>
+    </select></label>
+    <p className="muted hint">Off by default. The page hook changes getImageData and toDataURL in the Playwright session only. It sets window.__pmCanvasPrototype with customEngine false. It does not qualify canvas noise, does not run on a native launch, and is not a CAPTCHA bypass.</p>
   </div>;
 }
 

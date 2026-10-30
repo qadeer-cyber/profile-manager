@@ -1,6 +1,7 @@
 // Compare saved fingerprint settings with what Chromium actually exposed.
 // A finding is "pass" only when the compared values were both present.
 import { privateNetworkWeakening, WEBGL_DISABLE_ARG } from './fingerprint-settings.js';
+import { compareEngineIdentity } from './engine-identity.js';
 import { chromiumPolicyArgs } from './webrtc-policy.js';
 import { iceConsistencyFinding } from './webrtc-observe.js';
 
@@ -74,6 +75,21 @@ export function fingerprintFindings({
     findings.push(finding('ua_client_hints', 'pass', `Client hints report the installed Chromium ${chromiumVersion}. No other browser version was written.`));
   }
 
+  const coherence = compareEngineIdentity({
+    engineVersion: chromiumVersion,
+    userAgent: seen?.userAgent || '',
+    clientHints: hints?.availability === 'observed' ? hints : null,
+  });
+  if (!seen || !chromiumVersion || !seen.userAgent) {
+    findings.push(finding('ua_engine_coherence', 'unavailable', 'The installed Chromium version and the page user agent were not both available.'));
+  } else if (coherence.status === 'inconsistent') {
+    findings.push(finding('ua_engine_coherence', 'warning', coherence.issues.join(' ')));
+  } else if (coherence.status !== 'coherent') {
+    findings.push(finding('ua_engine_coherence', 'unavailable', coherence.issues.join(' ') || 'The engine version could not be compared.'));
+  } else {
+    findings.push(finding('ua_engine_coherence', 'pass', `The user agent version is the installed Chromium ${chromiumVersion} or its reduced major. Client hints are not assigned a different version.`));
+  }
+
   const expectedPlatform = HOST_PLATFORM[hostPlatform];
   if (!seen?.platform) findings.push(finding('host_platform', 'unavailable', 'navigator.platform was not collected.'));
   else if (!expectedPlatform) findings.push(finding('host_platform', 'unavailable', 'This operating system has no platform token to compare.'));
@@ -124,6 +140,7 @@ export function fingerprintFindings({
       ? `The page does not match the configured ${mismatches.join(', ')}.`
       : 'Viewport, screen, and device scale match the configured values.'));
   }
+  findings.push(finding('screen_monitor', 'unsupported', 'Window size, viewport, and device scale can be set. The screen API is not replaced with another monitor layout. A window fully outside known displays is moved to the primary origin only when those displays were supplied.'));
 
   if (geo.permission === 'default') findings.push(finding('geolocation', 'unavailable', 'Geolocation is left to the browser prompt. No allow or deny result is claimed.'));
   else if (!seen?.permissions?.geolocation || seen.permissions.geolocation.availability !== 'observed') findings.push(finding('geolocation', 'unavailable', 'The geolocation permission was not collected.'));
@@ -139,6 +156,7 @@ export function fingerprintFindings({
       ? 'The page received the coordinates saved on this profile.'
       : 'Geolocation is Allow, but the page did not return the saved coordinates.'));
   } else findings.push(finding('geolocation', 'unavailable', 'Geolocation is Allow without coordinates, so no position was expected.'));
+  findings.push(finding('geolocation_scope', 'unsupported', 'Geolocation permission and coordinates apply inside this browser profile. They do not conceal GPS, Wi-Fi, or IP location from the operating system or the network. Native launch stores the permission and does not apply a Playwright coordinate override.'));
 
   const policyFlag = chromiumPolicyArgs(webrtc)[0] || null;
   if (typeof commandLine !== 'string' || !commandLine.trim()) findings.push(finding('webrtc_flag', 'unavailable', 'The browser command line was not available, so the WebRTC policy was not checked.'));

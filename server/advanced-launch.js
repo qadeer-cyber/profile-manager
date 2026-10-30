@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { validateAdvancedSettings } from './advanced-settings.js';
 import { fingerprintLaunchArgs } from './fingerprint-settings.js';
+import { assessWindowPlacement } from './window-placement.js';
 
 const PLATFORMS = {
   linux: { token: 'X11; Linux x86_64', hint: 'Linux', navigatorPlatform: 'Linux x86_64' },
@@ -19,6 +20,7 @@ const CONTENT_KEYS = {
   clipboard: 'clipboard',
   midi: 'midi_sysex',
   geolocation: 'geolocation',
+  'local-fonts': 'local_fonts',
 };
 const CONTENT_VALUES = { allow: 1, deny: 2, ask: 3 };
 const CDP_SETTING = { allow: 'granted', deny: 'denied', ask: 'prompt' };
@@ -63,7 +65,7 @@ export function buildUserAgent({ version, platform, headless, mode }) {
   return { userAgent, metadata, navigatorPlatform: host.navigatorPlatform, version, mode, headless: !!headless };
 }
 
-export function advancedLaunchPlan(settings, { headless = false, version = null, platform = process.platform } = {}) {
+export function advancedLaunchPlan(settings, { headless = false, version = null, platform = process.platform, displays = null } = {}) {
   const advanced = validateAdvancedSettings(settings || {});
   const userAgent = advanced.userAgent.mode === 'default' ? null : buildUserAgent({ version, platform, headless: !!headless, mode: advanced.userAgent.mode });
   const launch = {};
@@ -76,9 +78,12 @@ export function advancedLaunchPlan(settings, { headless = false, version = null,
     launch.deviceScaleFactor = screen.deviceScaleFactor;
     args.push(`--force-device-scale-factor=${screen.deviceScaleFactor}`);
   }
+  const placement = assessWindowPlacement(screen, displays);
   if (screen.startMaximized) args.push('--start-maximized');
   else if (screen.width != null && screen.height != null) args.push(`--window-size=${screen.width},${screen.height}`);
-  if (screen.windowX != null && screen.windowY != null) args.push(`--window-position=${screen.windowX},${screen.windowY}`);
+  if (!screen.startMaximized && placement.windowX != null && placement.windowY != null) {
+    args.push(`--window-position=${placement.windowX},${placement.windowY}`);
+  }
   const geo = advanced.geolocation;
   if (geo.permission === 'allow' && geo.latitude != null && geo.longitude != null) {
     launch.geolocation = { latitude: geo.latitude, longitude: geo.longitude, accuracy: geo.accuracy ?? 100 };
@@ -97,7 +102,7 @@ export function advancedLaunchPlan(settings, { headless = false, version = null,
     permissions.microphone = 'denied';
   }
   for (const flag of fingerprintLaunchArgs(fingerprint)) args.push(flag);
-  return { args, launch, userAgent, startupUrls: [...advanced.preferences.startupUrls], permissions, settings: advanced };
+  return { args, launch, userAgent, startupUrls: [...advanced.preferences.startupUrls], permissions, settings: advanced, placement };
 }
 
 function preferenceFile(dir) {
@@ -112,6 +117,8 @@ function preferenceFile(dir) {
 
 function contentState(settings, key) {
   if (key === 'geolocation') return settings.geolocation.permission;
+  if (key === 'local-fonts') return settings.fingerprint?.fonts === 'restricted' ? 'deny' : 'default';
+  if ((key === 'camera' || key === 'microphone') && settings.fingerprint?.mediaDevices === 'restricted') return 'deny';
   return settings.preferences.permissions[key];
 }
 

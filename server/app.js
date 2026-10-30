@@ -23,6 +23,7 @@ import { summarizeConsistency } from './fingerprint-summary.js';
 import { buildMonitoringReport } from './monitoring-report.js';
 import { computeParityCoverage } from './parity-scorecard.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
+import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { buildEngineStockReport } from './engine-stock-report.js';
@@ -588,6 +589,10 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/privacy-engine', wrap((req, res) => res.json(privacyEngineReport({ platform: process.platform }))));
+  router.get('/privacy-acceptance', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(advancedPrivacyScorecards());
+  }));
   router.get('/google-compat/report', wrap(async (req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(await buildGoogleCompatReport({ profileId: req.query.profileId || null, probe: req.query.probe === '1' }));

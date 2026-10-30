@@ -130,3 +130,16 @@ export function privateNetworkWeakening(commandLine) {
   for (const match of commandLine.matchAll(/--disable-features=(\S+)/g)) features.push(...match[1].split(',').filter(Boolean));
   return { availability: 'observed', features: WEAKENING_FEATURES.filter(name => features.includes(name)) };
 }
+
+/** Refuse launch arguments this app assembled when they turn private-network checks off. */
+export function assertPrivateNetworkLaunchPolicy(args) {
+  const joined = Array.isArray(args) ? args.join(' ') : String(args || '');
+  const weakened = privateNetworkWeakening(joined);
+  if (weakened.features.length) {
+    throw Object.assign(
+      new Error(`Refusing to launch with private-network checks disabled: ${weakened.features.join(', ')}`),
+      { status: 500, code: 'PRIVATE_NETWORK_POLICY' },
+    );
+  }
+  return weakened;
+}

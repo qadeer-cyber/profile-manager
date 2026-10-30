@@ -20,7 +20,8 @@ export function resolveBrowsersPath() {
   }
   if (chromiumExeAt(bundledRoot)) return bundledRoot;
   const cached = expectedExecutable('chromium');
-  return cached && fs.existsSync(cached) ? path.dirname(path.dirname(cached)) : null;
+  // <browsers>/<chromium-rev>/<chrome-linux64|chrome-win64>/chrome
+  return cached && fs.existsSync(cached) ? path.dirname(path.dirname(path.dirname(cached))) : null;
 }
 
 export function chromiumAvailableForTests() {
