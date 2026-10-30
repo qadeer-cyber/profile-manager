@@ -26,6 +26,13 @@ export function App() {
   const [compact, setCompact] = useState(() => localStorage.getItem('pm-density') === 'compact');
   useEffect(() => { localStorage.setItem('pm-density', compact ? 'compact' : 'comfortable'); }, [compact]);
   useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1366px)');
+    const apply = () => { document.documentElement.dataset.viewport = mq.matches ? '1366' : 'wide'; };
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  }, []);
+  useEffect(() => {
     let prefix = '';
     const onKey = event => {
       const target = event.target;

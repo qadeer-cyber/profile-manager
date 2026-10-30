@@ -21,6 +21,7 @@ export function SettingsPage() {
       <p className="muted">Latitude 5480 / 8 GiB defaults: 4 running profiles, 1 GiB free-memory guard, 2 parallel launches.</p>
     </section>
     <AutomationDriversPanel toast={toast} settings={s} onSettingsChange={setS} />
+    <AutomationCliPanel />
     <AdbDevicesPanel toast={toast} />
     <section className="panel"><h2>Automation API</h2>
       {token ? <><p className="muted">Use this token with <code>/api/v1</code> (header <code>Authorization: Bearer …</code>). Base URL changes each launch in the desktop app; see Diagnostics.</p>
@@ -34,6 +35,20 @@ export function SettingsPage() {
     </section>
     <BackupPanel toast={toast} />
   </>;
+}
+
+function AutomationCliPanel() {
+  const [caps, setCaps] = useState(null);
+  useEffect(() => { api('/api/human-input').then(setCaps).catch(() => {}); }, []);
+  return <section className="panel"><h2>CLI &amp; automation</h2>
+    <p className="muted">Local-only automation via <code>npm run pm-cli -- help</code> and <code>/api/v1</code>. Requires <code>PM_API_TOKEN</code>.</p>
+    {caps && <ul className="muted small">
+      <li>Human input: Chromium CDP + Firefox geckodriver ({caps.specialKeySyntax})</li>
+      <li>Cancel: <code>POST /api/profiles/:id/human-input/cancel</code></li>
+      <li>Engines: {(caps.supportedEngines || []).join(', ')}</li>
+    </ul>}
+    {!caps && <p className="muted">Loading capability report…</p>}
+  </section>;
 }
 
 function AdbDevicesPanel({ toast }) {

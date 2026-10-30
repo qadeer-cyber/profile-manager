@@ -14,7 +14,7 @@ export function DashboardPage({ onOpenProfiles }) {
     <header className="page-head"><div><h1>Dashboard</h1><div className="muted">{stats ? `Updated ${new Date(stats.generatedAt).toLocaleTimeString()}` : 'Loading live counts'}</div></div>
       <button onClick={load} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</button></header>
     {error && <div className="notice warn" role="alert">{error} <button onClick={load}>Retry</button></div>}
-    {!stats && !error && <p className="muted">Loading profile, proxy, and session counts…</p>}
+    {!stats && !error && <p className="muted" aria-busy="true">Loading profile, proxy, and session counts…</p>}
     {stats && <>
       <div className="stat-grid">
         <Stat label="Profiles" value={stats.profiles.total} detail={`${stats.profiles.stopped} stopped`} />

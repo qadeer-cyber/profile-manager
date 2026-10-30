@@ -57,7 +57,9 @@ import {
   adbAdapterReport, adbDiagnostics, connectAdbTarget, disconnectAdbTarget, getAdbDeviceInfo,
   getSelectedAdbSerial, listAdbDevices, setSelectedAdbSerial,
 } from './adb-adapter.js';
-import { humanInputReport, typeHumanTextForProfile } from './human-input.js';
+import {
+  cancelHumanInput, getHumanInputStatus, humanInputReport, typeHumanTextForProfile,
+} from './human-input.js';
 import {
   geckoExtensionReport, importUnpackedGeckoExtension, importXpiGeckoExtension, listGeckoExtensions,
   readGeckoProfileExtensions, setGeckoProfileExtensionEnabled,
@@ -1034,6 +1036,14 @@ function mountExtensionRoutes(r) {
     res.set('Cache-Control', 'no-store');
     res.json(humanInputReport());
   }));
+  r.get('/profiles/:id/human-input/status', wrap((req, res) => {
+    must(req.params.id);
+    res.json(getHumanInputStatus(req.params.id));
+  }));
+  r.post('/profiles/:id/human-input/cancel', wrap((req, res) => {
+    must(req.params.id);
+    res.json(cancelHumanInput(req.params.id));
+  }));
   r.post('/profiles/:id/human-input', wrap(async (req, res) => {
     must(req.params.id);
     const text = req.body?.text;
@@ -1042,6 +1052,7 @@ function mountExtensionRoutes(r) {
       wpm: req.body?.wpm,
       jitterMs: req.body?.jitterMs,
       selector: req.body?.selector,
+      deterministic: req.body?.deterministic,
     }));
   }));
   r.post('/extensions/import', wrap((req, res) => res.status(201).json(importUnpackedExtension(req.body?.path ?? req.body?.sourcePath))));
