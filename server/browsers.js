@@ -3,6 +3,8 @@ import { browserContextSettings, validateBrowserSettings } from './browser-setti
 import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
 import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences, applyDocumentPermissions, installUserAgent } from './advanced-launch.js';
+import { canvasPrototypeInitScript, canvasPrototypeSeed } from './experimental/canvas-readback-prototype.js';
+import { webglReadPixelsPrototypeInitScript, webglReadPrototypeSeed } from './experimental/webgl-readpixels-prototype.js';
 import { verifyFingerprintLaunchArgs } from './fingerprint-settings.js';
 import { executableCompatibility } from './chromium-lifecycle.js';
 import { assertLaunchResources } from './launch-limits.js';
@@ -352,6 +354,12 @@ async function doLaunch(p, opts = {}) {
     }
     markContextReady(metricsHandle);
     assertLaunchNotCancelled(p.id);
+    if (plan.settings.experimental?.canvasReadback === 'prototype') {
+      await ctx.addInitScript(canvasPrototypeInitScript(canvasPrototypeSeed(p.id)));
+    }
+    if (plan.settings.experimental?.webglReadback === 'prototype') {
+      await ctx.addInitScript(webglReadPixelsPrototypeInitScript(webglReadPrototypeSeed(p.id)));
+    }
     if (plan.userAgent) await installUserAgent(ctx, plan.userAgent);
     const watchPermissions = page => page.on('framenavigated', frame => {
       if (frame === page.mainFrame()) applyDocumentPermissions(page, frame.url(), plan.permissions).catch(() => {});

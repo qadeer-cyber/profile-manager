@@ -1,7 +1,7 @@
 // Deterministic Profile Manager block inside gecko user.js (preserves user lines outside the block).
 import fs from 'node:fs';
 import path from 'node:path';
-import { geckoWebRtcUserPrefLines, geckoTimezoneUserPrefLine } from './firefox-gecko-prefs.js';
+import { geckoWebRtcUserPrefLines, geckoTimezoneUserPrefLine, GECKO_TIMEZONE_PREF_NOTE } from './firefox-gecko-prefs.js';
 import { validateWebRtcSettings } from './webrtc-policy.js';
 
 export const PM_GECKO_BEGIN = '// >>> profile-manager managed >>>';
@@ -45,7 +45,10 @@ export function buildManagedGeckoPrefLines({ proxy, relayUrl, regional, webrtcSe
     if (regional.locale) lines.push(`user_pref("intl.locale.requested", "${escapePrefValue(regional.locale)}");`);
   }
   const tzLine = geckoTimezoneUserPrefLine(regional?.timezoneId);
-  if (tzLine) lines.push(tzLine);
+  if (tzLine) {
+    lines.push(`// ${GECKO_TIMEZONE_PREF_NOTE}`);
+    lines.push(tzLine);
+  }
   for (const l of geckoWebRtcUserPrefLines(validateWebRtcSettings(webrtcSettings || {}))) lines.push(l);
   return lines;
 }

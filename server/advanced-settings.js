@@ -29,6 +29,7 @@ export const DEFAULT_ADVANCED_SETTINGS = Object.freeze({
     permissions: Object.freeze({ notifications: 'default', microphone: 'default', camera: 'default', clipboard: 'default', midi: 'default' }),
   }),
   fingerprint: DEFAULT_FINGERPRINT,
+  experimental: Object.freeze({ canvasReadback: 'off', webglReadback: 'off' }),
 });
 
 const invalid = (message, tab = 'identity') => {
@@ -55,6 +56,16 @@ function integerIn(value, min, max, tab, label) {
   return n;
 }
 
+function validateExperimental(value) {
+  const base = { canvasReadback: 'off', webglReadback: 'off' };
+  if (value == null) return base;
+  const input = section(value, ['canvasReadback', 'webglReadback'], 'fingerprint');
+  const canvasReadback = input.canvasReadback ?? base.canvasReadback;
+  const webglReadback = input.webglReadback ?? base.webglReadback;
+  if (canvasReadback !== 'off' && canvasReadback !== 'prototype') invalid('experimental.canvasReadback must be off or prototype', 'fingerprint');
+  if (webglReadback !== 'off' && webglReadback !== 'prototype') invalid('experimental.webglReadback must be off or prototype', 'fingerprint');
+  return { canvasReadback, webglReadback };
+}
 function validateUserAgent(value) {
   const input = section(value, ['mode'], 'identity');
   if (!UA_MODES.includes(input.mode)) invalid('userAgent.mode must be default, reduced, or full', 'identity');
@@ -149,6 +160,7 @@ function validatePreferences(value, previous) {
 
 function finishAdvanced(settings) {
   const out = clone(settings);
+  out.experimental = validateExperimental(out.experimental);
   out.fingerprint = validateFingerprint(out.fingerprint || DEFAULT_FINGERPRINT, out.preferences);
   return out;
 }
@@ -157,13 +169,14 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
   if (!keysOf(value).length) return finishAdvanced(base);
-  if (keysOf(value).some(key => !['userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint'].includes(key))) invalid('Unknown advancedSettings field');
+  if (keysOf(value).some(key => !['userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
   if ('geolocation' in value) out.geolocation = validateGeolocation(value.geolocation);
   if ('screen' in value) out.screen = validateScreen(value.screen);
   if ('preferences' in value) out.preferences = validatePreferences(value.preferences, out.preferences);
   if ('fingerprint' in value) out.fingerprint = value.fingerprint;
+  if ('experimental' in value) out.experimental = validateExperimental({ ...out.experimental, ...value.experimental });
   return finishAdvanced(out);
 }
 

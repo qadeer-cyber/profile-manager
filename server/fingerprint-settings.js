@@ -11,6 +11,8 @@ export const DEFAULT_FINGERPRINT = Object.freeze({
 });
 
 export const WEBGL_DISABLE_ARG = '--disable-webgl';
+export const FONT_ACCESS_DISABLE_FEATURE = 'FontAccess';
+export const FONT_ACCESS_DISABLE_ARG = `--disable-features=${FONT_ACCESS_DISABLE_FEATURE}`;
 
 export const FINGERPRINT_CONTROLS = Object.freeze([
   Object.freeze({
@@ -29,7 +31,7 @@ export const FINGERPRINT_CONTROLS = Object.freeze([
       Object.freeze({ id: 'real', label: 'Real — Chromium decides' }),
       Object.freeze({ id: 'restricted', label: 'Restricted — deny local font access' }),
     ]),
-    note: 'Restricted denies the local-fonts permission when a page opens. Measuring installed fonts through canvas is not blocked.',
+    note: 'Restricted denies the local-fonts permission, disables the FontAccess feature so queryLocalFonts is unavailable, and writes local_fonts in profile preferences. Canvas measureText is not blocked.',
   }),
   Object.freeze({
     id: 'mediaDevices',
@@ -108,13 +110,19 @@ export function validateFingerprint(value, preferences) {
 }
 
 export function fingerprintLaunchArgs(fingerprint = DEFAULT_FINGERPRINT) {
-  const mode = fingerprint?.webgl || 'default';
-  return mode === 'restricted' ? [WEBGL_DISABLE_ARG] : [];
+  const args = [];
+  if (fingerprint?.webgl === 'restricted') args.push(WEBGL_DISABLE_ARG);
+  if (fingerprint?.fonts === 'restricted') args.push(FONT_ACCESS_DISABLE_ARG);
+  return args;
 }
 
 export function verifyFingerprintLaunchArgs(args, fingerprint = DEFAULT_FINGERPRINT) {
   const expected = fingerprintLaunchArgs(fingerprint);
-  return expected.every(flag => args.includes(flag)) && (fingerprint?.webgl === 'restricted' || !args.includes(WEBGL_DISABLE_ARG));
+  if (!expected.every(flag => args.includes(flag))) return false;
+  if (fingerprint?.webgl === 'restricted' && !args.includes(WEBGL_DISABLE_ARG)) return false;
+  if (fingerprint?.webgl !== 'restricted' && args.includes(WEBGL_DISABLE_ARG)) return false;
+  if (fingerprint?.fonts === 'restricted' && !args.join(' ').includes(FONT_ACCESS_DISABLE_FEATURE)) return false;
+  return true;
 }
 
 const WEAKENING_FEATURES = Object.freeze([
@@ -129,4 +137,17 @@ export function privateNetworkWeakening(commandLine) {
   const features = [];
   for (const match of commandLine.matchAll(/--disable-features=(\S+)/g)) features.push(...match[1].split(',').filter(Boolean));
   return { availability: 'observed', features: WEAKENING_FEATURES.filter(name => features.includes(name)) };
+}
+
+/** Refuse launch arguments this app assembled when they turn private-network checks off. */
+export function assertPrivateNetworkLaunchPolicy(args) {
+  const joined = Array.isArray(args) ? args.join(' ') : String(args || '');
+  const weakened = privateNetworkWeakening(joined);
+  if (weakened.features.length) {
+    throw Object.assign(
+      new Error(`Refusing to launch with private-network checks disabled: ${weakened.features.join(', ')}`),
+      { status: 500, code: 'PRIVATE_NETWORK_POLICY' },
+    );
+  }
+  return weakened;
 }

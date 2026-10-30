@@ -1,6 +1,9 @@
 // Compare saved fingerprint settings with what Chromium actually exposed.
 // A finding is "pass" only when the compared values were both present.
 import { privateNetworkWeakening, WEBGL_DISABLE_ARG } from './fingerprint-settings.js';
+import { compareEngineIdentity } from './engine-identity.js';
+import { classifyMediaCaptureError } from './media-capture.js';
+import { FONT_ACCESS_DISABLE_FEATURE } from './fingerprint-settings.js';
 import { chromiumPolicyArgs } from './webrtc-policy.js';
 import { iceConsistencyFinding } from './webrtc-observe.js';
 
@@ -74,6 +77,21 @@ export function fingerprintFindings({
     findings.push(finding('ua_client_hints', 'pass', `Client hints report the installed Chromium ${chromiumVersion}. No other browser version was written.`));
   }
 
+  const coherence = compareEngineIdentity({
+    engineVersion: chromiumVersion,
+    userAgent: seen?.userAgent || '',
+    clientHints: hints?.availability === 'observed' ? hints : null,
+  });
+  if (!seen || !chromiumVersion || !seen.userAgent) {
+    findings.push(finding('ua_engine_coherence', 'unavailable', 'The installed Chromium version and the page user agent were not both available.'));
+  } else if (coherence.status === 'inconsistent') {
+    findings.push(finding('ua_engine_coherence', 'warning', coherence.issues.join(' ')));
+  } else if (coherence.status !== 'coherent') {
+    findings.push(finding('ua_engine_coherence', 'unavailable', coherence.issues.join(' ') || 'The engine version could not be compared.'));
+  } else {
+    findings.push(finding('ua_engine_coherence', 'pass', `The user agent version is the installed Chromium ${chromiumVersion} or its reduced major. Client hints are not assigned a different version.`));
+  }
+
   const expectedPlatform = HOST_PLATFORM[hostPlatform];
   if (!seen?.platform) findings.push(finding('host_platform', 'unavailable', 'navigator.platform was not collected.'));
   else if (!expectedPlatform) findings.push(finding('host_platform', 'unavailable', 'This operating system has no platform token to compare.'));
@@ -124,6 +142,7 @@ export function fingerprintFindings({
       ? `The page does not match the configured ${mismatches.join(', ')}.`
       : 'Viewport, screen, and device scale match the configured values.'));
   }
+  findings.push(finding('screen_monitor', 'unsupported', 'Window size, viewport, and device scale can be set. The screen API is not replaced with another monitor layout. A window fully outside known displays is moved to the primary origin only when those displays were supplied.'));
 
   if (geo.permission === 'default') findings.push(finding('geolocation', 'unavailable', 'Geolocation is left to the browser prompt. No allow or deny result is claimed.'));
   else if (!seen?.permissions?.geolocation || seen.permissions.geolocation.availability !== 'observed') findings.push(finding('geolocation', 'unavailable', 'The geolocation permission was not collected.'));
@@ -138,7 +157,9 @@ export function fingerprintFindings({
     findings.push(finding('geolocation', close ? 'pass' : 'warning', close
       ? 'The page received the coordinates saved on this profile.'
       : 'Geolocation is Allow, but the page did not return the saved coordinates.'));
-  } else findings.push(finding('geolocation', 'unavailable', 'Geolocation is Allow without coordinates, so no position was expected.'));
+  }   else findings.push(finding('geolocation', 'unavailable', 'Geolocation is Allow without coordinates, so no position was expected.'));
+  findings.push(finding('geolocation_scope', 'unsupported', 'Geolocation permission and coordinates apply inside this browser profile. They do not conceal GPS, Wi-Fi, or IP location from the operating system or the network. Native launch stores the permission and does not apply a Playwright coordinate override.'));
+  findings.push(finding('geolocation_native', 'unsupported', 'Coordinate override on native Chromium spawn is BLOCKED_SPAWN: pinned CfT has no command-line equivalent to CDP Emulation.setGeolocationOverride.'));
 
   const policyFlag = chromiumPolicyArgs(webrtc)[0] || null;
   if (typeof commandLine !== 'string' || !commandLine.trim()) findings.push(finding('webrtc_flag', 'unavailable', 'The browser command line was not available, so the WebRTC policy was not checked.'));
@@ -181,6 +202,13 @@ export function fingerprintFindings({
   else findings.push(finding('fonts_permission', seen.permissions['local-fonts'].state === 'denied' ? 'pass' : 'warning', seen.permissions['local-fonts'].state === 'denied'
     ? 'The local-fonts permission is denied. Font measurement through canvas is still possible.'
     : `The local-fonts permission is ${seen.permissions['local-fonts'].state}, not denied.`));
+  if (fingerprint.fonts !== 'restricted') findings.push(finding('fonts_query_api', 'unavailable', 'Local font access is not restricted on this profile.'));
+  else if (!seen?.fontsQuery) findings.push(finding('fonts_query_api', 'unavailable', 'queryLocalFonts was not collected.'));
+  else if (seen.fontsQuery.apiPresent === false) {
+    findings.push(finding('fonts_query_api', 'pass', `queryLocalFonts is unavailable because ${FONT_ACCESS_DISABLE_FEATURE} is disabled for this profile. Canvas measureText is not blocked.`));
+  } else if (seen.fontsQuery.resolved) {
+    findings.push(finding('fonts_query_api', 'warning', 'queryLocalFonts resolved even though fonts are Restricted. FontAccess disable may be missing from the process.'));
+  } else findings.push(finding('fonts_query_api', 'pass', `queryLocalFonts did not resolve (${seen.fontsQuery.errorName || 'rejected'}). Canvas measureText is not blocked.`));
 
   findings.push(finding('media_mask', 'unsupported', 'Cameras and microphones are not replaced with generated devices.'));
   if (fingerprint.mediaDevices !== 'restricted') findings.push(finding('media_permission', 'unavailable', 'Media devices are Real. Camera and microphone follow their own permission settings.'));
@@ -191,12 +219,28 @@ export function fingerprintFindings({
       ? 'Camera and microphone are denied. The device list is still this computer’s list.'
       : `Camera is ${seen.permissions.camera.state} and microphone is ${seen.permissions.microphone.state}. Restricted expected both to be denied.`));
   }
+  if (fingerprint.mediaDevices !== 'restricted') findings.push(finding('media_capture', 'unavailable', 'Media devices are Real. No capture classification is graded.'));
+  else if (seen?.mediaCapture?.availability !== 'observed') findings.push(finding('media_capture', 'unavailable', 'getUserMedia was not exercised.'));
+  else {
+    const classified = classifyMediaCaptureError(seen.mediaCapture.errorName, {
+      cameraState: seen.permissions?.camera?.state,
+      microphoneState: seen.permissions?.microphone?.state,
+    });
+    const ok = classified.kind === 'permission_denied' || classified.kind === 'no_device';
+    findings.push(finding('media_capture', ok ? 'pass' : 'warning', `${classified.summary} (error ${classified.errorName}).`));
+  }
 
   findings.push(finding('port_scan_mask', 'unsupported', 'Port-scan results are not masked, and there is no whitelist of local ports.'));
   const network = privateNetworkWeakening(commandLine);
   if (network.availability !== 'observed') findings.push(finding('port_scan_policy', 'unavailable', 'The process command line was not available, so private-network features were not checked.'));
   else if (network.features.length) findings.push(finding('port_scan_policy', 'warning', `The process disables ${network.features.join(', ')}. This app does not add those switches itself.`));
   else findings.push(finding('port_scan_policy', 'pass', 'The process command line does not disable Chromium’s private-network checks. That is not proof that every local port probe fails, and no masked result is substituted.'));
+  if (fingerprint.portScan !== 'real') findings.push(finding('local_network_access', 'unavailable', 'Port scan is not in the default real mode.'));
+  else if (seen?.permissions?.['local-network-access']?.availability !== 'observed') {
+    findings.push(finding('local_network_access', 'unavailable', 'The local-network-access permission was not collected.'));
+  } else findings.push(finding('local_network_access', seen.permissions['local-network-access'].state === 'denied' ? 'pass' : 'warning', seen.permissions['local-network-access'].state === 'denied'
+    ? 'local-network-access is denied through profile preferences (local_network_access). Private-network weakening flags are still refused on launch.'
+    : `local-network-access is ${seen.permissions['local-network-access'].state}, not denied.`));
 
   const restart = (id, key, label) => {
     if (!previous || previous[key] == null || previous[key] === '') return finding(id, 'unavailable', `No previous ${label} was supplied.`);

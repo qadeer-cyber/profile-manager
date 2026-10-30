@@ -34,6 +34,15 @@ export function profileConfigWarnings(config) {
     if (config.webrtcSettings?.mode && config.webrtcSettings.mode !== 'browser_default') {
       warnings.push({ code: 'FIREFOX_WEBRTC_GECKO_PREFS', message: 'WebRTC policy is mapped to stock Firefox ICE prefs (user.js), not Chromium --force-webrtc-ip-handling-policy.' });
     }
+    if (config.advancedSettings?.userAgent?.mode && config.advancedSettings.userAgent.mode !== 'default') {
+      warnings.push({ code: 'FIREFOX_UA_CHROMIUM_ONLY', message: 'User-agent presets and client hints are applied on Chromium only. Firefox keeps the stock Gecko user agent. No other browser version is invented.' });
+    }
+  }
+  if (config.advancedSettings?.experimental?.canvasReadback === 'prototype') {
+    warnings.push({ code: 'CANVAS_PROTOTYPE_NOT_ENGINE', message: 'The canvas readback prototype is an opt-in page hook. It is not a custom engine, does not qualify M24, and is not a CAPTCHA bypass.' });
+  }
+  if (config.advancedSettings?.experimental?.webglReadback === 'prototype') {
+    warnings.push({ code: 'WEBGL_READ_PROTOTYPE_NOT_ENGINE', message: 'The WebGL readPixels prototype is an opt-in page hook. It does not replace vendor or renderer strings and does not qualify M26.' });
   }
   const fp = config.advancedSettings?.fingerprint || {};
   if (fp.canvas === 'noise' || fp.audio === 'noise') {

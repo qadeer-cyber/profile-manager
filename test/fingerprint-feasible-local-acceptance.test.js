@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { validateAdvancedSettings } from '../server/advanced-settings.js';
 import { advancedLaunchPlan } from '../server/advanced-launch.js';
-import { privateNetworkWeakening, WEBGL_DISABLE_ARG, fingerprintLaunchArgs } from '../server/fingerprint-settings.js';
+import { privateNetworkWeakening, WEBGL_DISABLE_ARG, FONT_ACCESS_DISABLE_FEATURE, fingerprintLaunchArgs } from '../server/fingerprint-settings.js';
 import { MANIFEST } from '../server/chromium.js';
 
 const PNA_FEATURES = [
@@ -26,6 +26,7 @@ test('M30 launch plan never adds private-network weakening disable-features', ()
     assert.equal(joined.includes(name), false, `must not weaken ${name}`);
   }
   assert.ok(plan.args.includes(WEBGL_DISABLE_ARG));
+  assert.ok(joined.includes(FONT_ACCESS_DISABLE_FEATURE));
   assert.equal(privateNetworkWeakening(joined).features.length, 0);
 });
 
@@ -46,10 +47,12 @@ test('M28–M29 restricted fingerprint conflicts with allow capture are rejected
     err => err.code === 'INVALID_ADVANCED_SETTINGS',
   );
   const ok = validateAdvancedSettings({
-    fingerprint: { webgl: 'restricted', mediaDevices: 'restricted' },
+    fingerprint: { webgl: 'restricted', fonts: 'restricted', mediaDevices: 'restricted' },
     preferences: { permissions: { camera: 'default', microphone: 'default' } },
   });
-  assert.deepEqual(fingerprintLaunchArgs(ok.fingerprint), [WEBGL_DISABLE_ARG]);
+  const flags = fingerprintLaunchArgs(ok.fingerprint);
+  assert.ok(flags.includes(WEBGL_DISABLE_ARG));
+  assert.ok(flags.join(' ').includes(FONT_ACCESS_DISABLE_FEATURE));
 });
 
 test('M21 geolocation incoherent storage is rejected before launch', () => {

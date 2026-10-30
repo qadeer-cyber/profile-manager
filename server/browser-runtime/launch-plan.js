@@ -6,7 +6,8 @@ import { browserContextSettings, validateBrowserSettings } from '../browser-sett
 import { chromiumPolicyArgs, validateWebRtcSettings } from '../webrtc-policy.js';
 import { verifyWebRtcLaunchArgs, applyWebRtcPreference } from '../webrtc-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences } from '../advanced-launch.js';
-import { verifyFingerprintLaunchArgs } from '../fingerprint-settings.js';
+import { verifyFingerprintLaunchArgs, assertPrivateNetworkLaunchPolicy } from '../fingerprint-settings.js';
+import { readHostDisplays } from '../window-placement.js';
 import { executableCompatibility } from '../chromium-lifecycle.js';
 import { chromiumIdentity } from '../chromium-identity.js';
 import { extensionLaunchPlan } from '../extensions.js';
@@ -90,12 +91,15 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   const mergedAdvanced = { ...(p.advancedSettings || {}) };
   const screenOverride = rememberedScreen ?? mergedAdvanced.screen;
   if (screenOverride != null) mergedAdvanced.screen = screenOverride;
-  const plan = advancedLaunchPlan(mergedAdvanced, { headless: !!headless, version: identity.version, platform: process.platform });
+  const screenInput = mergedAdvanced.screen && typeof mergedAdvanced.screen === 'object' ? mergedAdvanced.screen : {};
+  const displays = !headless && screenInput.windowX != null && screenInput.windowY != null ? readHostDisplays() : null;
+  const plan = advancedLaunchPlan(mergedAdvanced, { headless: !!headless, version: identity.version, platform: process.platform, displays });
   for (const flag of plan.args) args.push(flag);
   if (!verifyFingerprintLaunchArgs(args, plan.settings.fingerprint)) {
     throw httpErr(500, 'Refusing to launch because the WebGL restriction does not match the saved fingerprint settings.', 'FINGERPRINT_LAUNCH_MISMATCH');
   }
   if (plan.launch.userAgent) args.push(`--user-agent=${plan.launch.userAgent}`);
+  assertPrivateNetworkLaunchPolicy(args);
 
   if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
   applyAdvancedPreferences(dir, p.advancedSettings || {});
