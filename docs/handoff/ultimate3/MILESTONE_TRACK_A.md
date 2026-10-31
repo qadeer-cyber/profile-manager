@@ -2,7 +2,7 @@
 
 **Branch:** `feature/ultimate3-fingerprint-m20-m30`  
 **Base:** `09d25c46215113bdf33ad7718eea041c3e0adde3` (`integration/ultimate2-unified-pr` tip at start)  
-**Code SHA:** filled in after the implementation commit  
+**Code SHA:** `69ed7e96240129d5bef44be4d7cfa5a0a148586d`  
 **Contract:** `docs/handoff/ultimate3/ACCEPTANCE_M20_M30_V1.md` (1.0.0)  
 **Evidence:** `docs/handoff/ultimate3/evidence/track-a-linux.json`
 
