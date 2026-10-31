@@ -25,17 +25,17 @@
 | M17 | Proxy templates / traffic saver | PARTIAL | Template tag + duplicate API; library summary (templates/health counts) in Proxies UI; **no traffic saver** (not measured) |
 | M18 | Provider Bright Data/Oxylabs/Webshare | PARTIAL | Provider panel + mocks **CI-only** (`test/proxy-providers.test.js`); no live subscription required |
 | M19 | Fingerprint: WebRTC | VERIFIED | Policy flags + prefs |
-| M20 | Fingerprint: timezone/locale/lang | PARTIAL | CDP observable tests; Firefox regional observables + documented limits in `profile-config-engine` (`FIREFOX_FINGERPRINT_LIMITS`) |
-| M21 | Fingerprint: geolocation | PARTIAL | Prefs + `fingerprint-gaps-browser.test.js` |
-| M22 | Fingerprint: screen/DPR | PARTIAL | Launch plan + CDP inner dimensions observable test |
-| M23 | Fingerprint: Navigator/UA/client hints | PARTIAL | UA from pinned CfT; CDP `navigator.userAgent` test |
+| M20 | Fingerprint: timezone/locale/lang | VERIFIED | Linux CfT 156.0.8078.4 CDP: timezone id, `getTimezoneOffset`, `navigator.language`, ordered languages, Intl locale, and Accept-Language (stock base-language fallback allowed). Second profile isolated. Firefox 159 Marionette: `TZ` observes Europe/Berlin and offset -60; `navigator.language` matches. Firefox Intl locale can stay the host locale. `privacy.timezone.override` is not the control. Not undetectable. Windows TZ not run. Evidence: `test/ultimate3-fingerprint-browser.test.js`, `docs/handoff/ultimate3/evidence/track-a-linux.json` |
+| M21 | Fingerprint: geolocation | PARTIAL | Automation path applies saved coordinates (allow, deny, restart, isolation). Native manual argv has no coordinate flag and no debugging port (`BLOCKED_SPAWN`). Phase 4 custom engine required for manual browse. Not promoted |
+| M22 | Fingerprint: screen/DPR | VERIFIED | Product headless/automation launch: screen 1280×800, viewport 1280×800, devicePixelRatio 2 (`test/ultimate3-fingerprint-browser.test.js`). Headed native spawn sets window flags only. Multi-monitor identity is not claimed and needs a custom engine |
+| M23 | Fingerprint: Navigator/UA/client hints | PARTIAL | Automation path keeps the CDP user-agent session so full and reduced UA plus client hints match CfT 156.0.8078.4. Native manual launch may pass `--user-agent` and does not attach that session or a debugging port. Arbitrary version spoof stays blocked. Not promoted |
 | M24 | Fingerprint: Canvas noise | UNSUPPORTED | Stock Chromium |
 | M25 | Fingerprint: AudioContext noise | UNSUPPORTED | Stock Chromium |
 | M26 | Fingerprint: WebGL vendor/renderer mask | UNSUPPORTED | `--disable-webgl` only |
 | M27 | Fingerprint: WebGPU mask | UNSUPPORTED | Observation only |
-| M28 | Fingerprint: Fonts enumeration mask | PARTIAL | `fingerprint-privacy-launch.test.js` local-fonts deny in launch plan |
-| M29 | Fingerprint: Media devices mask | PARTIAL | Restricted mediaDevices → camera/mic deny in launch plan |
-| M30 | Port scan / local network protection | PARTIAL | No PNA weakening flags; `privateNetworkWeakening()` in fingerprint-settings |
+| M28 | Fingerprint: Fonts enumeration mask | PARTIAL | Restricted disables FontAccess on native and automation launch args. `queryLocalFonts` is absent, canvas `measureText` stays real, and preferences store no substitute font list. BLOCKED_CUSTOM_ENGINE for a replacement list. Not promoted |
+| M29 | Fingerprint: Media devices mask | PARTIAL | Restricted denies camera and microphone in the automation permission set and in profile preferences. `enumerateDevices` exposes no labels and no invented device names. BLOCKED_CUSTOM_ENGINE for a substitute device list. Not promoted |
+| M30 | Port scan / local network protection | PARTIAL | No private-network weakening flags. `local_network_access` deny makes the permission query `denied`, but on CfT 156.0.8078.4 it is not the cause of the fetch: loopback→loopback returns `local-ok` with the preference absent (`prompt`) and present (`denied`); a public-classified initiator is blocked when the preference is absent, denied, or allow (`granted`), and the target sees no request. Masked results remain BLOCKED_CUSTOM_ENGINE. Not promoted |
 | M31 | Cookie import/export | VERIFIED | Chromium stopped SQLite; Firefox gecko **read/export** (`gecko-cookies.js`); import/clear Firefox **501** |
 | M32 | CookieRobot / scripted warming | VERIFIED | Chromium CDP jobs + UI; `test/cookie-robot-cdp.test.js` (real connectOverCDP); Firefox **unsupported**; `GET /api/cookie-robot` |
 | M33 | Human typing emulation | PARTIAL | Chromium CDP human input API + UI (`human-input.test.js`); authorized UI testing only |
@@ -56,8 +56,12 @@
 
 ## Codex stabilization checkpoint — 2026-10-30
 
-Counts remain **18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 0 MISSING / 2 NOT_APPLICABLE_CLOUD**. Historical weighted score: **65.1% → 65.1% (+0.0 percentage points)**. No features promoted. Existing VERIFIED labels are inherited evidence classifications, not a claim that this Linux checkpoint requalified every category. See `CODEX_STABILIZATION_CHECKPOINT.md` for current test limitations.
+Checkpoint counts were **18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 0 MISSING / 2 NOT_APPLICABLE_CLOUD**, weighted **65.1%**. That checkpoint promoted nothing. M20 and M22 moved later; see Ultimate 3.0 Track A below. Existing other VERIFIED labels are inherited evidence classifications, not a claim that this Linux checkpoint requalified every category. See `CODEX_STABILIZATION_CHECKPOINT.md`.
 
 ## Integration note (`integration/ultimate2-stock-secure`)
 
-Historical statuses stay at the Codex checkpoint: **18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 2 NOT_APPLICABLE_CLOUD**, weighted **65.1%**. Grok `8251394` promotions of M2, M3, M8, M12, M14, M17, M18, M33, M35, M36, M37, M38, and M40 to VERIFIED are **not adopted**. **M8 is not VERIFIED** — real Windows browser acceptance was not run. Feasible-local stock criteria are a separate scorecard in `FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md` (**23/23 PASS**; BLOCKED_CUSTOM_ENGINE excluded). That scorecard does not change this historical denominator.
+Historical statuses at the Codex checkpoint were **18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 2 NOT_APPLICABLE_CLOUD**, weighted **65.1%**. Grok `8251394` promotions of M2, M3, M8, M12, M14, M17, M18, M33, M35, M36, M37, M38, and M40 to VERIFIED are **not adopted**. **M8 is not VERIFIED** — real Windows browser acceptance was not run. Feasible-local stock criteria are a separate scorecard in `FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md` (**23/23 PASS**; BLOCKED_CUSTOM_ENGINE excluded). The Grok **80.2%** scorecard stays separate and is not this denominator.
+
+## Ultimate 3.0 Track A (`feature/ultimate3-fingerprint-m20-m30`)
+
+Strict table after M20 and M22 promotion: **20 VERIFIED / 18 PARTIAL / 5 UNSUPPORTED / 2 NOT_APPLICABLE_CLOUD**. Release-qualification `(20 + 0.5 × 18) / 43 = 29/43 ≈ 67.4%` (was 65.1%, **+2.3 percentage points**). Sprint 2 did not promote M30: the deny preference changes the permission query and does not change whether the fetch completes. Feature-completion for the Track A stock checks is a different metric in `docs/handoff/ultimate3/evidence/track-a-linux.json` (41 pass / 1 fail / 42 = 97.6%). M21, M23, and M28–M30 stay **PARTIAL**. M24–M27 and M42 stay **UNSUPPORTED** / `BLOCKED_CUSTOM_ENGINE`. M35 and M36 stay **PARTIAL** on this branch. No CAPTCHA bypass. Windows qualification was not run.

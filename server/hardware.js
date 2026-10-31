@@ -90,13 +90,18 @@ async function observeInPage() {
   let clientHints = { availability: 'unavailable', reason: 'not_exposed' };
   if (navigator.userAgentData?.getHighEntropyValues) {
     try {
-      const high = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'uaFullVersion', 'platform']);
+      const high = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'uaFullVersion', 'platform', 'architecture', 'bitness', 'model', 'wow64']);
       const chromium = Array.isArray(high.fullVersionList) ? high.fullVersionList.find(item => item.brand === 'Chromium') : null;
+      const brands = Array.isArray(navigator.userAgentData.brands) ? navigator.userAgentData.brands.map(item => text(item.brand)).filter(Boolean).slice(0, 8) : [];
       clientHints = {
         availability: 'observed',
         uaFullVersion: text(high.uaFullVersion),
         chromiumVersion: text(chromium?.version),
-        platform: text(high.platform),
+        platform: text(high.platform || navigator.userAgentData.platform),
+        architecture: text(high.architecture),
+        bitness: text(high.bitness),
+        mobile: navigator.userAgentData.mobile === true ? true : navigator.userAgentData.mobile === false ? false : null,
+        brands,
       };
     } catch { clientHints = { availability: 'unavailable', reason: 'client_hints_failed' }; }
   }
@@ -141,7 +146,14 @@ async function observeInPage() {
   const concurrency = number(navigator.hardwareConcurrency);
   const memory = number(navigator.deviceMemory);
   let timezone = null;
-  try { timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { timezone = null; }
+  let intlLocale = null;
+  let timezoneOffset = null;
+  try {
+    const resolved = Intl.DateTimeFormat().resolvedOptions();
+    timezone = resolved.timeZone || null;
+    intlLocale = resolved.locale || null;
+  } catch { timezone = null; intlLocale = null; }
+  try { timezoneOffset = new Date().getTimezoneOffset(); } catch { timezoneOffset = null; }
   return {
     hardwareConcurrency: concurrency == null ? { availability: 'unavailable', reason: 'not_exposed' } : { availability: 'observed', source: 'browser', value: concurrency },
     deviceMemory: memory == null ? { availability: 'unavailable', reason: 'not_exposed' } : { availability: 'observed', source: 'browser', value: memory },
@@ -151,6 +163,8 @@ async function observeInPage() {
     locale: text(navigator.language),
     languages: Array.isArray(navigator.languages) ? navigator.languages.slice(0, 10).map(tag => text(tag)).filter(Boolean) : [],
     timezone: text(timezone),
+    timezoneOffset: typeof timezoneOffset === 'number' ? timezoneOffset : null,
+    intlLocale: text(intlLocale),
     screen: { width: number(screen.width), height: number(screen.height), devicePixelRatio: number(window.devicePixelRatio), innerWidth: number(window.innerWidth), innerHeight: number(window.innerHeight) },
   };
 }
