@@ -60,6 +60,9 @@ for (const engine of ['chrome', 'firefox']) {
       try {
         await request(root, route + '/url', 'POST', { url: fixture.origin });
         assert.equal(await request(root, route + '/title'), 'webdriver fixture');
+        const rect = await request(root, route + '/window/rect');
+        assert.equal(typeof rect.width, 'number');
+        assert.ok(rect.width > 0);
         const element = await request(root, route + '/element', 'POST', { using: 'css selector', value: '#text' });
         const id = element['element-6066-11e4-a52e-4f735466cecf']; assert.ok(id);
         await request(root, route + `/element/${id}/value`, 'POST', { text: 'Hello اردو' });

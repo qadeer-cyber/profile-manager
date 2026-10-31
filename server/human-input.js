@@ -16,17 +16,86 @@ export const SPECIAL_KEY_NAMES = Object.freeze([
 ]);
 
 const SPECIAL_KEY_TOKEN = new Map(SPECIAL_KEY_NAMES.map(k => [k.toLowerCase(), k]));
+const FAST_DIGRAPHS = new Set(['th', 'he', 'in', 'er', 'an', 're', 'on', 'at', 'en', 'nd', 'hi', 'ou', 'ed', 'to', 'it', 'is', 'es', 'or', 'te', 'of']);
+const SLOW_CHARS = new Set(['.', ',', '!', '?', ';', ':', '\n']);
+export const TIMING_MODEL = 'interkey-wpm-v1';
+export const FIREFOX_TIMING_LIMITS = Object.freeze([
+  'Firefox timing uses W3C action pause durations only. Keydown timestamps are not read back, so timingMeasured is false.',
+  'Stock Firefox has no CDP Input.dispatchKeyEvent path.',
+  'Special keys are W3C key values, not Playwright key descriptions.',
+  'The geckodriver stub test checks the pause payload. It does not measure a live Firefox keydown clock.',
+  'Authorized local UI testing only. This is not a CAPTCHA bypass.',
+]);
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+export function buildTimingSchedule(text, opts = {}) {
+  const deterministic = !!opts.deterministic;
+  const jitterMs = deterministic ? 0 : Math.min(200, Math.max(0, Number(opts.jitterMs ?? 35) || 0));
+  const base = delayMsFromWpm(opts.wpm);
+  const segments = parseHumanInputSegments(String(text ?? ''));
+  const rng = mulberry32(deterministic ? 1 : (Number.isInteger(opts.seed) ? opts.seed : 1));
+  const intervalsMs = [];
+  let prev = null;
+  for (const seg of segments) {
+    let factor = 1;
+    if (seg.type === 'key') factor = 1.4;
+    else if (SLOW_CHARS.has(seg.value)) factor = 1.8;
+    else if (prev?.type === 'char' && seg.type === 'char' && FAST_DIGRAPHS.has((prev.value + seg.value).toLowerCase())) factor = 0.75;
+    let ms = Math.round(base * factor);
+    if (!deterministic && jitterMs > 0) ms += Math.floor(rng() * (jitterMs + 1));
+    intervalsMs.push(Math.min(800, Math.max(15, ms)));
+    prev = seg;
+  }
+  return { model: TIMING_MODEL, deterministic, baseDelayMs: base, jitterMs, intervalsMs };
+}
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted || signal?.cancel) {
+      reject(fail(409, 'Typing cancelled', 'TYPING_CANCELLED'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener?.('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(fail(409, 'Typing cancelled', 'TYPING_CANCELLED'));
+    };
+    signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
+}
 
 export function humanInputReport() {
   return {
     generatedAt: new Date().toISOString(),
     supportedEngines: ['chromium', 'firefox'],
-    chromium: { transport: 'cdp', requires: ['running profile', 'automation (CDP port)'] },
+    timingModel: TIMING_MODEL,
+    timingMeasuredEngines: ['chromium'],
+    chromium: {
+      transport: 'cdp',
+      requires: ['running profile', 'automation (CDP port)'],
+      timingMeasured: true,
+      note: 'Inter-key delays are slept in-process and returned as measuredIntervalsMs.',
+    },
     firefox: {
       supported: true,
       transport: 'geckodriver',
+      timingMeasured: false,
       requires: ['running profile', 'automation (-marionette)', 'geckodriver on PATH or PM_GECKODRIVER_PATH'],
       note: 'Uses W3C WebDriver key actions via geckodriver — not CDP.',
+      limits: FIREFOX_TIMING_LIMITS,
     },
     maxLength: MAX_TEXT,
     wpmRange: { min: 20, max: 600 },
@@ -34,7 +103,7 @@ export function humanInputReport() {
     specialKeySyntax: 'Embed {Enter}, {Tab}, {Escape}, etc. in text',
     cancelEndpoint: 'POST /api/profiles/:id/human-input/cancel',
     activeSessions: [...activeJobs.keys()],
-    note: 'For authorized UI testing and accessibility workflows only.',
+    note: 'Authorized local UI testing only. Not a CAPTCHA or access-control bypass.',
   };
 }
 
@@ -89,6 +158,8 @@ function normalizeOpts(opts = {}) {
   return {
     wpm: opts.wpm,
     jitterMs,
+    deterministic,
+    seed: opts.seed,
     selector: typeof opts.selector === 'string' && opts.selector.trim() ? opts.selector.trim() : null,
     signal: opts.signal || {},
   };
@@ -112,26 +183,37 @@ export async function typeHumanTextOverCdp(cdpPort, text, opts = {}) {
   const norm = normalizeOpts(opts);
   const payload = String(text ?? '');
   if (!payload.length || payload.length > MAX_TEXT) throw fail(400, `text must be 1-${MAX_TEXT} characters`, 'INVALID_TEXT');
-  const baseDelay = delayMsFromWpm(norm.wpm);
   const segments = parseHumanInputSegments(payload);
+  const schedule = buildTimingSchedule(payload, norm);
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+  const measuredIntervalsMs = [];
   try {
     const context = browser.contexts()[0] || await browser.newContext();
     const pages = context.pages().filter(p => !p.isClosed());
     const page = pages[0] || await context.newPage();
     await focusTarget(page, norm.selector);
-    let typed = 0;
-    for (const seg of segments) {
+    for (let i = 0; i < segments.length; i += 1) {
       assertNotCancelled(norm.signal);
-      const jitter = norm.jitterMs > 0 ? Math.floor(Math.random() * norm.jitterMs) : 0;
-      const delay = baseDelay + jitter;
-      if (seg.type === 'key') await page.keyboard.press(seg.value, { delay });
-      else if (seg.value === '\n') await page.keyboard.press('Enter', { delay });
-      else if (seg.value === '\t') await page.keyboard.press('Tab', { delay });
-      else await page.keyboard.type(seg.value, { delay });
-      typed++;
+      const seg = segments[i];
+      const started = Date.now();
+      await sleep(schedule.intervalsMs[i], norm.signal);
+      if (seg.type === 'key') await page.keyboard.press(seg.value, { delay: 0 });
+      else if (seg.value === '\n') await page.keyboard.press('Enter', { delay: 0 });
+      else if (seg.value === '\t') await page.keyboard.press('Tab', { delay: 0 });
+      else await page.keyboard.type(seg.value, { delay: 0 });
+      measuredIntervalsMs.push(Date.now() - started);
     }
-    return { typed, wpm: norm.wpm ?? 180, delayMs: baseDelay, transport: 'cdp', deterministic: norm.jitterMs === 0 };
+    return {
+      typed: segments.length,
+      wpm: norm.wpm ?? 180,
+      delayMs: schedule.baseDelayMs,
+      scheduleMs: schedule.intervalsMs,
+      measuredIntervalsMs,
+      timingModel: TIMING_MODEL,
+      timingMeasured: true,
+      transport: 'cdp',
+      deterministic: !!norm.deterministic,
+    };
   } finally {
     try { await browser.close(); } catch { /* detach only */ }
   }
@@ -159,8 +241,8 @@ export async function typeHumanTextOverWebDriver(webdriverUrl, text, opts = {}) 
   const norm = normalizeOpts(opts);
   const payload = String(text ?? '');
   if (!payload.length || payload.length > MAX_TEXT) throw fail(400, `text must be 1-${MAX_TEXT} characters`, 'INVALID_TEXT');
-  const baseDelay = delayMsFromWpm(norm.wpm);
   const segments = parseHumanInputSegments(payload);
+  const schedule = buildTimingSchedule(payload, norm);
   const session = await webDriverJson(webdriverUrl, '/session', 'POST', {
     capabilities: { alwaysMatch: { browserName: 'firefox' } },
   });
@@ -170,21 +252,30 @@ export async function typeHumanTextOverWebDriver(webdriverUrl, text, opts = {}) 
     let typed = 0;
     for (const seg of segments) {
       assertNotCancelled(norm.signal);
-      const jitter = norm.jitterMs > 0 ? Math.floor(Math.random() * norm.jitterMs) : 0;
-      const delay = baseDelay + jitter;
-      const value = seg.type === 'key' ? seg.value : seg.value;
-      const actions = [{ type: 'pause', duration: delay }];
-      if (seg.type === 'key') {
-        actions.push({ type: 'keyDown', value }, { type: 'keyUp', value });
-      } else {
-        actions.push({ type: 'keyDown', value }, { type: 'keyUp', value });
-      }
+      const delay = schedule.intervalsMs[typed];
+      const value = seg.value;
+      const actions = [
+        { type: 'pause', duration: delay },
+        { type: 'keyDown', value },
+        { type: 'keyUp', value },
+      ];
       await webDriverJson(webdriverUrl, `/session/${sessionId}/actions`, 'POST', {
         actions: [{ type: 'key', id: 'keyboard', actions }],
       });
       typed++;
     }
-    return { typed, wpm: norm.wpm ?? 180, delayMs: baseDelay, transport: 'geckodriver', deterministic: norm.jitterMs === 0 };
+    return {
+      typed,
+      wpm: norm.wpm ?? 180,
+      delayMs: schedule.baseDelayMs,
+      scheduleMs: schedule.intervalsMs,
+      measuredIntervalsMs: null,
+      timingModel: TIMING_MODEL,
+      timingMeasured: false,
+      transport: 'geckodriver',
+      deterministic: !!norm.deterministic,
+      firefoxTimingLimits: FIREFOX_TIMING_LIMITS,
+    };
   } finally {
     try { await webDriverJson(webdriverUrl, `/session/${sessionId}`, 'DELETE'); } catch { /* ignore */ }
   }

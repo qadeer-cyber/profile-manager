@@ -33,6 +33,7 @@ import { buildEngineStockReport } from './engine-stock-report.js';
 import { readWindowState } from './window-state.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
+import { buildAttachDescriptor } from './automation-attach.js';
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
   listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
@@ -93,6 +94,7 @@ import {
 } from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
 import { assertNotPausedTemplate, proxyHealthAnalytics, proxyTagGroups } from './proxy-library.js';
+import { compareTrafficSavings, copyTrafficPolicy, getTrafficPolicy, getTrafficSession, measureTrafficScript, saveTrafficPolicy } from './proxy-traffic.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
 const browserInstall = { state: 'idle', log: '', error: null, code: null };
@@ -662,6 +664,25 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     must(req.params.id);
     res.json(stopWebDriverBridge(req.params.id));
   }));
+  router.get('/profiles/:id/automation-attach', wrap((req, res) => {
+    const p = must(req.params.id);
+    const row = engine.runInfo(p.id);
+    const desc = buildAttachDescriptor({
+      profileId: p.id,
+      engine: p.browserEngine,
+      cdpPort: row?.cdp_port,
+      wsEndpoint: row?.ws_endpoint,
+      running: !!row,
+    });
+    if (!desc.attachable) {
+      const code = p.browserEngine === 'firefox' ? 'FIREFOX_NO_CDP' : (!row ? 'NOT_RUNNING' : 'NO_CDP');
+      const error = code === 'FIREFOX_NO_CDP'
+        ? 'Firefox has no Playwright/Puppeteer CDP attach endpoint'
+        : 'Profile is not running with a CDP port';
+      return res.status(409).json({ ...desc, code, error });
+    }
+    res.json(desc);
+  }));
   router.get('/profiles/:id/browser-config', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     const profile = get(req.params.id);
@@ -876,6 +897,7 @@ function publicProxy(r) {
   return { id: r.id, name: r.name, type: r.type, host: r.host, port: r.port, username: r.username, hasPassword: !!r.password, tags: JSON.parse(r.tags),
     provider: r.provider || null, providerRef: r.provider_ref || null, providerMeta: safeProviderMeta(r.provider_meta),
     lastTest: { status: r.last_test_status ?? null, ip: r.last_test_ip ?? null, latencyMs: r.last_test_latency_ms ?? null, error: r.last_test_error ?? null, testedAt: r.last_tested_at ?? null },
+    trafficPolicy: getTrafficPolicy(r.id),
     assignedProfiles: db.prepare('SELECT COUNT(*) n FROM profiles WHERE proxy_id=?').get(r.id).n, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function listProxies({ q = '', tag = '', status = '' } = {}) {
@@ -926,6 +948,7 @@ function duplicateProxy(id, { name, asTemplate = false, stripTemplate = false } 
     providerRef: null,
     providerMeta: JSON.parse(r.provider_meta || '{}'),
   });
+  copyTrafficPolicy(id, newId);
   return publicProxy(proxyRow(newId));
 }
 function assignProxy(profileId, proxyId) {
@@ -1149,7 +1172,9 @@ function mountProxyRoutes(r) {
   }));
   r.post('/proxies/templates', wrap((req, res) => {
     const body = { ...(req.body || {}), tags: cleanTags([...(Array.isArray(req.body?.tags) ? req.body.tags : []), 'template']) };
-    res.status(201).json(publicProxy(proxyRow(createProxyRow(body))));
+    const id = createProxyRow(body);
+    if (req.body?.trafficPolicy) saveTrafficPolicy(id, req.body.trafficPolicy);
+    res.status(201).json(publicProxy(proxyRow(id)));
   }));
   r.patch('/proxies/templates/:id', wrap((req, res) => {
     const row = mustProxy(req.params.id);
@@ -1192,9 +1217,39 @@ function mountProxyRoutes(r) {
     }
     res.json({ total: rows.length, templates, testedOk, testedFailed, providerAccounts: providers.size });
   }));
+  r.post('/proxies/traffic/measure', wrap(async (req, res) => {
+    const proxyId = req.body?.proxyId || null;
+    if (proxyId) mustProxy(proxyId);
+    res.status(201).json(await measureTrafficScript({
+      scriptId: req.body?.scriptId,
+      requests: req.body?.requests,
+      policy: req.body?.policy,
+      proxyId,
+    }));
+  }));
+  r.get('/proxies/traffic/savings', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(compareTrafficSavings(req.query.baseline, req.query.controlled));
+  }));
+  r.get('/proxies/traffic/sessions/:id', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(getTrafficSession(req.params.id));
+  }));
   r.get('/proxies', (req, res) => res.json(listProxies(req.query)));
-  r.post('/proxies', wrap((req, res) => res.status(201).json(publicProxy(proxyRow(createProxyRow(req.body))))));
+  r.post('/proxies', wrap((req, res) => {
+    const id = createProxyRow(req.body || {});
+    if (req.body?.trafficPolicy) saveTrafficPolicy(id, req.body.trafficPolicy);
+    res.status(201).json(publicProxy(proxyRow(id)));
+  }));
   r.post('/proxies/import', wrap((req, res) => res.json(importProxies(req.body))));
+  r.get('/proxies/:id/traffic-policy', wrap((req, res) => {
+    mustProxy(req.params.id);
+    res.json(getTrafficPolicy(req.params.id));
+  }));
+  r.put('/proxies/:id/traffic-policy', wrap((req, res) => {
+    mustProxy(req.params.id);
+    res.json(saveTrafficPolicy(req.params.id, req.body || {}));
+  }));
   r.get('/proxies/:id', wrap((req, res) => res.json(publicProxy(mustProxy(req.params.id)))));
   r.patch('/proxies/:id', wrap((req, res) => res.json(patchProxy(req.params.id, req.body))));
   r.delete('/proxies/:id', wrap((req, res) => { deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true'); res.status(204).end(); }));

@@ -1,0 +1,5 @@
+{
+  "traffic": 4096,
+  "unit": "bytes",
+  "apiToken": "fixture-oxylabs-token-must-not-leak"
+}

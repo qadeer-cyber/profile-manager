@@ -55,8 +55,12 @@ test('tag groups and measurable analytics', async () => {
   assert.ok(groups.body.some(g => g.tag === 'template' || g.tag === 'office'));
   const analytics = await call('GET', '/api/v1/proxies/library/analytics');
   assert.equal(analytics.body.trafficSaverSupported, false);
+  assert.equal(analytics.body.measuredHttpSavingsSupported, true);
+  assert.equal(analytics.body.httpsConnectBlocking, false);
+  assert.equal(typeof analytics.body.measuredTrafficSessions, 'number');
   assert.ok('checksLast7Days' in analytics.body);
   assert.match(analytics.body.note, /local/i);
+  assert.match(analytics.body.trafficNote, /do not invent savings/i);
 });
 
 test('safe proxy switch direct and library', async () => {
