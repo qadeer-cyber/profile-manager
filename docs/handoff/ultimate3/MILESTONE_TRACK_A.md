@@ -58,9 +58,12 @@ Still blocked. Support `#4931951` owns the Windows runners. This track did not r
 ## Sprint 2 — causal M30 probe
 
 **Branch tip before this sprint:** `1d6b63bbab9ffb1f4c71427b9db3ea9dea967c22`  
+**Sprint 2 SHA:** filled in after the commit  
 **Release-qualification before and after this sprint:** **67.4%** (20 VERIFIED / 18 PARTIAL). No new promotion.  
 **Feature-completion after the causal probe:** **41 pass / 1 fail / 42 = 97.6%**.  
 **M30 decision:** stays **PARTIAL**.
+
+Tests this sprint: `npm run test:unit` **144 pass / 0 fail**; `npm run test:browser-runtime` **188 pass / 0 fail**; live fingerprint test **1 pass**.
 
 The probe holds address space fixed and varies only the profile deny preference. CORS is enabled so a completed fetch returns the body `local-ok`.
 
