@@ -7,6 +7,7 @@ The Linux M8 acceptance was reported 2/2 PASS at QA 66bf4af, but this newly comb
 ## Requirements
 
 - Windows 10/11 x64; Node.js 22.x; Git; free disk space; npm and browser download access
+- **Native compile:** `npm ci` runs `better-sqlite3` via node-gyp when no matching prebuild exists. The qualification scripts call `Ensure-WindowsNativeBuildPrereqs.ps1` first to install **Python 3.8+** and **VS 2022 Build Tools (VC.Tools.x86.x64)** via winget/Chocolatey when missing, then set `npm config python` and `msvs_version=2022`. No lockfile changes and no skipping native rebuild.
 - Stock Mozilla Firefox (installed or available via winget/Chocolatey)
 - A clean Git working tree checked out on integration/ultimate2-unified-pr
 - PowerShell 5.1+. The locally built installer may be unsigned.
@@ -24,6 +25,12 @@ The builder runs M8 REAL Chromium + Firefox acceptance, requiring TAP # pass 2, 
 
 Output: %TEMP%\pm-ultimate2-unified-build\Profile-Manager-Ultimate2-unified-<SHA8>-offline-Setup-x64.exe
 Also writes BUILD-MANIFEST.txt (commit and SHA-256) plus the build transcript. Output is an unsigned LOCAL CANDIDATE, not a published/released installer; it never installs, tags, merges or uploads.
+
+## Bootstrap node-gyp only (Python + MSVC)
+
+    .\scripts\windows-qualification\Ensure-WindowsNativeBuildPrereqs.ps1
+
+Use `-SkipBootstrap` to verify without installing. Evidence: `%TEMP%\pm-windows-native-prereqs\`.
 
 ## Run M8 only
 

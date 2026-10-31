@@ -6,7 +6,8 @@ Nothing is uploaded, installed, published, tagged, or merged.
 #>
 param(
   [string]$EvidenceRoot = (Join-Path $env:TEMP 'pm-ultimate2-unified-build'),
-  [switch]$SkipDeps
+  [switch]$SkipDeps,
+  [switch]$SkipNativeBootstrap
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -47,6 +48,7 @@ try {
   $m8Script = Join-Path $PSScriptRoot 'Run-M8-Qualification.ps1'
   $m8Args = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$m8Script,'-EvidenceRoot',$m8Evidence)
   if ($SkipDeps) { $m8Args += '-SkipDeps' }
+  if ($SkipNativeBootstrap) { $m8Args += '-SkipNativeBootstrap' }
   Invoke-Checked 'Isolated real Windows M8 gate' 'powershell.exe' $m8Args
   if (-not (Test-Path (Join-Path $m8Evidence 'm8-acceptance.result')) -or
       (Get-Content (Join-Path $m8Evidence 'm8-acceptance.result') -Raw).Trim() -ne 'PASS') {

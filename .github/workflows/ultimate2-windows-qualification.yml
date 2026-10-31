@@ -1,0 +1,79 @@
+name: Ultimate 2.0 Windows qualification
+on:
+  workflow_dispatch:
+    inputs:
+      run_full_offline_build:
+        description: Run Build-Ultimate2-Offline.ps1 after M8 (unsigned local EXE, no GitHub release)
+        type: boolean
+        default: false
+      publish_prerelease:
+        description: Create GitHub pre-release (only if full build + smoke pass; requires owner approval)
+        type: boolean
+        default: false
+
+jobs:
+  ultimate2-windows:
+    runs-on: windows-2022
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    env:
+      PM_API_TOKEN: ultimate2-gha-validation
+    steps:
+      - name: Checkout integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: integration/ultimate2-unified-pr
+      - name: Record runner metadata
+        shell: pwsh
+        run: |
+          @"
+          ## Ultimate 2.0 Windows qualification
+          - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **SHA:** ${{ github.sha }}
+          - **Runner:** $env:RUNNER_OS $env:RUNNER_ARCH (GitHub-hosted windows-2022)
+          "@ | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          Write-Host "PROCESSOR_ARCHITECTURE=$env:PROCESSOR_ARCHITECTURE"
+      - name: Install Node.js 22 x64
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install Python 3.12 for node-gyp
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ensure Python + MSVC for node-gyp (bootstrap if missing)
+        shell: pwsh
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'pm-native-prereqs'
+          & ./scripts/windows-qualification/Ensure-WindowsNativeBuildPrereqs.ps1 -EvidenceRoot $evidence -SkipBootstrap
+      - name: Real Windows M8 gate (Chromium + Firefox)
+        shell: pwsh
+        timeout-minutes: 90
+        run: |
+          $m8 = Join-Path $env:RUNNER_TEMP 'pm-m8-gha'
+          & ./scripts/windows-qualification/Run-M8-Qualification.ps1 -EvidenceRoot $m8 -SkipNativeBootstrap
+          Get-Content (Join-Path $m8 'm8-acceptance.result')
+      - name: Core regression suites
+        shell: pwsh
+        timeout-minutes: 60
+        run: |
+          npm run test:unit
+          npm run test:stabilization
+          npm run test:data-recovery
+          npm run test:browser-runtime
+          npm run test:integration:preflight
+      - name: Full offline NSIS build (local candidate)
+        if: ${{ inputs.run_full_offline_build == true }}
+        shell: pwsh
+        timeout-minutes: 120
+        run: |
+          $build = Join-Path $env:RUNNER_TEMP 'pm-ultimate2-unified-build'
+          & ./scripts/windows-qualification/Build-Ultimate2-Offline.ps1 -EvidenceRoot $build -SkipNativeBootstrap
+          Get-Content (Join-Path $build 'build.result')
+      - name: Block pre-release publish from CI (manual owner gate)
+        if: ${{ inputs.publish_prerelease == true }}
+        shell: pwsh
+        run: |
+          Write-Error "publish_prerelease is not automated on this workflow yet. Run owner Dell Build-Ultimate2-Offline.ps1, install smoke, then tag pre-release manually after billing/sign-off."
