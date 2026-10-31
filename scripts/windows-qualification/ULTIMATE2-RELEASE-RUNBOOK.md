@@ -129,6 +129,19 @@ gh release create $tag `
 
 ---
 
+## Experimental Linux cross-build (NOT qualified)
+
+For engineering-only artifacts when `windows-2022` is blocked:
+
+```bash
+# Requires: wine + wine32 (i386), Node 22, USE_SYSTEM_WINE=true
+./scripts/linux-qualification/build-ultimate2-offline-cross.sh
+```
+
+Output under `build-evidence/ultimate2-crossbuild-<SHA8>/`. **No Windows M8 or install smoke.** Publish only as an **experimental / windows-unverified** pre-release (separate tag from qualified RC).
+
+---
+
 ## Linux-side reconfirmation (source only)
 
 Does **not** replace Windows M8 or NSIS.
