@@ -27,7 +27,7 @@ export function ExtensionsPage() {
       <th>Name</th><th>Version</th><th>Permissions</th><th>Profiles</th><th></th>
     </tr></thead><tbody>
       {list.map(ext => <tr key={ext.id}>
-        <td className="name">{ext.name} <span className="muted">{ext.browserEngine === 'firefox' ? 'Firefox · manual installation' : 'Chromium'}</span>{ext.description ? <div className="muted">{ext.description}</div> : null}</td>
+        <td className="name">{ext.name} <span className="muted">{ext.browserEngine === 'firefox' ? 'Firefox · signed installation' : 'Chromium'}</span>{ext.description ? <div className="muted">{ext.description}</div> : null}</td>
         <td className="mono-sm">{ext.version} <span className="muted">MV{ext.manifestVersion}</span></td>
         <td className="small">{permissionText(ext)}</td>
         <td>{ext.assignedProfiles || <span className="muted">0</span>}</td>
@@ -41,11 +41,12 @@ export function ExtensionsPage() {
     {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
     <section className="panel"><h2>Firefox / Gecko library</h2>
       <p className="muted small">{gecko.report?.signingPolicy || 'Mozilla signed extensions only; no signing bypass.'}</p>
-      <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Gecko ID</th><th>Version</th><th>Profiles</th></tr></thead><tbody>
-        {gecko.items.map(ext => <tr key={ext.id}><td className="name">{ext.name}</td><td className="mono-sm">{ext.geckoExtensionId || '—'}</td><td>{ext.version}</td><td>{ext.assignedProfiles || 0}</td></tr>)}
+      <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Gecko ID</th><th>Version</th><th>Profiles</th><th></th></tr></thead><tbody>
+        {gecko.items.map(ext => <tr key={ext.id}><td className="name">{ext.name}</td><td className="mono-sm">{ext.geckoExtensionId || '—'}</td><td>{ext.version}</td><td>{ext.assignedProfiles || 0}</td><td><button onClick={() => setDialog({ kind: 'manageGecko', data: ext })}>Manage in profile</button></td></tr>)}
         {geckoLoaded && !gecko.items.length && <tr><td colSpan="4" className="empty">No Firefox extensions yet. Import an unpacked folder or signed .xpi.</td></tr>}
         {!geckoLoaded && <tr><td colSpan="4" className="empty">Loading Gecko extensions…</td></tr>}
       </tbody></table></div></section>
+    {dialog?.kind === 'manageGecko' && <ManageGeckoDialog extension={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'importGecko' && <ImportGeckoDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
     {dialog?.kind === 'assign' && <AssignDialog extension={dialog.data} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); load(); }} />}
     {dialog?.kind === 'force' && <Confirm title="Extension is assigned" danger confirmLabel="Unassign and remove" message={`${dialog.msg} Removing it also drops those assignments. The copied files are deleted.`} onConfirm={() => remove(dialog.data, true)} onClose={() => setDialog(null)} />}
@@ -74,7 +75,7 @@ function ImportGeckoDialog({ onClose, onDone }) {
     setBusy(false);
   };
   return <Dialog title="Import Firefox extension" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={busy} onClick={submit}>Import</button></>}>
-    <p className="muted">Import an unpacked development folder or a <code>.xpi</code> into the local library. Import checks archive safety, not Mozilla signatures. Firefox verifies signing and compatibility during installation.</p><p className="notice warn">Firefox assignments are inventory only. In the chosen Firefox profile, open about:addons and use Install Add-on From File with your original XPI. Manage enable, disable, and removal there. Unpacked extensions use about:debugging and last until restart.</p>
+    <p className="muted">Import an unpacked development folder or a <code>.xpi</code> into the local library. Import checks archive safety, not Mozilla signatures. Firefox verifies signing and compatibility during installation.</p><p className="notice warn">Use Manage in profile to permanently install a signed XPI into a running Firefox profile with automation enabled. Firefox performs cryptographic signature, certificate trust and compatibility checks. Enable/disable remains available in about:addons. Unpacked development folders are library inventory only.</p>
     <label>Extension path<input autoFocus value={source} onChange={e => setSource(e.target.value)} placeholder="Absolute path to folder or .xpi" /></label>
   </Dialog>;
 }
@@ -140,4 +141,30 @@ function AssignDialog({ extension, onClose, onSaved }) {
       </div>;
     })}
   </Dialog>;
+}
+
+function ManageGeckoDialog({ extension, onClose }) {
+  const [profiles, setProfiles] = useState([]), [selected, setSelected] = useState(''), [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [addons, setAddons] = useState([]);
+  useEffect(() => { api('/api/profiles').then(rows => setProfiles(rows.filter(p => p.browserEngine === 'firefox'))).catch(e => setStatus(e.message)); }, []);
+  async function inspect(id) { if (id) setAddons((await api(`/api/profiles/${id}/gecko-extensions`)).addons); }
+  async function act(action) {
+    setBusy(true); setStatus('');
+    try {
+      const result = await api(`/api/profiles/${selected}/gecko-extensions/${extension.id}/${action}`, { method: 'POST', body: { confirm: confirmed } });
+      setStatus(result.removed ? 'Removal verified in Firefox profile data.' : 'Permanent installation and signed package verified by Firefox. Restart persistence must be checked after reopening.');
+      await inspect(selected); setConfirmed(false);
+    } catch (e) { setStatus(e.message); } finally { setBusy(false); }
+  }
+  return <Dialog title={`Manage ${extension.name} in Firefox`} onClose={onClose} footer={<>
+    <button onClick={onClose}>Close</button><button disabled={busy || !selected || !confirmed} onClick={() => act('install')}>Install signed XPI</button>
+    <button disabled={busy || !selected || !confirmed} onClick={() => act('remove')}>Remove from profile</button>
+  </>}>
+    <p>Launch the target Firefox profile with automation enabled. Other automation clients must disconnect before this operation. Firefox verifies Mozilla signing and compatibility; unsigned or unpacked packages cannot be permanently installed here.</p>
+    <label>Firefox profile<select value={selected} onChange={e => { setSelected(e.target.value); setConfirmed(false); inspect(e.target.value).catch(e => setStatus(e.message)); }}><option value="">Choose profile</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}{p.running ? ' (running)' : ' (stopped)'}</option>)}</select></label>
+    <label className="check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I confirm this change to the selected profile.</label>
+    {addons.filter(a => a.id === extension.geckoExtensionId).map(a => <p key={a.id}>Recorded version {a.version}; {a.signatureVerified ? 'Firefox signature accepted' : 'signature unverified'}; {a.active ? 'active' : 'inactive'}. Enable/disable in about:addons.</p>)}
+    {status && <p role="status">{status}</p>}
+  </Dialog>;
+
 }

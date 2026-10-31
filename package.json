@@ -52,7 +52,9 @@
     "test:webdriver:real": "node --test --test-timeout=180000 test/webdriver-real.test.js",
     "test:data-recovery": "node --test --test-timeout=120000 test/portable-recovery.test.js test/portable-restore-crash.test.js test/portable-purge-crash.test.js test/portable-api.test.js test/profile-lifecycle-purge.test.js test/backup-selective.test.js test/backup.test.js test/recovery-locks.test.js test/backup-stream.test.js test/backup-stream-api.test.js test/marionette-client.test.js",
     "test:m8:acceptance": "npm run build && node --test --test-timeout=180000 test/m8-browser-acceptance.test.js",
-    "test:integration:preflight": "node --test --test-timeout=30000 test/integration-preflight.test.js"
+    "test:integration:preflight": "node --test --test-timeout=30000 test/integration-preflight.test.js",
+    "test:trackc": "node --test --test-timeout=30000 test/trackc-gecko.test.js test/trackc-window.test.js test/trackc-workspace.test.js test/trackc-workspace-sync.test.js",
+    "test:trackc:acceptance": "npm run build && node --test --test-concurrency=1 --test-timeout=180000 test/m8-browser-acceptance.test.js test/trackc-browser-acceptance.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

@@ -70,7 +70,7 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
   await browse(a, profile.id, true);
   let bytes, uiBrowser, uiPage;
   const archivePath = path.join(root, 'ui-export.pmp');
-  if (engine === 'chromium') {
+  {
     uiBrowser = await chromium.launch({ headless: true, ...(process.platform === 'linux' && process.getuid?.() === 0 ? { args: ['--no-sandbox'] } : {}) });
     t.after(() => uiBrowser.close());
     const context = await uiBrowser.newContext({ acceptDownloads: true, viewport: { width: 1366, height: 768 } });
@@ -84,9 +84,6 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
     await dialog.getByRole('checkbox').check();
     const downloading = uiPage.waitForEvent('download'); await dialog.getByRole('button', { name: 'Download encrypted .pmp' }).click();
     await (await downloading).saveAs(archivePath); bytes = fs.readFileSync(archivePath);
-  } else {
-    const exported = await fetch(a.url + `/api/v1/profiles/${profile.id}/backup/export-stream`, { method: 'POST', headers, body: JSON.stringify({ passphrase: 'disposable browser passphrase', confirmSensitive: true }) });
-    assert.equal(exported.status, 200); bytes = Buffer.from(await exported.arrayBuffer());
   }
   assert.equal(bytes.subarray(0, 4).toString(), 'PMBE');
   assert.equal(await stopServer(a), true); a = null;

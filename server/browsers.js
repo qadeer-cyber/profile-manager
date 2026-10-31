@@ -1,3 +1,4 @@
+import { monitorWindowState } from './window-state.js';
 import { assertProfileOperationAvailable } from './recovery-journal.js';
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
 import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
@@ -299,6 +300,7 @@ async function doLaunch(p, opts = {}) {
       const marionettePort = fxPlan.marionettePort || null;
       updateLock(dir, { browserPid: native.browserPid, cdpPort: marionettePort });
       live.set(p.id, entry);
+      monitorWindowState(p.id, entry);
       db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, marionettePort, null, fxPlan.relayUrl, new Date().toISOString());
       setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
       emit('profile:started', p.id, { runtime: 'native', engine: 'firefox' });
@@ -331,6 +333,7 @@ async function doLaunch(p, opts = {}) {
       native.proc.on('exit', () => onClosed(p.id, null));
       updateLock(dir, { browserPid: native.browserPid, cdpPort: null });
       live.set(p.id, entry);
+      monitorWindowState(p.id, entry);
       try {
         db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, null, null, relayUrl, new Date().toISOString());
       } catch (e) {
@@ -411,6 +414,7 @@ async function doLaunch(p, opts = {}) {
     emit('profile:started', p.id);
     entry.restoreTabs = launchPlan.restoreTabs;
     entry.rememberWindow = launchPlan.rememberWindow;
+    monitorWindowState(p.id, entry);
     entry.tabUrls = [];
     const openUrls = launchPlan.openUrls;
     if (openUrls.length) {
@@ -758,6 +762,7 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   const e = live.get(id) || settling.get(id);
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
   e.stopping = true;
+  e.stopWindowTracking?.();
   if (e.restoreTabs && e.ctx) {
     try {
       const next = snapshotTabUrls(e.ctx.pages());

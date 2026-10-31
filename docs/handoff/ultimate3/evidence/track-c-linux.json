@@ -1,0 +1,119 @@
+{
+  "date": "2026-10-31",
+  "platform": "Linux x64",
+  "node": "24.22.1",
+  "baseCommit": "09d25c46215113bdf33ad7718eea041c3e0adde3",
+  "scope": "Track C source tree containing this evidence; suites overlap and must not be summed as unique tests.",
+  "results": [
+    {
+      "suite": "targeted",
+      "command": "npm run test:trackc",
+      "tests": 14,
+      "pass": 14,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "70666889543a659e909066142b3608a260f87489f46196a08d663a5d68398490"
+    },
+    {
+      "suite": "recovery",
+      "command": "npm run test:data-recovery",
+      "tests": 63,
+      "pass": 63,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "97ed4a05a2fb540861e4d4c298a8914126967d86b181aa90dc3f697b95bdb9d9"
+    },
+    {
+      "suite": "stabilization",
+      "command": "npm run test:stabilization",
+      "tests": 90,
+      "pass": 90,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "1ea9e87e43e0706a71f566588b850deb6f69cddd98d85b5ac45b5b7a0b6d6351"
+    },
+    {
+      "suite": "unit",
+      "command": "npm run test:unit",
+      "tests": 134,
+      "pass": 132,
+      "fail": 2,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "da1991a25ed214a235a89b4caf6ceb4b25926f1ce23120dfbd2596247c7ca3f9"
+    },
+    {
+      "suite": "runtime",
+      "command": "npm run test:browser-runtime",
+      "tests": 187,
+      "pass": 177,
+      "fail": 6,
+      "skipped": 4,
+      "cancelled": 0,
+      "logSHA256": "a05f258ed3fba0c77f0d5818f4061370bd585e2f8d8e6e4b94123bad9036b559"
+    },
+    {
+      "suite": "webrtc-source",
+      "command": "npm run test:m4",
+      "tests": 48,
+      "pass": 48,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "5389100e0dadce440dcbf33a7f0b36b3b6e181d56d5475d85e6fefb7b7acad2b"
+    },
+    {
+      "suite": "m8-acceptance",
+      "command": "npm run test:m8:acceptance",
+      "tests": 2,
+      "pass": 0,
+      "fail": 2,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "ba26630f930305762b53b6a8f59c6837114006db08026cd0c59a82cfb9a673ec"
+    },
+    {
+      "suite": "trackc-acceptance",
+      "command": "node --test --test-concurrency=1 --test-timeout=180000 test/trackc-browser-acceptance.test.js",
+      "tests": 4,
+      "pass": 0,
+      "fail": 4,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "f7960f3ad15d5469f2a92d64f801fa639ea9ce02fdf926276a3fd522f58e203d"
+    }
+  ],
+  "frontendBuild": "PASS",
+  "limitations": [
+    "Chromium headless shell and Firefox executables unavailable",
+    "OS process identity: /proc/<process.pid>/stat returned ENOENT while /proc/self/stat exists",
+    "No Windows desktop or X11 display in local host",
+    "No signed XPI fixture locally; Windows workflow pins upstream signed uBlock Origin 1.75.0",
+    "New Windows workflow result is recorded separately after execution"
+  ],
+  "baselineWindows": {
+    "runId": 41174241314,
+    "status": "completed",
+    "conclusion": "failure",
+    "runnerAllocated": true,
+    "failedStep": "API integration tests",
+    "exactFailure": "delete running profile (stops + removes data)",
+    "counts": {
+      "pass": 40,
+      "fail": 1
+    },
+    "fix": "Assert recoverable Trash preservation, stopped state, rejection of incorrect purge confirmation, then confirmed permanent purge."
+  },
+  "score": {
+    "verified": 18,
+    "partial": 20,
+    "unsupported": 5,
+    "na": 2,
+    "denominator": 43,
+    "percentage": 65.1,
+    "promotions": []
+  }
+}

@@ -62,6 +62,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     regional,
     webrtcSettings: p.webrtcSettings,
   });
+  managed.push('user_pref("xpinstall.signatures.required", true);', 'user_pref("xpinstall.signatures.dev-root", false);');
   if (marionettePort) managed.push(`user_pref("marionette.port", ${marionettePort});`);
   writeManagedGeckoUserJs(profileDir, managed);
   materializeGeckoExtensions(profileDir, p.id);
