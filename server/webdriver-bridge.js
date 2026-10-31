@@ -36,22 +36,47 @@ export function resolveChromedriverExecutable() {
   return resolveChromedriverForBridge();
 }
 
+export function webDriverNewSessionBody(debuggerAddress) {
+  if (typeof debuggerAddress !== 'string' || !/^[A-Za-z0-9._-]+:\d{1,5}$/.test(debuggerAddress)) {
+    throw fail(400, 'debuggerAddress must look like 127.0.0.1:9222', 'INVALID_WEBDRIVER');
+  }
+  const port = Number(debuggerAddress.split(':').pop());
+  if (port < 1 || port > 65535) throw fail(400, 'debuggerAddress port is out of range', 'INVALID_WEBDRIVER');
+  return {
+    capabilities: {
+      alwaysMatch: {
+        browserName: 'chrome',
+        'goog:chromeOptions': { debuggerAddress },
+      },
+    },
+  };
+}
+
 export function webDriverBridgeReport() {
   const drivers = automationDriversReport();
   return {
     supported: true,
     bundled: false,
+    fullParity: false,
     requiresChromedriverOnPath: !drivers.chromedriver.installed,
     configureWith: 'PM_CHROMEDRIVER_PATH',
     optionalCache: drivers.chromedriver,
     attachCapability: 'goog:chromeOptions.debuggerAddress',
     note: 'Only for profiles running with automation (Playwright path + remote-debugging-port). Manual native launches cannot use WebDriver.',
+    realPath: {
+      env: 'PM_REAL_WEBDRIVER=1',
+      test: 'test/webdriver-real.test.js',
+      covers: ['session', 'navigate', 'title', 'element', 'unicode value', 'window rect', 'two-profile isolation', 'quit'],
+      fullParity: false,
+      note: 'Skipped unless PM_REAL_WEBDRIVER=1 and PM_CHROMEDRIVER_PATH are set. A passing stub does not prove a real browser.',
+    },
     activeSessions: [...bridges.keys()],
   };
 }
 
 export async function startWebDriverBridge(profileId, debuggerAddress) {
   if (!profileId || !debuggerAddress) throw fail(400, 'debuggerAddress is required', 'INVALID_WEBDRIVER');
+  const newSession = webDriverNewSessionBody(debuggerAddress);
   const existing = bridges.get(profileId);
   if (existing) return { ...existing.public, reused: true };
   const port = await freePort();
@@ -83,6 +108,7 @@ export async function startWebDriverBridge(profileId, debuggerAddress) {
     profileId,
     webdriverUrl: `http://127.0.0.1:${port}`,
     debuggerAddress,
+    newSession,
     sessionHint: {
       'goog:chromeOptions': { debuggerAddress },
     },

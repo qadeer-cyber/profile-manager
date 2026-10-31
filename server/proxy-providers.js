@@ -235,6 +235,16 @@ async function providerFetch(url, { headers, secret, timeoutMs = 15000 }) {
   }
 }
 
+function publicScalarFields(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return {};
+  const out = {};
+  for (const [key, value] of Object.entries(body)) {
+    if (/password|passphrase|secret|token|authorization|api[-_]?key/i.test(key)) continue;
+    if (value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') out[key] = value;
+  }
+  return out;
+}
+
 function redactBrightZone(body) {
   if (!body || typeof body !== 'object') return body;
   const out = { ...body };
@@ -258,7 +268,7 @@ export async function providerUsage(id) {
       headers: { Authorization: `Bearer ${account.apiToken}`, accept: 'application/json' },
       secret: account.apiToken,
     });
-    return { supported: true, available: true, provider: 'oxylabs', source: 'https://residential-api.oxylabs.io/v2/users/{userId}/client-stats', stats: body };
+    return { supported: true, available: true, provider: 'oxylabs', source: 'https://residential-api.oxylabs.io/v2/users/{userId}/client-stats', stats: publicScalarFields(body) };
   }
   if (account.provider === 'brightdata') {
     if (!account.apiToken) return { supported: true, available: false, provider: 'brightdata', reason: 'Balance requires the Bright Data account API key. The zone password is a different credential and is not sent to this endpoint.' };

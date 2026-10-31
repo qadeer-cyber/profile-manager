@@ -35,4 +35,26 @@ test('humanInputReport documents Firefox geckodriver path', () => {
   const report = humanInputReport();
   assert.equal(report.firefox.supported, true);
   assert.equal(report.firefox.transport, 'geckodriver');
+  assert.equal(report.firefox.timingMeasured, false);
+});
+
+test('typeHumanTextOverCdp measures inter-key intervals', { timeout: 120000 }, async t => {
+  const fixture = await startLocalHttpFixture({ body: '<!doctype html><html><body><input id="t" /></body></html>' });
+  t.after(() => fixture.close());
+  const { port, endpoint } = await startChromiumCdpFixture(t);
+  const browser = await chromium.connectOverCDP(endpoint, { timeout: 10000 });
+  t.after(() => browser.close());
+  const page = browser.contexts()[0].pages()[0];
+  await page.goto(fixture.origin, { waitUntil: 'domcontentloaded' });
+  await page.locator('#t').waitFor();
+  const result = await typeHumanTextOverCdp(port, 'hi.', { wpm: 120, selector: '#t', deterministic: true });
+  assert.equal(await page.inputValue('#t'), 'hi.');
+  assert.equal(result.timingMeasured, true);
+  assert.equal(result.timingModel, 'interkey-wpm-v1');
+  assert.equal(result.scheduleMs.length, 3);
+  assert.equal(result.measuredIntervalsMs.length, 3);
+  for (let i = 0; i < result.scheduleMs.length; i += 1) {
+    assert.ok(result.measuredIntervalsMs[i] >= result.scheduleMs[i] - 25, `interval ${i} measured ${result.measuredIntervalsMs[i]} planned ${result.scheduleMs[i]}`);
+  }
+  assert.ok(result.scheduleMs[2] > result.scheduleMs[0]);
 });

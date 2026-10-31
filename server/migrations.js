@@ -174,6 +174,26 @@ export const migrations = [
       }
       if (!cols.includes('gecko_extension_id')) db.exec('ALTER TABLE extensions ADD COLUMN gecko_extension_id TEXT');
     } },
+  { version: 19, name: 'proxy traffic policies and measured sessions', up: db => {
+      db.exec(`CREATE TABLE IF NOT EXISTS proxy_traffic_policies (
+        proxy_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        block_extensions TEXT NOT NULL DEFAULT '[]',
+        updated_at TEXT NOT NULL
+      )`);
+      db.exec(`CREATE TABLE IF NOT EXISTS proxy_traffic_sessions (
+        id TEXT PRIMARY KEY,
+        proxy_id TEXT,
+        script_id TEXT NOT NULL,
+        policy_json TEXT NOT NULL,
+        origin_response_bytes INTEGER NOT NULL,
+        origin_request_bytes INTEGER NOT NULL,
+        blocked_requests INTEGER NOT NULL,
+        forwarded_requests INTEGER NOT NULL,
+        created_at TEXT NOT NULL
+      )`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_proxy_traffic_sessions_script ON proxy_traffic_sessions(script_id, created_at)');
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

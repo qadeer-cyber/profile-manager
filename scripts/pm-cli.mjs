@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /** Local Profile Manager CLI (automation + UI API). Requires PM_API_TOKEN; optional PM_API_BASE / PM_UI_BASE. */
 import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { executeCliScript } from './cli-script.mjs';
 
 const base = (process.env.PM_API_BASE || 'http://127.0.0.1:3847/api/v1').replace(/\/$/, '');
 const uiBase = (process.env.PM_UI_BASE || base.replace(/\/api\/v1\/?$/, '/api')).replace(/\/$/, '');
@@ -48,6 +51,14 @@ Proxy & extensions (v1):
   proxy-summary                Library health summary
   proxy-assign <profileId> <proxyId|null>
   proxy-switch <profileId> direct|library <proxyId>
+  traffic-policy-get <proxyId>
+  traffic-policy-set <proxyId> <json|@file>
+  traffic-measure <json|@file> POST /proxies/traffic/measure
+  traffic-savings <baselineId> <controlledId>
+
+Scripts:
+  run <json|@file>             Run a local API script (steps with {{id.field}})
+  exec <script.mjs> [profileId]  Run node on a file (no shell). Sets PM_CDP_HTTP when profileId is running.
   extensions                   List extension library
   extension-assign <profileId> <extensionId> [true|false enabled]
 
@@ -79,6 +90,7 @@ Other:
   adb-disconnect [serial]      Disconnect target or all
   adb-select <serial|null>     Persist selected device for UI
   type <id> <text...>          Human-input keystrokes (Chromium, running)
+  automation-attach <id>       Playwright/Puppeteer CDP attach descriptor
   help                         This help
 
 Env: PM_API_TOKEN (required), PM_API_BASE, PM_UI_BASE, PM_TYPE_WPM, PM_BACKUP_PASSPHRASE (backup-export only; not argv)
@@ -155,7 +167,9 @@ function parseListQuery(arg) {
 }
 
 function exitFromError(e) {
-  console.error(e.message || String(e));
+  const message = e.message || String(e);
+  if (jsonMode) console.error(JSON.stringify({ ok: false, error: message, code: e.code || null, status: e.status ?? e.exitCode ?? null }));
+  else console.error(message);
   if (e.exitCode === EXIT.USAGE) process.exit(EXIT.USAGE);
   const st = e.status;
   if (typeof st === 'number' && st >= 2 && st <= 254) process.exit(st);
@@ -241,6 +255,42 @@ try {
     if (arg2 === 'direct') out(await api('POST', `/profiles/${arg}/proxy/switch`, { mode: 'direct' }));
     else if (arg2 === 'library') out(await api('POST', `/profiles/${arg}/proxy/switch`, { mode: 'library', proxyId: arg3 }));
     else throw Object.assign(new Error('proxy-switch requires direct or library'), { exitCode: EXIT.USAGE });
+  } else if (cmd === 'traffic-policy-get') {
+    if (!arg) throw Object.assign(new Error('traffic-policy-get requires proxy id'), { exitCode: EXIT.USAGE });
+    out(await api('GET', `/proxies/${arg}/traffic-policy`));
+  } else if (cmd === 'traffic-policy-set') {
+    if (!arg || !arg2) throw Object.assign(new Error('traffic-policy-set requires proxy id and JSON'), { exitCode: EXIT.USAGE });
+    out(await api('PUT', `/proxies/${arg}/traffic-policy`, readJsonArg(arg2, 'traffic-policy-set')));
+  } else if (cmd === 'traffic-measure') {
+    out(await api('POST', '/proxies/traffic/measure', readJsonArg(arg, 'traffic-measure')));
+  } else if (cmd === 'traffic-savings') {
+    if (!arg || !arg2) throw Object.assign(new Error('traffic-savings requires baseline and controlled session ids'), { exitCode: EXIT.USAGE });
+    out(await api('GET', `/proxies/traffic/savings?baseline=${encodeURIComponent(arg)}&controlled=${encodeURIComponent(arg2)}`));
+  } else if (cmd === 'run') {
+    out(await executeCliScript(readJsonArg(arg, 'run'), api));
+  } else if (cmd === 'exec') {
+    if (!arg) throw Object.assign(new Error('exec requires a .mjs, .js, or .cjs file'), { exitCode: EXIT.USAGE });
+    const abs = path.resolve(arg);
+    if (!/\.(mjs|js|cjs)$/.test(abs)) throw Object.assign(new Error('exec only runs a node script file'), { exitCode: EXIT.USAGE });
+    if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) throw Object.assign(new Error('exec script file not found'), { exitCode: EXIT.USAGE });
+    let cdp = '';
+    if (arg2) {
+      const attach = await api('GET', `/profiles/${arg2}/automation-attach`);
+      cdp = attach?.playwright?.endpoint || '';
+      if (!cdp) throw Object.assign(new Error('Profile has no Chromium CDP endpoint'), { status: 409, code: 'NO_CDP' });
+    }
+    const child = spawnSync(process.execPath, [abs], {
+      encoding: 'utf8',
+      shell: false,
+      env: { ...process.env, PM_CDP_HTTP: cdp, PM_SCRIPT_AUTHORIZED: 'ui-testing' },
+      timeout: Number(process.env.PM_EXEC_TIMEOUT_MS || 120000),
+    });
+    if (jsonMode) out({ ok: child.status === 0, status: child.status, stdout: child.stdout, stderr: child.stderr });
+    else {
+      if (child.stdout) process.stdout.write(child.stdout);
+      if (child.stderr) process.stderr.write(child.stderr);
+    }
+    if ((child.status ?? 1) !== 0) process.exit(child.status || EXIT.ERROR);
   } else if (cmd === 'webdriver-start') {
     out(await api('POST', `/profiles/${arg}/webdriver/start`, {}));
   } else if (cmd === 'webdriver-stop') {
@@ -307,6 +357,9 @@ try {
     out(await api('POST', '/adb/disconnect', { serial: arg || '' }, { ui: true }));
   } else if (cmd === 'adb-select') {
     out(await api('PUT', '/adb/selection', { serial: arg === 'null' || !arg ? null : arg }, { ui: true }));
+  } else if (cmd === 'automation-attach') {
+    if (!arg) throw Object.assign(new Error('automation-attach requires profile id'), { exitCode: EXIT.USAGE });
+    out(await api('GET', `/profiles/${arg}/automation-attach`));
   } else if (cmd === 'type') {
     if (!arg || !arg2) throw Object.assign(new Error('type requires profile id and text'), { exitCode: EXIT.USAGE });
     out(await api('POST', `/profiles/${arg}/human-input`, {
