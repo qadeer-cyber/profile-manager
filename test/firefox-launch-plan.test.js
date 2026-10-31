@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { buildFirefoxLaunchPlan, geckoUserDataDir } from '../server/browser-runtime/firefox-launch.js';
+import { buildFirefoxLaunchPlan, geckoUserDataDir, geckoDescendants, discoverGeckoBrowserPid } from '../server/browser-runtime/firefox-launch.js';
 
 test('gecko profile dir is under chromium userDataDir', () => {
   const id = randomUUID();
@@ -32,13 +32,39 @@ test('firefox launch plan uses -no-remote and -profile', async () => {
   const plan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, opts: { automation: false, headless: false } });
   assert.equal(plan.engine, 'firefox');
   assert.ok(plan.args.includes('-no-remote'));
+  assert.equal(plan.args.includes('-wait-for-browser'), process.platform === 'win32');
   const autoPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, opts: { automation: true, headless: false } });
   assert.ok(autoPlan.args.includes('-marionette'));
   assert.ok(autoPlan.marionettePort > 0);
+  const headlessPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, opts: { automation: true, headless: true } });
+  assert.ok(headlessPlan.args.includes('-headless'));
+  assert.equal(headlessPlan.headless, true);
+  const prefs = fs.readFileSync(path.join(headlessPlan.profileDir, 'user.js'), 'utf8');
+  assert.match(prefs, /user_pref\("xpinstall.signatures.required", true\)/);
+  assert.match(prefs, /user_pref\("xpinstall.signatures.dev-root", false\)/);
   assert.ok(plan.args.some(a => a === '-profile' || String(a).includes('gecko')));
   assert.equal(plan.args.some(a => String(a).includes('--disable-webgl')), false);
   fs.rmSync(dataDir, { recursive: true, force: true });
   delete process.env.PM_DATA_DIR;
+});
+
+test('Firefox Windows discovery selects the owned browser child, not the waiting launcher', async () => {
+  const parents = [{ pid: 11, parentPid: 10 }, { pid: 12, parentPid: 11 }, { pid: 90, parentPid: 1 }];
+  assert.deepEqual(geckoDescendants([10], parents), [11, 12]);
+  const inspected = [];
+  assert.equal(await discoverGeckoBrowserPid('disposable-profile', [10], 500, {
+    platform: 'win32', parents: async () => parents, alive: () => true,
+    matches: async pid => { inspected.push(pid); return pid === 10 || pid === 11; },
+    observeWindow: async () => { throw Error('Child selection must not query the launcher window'); },
+  }), 11);
+  assert.deepEqual(inspected, [11]);
+});
+
+test('Firefox Windows discovery rejects unrelated processes and supports a direct window owner', async () => {
+  const base = { platform: 'win32', parents: async () => [{ pid: 99, parentPid: 1 }], alive: () => false, matches: async pid => pid === 10 };
+  assert.equal(await discoverGeckoBrowserPid('disposable-profile', [10], 500, { ...base, observeWindow: async () => null }), null);
+  assert.equal(await discoverGeckoBrowserPid('disposable-profile', [10], 500, { ...base, observeWindow: async () => ({ width: 800 }) }), 10);
+  assert.deepEqual(geckoDescendants([10], [{ pid: 11, parentPid: 10 }, { pid: 10, parentPid: 11 }]), [11]);
 });
 
 test('automation writes its selected Marionette port into managed Firefox prefs', async () => {

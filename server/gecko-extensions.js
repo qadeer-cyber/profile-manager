@@ -112,14 +112,17 @@ export function readGeckoProfileExtensions(profileDir) {
   const file = path.join(profileDir, 'extensions.json');
   if (!fs.existsSync(file)) return { schemaVersion: null, addons: [] };
   try {
+    const st = fs.lstatSync(file);
+    if (!st.isFile() || st.isSymbolicLink() || st.size > 4 * 1024 * 1024 || fs.lstatSync(profileDir).isSymbolicLink()) throw Error('Unsafe Firefox extension metadata');
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     const addons = Array.isArray(data.addons) ? data.addons : [];
+    if (addons.length > 1000 || addons.some(a => !a || typeof a.id !== 'string' || a.id.length > 128)) throw Error('Invalid Firefox extension metadata');
     return {
       schemaVersion: data.schemaVersion ?? null,
       addons: addons.map(a => ({
         id: a.id,
         version: a.version,
-        active: a.active !== false,
+        active: a.active === true,
         userDisabled: !!a.userDisabled,
         appDisabled: !!a.appDisabled,
         type: a.type || 'extension',

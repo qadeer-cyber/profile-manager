@@ -7,8 +7,9 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import { db, DATA_DIR, userDataDir } from '../server/db.js';
 import { buildXpi, demoManifest } from './_xpi-fixture.mjs';
-import { importXpiGeckoExtension } from '../server/gecko-extensions.js';
+import { importXpiGeckoExtension, readGeckoProfileExtensions } from '../server/gecko-extensions.js';
 import { validatePermanentXpi, installGeckoExtension, removeGeckoExtension } from '../server/gecko-install.js';
+import { firefoxSessionIdentity } from '../server/firefox-session.js';
 
 function profile() {
   const id = crypto.randomUUID(), now = new Date().toISOString();
@@ -20,6 +21,15 @@ function library(signed = false) {
   const file = path.join(DATA_DIR, crypto.randomUUID() + '.xpi'); fs.writeFileSync(file, bytes);
   return { bytes, row: importXpiGeckoExtension(file) };
 }
+test('Firefox runtime identity accepts only the canonical profile and a valid expected browser PID', () => {
+  const p = profile(), capabilities = { browserName: 'firefox', 'moz:profile': p.dir, 'moz:processID': 123 };
+  assert.deepEqual(firefoxSessionIdentity({ capabilities }, path.join(p.dir, '.'), 123), { pid: 123 });
+  assert.deepEqual(firefoxSessionIdentity({ value: { capabilities } }, p.dir), { pid: 123 });
+  for (const changed of [{ 'moz:profile': DATA_DIR }, { 'moz:processID': '123' }, { 'moz:processID': 0 }, { browserName: 'chrome' }]) {
+    assert.throws(() => firefoxSessionIdentity({ capabilities: { ...capabilities, ...changed } }, p.dir), e => e.code === 'GECKO_SESSION_MISMATCH');
+  }
+  assert.throws(() => firefoxSessionIdentity({ capabilities }, p.dir, 456), e => e.code === 'GECKO_SESSION_MISMATCH');
+});
 async function protocolFixture(t, p, mismatch = false) {
   const commands = [], sockets = new Set();
   const frame = value => { const b = Buffer.from(JSON.stringify(value)); return Buffer.concat([Buffer.from(b.length + ':'), b]); };
@@ -50,6 +60,15 @@ test('permanent add-ons reject unsigned archives, changed IDs and missing confir
   await assert.rejects(() => installGeckoExtension(p.id, row.id, { confirm: true }), /Mozilla-signed/);
   await assert.rejects(() => removeGeckoExtension(p.id, row.id), /Confirm/);
   assert.equal(db.prepare('SELECT count(*) n FROM profile_extensions WHERE profile_id=?').get(p.id).n, 0);
+});
+test('Firefox metadata is bounded and missing active state never claims availability', () => {
+  const p = profile(), file = path.join(p.dir, 'extensions.json');
+  fs.writeFileSync(file, JSON.stringify({ addons: [{ id: 'demo@test', signedState: 2, appDisabled: false }] }));
+  assert.equal(readGeckoProfileExtensions(p.dir).addons[0].active, false);
+  const fd = fs.openSync(file, 'w'); fs.ftruncateSync(fd, 4 * 1024 * 1024 + 1); fs.closeSync(fd);
+  assert.equal(readGeckoProfileExtensions(p.dir).corrupt, true);
+  fs.writeFileSync(file, JSON.stringify({ addons: Array.from({ length: 1001 }, () => ({ id: 'demo@test' })) }));
+  assert.equal(readGeckoProfileExtensions(p.dir).corrupt, true);
 });
 test('weakened signing preferences and unresolved recovery fail before contacting Firefox', async () => {
   const p = profile(), { row } = library(true);

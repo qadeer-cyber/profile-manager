@@ -69,17 +69,25 @@ export function screenFromRememberedWindow(id, advancedSettings) {
     viewportWidth: Math.min(saved.width, base.viewportWidth || saved.width), viewportHeight: Math.min(saved.height, base.viewportHeight || saved.height),
     windowX: saved.maximized ? null : saved.left, windowY: saved.maximized ? null : saved.top, startMaximized: saved.maximized };
 }
-export function monitorWindowState(id, entry) {
-  if (!entry.rememberWindow || entry.diagnosticHeadless) return;
+export function monitorWindowState(id, entry, screenPreferences = {}) {
+  if ((!entry.rememberWindow && !screenPreferences.startMaximized) || entry.diagnosticHeadless) return;
   let busy = false;
-  const saved = clampRememberedWindow(readWindowState(id), readHostDisplays());
-  let restorePending = !!saved, attempts = 0;
+  const saved = entry.rememberWindow ? clampRememberedWindow(readWindowState(id), readHostDisplays()) : null;
+  let restorePending = !!saved || screenPreferences.startMaximized === true, attempts = 0;
   const tick = async () => {
     if (busy || entry.stopping || entry.closed) return;
     busy = true;
     try {
-      if (restorePending) { attempts++; restorePending = !(await restoreNativeWindow(entry.browserPid, saved)) && attempts < 3; }
-      if (!restorePending) await captureWindowStateForSession(id, entry);
+      if (restorePending) {
+        attempts++;
+        const normal = saved || await observeNativeWindow(entry.browserPid);
+        const restored = normal && await restoreNativeWindow(entry.browserPid, { ...normal, maximized: screenPreferences.startMaximized === true || normal.maximized });
+        restorePending = !restored && attempts < 3;
+      }
+      if (!restorePending) {
+        if (entry.rememberWindow) await captureWindowStateForSession(id, entry);
+        else entry.stopWindowTracking?.();
+      }
     } catch { if (++attempts >= 3) restorePending = false; }
     finally { busy = false; }
   };

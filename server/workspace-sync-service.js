@@ -25,7 +25,7 @@ export function createWorkspaceSyncService({ directory, key, cert, principals, m
     const st = fs.lstatSync(path.join(directory, f)); if (!st.isFile() || st.isSymbolicLink()) throw error(409, 'Sync storage requires review'); return n + st.size;
   }, 0);
   const server = https.createServer({ key, cert, minVersion: 'TLSv1.2', requestTimeout: 300000, headersTimeout: 15000 }, async (req, res) => {
-    let tmp, uploadName, reservation = 0, counted = false;
+    let tmp, uploadName, reservation = 0, counted = false, stage = 'request';
     const send = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(body)); };
     try {
       const match = /^\/v1\/workspaces\/([^/?]+)\/snapshot$/.exec(req.url);
@@ -59,12 +59,16 @@ export function createWorkspaceSyncService({ directory, key, cert, principals, m
         if (header.length < 64) header = Buffer.concat([header, chunk.subarray(0, 64 - header.length)]);
         hash.update(chunk); callback(null, chunk);
       } });
+      stage = 'upload';
       await pipeline(req, cap, fs.createWriteStream(tmp, { flags: 'wx', mode: 0o600 }));
       if (bytes !== size) throw error(400, 'Truncated snapshot');
       try { readBackupHeader(header, { headerOnly: true }); } catch { throw error(400, 'Only encrypted PMBE snapshots are accepted'); }
       const sha256 = hash.digest('hex');
-      const fd = fs.openSync(tmp, 'r'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+      stage = 'flush';
+      // Windows FlushFileBuffers requires a handle opened for writing.
+      const fd = fs.openSync(tmp, 'r+'); try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
       let revision;
+      stage = 'commit';
       db.transaction(() => {
         const row = db.prepare('SELECT revision FROM snapshots WHERE id=?').get(id);
         if ((row?.revision || 0) !== Number(expected)) throw error(409, 'Snapshot changed; pull and resolve the conflict explicitly');
@@ -75,7 +79,10 @@ export function createWorkspaceSyncService({ directory, key, cert, principals, m
         db.prepare('INSERT INTO snapshots VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,object=excluded.object,sha256=excluded.sha256,size=excluded.size').run(id, revision, object, sha256, size);
       }).immediate();
       send(200, { revision, sha256, bytes: size });
-    } catch (e) { if (!res.headersSent && !res.destroyed) send(e.status || 500, { error: e.status ? e.message : 'Sync storage operation failed; retained data was not deleted' }); }
+    } catch (e) {
+      if (!e.status) console.error('SYNC_STORAGE_ERROR', JSON.stringify({ stage, code: /^[A-Z0-9_]+$/.test(e.code || '') ? e.code : 'UNKNOWN' }));
+      if (!res.headersSent && !res.destroyed) send(e.status || 500, { error: e.status ? e.message : 'Sync storage operation failed; retained data was not deleted' });
+    }
     finally {
       if (counted) active--; reserved -= reservation; uploads.delete(uploadName);
       if (tmp) { try { fs.rmSync(tmp, { force: true }); } catch { console.error('Sync temporary ciphertext retained: cleanup failed; manual storage review required'); } }

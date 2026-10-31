@@ -50,6 +50,11 @@ for (const engine of ['chromium','firefox']) test(`M12 real ${engine} OS geometr
   await app.restart(); launched = await launch();
   await eventually(() => observeNativeWindow(launched.cdp.pid), s => s?.maximized, 'Maximized state was not restored after restart');
   await app.api(`/profiles/${p.id}/stop`, {});
+  if (engine === 'firefox') {
+    launched = await app.api(`/profiles/${p.id}/launch`, { headless: false, automation: false });
+    await eventually(() => observeNativeWindow(launched.cdp.pid), s => s?.maximized, 'Manual Firefox launch did not restore its real browser window');
+    await app.api(`/profiles/${p.id}/stop`, {});
+  }
 });
 test('M14 real signed Firefox XPI: permanent installation, restart, profile isolation and removal', { timeout: 120000 }, async t => {
   const file = process.env.PM_SIGNED_XPI, expectedHash = process.env.PM_SIGNED_XPI_SHA256;

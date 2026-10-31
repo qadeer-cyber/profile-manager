@@ -9,6 +9,7 @@ import { assertWorkspaceAccess } from './workspaces.js';
 import { validateXpiArchive, XPI_LIMITS } from './gecko-xpi.js';
 import { readGeckoProfileExtensions } from './gecko-extensions.js';
 import { connectMarionette } from './marionette-client.js';
+import { firefoxSessionIdentity } from './firefox-session.js';
 const busy = new Set();
 const fail = (message, code = 'GECKO_INSTALL_REJECTED', status = 409) => Object.assign(new Error(message), { code, status });
 export function validatePermanentXpi(bytes, expectedId) {
@@ -53,11 +54,7 @@ async function sessionFor(id, action) {
   try {
     client = await connectMarionette(target.running.cdp_port, 10000);
     const session = await client.command('WebDriver:NewSession', {}); created = true;
-    const capabilities = session?.capabilities || session?.value?.capabilities;
-    // A stale running row must never direct an installation into another profile.
-    let sameProfile = false;
-    try { sameProfile = fs.realpathSync(capabilities?.['moz:profile']) === fs.realpathSync(target.dir); } catch {}
-    if (!sameProfile || capabilities?.browserName !== 'firefox' || capabilities?.['moz:processID'] !== target.running.pid) throw fail('Firefox session identity does not match this profile. Stop and relaunch it before retrying.', 'GECKO_SESSION_MISMATCH');
+    firefoxSessionIdentity(session, target.dir, target.running.pid);
     return await action(client, target);
   } finally { if (created) await client.command('WebDriver:DeleteSession').catch(() => {}); client?.close(); busy.delete(id); }
 }

@@ -287,20 +287,20 @@ async function doLaunch(p, opts = {}) {
         ctx: null, runtime: 'native', engine: 'firefox', relayUrl: fxPlan.relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline: readPreferences(dir), closeReason: null,
-        launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
+        launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: fxPlan.headless, diagnosticStart: null,
         requestedArgs: native.argv, restoreTabs: fxPlan.restoreTabs, rememberWindow: adv.preferences.rememberLastWindow === true,
         tabUrls: [], geckoDir: fxPlan.profileDir,
         marionettePort: fxPlan.marionettePort || null, automation: !!fxPlan.automation,
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, fxPlan.profileDir);
-      entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, []);
+      entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, native.parents || []);
       markBrowserReady(metricsHandle);
       native.proc.on('exit', () => onClosed(p.id, null));
       const marionettePort = fxPlan.marionettePort || null;
       updateLock(dir, { browserPid: native.browserPid, cdpPort: marionettePort });
       live.set(p.id, entry);
-      monitorWindowState(p.id, entry);
+      monitorWindowState(p.id, entry, p.advancedSettings?.screen);
       db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, marionettePort, null, fxPlan.relayUrl, new Date().toISOString());
       setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
       emit('profile:started', p.id, { runtime: 'native', engine: 'firefox' });
@@ -333,7 +333,7 @@ async function doLaunch(p, opts = {}) {
       native.proc.on('exit', () => onClosed(p.id, null));
       updateLock(dir, { browserPid: native.browserPid, cdpPort: null });
       live.set(p.id, entry);
-      monitorWindowState(p.id, entry);
+      monitorWindowState(p.id, entry, p.advancedSettings?.screen);
       try {
         db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, null, null, relayUrl, new Date().toISOString());
       } catch (e) {
@@ -414,7 +414,7 @@ async function doLaunch(p, opts = {}) {
     emit('profile:started', p.id);
     entry.restoreTabs = launchPlan.restoreTabs;
     entry.rememberWindow = launchPlan.rememberWindow;
-    monitorWindowState(p.id, entry);
+    monitorWindowState(p.id, entry, p.advancedSettings?.screen);
     entry.tabUrls = [];
     const openUrls = launchPlan.openUrls;
     if (openUrls.length) {
@@ -445,7 +445,8 @@ async function doLaunch(p, opts = {}) {
     entry?.detachTermination?.();
     if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
     if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
-    releaseLock(dir);
+    if (e.preserveProfileLock) updateLock(dir, { browserPid: e.browserPid });
+    else releaseLock(dir);
     const classified = classifyLaunchError(e.status ? e : httpErr(500, e.message, 'LAUNCH_FAILED'));
     finalizeLaunchMetrics(metricsHandle, { success: false, errorCode: classified.code });
     if (classified.code !== 'LAUNCH_CANCELLED') {

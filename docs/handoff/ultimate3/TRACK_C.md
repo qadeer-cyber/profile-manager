@@ -8,10 +8,10 @@ branches; this checkpoint does not merge them or alter either historical scoreca
 
 | Feature | Delivered | Still required for VERIFIED |
 |---|---|---|
-| M8 | Existing encrypted portable v2 and streaming format retained; complete multi-profile workspace snapshots use dependency maps and one recoverable filesystem/SQLite operation. Single-profile restore can target an accessible workspace. Firefox M8 now uses application UI export and restore, as Chromium does. | Real Chromium and Firefox UI export → fresh install → browser readback → application restart/readback, including Windows. OS-bound credentials remain explicitly unsupported across machines unless independently demonstrated. |
-| M12 | Observe Win32 window placement or X11 window manager state; Chromium CDP fallback reads actual browser bounds. Persist validated bounds and maximized state atomically, retain normal bounds, allow negative monitor coordinates, and fall back to a connected display. Track while running and save before shutdown. | Headed OS-observed acceptance for both engines; physical multi-monitor disconnect and mixed-DPI qualification. Wayland/macOS window observation is not implemented. |
+| M8 | Existing encrypted portable v2 and streaming format retained; complete multi-profile workspace snapshots use dependency maps and one recoverable filesystem/SQLite operation. Single-profile restore can target an accessible workspace. Both Windows Chromium and Firefox UI export → fresh install → cookie/localStorage readback → application restart/readback passed at `2549682`. | Additional bookmarks/session/extension-settings readback, large-profile Windows load and installed Windows 10 qualification. OS-bound credentials remain explicitly unsupported across machines unless independently demonstrated. |
+| M12 | Observe Win32 window placement or X11 window manager state; Chromium CDP fallback reads actual browser bounds. Persist validated bounds and maximized state atomically, retain normal bounds, allow negative monitor coordinates, and fall back to a connected display. Track while running and save before shutdown. Chromium Win32 restart acceptance passed at `2549682`. | Corrected Firefox launcher/browser identity needs Windows requalification; physical multi-monitor disconnect and mixed-DPI qualification. Wayland/macOS window observation is not implemented. |
 | M14 | Confirmed permanent install/removal via Firefox Marionette AddonManager; bounded XPI/CRC/path validation; unsigned rejection; enforce Mozilla signing preferences; verify session profile/PID, persisted signed/active state and installed-file SHA-256 before reporting success. UI exposes actual install/remove. | Genuine signed XPI install → restart → availability → isolation → removal in real Firefox. Signature metadata alone is never proof; Firefox performs Mozilla trust-chain and compatibility validation. Enable/disable still uses Firefox's own add-on UI. |
-| M38 | Complete encrypted workspace export/import with browser files, secrets, dependencies, shared-ID remapping and atomic rollback. Membership changes use SQLite writer transactions; recovery locks and optimistic edit revisions prevent conflicting changes. UI export/restore and optional authenticated HTTPS snapshot sync. | Real application UI acceptance and independent devices against a deployed, authorized relay. Local two-process TLS tests are not cloud-team qualification. |
+| M38 | Complete encrypted workspace export/import with browser files, secrets, dependencies, shared-ID remapping and atomic rollback. Membership changes use SQLite writer transactions; recovery locks and optimistic edit revisions prevent conflicting changes. Real Windows UI export/restore/restart passed at `2549682`; optional authenticated HTTPS snapshot sync. | Corrected writable Windows flush handle needs requalification; independent devices against a deployed, authorized relay. Local two-process TLS tests are not cloud-team qualification. |
 
 All four remain **PARTIAL** until their complete gates pass. Original score remains
 18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 2 NA: `(18 + 0.5*20)/43 = 65.1%`.
@@ -21,7 +21,7 @@ unsupported as a CAPTCHA-free guarantee.
 
 ## Reproducible qualification
 
-- `npm run test:trackc`: 14 source/protocol/API/database/TLS tests, including two
+- `npm run test:trackc`: 16 source/protocol/API/database/TLS tests, including two
   independent local app processes, encrypted relay storage, reader/writer ACLs,
   concurrent revision conflict rejection, fresh restore and restart.
 - `npm run test:data-recovery`: existing crash, integrity, rollback, purge and
@@ -42,6 +42,24 @@ separate evidence. Baseline Windows run
 allocated a runner and passed native installation, unit and desktop tests. Its
 API failure was the obsolete expectation that Delete immediately destroys data.
 The repaired API test verifies Trash preservation and confirmed purge separately.
+
+First Track C Windows run [41195278893](https://github.com/qadeer-cyber/profile-manager/actions/runs/41195278893)
+at `2549682877f484d17f1e65fc2218dd314240565b` completed with failures, not green.
+Its six real acceptance cases were **4 PASS / 2 FAIL / 0 SKIP**: both M8 engines,
+Chromium OS window persistence and workspace UI passed; Firefox window identity
+and signed-addon session identity failed. Unit 134, API 45, security 41 and UI 25
+passed. Full counts and original log hashes are in `evidence/track-c-windows-first.json`.
+
+Follow-up fixes close the encrypted-backup fixture's SQLite handle before removing
+its disposable directory, create a fresh human-input CDP page to avoid Chromium's
+startup navigation race, and open sync ciphertext for writing before Windows
+FlushFileBuffers. Firefox now verifies the canonical profile and actual browser
+PID through Marionette, or discovers a profile-owned launcher descendant for
+manual launches. It retains the profile lock when failed launch cleanup cannot
+prove the process stopped. Windows uses `-wait-for-browser`; Mozilla launcher or
+signature security is never disabled. Headless sessions cannot overwrite observed
+desktop geometry, and explicit start-maximized settings take precedence.
+These source fixes require a new Windows run; the first run is not relabeled.
 
 The Track C Windows workflow runs only on this branch, with read-only repository
 permissions. It pins the upstream signed uBlock Origin 1.75.0 XPI and its release
@@ -83,7 +101,8 @@ Heads inspected: Track B `9ffd7f12c9466c145aec65bee721b360fad63b05`; Track A
 |---|---|
 | `package.json` (A, B, C) | Keep the union of test scripts. No Track C dependency or lockfile change. |
 | `server/app.js` (B, C) | Keep B's automation-attach/traffic routes and C's encrypted workspace/sync/Firefox install routes, including authentication, confirmation and recovery guards. No route names collide. |
-| `server/browser-runtime/firefox-launch.js` (A, C) | Preserve A's `firefoxProcessEnv` extraction and C's mandatory signing preferences; edits occupy distinct sections. |
+| `server/browser-runtime/firefox-launch.js` (A, C) | Manually preserve A's `firefoxProcessEnv` extraction and C's mandatory signing preferences, explicit headless flag, launcher wait and verified browser PID selection. |
+| `test/human-input.test.js` (B, C) | Preserve B's Firefox WebDriver coverage and C's fresh Chromium target/owned fixture cleanup. Keep input-value assertions in both engines. |
 | Migration 19 (B) | C adds no main-database migration. Relay SQLite has an independent database. B's new `proxy_traffic_policies` and sessions are NOT yet portable dependencies: explicitly map policies before claiming combined backup completeness; measured session history needs an explicit retention contract. Older C builds correctly reject unsupported future-schema portable archives. |
 | CLI (B) / encrypted transfer (C) | Existing profile endpoints remain compatible. CLI still needs workspace snapshot/sync commands with explicit passphrases/confirmations; do not send secrets in URLs. |
 | Automation sessions (B) / Firefox add-ons (C) | Both may own Marionette. Serialize management sessions; an occupied session currently returns an error rather than displacing another client. Test reconnect and installed-extension restart together. |

@@ -1,6 +1,7 @@
 // Source qualification only. No installer, publication, external credentials or user profiles.
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 const root = path.resolve('build-evidence/trackc'); fs.mkdirSync(root, { recursive: true });
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
@@ -22,10 +23,18 @@ for (const suite of suites) {
   const text = fs.readFileSync(log, 'utf8');
   const totals = {};
   for (const key of ['tests','pass','fail','skipped','cancelled']) {
-    const match = [...text.matchAll(new RegExp(`(?:#|ℹ) ${key} (\\d+)`, 'g'))].at(-1);
-    if (match) totals[key] = Number(match[1]);
+    const matches = [...text.matchAll(new RegExp(`(?:#|ℹ) ${key} (\\d+)`, 'g'))];
+    if (matches.length) totals[key] = matches.reduce((n, match) => n + Number(match[1]), 0);
   }
-  const result = { suite, start, finished: new Date().toISOString(), exitCode: code, timedOut, totals, log: path.basename(log) };
+  if (!Object.keys(totals).length) {
+    const matches = [...text.matchAll(/^(\d+) passed, (\d+) failed\s*$/gm)];
+    if (matches.length) {
+      totals.pass = matches.reduce((n, match) => n + Number(match[1]), 0);
+      totals.fail = matches.reduce((n, match) => n + Number(match[2]), 0);
+      totals.tests = totals.pass + totals.fail;
+    }
+  }
+  const result = { suite, start, finished: new Date().toISOString(), exitCode: code, timedOut, totals, log: path.basename(log), logSHA256: crypto.createHash('sha256').update(fs.readFileSync(log)).digest('hex') };
   results.push(result); console.log(JSON.stringify(result));
   fs.writeFileSync(path.join(root, 'qualification.json'), JSON.stringify({ sourceCommit: process.env.GITHUB_SHA || null, platform: process.platform, node: process.version, results }, null, 2));
 }
