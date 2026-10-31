@@ -119,8 +119,7 @@ jobs:
           name: ultimate2-offline-windows-${{ github.sha }}
           path: |
             ${{ runner.temp }}/pm-ultimate2-unified-build/**
-            release/*.exe
-            release/BUILD-MANIFEST.txt
+          # BUILD-MANIFEST.txt, SHA256SUMS.txt, PRE-RELEASE-NOTES-DRAFT via Prepare-Ultimate2-ReleaseAssets.ps1 after local review
           if-no-files-found: error
           retention-days: 14
       - name: Block automated pre-release publish (owner gate)

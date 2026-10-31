@@ -78,6 +78,8 @@ try {
   $installer = Join-Path $EvidenceRoot ("Profile-Manager-Ultimate2-unified-$short-offline-Setup-x64.exe")
   Copy-Item -LiteralPath $setups[0].FullName -Destination $installer -Force
   $hash = (Get-FileHash -Path $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+  $artifactName = Split-Path $installer -Leaf
+  "$hash  $artifactName" | Set-Content -Path (Join-Path $EvidenceRoot 'SHA256SUMS.txt') -Encoding ascii
   @(
     "Repository: qadeer-cyber/profile-manager",
     "Branch: $branch",

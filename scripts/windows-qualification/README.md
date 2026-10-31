@@ -42,6 +42,14 @@ Use `-SkipBootstrap` to verify without installing. Evidence: `%TEMP%\pm-windows-
 
 The guard must create native-guard.result=SELF_TEST_PASS. A failed native command must never write a PASS M8 result.
 
+## Pre-release runbook
+
+Full order (M8 → regressions → NSIS → smoke → RC assets → owner pre-release):  
+`scripts/windows-qualification/ULTIMATE2-RELEASE-RUNBOOK.md`
+
+After `Build-Ultimate2-Offline.ps1` PASS:  
+`Prepare-Ultimate2-ReleaseAssets.ps1 -EvidenceRoot <same dir>` (does **not** publish).
+
 ## Known limitations
 
 - The connected environment cannot execute Windows installer builds and did not run Windows acceptance.
