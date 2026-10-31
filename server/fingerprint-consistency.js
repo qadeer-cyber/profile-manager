@@ -1,7 +1,8 @@
 // Compare saved fingerprint settings with what Chromium actually exposed.
 // A finding is "pass" only when the compared values were both present.
 import { privateNetworkWeakening, WEBGL_DISABLE_ARG } from './fingerprint-settings.js';
-import { compareEngineIdentity } from './engine-identity.js';
+import { assessPinnedClientHints, compareEngineIdentity } from './engine-identity.js';
+import { assessLanguageList, timezoneOffsetMinutes } from './regional-consistency.js';
 import { classifyMediaCaptureError } from './media-capture.js';
 import { FONT_ACCESS_DISABLE_FEATURE } from './fingerprint-settings.js';
 import { chromiumPolicyArgs } from './webrtc-policy.js';
@@ -92,6 +93,11 @@ export function fingerprintFindings({
     findings.push(finding('ua_engine_coherence', 'pass', `The user agent version is the installed Chromium ${chromiumVersion} or its reduced major. Client hints are not assigned a different version.`));
   }
 
+  const hintPin = assessPinnedClientHints({ engineVersion: chromiumVersion, clientHints: hints, hostPlatform });
+  if (hintPin.status === 'unavailable') findings.push(finding('ua_hint_pin', 'unavailable', hintPin.issues[0] || 'Client hints were not collected.'));
+  else if (hintPin.status === 'inconsistent') findings.push(finding('ua_hint_pin', 'warning', hintPin.issues.join(' ')));
+  else findings.push(finding('ua_hint_pin', 'pass', 'Client hint platform, mobile flag, and brands agree with this desktop Chromium when those fields were exposed. No other browser version was written.'));
+
   const expectedPlatform = HOST_PLATFORM[hostPlatform];
   if (!seen?.platform) findings.push(finding('host_platform', 'unavailable', 'navigator.platform was not collected.'));
   else if (!expectedPlatform) findings.push(finding('host_platform', 'unavailable', 'This operating system has no platform token to compare.'));
@@ -110,14 +116,26 @@ export function fingerprintFindings({
     ? `No timezone override is set. The page matches this computer (${hostTimezone}).`
     : `No timezone override is set, but the page reports ${seen.timezone} instead of this computer’s ${hostTimezone}.`));
 
+  if (!timezone) findings.push(finding('timezone_offset', 'unavailable', 'No timezone is configured, so the offset is not graded.'));
+  else if (!seen || typeof seen.timezoneOffset !== 'number') findings.push(finding('timezone_offset', 'unavailable', 'The page timezone offset was not collected.'));
+  else {
+    let expected = null;
+    try { expected = timezoneOffsetMinutes(timezone); } catch { expected = null; }
+    const match = expected != null && seen.timezoneOffset === expected;
+    findings.push(finding('timezone_offset', match ? 'pass' : 'warning', match
+      ? `The page offset is ${seen.timezoneOffset} minutes, which is the offset of ${timezone}.`
+      : `The page offset is ${seen.timezoneOffset} minutes. ${timezone} is ${expected} minutes at this time.`));
+  }
+
   const languages = Array.isArray(browserSettings.languages) ? browserSettings.languages : [];
   if (!seen?.languages) findings.push(finding('languages', 'unavailable', 'navigator.languages was not collected.'));
   else if (!languages.length) findings.push(finding('languages', 'unavailable', 'No language list is configured, so there is no expected order to compare.'));
   else {
-    const same = seen.languages.length === languages.length && seen.languages.every((tag, index) => tag === languages[index]);
-    findings.push(finding('languages', same ? 'pass' : 'warning', same
+    const judged = assessLanguageList(languages, seen.languages);
+    const status = judged.status === 'fail' ? 'warning' : judged.status;
+    findings.push(finding('languages', status, judged.status === 'pass'
       ? `navigator.languages matches the configured list (${languages.join(', ')}).`
-      : `navigator.languages is ${(seen.languages || []).join(', ') || 'empty'}. The profile lists ${languages.join(', ')}.`));
+      : judged.issues[0]));
   }
 
   const locale = browserSettings.locale || '';
@@ -126,6 +144,12 @@ export function fingerprintFindings({
   else findings.push(finding('locale', seen.locale === locale ? 'pass' : 'warning', seen.locale === locale
     ? `navigator.language is the configured locale ${locale}.`
     : `navigator.language is ${seen.locale}. The profile locale is ${locale}.`));
+
+  if (!locale) findings.push(finding('intl_locale', 'unavailable', 'No locale is configured, so the Intl locale is not graded.'));
+  else if (!seen?.intlLocale) findings.push(finding('intl_locale', 'unavailable', 'The Intl locale was not collected.'));
+  else findings.push(finding('intl_locale', seen.intlLocale === locale ? 'pass' : 'warning', seen.intlLocale === locale
+    ? `Intl locale is the configured locale ${locale}.`
+    : `Intl locale is ${seen.intlLocale}. The profile locale is ${locale}.`));
 
   const configuredScreen = screen.preset && screen.preset !== 'native';
   const expectScale = screen.deviceScaleFactor != null;
@@ -229,6 +253,10 @@ export function fingerprintFindings({
     const ok = classified.kind === 'permission_denied' || classified.kind === 'no_device';
     findings.push(finding('media_capture', ok ? 'pass' : 'warning', `${classified.summary} (error ${classified.errorName}).`));
   }
+  if (fingerprint.mediaDevices !== 'restricted') findings.push(finding('media_enumeration', 'unavailable', 'Media devices are Real. Enumeration is not graded.'));
+  else if (seen?.media?.devices?.availability !== 'observed') findings.push(finding('media_enumeration', 'unavailable', 'Media device enumeration was not collected.'));
+  else if (seen.media.devices.labelsAvailable) findings.push(finding('media_enumeration', 'warning', 'Device labels are visible while media devices are Restricted. Restricted does not invent a device list.'));
+  else findings.push(finding('media_enumeration', 'pass', `Enumeration returned ${seen.media.devices.count} device(s) and no labels. This is still this computer’s list, not a substitute list.`));
 
   findings.push(finding('port_scan_mask', 'unsupported', 'Port-scan results are not masked, and there is no whitelist of local ports.'));
   const network = privateNetworkWeakening(commandLine);

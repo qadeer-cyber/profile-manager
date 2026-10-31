@@ -106,10 +106,15 @@ export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs 
   return candidates.find(p => p && isAlive(p)) ?? null;
 }
 
-export async function launchFirefoxNative(plan) {
-  const env = { ...process.env };
+export function firefoxProcessEnv(plan, base = process.env) {
+  const env = { ...base };
   if (plan.marionettePort) env.MARIONETTE_PORT = String(plan.marionettePort);
   if (plan.timezoneId) env.TZ = plan.timezoneId;
+  return env;
+}
+
+export async function launchFirefoxNative(plan) {
+  const env = firefoxProcessEnv(plan);
   const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false, env });
   if (!proc.pid) throw Object.assign(new Error('Failed to spawn Firefox'), { status: 500, code: 'FIREFOX_SPAWN_FAILED' });
   const browserPid = await discoverGeckoBrowserPid(plan.profileDir, [proc.pid]);

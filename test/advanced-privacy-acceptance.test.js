@@ -39,19 +39,19 @@ import { MANIFEST } from '../server/chromium.js';
 
 const matrixPath = new URL('../docs/handoff/multilogin-platform/MULTILOGIN_COMPLETE_TECHNOLOGY_MATRIX.md', import.meta.url);
 
-test('historical matrix denominator 43 and row statuses stay frozen', () => {
+test('strict matrix denominator stays 43 and matches the scorecard', () => {
   const scored = scoreHistoricalMarkdown(fs.readFileSync(matrixPath, 'utf8'));
   assert.equal(scored.denominator, HISTORICAL_MATRIX.denominator);
   assert.equal(scored.denominator, 43);
-  assert.equal(scored.verified, 18);
-  assert.equal(scored.partial, 20);
+  assert.equal(scored.verified, 20);
+  assert.equal(scored.partial, 18);
   assert.equal(scored.unsupported, 5);
   assert.equal(scored.cloudExcluded, 2);
   assert.deepEqual(scored.partialIds, [...HISTORICAL_MATRIX.partialIds]);
   assert.deepEqual(scored.unsupportedIds, [...HISTORICAL_MATRIX.unsupportedIds]);
   const coverage = historicalCoverage();
-  assert.equal(coverage, (18 + 10) / 43);
-  assert.ok(Math.abs(coverage - 0.6511627906976745) < 1e-12);
+  assert.equal(coverage, (20 + 9) / 43);
+  assert.ok(Math.abs(coverage - (29 / 43)) < 1e-12);
   const report = advancedPrivacyScorecards();
   assert.equal(report.A.file.denominator, 43);
   assert.equal(report.B.frozen, true);
@@ -63,10 +63,11 @@ test('historical matrix denominator 43 and row statuses stay frozen', () => {
   assert.equal(WINDOWS_QUALIFICATION.realTests, false);
 });
 
-test('PARTIAL rows keep engine requirements and are not relabeled', () => {
+test('fingerprint rows keep engine requirements and only promoted rows are VERIFIED', () => {
   for (const id of Object.keys(PARTIAL_REQUIREMENTS)) {
     const row = PARTIAL_REQUIREMENTS[id];
-    assert.equal(row.matrixStatus, 'PARTIAL', id);
+    const expected = id === 'M20' || id === 'M22' ? 'VERIFIED' : 'PARTIAL';
+    assert.equal(row.matrixStatus, expected, id);
     assert.ok(row.satisfied.length >= 3, id);
     assert.ok(row.engineRequired.length >= 1, id);
   }

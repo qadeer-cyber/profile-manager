@@ -1,18 +1,18 @@
-// Acceptance contracts for Ultimate 2.0 advanced privacy.
-// Historical and stock-feasible denominators are frozen. New checks do not
-// promote PARTIAL rows and do not add stock-feasible PASS rows.
+// Acceptance contracts for advanced privacy.
+// The strict denominator stays 43. A row is VERIFIED only when its recorded
+// release gates pass. Stock-feasible PASS rows are not added to that denominator.
 import fs from 'node:fs';
 import { NATIVE_GEO_COORDINATE_OVERRIDE } from './geolocation-launch.js';
 
 export const HISTORICAL_MATRIX = Object.freeze({
   id: 'A',
   denominator: 43,
-  verified: 18,
-  partial: 20,
+  verified: 20,
+  partial: 18,
   unsupported: 5,
   cloudExcluded: 2,
   formula: '(VERIFIED + 0.5 × PARTIAL) / 43',
-  partialIds: Object.freeze(["M2","M3","M8","M12","M14","M17","M18","M20","M21","M22","M23","M28","M29","M30","M33","M35","M36","M37","M38","M40"]),
+  partialIds: Object.freeze(["M2","M3","M8","M12","M14","M17","M18","M21","M23","M28","M29","M30","M33","M35","M36","M37","M38","M40"]),
   unsupportedIds: Object.freeze(['M24', 'M25', 'M26', 'M27', 'M42']),
   cloudIds: Object.freeze(['M16', 'M39']),
 });
@@ -25,12 +25,12 @@ export const STOCK_FEASIBLE_BASELINE = Object.freeze({
   ownerPass: 23,
   ownerBlockedExcluded: 7,
   publishedNamedPassRows: 23,
-  note: 'Integrated checkpoint reconciled the collapsed negative-test row: 23/23 PASS and 7 BLOCKED_CUSTOM_ENGINE criteria excluded. No criteria added. Combined strict historical matrix is 18 VERIFIED / 20 PARTIAL / 5 UNSUPPORTED / 2 cloud-excluded; Grok 80.2% belongs to its separate source branch.',
+  note: 'Stock-feasible scorecard stays 23/23 PASS with 7 BLOCKED_CUSTOM_ENGINE criteria excluded. It is not the strict matrix. Strict release-qualification is 20 VERIFIED / 18 PARTIAL / 5 UNSUPPORTED / 2 cloud-excluded after Track A. Grok 80.2% belongs to its separate source branch.',
 });
 
 export const PARTIAL_REQUIREMENTS = Object.freeze({
   M20: Object.freeze({
-    matrixStatus: 'PARTIAL',
+    matrixStatus: 'VERIFIED',
     satisfied: Object.freeze([
       'Per-profile locale, IANA timezone, and language list are validated and stored.',
       'The first preferred language must match locale when both are set.',
@@ -60,7 +60,7 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
     ]),
   }),
   M22: Object.freeze({
-    matrixStatus: 'PARTIAL',
+    matrixStatus: 'VERIFIED',
     satisfied: Object.freeze([
       'Window presets, custom size, viewport, and device scale factor are validated and reapplied on launch.',
       'Viewport cannot exceed the configured screen size.',
@@ -261,6 +261,6 @@ export function advancedPrivacyScorecards(markdown = null) {
     partial: PARTIAL_REQUIREMENTS,
     m42: M42_ACCEPTANCE,
     geolocationNative: NATIVE_GEO_COORDINATE_OVERRIDE,
-    policy: 'BLOCKED is reported instead of a fabricated PASS. PARTIAL rows stay PARTIAL. Denominator 43 is unchanged.',
+    policy: 'BLOCKED is reported instead of a fabricated PASS. Denominator 43 is unchanged. A strict-matrix promotion requires every Ultimate 3 release gate for that row to pass. Feature-completion percent is not release-qualification percent.',
   };
 }

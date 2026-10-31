@@ -1,0 +1,248 @@
+{
+  "contractVersion": "1.0.0",
+  "capturedAt": "2026-10-31T08:05:42.046Z",
+  "chromium": "156.0.8078.4",
+  "results": {
+    "m21-native-coordinates": "blocked",
+    "m23-arbitrary-version": "blocked",
+    "m28-substitute-font-list": "blocked",
+    "m29-fake-device-labels": "blocked",
+    "m22-launch-plan": "pass",
+    "m30-refuse-weakening-flags": "pass",
+    "m30-masked-mode-rejected": "pass",
+    "m29-allow-capture-rejected": "pass",
+    "m23-custom-ua-rejected": "pass",
+    "m20-config-locale-language": "pass",
+    "m20-chromium-timezone-id": "pass",
+    "m20-chromium-timezone-offset": "pass",
+    "m20-chromium-locale": "pass",
+    "m20-chromium-languages": "pass",
+    "m20-chromium-intl-locale": "pass",
+    "m20-chromium-accept-language": "pass",
+    "m21-allow-coordinates": "pass",
+    "m22-inner-size": "pass",
+    "m22-screen-size": "pass",
+    "m22-device-scale": "pass",
+    "m23-pinned-full": "pass",
+    "m23-client-hints-match-binary": "pass",
+    "m28-permission-or-api-absent": "pass",
+    "m28-query-local-fonts-unavailable": "pass",
+    "m28-canvas-measure-still-real": "pass",
+    "m29-camera-mic-denied": "pass",
+    "m29-capture-not-granted": "pass",
+    "m29-labels-hidden-when-denied": "pass",
+    "m30-permission-denied": "pass",
+    "m28-launch-flag": "pass",
+    "m28-preference-persisted": "pass",
+    "m30-process-has-no-weakening": "pass",
+    "m21-persist-restart": "pass",
+    "m20-chromium-isolation": "pass",
+    "m21-isolation": "pass",
+    "m21-deny": "pass",
+    "m23-pinned-reduced": "pass",
+    "m30-treatment-probe-blocked": "pass",
+    "m30-pref-changes-probe": "fail",
+    "m20-firefox-timezone-id": "pass",
+    "m20-firefox-timezone-offset": "pass",
+    "m20-firefox-locale": "pass"
+  },
+  "details": {
+    "m20-observed": {
+      "timeZone": "Europe/Berlin",
+      "offset": -60,
+      "expectedOffset": -60,
+      "language": "de-DE",
+      "languages": [
+        "de-DE",
+        "en-US"
+      ],
+      "intlLocale": "de-DE",
+      "accept": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+      "screen": [
+        1280,
+        800,
+        1280,
+        800,
+        2
+      ]
+    },
+    "m20-chromium-timezone-id": "Europe/Berlin",
+    "m20-chromium-timezone-offset": "-60 != -60",
+    "m20-chromium-locale": "de-DE",
+    "m20-chromium-languages": "de-DE,en-US",
+    "m20-chromium-intl-locale": "de-DE",
+    "m20-chromium-accept-language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
+    "m21-allow-coordinates": "{\"lat\":52.52,\"lon\":13.405,\"acc\":30}",
+    "m22-inner-size": "1280x800",
+    "m22-screen-size": "1280x800",
+    "m22-device-scale": "2",
+    "m23-pinned-full": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.4 Safari/537.36",
+    "m23-hints-full": {
+      "mobile": false,
+      "platform": "Linux",
+      "full": "156.0.8078.4",
+      "brands": [
+        "Chromium",
+        "HeadlessChrome",
+        "Not.A/Brand"
+      ],
+      "chromium": "156.0.8078.4"
+    },
+    "m23-client-hints-match-binary": "{\"mobile\":false,\"platform\":\"Linux\",\"full\":\"156.0.8078.4\",\"brands\":[\"Chromium\",\"HeadlessChrome\",\"Not.A/Brand\"],\"chromium\":\"156.0.8078.4\"}",
+    "m28-permission-or-api-absent": "query_error:TypeError",
+    "m28-query-local-fonts-unavailable": "{\"api\":\"missing\"}",
+    "m28-canvas-measure-still-real": "83.30078125",
+    "m29-camera-mic-denied": "{\"geolocation\":\"granted\",\"local-fonts\":\"query_error:TypeError\",\"local-network-access\":\"denied\",\"camera\":\"denied\",\"microphone\":\"denied\"}",
+    "m29-capture-not-granted": "NotFoundError",
+    "m29-labels-hidden-when-denied": "{\"count\":0,\"labeled\":0,\"error\":\"\"}",
+    "m30-permission-denied": "denied",
+    "m30-command": {
+      "availability": "observed",
+      "features": []
+    },
+    "m28-launch-flag": "/home/ubuntu/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome --disable-field-trial-config --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-back-forward-cache --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-component-update --no-default-browser-",
+    "m21-persist-restart": "{\"geo\":{\"lat\":52.52,\"lon\":13.405,\"acc\":30},\"timeZone\":\"Europe/Berlin\"}",
+    "m20-chromium-isolation": "{\"timeZone\":\"Asia/Tokyo\",\"offset\":-540,\"language\":\"ja-JP\"}",
+    "m21-isolation": "{\"lat\":35.6762,\"lon\":139.6503,\"acc\":40}",
+    "m21-deny": "{\"code\":1}",
+    "m23-reduced": {
+      "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+      "hints": {
+        "mobile": false,
+        "platform": "Linux",
+        "full": "156.0.8078.4",
+        "brands": [
+          "Chromium",
+          "HeadlessChrome",
+          "Not.A/Brand"
+        ],
+        "chromium": "156.0.8078.4"
+      }
+    },
+    "m23-pinned-reduced": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
+    "m30-probe": {
+      "treatment": {
+        "permissionState": "denied",
+        "fetchOk": false,
+        "errorName": "TypeError",
+        "classified": {
+          "status": "pass",
+          "reason": "blocked",
+          "errorName": "TypeError"
+        }
+      },
+      "control": {
+        "permissionState": "prompt",
+        "fetchOk": false,
+        "errorName": "TypeError",
+        "classified": {
+          "status": "fail",
+          "reason": "permission_not_denied",
+          "errorName": "TypeError"
+        }
+      }
+    },
+    "m30-treatment-probe-blocked": "{\"permissionState\":\"denied\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"classified\":{\"status\":\"pass\",\"reason\":\"blocked\",\"errorName\":\"TypeError\"}}",
+    "m30-pref-changes-probe": "{\"control\":{\"permissionState\":\"prompt\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"classified\":{\"status\":\"fail\",\"reason\":\"permission_not_denied\",\"errorName\":\"TypeError\"}},\"treatment\":{\"permissionState\":\"denied\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"classified\":{\"status\":\"pass\",\"reason\":\"blocked\",\"errorName\":\"TypeError\"}}}",
+    "m20-firefox": {
+      "availability": "observed",
+      "timezone": "Europe/Berlin",
+      "timezoneOffset": -60,
+      "locale": "de-DE",
+      "languages": [
+        "de-DE",
+        "en-US"
+      ],
+      "intlLocale": "en-US"
+    },
+    "m20-firefox-timezone-id": "{\"availability\":\"observed\",\"timezone\":\"Europe/Berlin\",\"timezoneOffset\":-60,\"locale\":\"de-DE\",\"languages\":[\"de-DE\",\"en-US\"],\"intlLocale\":\"en-US\"}",
+    "m20-firefox-timezone-offset": "-60",
+    "m20-firefox-locale": "de-DE"
+  },
+  "decisions": {
+    "M20": {
+      "id": "M20",
+      "contractVersion": "1.0.0",
+      "status": "VERIFIED",
+      "missing": [],
+      "phase4Required": [
+        "m20-every-locale-api"
+      ]
+    },
+    "M21": {
+      "id": "M21",
+      "contractVersion": "1.0.0",
+      "status": "PARTIAL",
+      "missing": [
+        "m21-native-coordinates"
+      ],
+      "phase4Required": [
+        "m21-native-coordinates",
+        "m21-hide-os-location"
+      ]
+    },
+    "M22": {
+      "id": "M22",
+      "contractVersion": "1.0.0",
+      "status": "VERIFIED",
+      "missing": [],
+      "phase4Required": [
+        "m22-multi-monitor"
+      ]
+    },
+    "M23": {
+      "id": "M23",
+      "contractVersion": "1.0.0",
+      "status": "PARTIAL",
+      "missing": [
+        "m23-arbitrary-version"
+      ],
+      "phase4Required": [
+        "m23-arbitrary-version"
+      ]
+    },
+    "M28": {
+      "id": "M28",
+      "contractVersion": "1.0.0",
+      "status": "PARTIAL",
+      "missing": [
+        "m28-substitute-font-list"
+      ],
+      "phase4Required": [
+        "m28-substitute-font-list"
+      ]
+    },
+    "M29": {
+      "id": "M29",
+      "contractVersion": "1.0.0",
+      "status": "PARTIAL",
+      "missing": [
+        "m29-fake-device-labels"
+      ],
+      "phase4Required": [
+        "m29-fake-device-labels"
+      ]
+    },
+    "M30": {
+      "id": "M30",
+      "contractVersion": "1.0.0",
+      "status": "PARTIAL",
+      "missing": [
+        "m30-pref-changes-probe"
+      ],
+      "phase4Required": [
+        "m30-masked-results"
+      ]
+    }
+  },
+  "featureCompletion": {
+    "kind": "feature-completion",
+    "formula": "passed stock checks / (passed + failed stock checks); BLOCKED_CUSTOM_ENGINE and not_run excluded",
+    "passed": 37,
+    "failed": 1,
+    "blocked": 0,
+    "notRun": 0,
+    "denominator": 38,
+    "percent": 97.4
+  }
+}
