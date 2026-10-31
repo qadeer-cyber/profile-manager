@@ -7,7 +7,7 @@ on:
         type: boolean
         default: false
       publish_prerelease:
-        description: Create GitHub pre-release (only if full build + smoke pass; requires owner approval)
+        description: Create GitHub pre-release (fail-closed; owner must enable publish path separately)
         type: boolean
         default: false
 
@@ -43,37 +43,88 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Ensure Python + MSVC for node-gyp (bootstrap if missing)
+      - name: Ensure Python + MSVC + Windows SDK (verify on GHA image)
         shell: pwsh
+        id: native_prereqs
         run: |
           $evidence = Join-Path $env:RUNNER_TEMP 'pm-native-prereqs'
           & ./scripts/windows-qualification/Ensure-WindowsNativeBuildPrereqs.ps1 -EvidenceRoot $evidence -SkipBootstrap
-      - name: Real Windows M8 gate (Chromium + Firefox)
+          . ./scripts/windows-qualification/Windows-NodeGypEnv.ps1
+          Import-WindowsNodeGypEnv -EvidenceRoot $evidence
+          "PYTHON=$env:PYTHON" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "npm_config_python=$env:npm_config_python" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "GYP_MSVS_VERSION=$env:GYP_MSVS_VERSION" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "npm_config_msvs_version=$env:npm_config_msvs_version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "PM_NODE_GYP_EVIDENCE=$evidence" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Real Windows M8 gate (Chromium + Firefox, TAP 2/0/0)
         shell: pwsh
         timeout-minutes: 90
         run: |
           $m8 = Join-Path $env:RUNNER_TEMP 'pm-m8-gha'
+          if ($env:PM_NODE_GYP_EVIDENCE) {
+            . ./scripts/windows-qualification/Windows-NodeGypEnv.ps1
+            Import-WindowsNodeGypEnv -EvidenceRoot $env:PM_NODE_GYP_EVIDENCE
+          }
           & ./scripts/windows-qualification/Run-M8-Qualification.ps1 -EvidenceRoot $m8 -SkipNativeBootstrap
-          Get-Content (Join-Path $m8 'm8-acceptance.result')
+          $result = (Get-Content (Join-Path $m8 'm8-acceptance.result') -Raw).Trim()
+          if ($result -ne 'PASS') { throw "M8 result was $result" }
+          Get-Content (Join-Path $m8 'm8-acceptance.tap.log') | Select-Object -Last 15
       - name: Core regression suites
         shell: pwsh
-        timeout-minutes: 60
+        timeout-minutes: 90
         run: |
+          if ($env:PM_NODE_GYP_EVIDENCE) {
+            . ./scripts/windows-qualification/Windows-NodeGypEnv.ps1
+            Import-WindowsNodeGypEnv -EvidenceRoot $env:PM_NODE_GYP_EVIDENCE
+          }
           npm run test:unit
           npm run test:stabilization
           npm run test:data-recovery
           npm run test:browser-runtime
           npm run test:integration:preflight
+          npm run test:security
       - name: Full offline NSIS build (local candidate)
         if: ${{ inputs.run_full_offline_build == true }}
         shell: pwsh
         timeout-minutes: 120
         run: |
+          if ($env:PM_NODE_GYP_EVIDENCE) {
+            . ./scripts/windows-qualification/Windows-NodeGypEnv.ps1
+            Import-WindowsNodeGypEnv -EvidenceRoot $env:PM_NODE_GYP_EVIDENCE
+          }
           $build = Join-Path $env:RUNNER_TEMP 'pm-ultimate2-unified-build'
           & ./scripts/windows-qualification/Build-Ultimate2-Offline.ps1 -EvidenceRoot $build -SkipNativeBootstrap
-          Get-Content (Join-Path $build 'build.result')
-      - name: Block pre-release publish from CI (manual owner gate)
+          $buildResult = (Get-Content (Join-Path $build 'build.result') -Raw).Trim()
+          if ($buildResult -ne 'PASS') { throw "Offline build result was $buildResult" }
+      - name: Installed offline smoke (when EXE built)
+        if: ${{ inputs.run_full_offline_build == true }}
+        shell: pwsh
+        timeout-minutes: 45
+        env:
+          PM_AUTOMATION_DEFAULT: "1"
+          PM_PROXY_LOOPBACK: "1"
+          PM_PROXY_TEST_INSECURE_TLS: "1"
+        run: |
+          $build = Join-Path $env:RUNNER_TEMP 'pm-ultimate2-unified-build'
+          $exe = @(Get-ChildItem -LiteralPath $build -Filter '*offline-Setup-x64.exe' -ErrorAction SilentlyContinue)
+          if ($exe.Count -ne 1) { throw "Expected one offline setup exe under $build" }
+          $p = Start-Process -FilePath $exe[0].FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Silent install exited $($p.ExitCode)" }
+          npm run test:electron
+          node test/electron-smoke-offline.js
+      - name: Upload offline build evidence (not a GitHub Release)
+        if: ${{ inputs.run_full_offline_build == true }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate2-offline-windows-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/pm-ultimate2-unified-build/**
+            release/*.exe
+            release/BUILD-MANIFEST.txt
+          if-no-files-found: error
+          retention-days: 14
+      - name: Block automated pre-release publish (owner gate)
         if: ${{ inputs.publish_prerelease == true }}
         shell: pwsh
         run: |
-          Write-Error "publish_prerelease is not automated on this workflow yet. Run owner Dell Build-Ultimate2-Offline.ps1, install smoke, then tag pre-release manually after billing/sign-off."
+          Write-Error "publish_prerelease remains disabled. After real Windows gates pass, owner tags RC and uploads via approved release process — not this workflow input alone."

@@ -12,6 +12,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Windows-NodeGypEnv.ps1')
 function Invoke-Checked {
   param([string]$Name, [string]$Executable, [string[]]$Arguments)
   $global:LASTEXITCODE = 0
@@ -62,11 +63,12 @@ try {
     "os=$([Environment]::OSVersion.VersionString)", "time=$(Get-Date -Format o)") |
     Set-Content (Join-Path $EvidenceRoot 'run-metadata.txt') -Encoding UTF8
   if (-not $SkipDeps) {
-    $prereqScript = Join-Path $PSScriptRoot 'Ensure-WindowsNativeBuildPrereqs.ps1'
     $prereqEvidence = Join-Path $EvidenceRoot 'native-prereqs'
-    $prereqArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $prereqScript, '-EvidenceRoot', $prereqEvidence)
-    if ($SkipNativeBootstrap) { $prereqArgs += '-SkipBootstrap' }
-    Invoke-Checked 'Windows native build prerequisites (Python + MSVC for node-gyp)' 'powershell.exe' $prereqArgs
+    $prereqScript = Join-Path $PSScriptRoot 'Ensure-WindowsNativeBuildPrereqs.ps1'
+    $prereqParams = @{ EvidenceRoot = $prereqEvidence }
+    if ($SkipNativeBootstrap) { $prereqParams.SkipBootstrap = $true }
+    & $prereqScript @prereqParams
+    Import-WindowsNodeGypEnv -EvidenceRoot $prereqEvidence
     Invoke-Checked 'npm ci' 'npm.cmd' @('ci')
     Invoke-Checked 'Playwright Chromium install' 'npx.cmd' @('playwright', 'install', 'chromium')
   }

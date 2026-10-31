@@ -7,7 +7,7 @@ The Linux M8 acceptance was reported 2/2 PASS at QA 66bf4af, but this newly comb
 ## Requirements
 
 - Windows 10/11 x64; Node.js 22.x; Git; free disk space; npm and browser download access
-- **Native compile:** `npm ci` runs `better-sqlite3` via node-gyp when no matching prebuild exists. The qualification scripts call `Ensure-WindowsNativeBuildPrereqs.ps1` first to install **Python 3.8+** and **VS 2022 Build Tools (VC.Tools.x86.x64)** via winget/Chocolatey when missing, then set `npm config python` and `msvs_version=2022`. No lockfile changes and no skipping native rebuild.
+- **Native compile:** `npm ci` runs `better-sqlite3` via node-gyp when no matching prebuild exists. `Ensure-WindowsNativeBuildPrereqs.ps1` installs **Python 3.8+**, **VS 2022 Build Tools (VCTools)**, and a **Windows 10/11 SDK** when missing (winget/Chocolatey). It sets **`PYTHON`**, **`npm_config_python`**, **`GYP_MSVS_VERSION`**, and **`npm_config_msvs_version`** (npm 10 rejects legacy `npm config set python`). It writes **`node-gyp.env.ps1`** under the evidence directory; **dot-source it in the same PowerShell process before `npm ci`** (`Import-WindowsNodeGypEnv` in `Run-M8-Qualification.ps1` / `Build-Ultimate2-Offline.ps1`). Child `powershell.exe` runs do not inherit these variables automatically.
 - Stock Mozilla Firefox (installed or available via winget/Chocolatey)
 - A clean Git working tree checked out on integration/ultimate2-unified-pr
 - PowerShell 5.1+. The locally built installer may be unsigned.

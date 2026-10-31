@@ -2,6 +2,7 @@
 <#
   Ensures node-gyp can compile native modules (better-sqlite3) on Windows x64.
   Provisions Python 3.x and MSVC Build Tools when missing (winget, then Chocolatey).
+  Writes node-gyp.env.ps1 under EvidenceRoot; callers must dot-source it in the parent process.
   Does not skip native compile, downgrade dependencies, or alter package-lock.json.
 #>
 param(
@@ -10,6 +11,8 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+. (Join-Path $PSScriptRoot 'Windows-NodeGypEnv.ps1')
 
 function Refresh-ProcessPath {
   $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
@@ -44,13 +47,8 @@ function Find-PythonExecutable {
   if ($env:PYTHON -and (Test-Path -LiteralPath $env:PYTHON)) {
     $candidates += $env:PYTHON
   }
-  $npmPython = $null
-  try {
-    $global:LASTEXITCODE = 0
-    $npmPython = (& npm.cmd config get python 2>$null).Trim()
-  } catch { $npmPython = $null }
-  if ($npmPython -and $npmPython -ne 'undefined' -and (Test-Path -LiteralPath $npmPython)) {
-    $candidates += $npmPython
+  if ($env:npm_config_python -and (Test-Path -LiteralPath $env:npm_config_python)) {
+    $candidates += $env:npm_config_python
   }
   foreach ($cmd in @('python.exe', 'py.exe')) {
     $found = Get-Command $cmd -ErrorAction SilentlyContinue
@@ -104,41 +102,66 @@ function Find-VsWhere {
   return $null
 }
 
-function Test-MsvcBuildTools {
+function Test-VsComponentInstalled {
+  param([string[]]$Requires)
   $vswhere = Find-VsWhere
   if (-not $vswhere) { return $false }
+  $args = @('-latest', '-products', '*', '-property', 'installationPath')
+  foreach ($req in $Requires) { $args += @('-requires', $req) }
   $global:LASTEXITCODE = 0
-  $install = (& $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null).Trim()
+  $install = (& $vswhere @args 2>$null).Trim()
   return ($LASTEXITCODE -eq 0 -and $install)
 }
 
+function Test-MsvcBuildTools {
+  return (Test-VsComponentInstalled -Requires @(
+    'Microsoft.VisualStudio.Component.VC.Tools.x86.x64'
+  ))
+}
+
+function Test-WindowsSdkInstalled {
+  $sdkIds = @(
+    'Microsoft.VisualStudio.Component.Windows11SDK.22621',
+    'Microsoft.VisualStudio.Component.Windows11SDK.22000',
+    'Microsoft.VisualStudio.Component.Windows10SDK.20348',
+    'Microsoft.VisualStudio.Component.Windows10SDK.19041',
+    'Microsoft.VisualStudio.Component.Windows10SDK'
+  )
+  foreach ($id in $sdkIds) {
+    if (Test-VsComponentInstalled -Requires @($id)) { return $true }
+  }
+  return $false
+}
+
 function Install-MsvcBuildTools {
-  Write-PrereqEvidence 'Installing Visual Studio 2022 Build Tools (Desktop C++ workload for node-gyp)...'
-  $override = '--wait --passive --norestart --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended'
+  Write-PrereqEvidence 'Installing Visual Studio 2022 Build Tools (VCTools + Windows 10/11 SDK for node-gyp)...'
+  $override = @(
+    '--wait', '--passive', '--norestart',
+    '--add', 'Microsoft.VisualStudio.Workload.VCTools',
+    '--add', 'Microsoft.VisualStudio.Component.Windows10SDK.19041',
+    '--includeRecommended'
+  ) -join ' '
   if (Get-Command winget.exe -ErrorAction SilentlyContinue) {
     & winget.exe install --id Microsoft.VisualStudio.2022.BuildTools -e --override $override --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw "winget VS Build Tools install failed with exit $LASTEXITCODE" }
     return
   }
   if (Get-Command choco.exe -ErrorAction SilentlyContinue) {
-    $params = '--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --wait'
+    $params = '--add Microsoft.VisualStudio.Workload.VCTools --add Microsoft.VisualStudio.Component.Windows10SDK.19041 --includeRecommended --quiet --wait'
     & choco.exe install visualstudio2022buildtools -y --no-progress --package-parameters="$params"
     if ($LASTEXITCODE -ne 0) { throw "choco VS Build Tools install failed with exit $LASTEXITCODE" }
     return
   }
-  throw 'MSVC Build Tools are required when better-sqlite3 must compile. Install VS 2022 Build Tools with "Desktop development with C++".'
+  throw 'MSVC Build Tools are required when better-sqlite3 must compile. Install VS 2022 Build Tools with "Desktop development with C++" and a Windows 10/11 SDK.'
 }
 
-function Set-NodeGypPython {
+function Apply-NodeGypEnvironment {
   param([string]$PythonExe)
-  $env:PYTHON = $PythonExe
-  $global:LASTEXITCODE = 0
-  & npm.cmd config set python $PythonExe
-  if ($LASTEXITCODE -ne 0) { throw 'npm config set python failed' }
-  & npm.cmd config set msvs_version 2022
-  if ($LASTEXITCODE -ne 0) { throw 'npm config set msvs_version failed' }
+  Set-WindowsNodeGypProcessEnv -PythonExe $PythonExe -MsvsVersion '2022'
+  $written = Write-WindowsNodeGypEnvFile -EvidenceRoot $EvidenceRoot -PythonExe $PythonExe -MsvsVersion '2022'
+  Write-PrereqEvidence "env_file=$written"
   Write-PrereqEvidence "PYTHON=$PythonExe"
-  Write-PrereqEvidence 'npm msvs_version=2022'
+  Write-PrereqEvidence 'GYP_MSVS_VERSION=2022'
 }
 
 function Assert-WindowsX64 {
@@ -165,7 +188,7 @@ if (-not $python) {
   if (-not $python) { throw 'Python install completed but python.exe is still not discoverable. Restart PowerShell and retry.' }
 }
 Write-PrereqEvidence "python=$python"
-Set-NodeGypPython -PythonExe $python
+Apply-NodeGypEnvironment -PythonExe $python
 
 if (-not (Test-MsvcBuildTools)) {
   if ($SkipBootstrap) {
@@ -178,6 +201,17 @@ if (-not (Test-MsvcBuildTools)) {
 }
 Write-PrereqEvidence 'msvc=ok'
 
+if (-not (Test-WindowsSdkInstalled)) {
+  if ($SkipBootstrap) {
+    throw 'Windows 10/11 SDK component not detected (required for node-gyp). Install SDK via VS Build Tools or re-run without -SkipNativeBootstrap.'
+  }
+  Install-MsvcBuildTools
+  if (-not (Test-WindowsSdkInstalled)) {
+    throw 'Windows SDK still missing after Build Tools install. Open Visual Studio Installer and add Windows 10/11 SDK, then retry.'
+  }
+}
+Write-PrereqEvidence 'windows_sdk=ok'
+
 $global:LASTEXITCODE = 0
 $ngv = (& npx.cmd --yes node-gyp --version 2>&1 | Out-String).Trim()
 if ($LASTEXITCODE -ne 0) { throw "node-gyp probe failed: $ngv" }
@@ -189,4 +223,4 @@ if ($LASTEXITCODE -ne 0) { throw "Python probe failed: $pyProbe" }
 Write-PrereqEvidence "python_version=$pyProbe"
 
 'PASS' | Set-Content -Path (Join-Path $EvidenceRoot 'native-prereqs.result') -Encoding UTF8
-Write-Host "Windows native build prerequisites OK. Evidence: $EvidenceRoot"
+Write-Host "Windows native build prerequisites OK. Dot-source $(Get-WindowsNodeGypEnvPath -EvidenceRoot $EvidenceRoot) before npm ci in this process."

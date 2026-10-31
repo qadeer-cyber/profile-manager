@@ -11,6 +11,7 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'Windows-NodeGypEnv.ps1')
 function Invoke-Checked {
   param([string]$Name, [string]$Executable, [string[]]$Arguments)
   Write-Host "=== $Name ==="
@@ -53,6 +54,13 @@ try {
   if (-not (Test-Path (Join-Path $m8Evidence 'm8-acceptance.result')) -or
       (Get-Content (Join-Path $m8Evidence 'm8-acceptance.result') -Raw).Trim() -ne 'PASS') {
     throw 'Real Windows Chromium + Firefox M8 acceptance did not pass'
+  }
+  $nodeGypEvidence = Join-Path $m8Evidence 'native-prereqs'
+  if ($env:PM_NODE_GYP_EVIDENCE -and (Test-Path (Join-Path $env:PM_NODE_GYP_EVIDENCE 'node-gyp.env.ps1'))) {
+    $nodeGypEvidence = $env:PM_NODE_GYP_EVIDENCE
+  }
+  if ((-not $SkipDeps) -or (Test-Path (Join-Path $nodeGypEvidence 'node-gyp.env.ps1'))) {
+    Import-WindowsNodeGypEnv -EvidenceRoot $nodeGypEvidence
   }
   foreach ($suite in @('test:unit','test:stabilization','test:data-recovery','test:browser-runtime','test:integration:preflight')) {
     Invoke-Checked $suite 'npm.cmd' @('run', $suite)
