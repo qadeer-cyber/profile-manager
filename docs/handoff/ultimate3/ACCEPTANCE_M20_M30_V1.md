@@ -47,7 +47,7 @@ Release gates:
 - `m21-deny` — deny does not return those coordinates.
 - `m21-persist-restart` — the same coordinates return after stop and launch.
 - `m21-isolation` — a second profile does not observe the first profile’s coordinates.
-- `m21-native-coordinates` — native manual spawn coordinate override. Stock CfT has no command-line equivalent. This gate stays blocked, so M21 stays **PARTIAL**.
+- `m21-native-coordinates` — native manual spawn coordinate override. Stock CfT has no command-line equivalent. Native argv must not grow a coordinate flag (`m21-native-no-coordinate-flag`). This gate stays blocked, so M21 stays **PARTIAL**.
 
 Remainders:
 
@@ -75,7 +75,7 @@ Release gates:
 - `m23-pinned-full` — full mode’s user agent contains the installed Chromium version.
 - `m23-pinned-reduced` — reduced mode’s user agent uses `major.0.0.0` and does not contain the full version.
 - `m23-client-hints-match-binary` — high-entropy full version, platform, `mobile: false`, and a Chromium brand match this binary.
-- `m23-arbitrary-version` — a version this binary does not have. Blocked. M23 stays **PARTIAL**.
+- `m23-arbitrary-version` — a version this binary does not have. Blocked. M23 stays **PARTIAL**. Native manual launch does not open a debugging port for client-hint metadata (`m23-native-no-debug-port`).
 
 Remainders:
 
@@ -95,7 +95,7 @@ Release gates:
 - `m28-launch-flag` — restricted mode puts `FontAccess` on `--disable-features`.
 - `m28-permission-or-api-absent` — `local-fonts` is not granted.
 - `m28-query-local-fonts-unavailable` — `queryLocalFonts` is missing or does not resolve.
-- `m28-substitute-font-list` — a replacement font list. Blocked. M28 stays **PARTIAL**.
+- `m28-substitute-font-list` — a replacement font list. Blocked. M28 stays **PARTIAL**. Preferences must not gain an invented font list (`m28-no-invented-font-list`).
 
 Remainders:
 
@@ -108,7 +108,7 @@ Release gates:
 - `m29-camera-mic-denied` — camera and microphone permissions are denied.
 - `m29-capture-not-granted` — `getUserMedia` does not return a stream.
 - `m29-labels-hidden-when-denied` — `enumerateDevices` does not expose labels while restricted.
-- `m29-fake-device-labels` — invented device names or counts. Blocked. M29 stays **PARTIAL**.
+- `m29-fake-device-labels` — invented device names or counts. Blocked. M29 stays **PARTIAL**. Preferences and the page must not gain invented device names (`m29-no-invented-device-names`).
 
 Remainders:
 
@@ -121,7 +121,7 @@ Release gates:
 - `m30-refuse-weakening-flags` — launch arguments this app builds are refused when they disable private-network checks.
 - `m30-process-has-no-weakening` — the product browser process command line does not disable those checks.
 - `m30-permission-denied` — `local-network-access` is denied.
-- `m30-pref-changes-probe` — a public-classified page is blocked from reading a loopback port only when the profile deny preference is applied, and the same probe succeeds without that preference. If both block, this gate fails and M30 stays **PARTIAL**.
+- `m30-pref-changes-probe` — with address space held fixed, the request completes when the deny preference is absent and does not complete when it is present. On pinned CfT 156 this gate fails: a loopback initiator receives `local-ok` with and without the preference, and a public-classified initiator is blocked in both cases (including when the preference is allow). M30 stays **PARTIAL**.
 
 Remainders:
 

@@ -55,6 +55,34 @@ M24–M27 and M42 stay **UNSUPPORTED**. No CAPTCHA bypass. No Mimic or Stealthfo
 
 Still blocked. Support `#4931951` owns the Windows runners. This track did not run Windows browser qualification and did not edit Windows CI.
 
+## Sprint 2 — causal M30 probe
+
+**Branch tip before this sprint:** `1d6b63bbab9ffb1f4c71427b9db3ea9dea967c22`  
+**Release-qualification before and after this sprint:** **67.4%** (20 VERIFIED / 18 PARTIAL). No new promotion.  
+**Feature-completion after the causal probe:** **41 pass / 1 fail / 42 = 97.6%**.  
+**M30 decision:** stays **PARTIAL**.
+
+The probe holds address space fixed and varies only the profile deny preference. CORS is enabled so a completed fetch returns the body `local-ok`.
+
+| Initiator | Preference | Permission | Fetch |
+|-----------|------------|------------|-------|
+| Loopback | absent | `prompt` | **200 `local-ok`** |
+| Loopback | deny | `denied` | **200 `local-ok`** |
+| Public-classified | absent | `prompt` | fails, target sees no request |
+| Public-classified | deny | `denied` | fails, target sees no request |
+| Public-classified | allow | `granted` | fails, target sees no request |
+
+Stock CfT 156.0.8078.4 cannot show the preference as the cause. Where the request succeeds without deny, it still succeeds with deny. Where a public initiator is blocked, it stays blocked even if the preference is allow.
+
+M21, M23, M28, and M29 stay **PARTIAL**. Added checks, not promotions:
+
+- Native manual argv has no geolocation coordinate flag and no debugging port. Automation still applies Playwright coordinates and the retained client-hint session.
+- Restricted font and media preferences do not contain a substitute font list or invented device names. `queryLocalFonts` stays absent and canvas measurement stays real.
+
+M35 and M36 are still **PARTIAL** on this branch. Track B’s promotions of those IDs are not counted here.
+
+M24–M27 were not touched. M42 was not touched.
+
 ## Next highest-impact action
 
-Prove or replace M30’s local-network deny so a public-origin probe succeeds without the preference and fails with it. Until that difference is observed, M30 stays PARTIAL. Native geolocation coordinates (M21) need a custom engine or an always-on location provider; do not open a standing debugging port to fake that.
+M30 needs a browser whose local-network content setting actually gates the socket. This pinned CfT does not. Do not disable private-network checks to manufacture a pass, and do not open a debugging port on native manual launch to fake M21 coordinates.

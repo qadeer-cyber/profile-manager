@@ -1,6 +1,6 @@
 {
   "contractVersion": "1.0.0",
-  "capturedAt": "2026-10-31T08:05:42.046Z",
+  "capturedAt": "2026-10-31T08:12:09.985Z",
   "chromium": "156.0.8078.4",
   "results": {
     "m21-native-coordinates": "blocked",
@@ -40,6 +40,10 @@
     "m21-isolation": "pass",
     "m21-deny": "pass",
     "m23-pinned-reduced": "pass",
+    "m21-native-no-coordinate-flag": "pass",
+    "m23-native-no-debug-port": "pass",
+    "m28-no-invented-font-list": "pass",
+    "m29-no-invented-device-names": "pass",
     "m30-treatment-probe-blocked": "pass",
     "m30-pref-changes-probe": "fail",
     "m20-firefox-timezone-id": "pass",
@@ -121,29 +125,134 @@
     },
     "m23-pinned-reduced": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.0.0 Safari/537.36",
     "m30-probe": {
-      "treatment": {
-        "permissionState": "denied",
-        "fetchOk": false,
-        "errorName": "TypeError",
-        "classified": {
-          "status": "pass",
-          "reason": "blocked",
-          "errorName": "TypeError"
-        }
+      "causal": {
+        "causal": false,
+        "pairs": [
+          {
+            "space": "local",
+            "causal": false,
+            "absent": {
+              "fetchOk": true,
+              "permissionState": "prompt",
+              "body": "local-ok"
+            },
+            "deny": {
+              "fetchOk": true,
+              "permissionState": "denied",
+              "body": "local-ok"
+            }
+          },
+          {
+            "space": "public",
+            "causal": false,
+            "absent": {
+              "fetchOk": false,
+              "permissionState": "prompt",
+              "body": ""
+            },
+            "deny": {
+              "fetchOk": false,
+              "permissionState": "denied",
+              "body": ""
+            }
+          }
+        ],
+        "note": "The deny preference is not the cause. Where the request succeeds without it, it still succeeds with it. Where a public-classified initiator is blocked, it stays blocked with the preference absent or present."
       },
-      "control": {
-        "permissionState": "prompt",
-        "fetchOk": false,
-        "errorName": "TypeError",
-        "classified": {
-          "status": "fail",
-          "reason": "permission_not_denied",
-          "errorName": "TypeError"
+      "cells": {
+        "local:absent": {
+          "deny": false,
+          "allow": false,
+          "space": "local",
+          "permissionState": "prompt",
+          "fetchOk": true,
+          "errorName": "ok",
+          "body": "local-ok",
+          "status": 200
+        },
+        "local:deny": {
+          "deny": true,
+          "allow": false,
+          "space": "local",
+          "permissionState": "denied",
+          "fetchOk": true,
+          "errorName": "ok",
+          "body": "local-ok",
+          "status": 200
+        },
+        "public:absent": {
+          "deny": false,
+          "allow": false,
+          "space": "public",
+          "permissionState": "prompt",
+          "fetchOk": false,
+          "errorName": "TypeError",
+          "body": "",
+          "status": 0
+        },
+        "public:deny": {
+          "deny": true,
+          "allow": false,
+          "space": "public",
+          "permissionState": "denied",
+          "fetchOk": false,
+          "errorName": "TypeError",
+          "body": "",
+          "status": 0
+        },
+        "public:allow": {
+          "deny": false,
+          "allow": true,
+          "space": "public",
+          "permissionState": "granted",
+          "fetchOk": false,
+          "errorName": "TypeError",
+          "body": "",
+          "status": 0
         }
       }
     },
-    "m30-treatment-probe-blocked": "{\"permissionState\":\"denied\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"classified\":{\"status\":\"pass\",\"reason\":\"blocked\",\"errorName\":\"TypeError\"}}",
-    "m30-pref-changes-probe": "{\"control\":{\"permissionState\":\"prompt\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"classified\":{\"status\":\"fail\",\"reason\":\"permission_not_denied\",\"errorName\":\"TypeError\"}},\"treatment\":{\"permissionState\":\"denied\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"classified\":{\"status\":\"pass\",\"reason\":\"blocked\",\"errorName\":\"TypeError\"}}}",
+    "path-gaps": {
+      "paths": {
+        "M21": {
+          "native": "BLOCKED_SPAWN",
+          "nativeCoordinateFlag": false,
+          "automationGeolocation": {
+            "latitude": 52.52,
+            "longitude": 13.405,
+            "accuracy": 30
+          },
+          "note": "Playwright geolocation is applied only on the automation launch. Native manual spawn has no coordinate argument and no debugging port."
+        },
+        "M23": {
+          "nativeUserAgent": "--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.8078.4 Safari/537.36",
+          "nativeDebugPort": false,
+          "nativeClientHints": "not_attached",
+          "automationClientHints": "cdp_session_retained",
+          "note": "Client-hint metadata is applied by a CDP session kept open on the automation path. Native manual launch can pass --user-agent and does not attach that session."
+        },
+        "M28": {
+          "fontAccessDisabled": true,
+          "substituteFontList": false,
+          "note": "Restricted disables FontAccess. No substitute font list is written."
+        },
+        "M29": {
+          "camera": "denied",
+          "microphone": "denied",
+          "substituteDevices": false,
+          "note": "Restricted denies camera and microphone. Device names are not invented."
+        }
+      },
+      "prefSnap": {
+        "local_fonts": 2,
+        "media_stream_camera": 2,
+        "media_stream_mic": 2,
+        "local_network_access": 2,
+        "invented": []
+      }
+    },
+    "m30-treatment-probe-blocked": "{\"deny\":true,\"allow\":false,\"space\":\"public\",\"permissionState\":\"denied\",\"fetchOk\":false,\"errorName\":\"TypeError\",\"body\":\"\",\"status\":0}",
+    "m30-pref-changes-probe": "The deny preference is not the cause. Where the request succeeds without it, it still succeeds with it. Where a public-classified initiator is blocked, it stays blocked with the preference absent or present.",
     "m20-firefox": {
       "availability": "observed",
       "timezone": "Europe/Berlin",
@@ -238,11 +347,11 @@
   "featureCompletion": {
     "kind": "feature-completion",
     "formula": "passed stock checks / (passed + failed stock checks); BLOCKED_CUSTOM_ENGINE and not_run excluded",
-    "passed": 37,
+    "passed": 41,
     "failed": 1,
     "blocked": 0,
     "notRun": 0,
-    "denominator": 38,
-    "percent": 97.4
+    "denominator": 42,
+    "percent": 97.6
   }
 }

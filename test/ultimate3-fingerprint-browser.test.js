@@ -20,7 +20,8 @@ import { processCommandLine } from '../server/proc.js';
 import { resolveFirefoxExecutable, firefoxProcessEnv } from '../server/browser-runtime/firefox-launch.js';
 import { buildManagedGeckoPrefLines, writeManagedGeckoUserJs } from '../server/firefox-gecko-userjs.js';
 import { languageListMatchesStock, timezoneOffsetMinutes, assessAcceptLanguage } from '../server/regional-consistency.js';
-import { classifyLocalNetworkProbe, probeOutcomeChanged } from '../server/local-network-probe.js';
+import { summarizeCausalProbe } from '../server/local-network-probe.js';
+import { describeFingerprintPaths, restrictedPreferenceSnapshot } from '../server/fingerprint-path-gaps.js';
 import {
   ROW_CONTRACTS,
   ULTIMATE3_CONTRACT_VERSION,
@@ -108,13 +109,18 @@ async function readSurface(page) {
       hints,
       ua: navigator.userAgent,
       fontWidth,
+      inventedFontList: window.__pmFontList || null,
+      inventedDevices: window.__pmMediaDevices || null,
     };
   });
 }
 
-async function localNetworkProbe({ executablePath, deny }) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), deny ? 'pm-u3-pna-deny-' : 'pm-u3-pna-open-'));
-  const target = http.createServer((req, res) => { res.end('local-ok'); });
+async function localNetworkProbe({ executablePath, deny, space, allow }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `pm-u3-pna-${space}-`));
+  const target = http.createServer((req, res) => {
+    res.setHeader('access-control-allow-origin', '*');
+    res.end('local-ok');
+  });
   const pageServer = http.createServer((req, res) => {
     res.setHeader('content-type', 'text/html');
     res.end('<!doctype html><title>pna</title>');
@@ -125,13 +131,22 @@ async function localNetworkProbe({ executablePath, deny }) {
   try {
     const settings = validateAdvancedSettings(deny ? { fingerprint: { portScan: 'real' } } : {});
     if (deny) applyAdvancedPreferences(dir, settings);
+    if (allow) {
+      const prefDir = path.join(dir, 'Default');
+      fs.mkdirSync(prefDir, { recursive: true });
+      fs.writeFileSync(path.join(prefDir, 'Preferences'), JSON.stringify({
+        profile: { default_content_setting_values: { local_network_access: 1 } },
+      }));
+    }
     const plan = advancedLaunchPlan(settings, { headless: true, version: MANIFEST.browserVersion });
     assertPrivateNetworkLaunchPolicy(plan.args);
+    const args = [...plan.args];
+    if (space === 'public') args.push(`--ip-address-space-overrides=127.0.0.1:${pagePort}=public`);
     browser = await chromium.launchPersistentContext(dir, {
       executablePath,
       headless: true,
       viewport: { width: 800, height: 600 },
-      args: [...plan.args, `--ip-address-space-overrides=127.0.0.1:${pagePort}=public`],
+      args,
     });
     const page = browser.pages()[0] || await browser.newPage();
     await page.goto(`http://127.0.0.1:${pagePort}/`, { waitUntil: 'domcontentloaded' });
@@ -139,19 +154,15 @@ async function localNetworkProbe({ executablePath, deny }) {
       let permissionState = 'unknown';
       try { permissionState = (await navigator.permissions.query({ name: 'local-network-access' })).state; }
       catch (error) { permissionState = `query_error:${error.name || 'Error'}`; }
-      let fetchOk = false;
-      let errorName = '';
       try {
-        await fetch(`http://127.0.0.1:${port}/probe`, { cache: 'no-store' });
-        fetchOk = true;
-        errorName = 'ok';
+        const response = await fetch(`http://127.0.0.1:${port}/probe`, { cache: 'no-store', mode: 'cors' });
+        const body = await response.text();
+        return { permissionState, fetchOk: true, errorName: 'ok', body, status: response.status };
       } catch (error) {
-        fetchOk = false;
-        errorName = error.name || 'Error';
+        return { permissionState, fetchOk: false, errorName: error.name || 'Error', body: '', status: 0 };
       }
-      return { permissionState, fetchOk, errorName };
     }, targetPort);
-    return { ...observed, classified: classifyLocalNetworkProbe(observed) };
+    return { deny: !!deny, allow: !!allow, space, ...observed };
   } finally {
     await browser?.close().catch(() => {});
     await new Promise(resolve => target.close(() => resolve()));
@@ -337,6 +348,8 @@ test('Ultimate 3 fingerprint surfaces match the profile in a live browser', { ti
     assert.ok(record('m28-permission-or-api-absent', fontPermissionOk, first.permissions['local-fonts']));
     assert.ok(record('m28-query-local-fonts-unavailable', fontsOk, JSON.stringify(first.localFonts)));
     assert.ok(record('m28-canvas-measure-still-real', first.fontWidth > 0, String(first.fontWidth)));
+    assert.equal(first.inventedFontList, null);
+    assert.equal(first.inventedDevices, null);
     assert.ok(record('m29-camera-mic-denied', first.permissions.camera === 'denied' && first.permissions.microphone === 'denied', JSON.stringify(first.permissions)));
     assert.ok(record('m29-capture-not-granted', first.mediaError !== 'granted', first.mediaError));
     assert.ok(record('m29-labels-hidden-when-denied', first.devices.labeled === 0, JSON.stringify(first.devices)));
@@ -395,13 +408,38 @@ test('Ultimate 3 fingerprint surfaces match the profile in a live browser', { ti
     await closeSession(reduced.id);
 
     const executablePath = expectedExecutable('chromium');
-    const treatment = await localNetworkProbe({ executablePath, deny: true });
-    const control = await localNetworkProbe({ executablePath, deny: false });
-    details['m30-probe'] = { treatment, control };
-    record('m30-treatment-probe-blocked', treatment.fetchOk === false && treatment.permissionState === 'denied', JSON.stringify(treatment));
-    record('m30-pref-changes-probe', probeOutcomeChanged(control, treatment), JSON.stringify({ control, treatment }));
-    assert.equal(treatment.fetchOk, false, `restricted probe reached loopback: ${JSON.stringify(treatment)}`);
-    assert.equal(treatment.permissionState, 'denied');
+    const cells = [];
+    for (const spec of [
+      { deny: false, space: 'local' },
+      { deny: true, space: 'local' },
+      { deny: false, space: 'public' },
+      { deny: true, space: 'public' },
+      { deny: false, allow: true, space: 'public' },
+    ]) cells.push(await localNetworkProbe({ executablePath, ...spec }));
+    const causal = summarizeCausalProbe(cells.filter(cell => !cell.allow));
+    const byKey = Object.fromEntries(cells.map(cell => [`${cell.space}:${cell.allow ? 'allow' : cell.deny ? 'deny' : 'absent'}`, cell]));
+    details['m30-probe'] = { causal, cells: byKey };
+    const paths = describeFingerprintPaths();
+    const prefSnap = restrictedPreferenceSnapshot();
+    details['path-gaps'] = { paths, prefSnap };
+    assert.ok(record('m21-native-no-coordinate-flag', paths.M21.native === 'BLOCKED_SPAWN' && paths.M21.nativeCoordinateFlag === false && paths.M21.automationGeolocation?.latitude === 52.52));
+    assert.ok(record('m23-native-no-debug-port', paths.M23.nativeDebugPort === false && paths.M23.nativeClientHints === 'not_attached' && paths.M23.nativeUserAgent.includes(version)));
+    assert.ok(record('m28-no-invented-font-list', paths.M28.substituteFontList === false && paths.M28.fontAccessDisabled === true && prefSnap.invented.length === 0 && prefSnap.local_fonts === 2 && first.inventedFontList === null));
+    assert.ok(record('m29-no-invented-device-names', paths.M29.substituteDevices === false && paths.M29.camera === 'denied' && paths.M29.microphone === 'denied' && prefSnap.invented.length === 0 && first.inventedDevices === null && first.devices.labeled === 0));
+    record('m30-treatment-probe-blocked', byKey['public:deny'].fetchOk === false && byKey['public:deny'].permissionState === 'denied', JSON.stringify(byKey['public:deny']));
+    record('m30-pref-changes-probe', causal.causal, causal.note);
+    assert.equal(byKey['local:absent'].fetchOk, true);
+    assert.equal(byKey['local:absent'].body, 'local-ok');
+    assert.equal(byKey['local:absent'].permissionState, 'prompt');
+    assert.equal(byKey['local:deny'].fetchOk, true);
+    assert.equal(byKey['local:deny'].body, 'local-ok');
+    assert.equal(byKey['local:deny'].permissionState, 'denied');
+    assert.equal(byKey['public:absent'].fetchOk, false);
+    assert.equal(byKey['public:deny'].fetchOk, false);
+    assert.equal(byKey['public:deny'].permissionState, 'denied');
+    assert.equal(byKey['public:allow'].fetchOk, false);
+    assert.equal(byKey['public:allow'].permissionState, 'granted');
+    assert.equal(causal.causal, false, causal.note);
 
     const firefox = await observeFirefox({ locale: 'de-DE', timezoneId: 'Europe/Berlin', languages: ['de-DE', 'en-US'] });
     details['m20-firefox'] = firefox;

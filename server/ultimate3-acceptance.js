@@ -70,6 +70,7 @@ export const ROW_CONTRACTS = Object.freeze({
       'm21-deny',
       'm21-persist-restart',
       'm21-isolation',
+      'm21-native-no-coordinate-flag',
     ]),
     remainders: gate([
       Object.freeze({ id: 'm21-native-coordinates', phase4: true, note: 'Native manual spawn has no stock command-line coordinate override. CDP Emulation.setGeolocationOverride is session-scoped and this app does not leave a debugging port open. A custom engine or an always-on location provider would be required for manual browse.' }),
@@ -108,6 +109,7 @@ export const ROW_CONTRACTS = Object.freeze({
       'm23-pinned-reduced',
       'm23-client-hints-match-binary',
       'm23-custom-ua-rejected',
+      'm23-native-no-debug-port',
     ]),
     remainders: gate([
       Object.freeze({ id: 'm23-arbitrary-version', phase4: true, note: 'A Chrome version the binary does not have is rejected. Lying client hints requires a custom engine.' }),
@@ -128,6 +130,7 @@ export const ROW_CONTRACTS = Object.freeze({
       'm28-query-local-fonts-unavailable',
       'm28-preference-persisted',
       'm28-canvas-measure-still-real',
+      'm28-no-invented-font-list',
     ]),
     remainders: gate([
       Object.freeze({ id: 'm28-substitute-font-list', phase4: true, note: 'The installed font list is not replaced. Restricted only denies local font access. Phase 4 custom engine is required for a substitute list.' }),
@@ -146,6 +149,7 @@ export const ROW_CONTRACTS = Object.freeze({
       'm29-capture-not-granted',
       'm29-labels-hidden-when-denied',
       'm29-allow-capture-rejected',
+      'm29-no-invented-device-names',
     ]),
     remainders: gate([
       Object.freeze({ id: 'm29-fake-device-labels', phase4: true, note: 'Device names and counts are not invented. Phase 4 custom engine is required for a substitute device list.' }),

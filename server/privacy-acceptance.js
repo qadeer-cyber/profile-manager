@@ -120,6 +120,7 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
       'Launch arguments this app builds are refused when they disable private-network checks.',
       'A normal process command line is reported as not weakening those checks.',
       'portScan real writes local_network_access deny in profile preferences; local-network-access permission query is denied in the browser.',
+      'On pinned CfT the deny preference changes that permission query. It does not stop a loopback fetch that already succeeds without the preference, and a public-classified fetch fails even when the preference is allow.',
       'portScan masked and custom whitelist modes are rejected.',
     ]),
     engineRequired: Object.freeze([

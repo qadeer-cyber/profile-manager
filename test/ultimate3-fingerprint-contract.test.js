@@ -18,7 +18,8 @@ import {
   languageListMatchesStock,
   timezoneOffsetMinutes,
 } from '../server/regional-consistency.js';
-import { classifyLocalNetworkProbe, probeOutcomeChanged } from '../server/local-network-probe.js';
+import { classifyLocalNetworkProbe, probeOutcomeChanged, summarizeCausalProbe } from '../server/local-network-probe.js';
+import { describeFingerprintPaths, restrictedPreferenceSnapshot } from '../server/fingerprint-path-gaps.js';
 import {
   BASELINE_RELEASE,
   GROK_SCORECARD,
@@ -149,6 +150,48 @@ test('local-network probe classification does not treat a successful fetch as bl
     { fetchOk: false, permissionState: 'prompt' },
     { fetchOk: false, permissionState: 'denied' },
   ), false);
+});
+
+test('M30 deny preference is causal only when the request outcome changes', () => {
+  const stock = summarizeCausalProbe([
+    { space: 'local', deny: false, fetchOk: true, permissionState: 'prompt', body: 'local-ok' },
+    { space: 'local', deny: true, fetchOk: true, permissionState: 'denied', body: 'local-ok' },
+    { space: 'public', deny: false, fetchOk: false, permissionState: 'prompt', body: '' },
+    { space: 'public', deny: true, fetchOk: false, permissionState: 'denied', body: '' },
+  ]);
+  assert.equal(stock.causal, false);
+  assert.match(stock.note, /not the cause/);
+  const caused = summarizeCausalProbe([
+    { space: 'local', deny: false, fetchOk: true, permissionState: 'prompt', body: 'local-ok' },
+    { space: 'local', deny: true, fetchOk: false, permissionState: 'denied', body: '' },
+    { space: 'public', deny: false, fetchOk: false, permissionState: 'prompt', body: '' },
+    { space: 'public', deny: true, fetchOk: false, permissionState: 'denied', body: '' },
+  ]);
+  assert.equal(caused.causal, true);
+  assert.equal(caused.pairs.find(pair => pair.space === 'local').causal, true);
+});
+
+test('native and automation fingerprint paths do not invent coordinates, hints, fonts, or devices', () => {
+  const paths = describeFingerprintPaths();
+  assert.equal(paths.M21.native, 'BLOCKED_SPAWN');
+  assert.equal(paths.M21.nativeCoordinateFlag, false);
+  assert.equal(paths.M21.automationGeolocation.latitude, 52.52);
+  assert.equal(paths.M23.nativeDebugPort, false);
+  assert.equal(paths.M23.nativeClientHints, 'not_attached');
+  assert.equal(paths.M23.automationClientHints, 'cdp_session_retained');
+  assert.match(paths.M23.nativeUserAgent, new RegExp(MANIFEST.browserVersion.replace(/\./g, '\\.')));
+  assert.equal(paths.M23.nativeUserAgent.includes('--remote-debugging-port'), false);
+  assert.equal(paths.M28.fontAccessDisabled, true);
+  assert.equal(paths.M28.substituteFontList, false);
+  assert.equal(paths.M29.camera, 'denied');
+  assert.equal(paths.M29.microphone, 'denied');
+  assert.equal(paths.M29.substituteDevices, false);
+  const prefs = restrictedPreferenceSnapshot();
+  assert.equal(prefs.local_fonts, 2);
+  assert.equal(prefs.media_stream_camera, 2);
+  assert.equal(prefs.media_stream_mic, 2);
+  assert.equal(prefs.local_network_access, 2);
+  assert.deepEqual(prefs.invented, []);
 });
 
 test('feature completion and release qualification stay separate', () => {
