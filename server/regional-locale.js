@@ -2,6 +2,8 @@
 // option also installs a single-language UA override, so it cannot serve this path.
 // New page targets pause before scripts execute. Commands use the existing pipe;
 // this does not enable a CDP TCP port or replace any JavaScript navigator values.
+// Bound for confirming Target.closeTarget of a failed diagnostic tab (addendum A1).
+export const CLOSE_CONFIRM_MS = 1000;
 export async function installRegionalLocale(context, locale, { onFailure = () => {} } = {}) {
   const root = await context.browser().newBrowserCDPSession();
   // Pinned playwright-core 1.64.1 bridge, like browsers.js browserProcess().
@@ -15,6 +17,24 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
   const pending = new Set(), children = new Map();
   const filter = [{ type: 'page' }, { type: 'iframe' }, { exclude: true }];
   let startup = true, failure = null, closed = false;
+  // M2 diagnostic exemption. Ownership is the exact targetId returned by this
+  // module's own Target.createTarget call (never a URL match). Only a top-level
+  // page's initial regional setup may fail without closing the profile; that
+  // failed target is never resumed and is closed at once by targetId
+  // (owner-approved DiagnosticsV1 §7.9 addendum A1). If the close cannot be
+  // confirmed, M3 fail-closed applies to the whole profile.
+  const diagnosticCreates = new Set(), diagnosticTargets = new Map(), quarantined = new Set();
+  const isDiagnostic = async targetId => {
+    if (!targetId) return false;
+    await Promise.allSettled([...diagnosticCreates]);
+    return diagnosticTargets.has(targetId);
+  };
+  const settleDiagnostic = (targetId, error) => {
+    const waiter = diagnosticTargets.get(targetId);
+    if (!waiter) return;
+    diagnosticTargets.delete(targetId);
+    if (error) waiter.reject(error); else waiter.resolve();
+  };
   const applyLocale = async child => {
     try {
       await child.send('Emulation.setLocaleOverride', { locale });
@@ -30,7 +50,8 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
       if (exceptionDetails || !result.value || result.value.actual !== result.value.expected) throw error;
     }
   };
-  const attach = (session, { sessionId }) => {
+  const attach = (session, { sessionId, targetInfo }) => {
+    const targetId = session === parent ? targetInfo?.targetId : undefined;
     const child = session.createChildSession(sessionId);
     children.set(sessionId, { parent: session, child });
     child.on('Target.attachedToTarget', event => attach(child, event));
@@ -40,10 +61,29 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
         await applyLocale(child);
         await child.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true, filter });
         await child.send('Runtime.runIfWaitingForDebugger');
+        if (diagnosticCreates.size || diagnosticTargets.size) void isDiagnostic(targetId).then(own => own && settleDiagnostic(targetId, null));
       } catch (error) {
         // A page closed during setup is no longer a target to configure.
         if (closed || !children.has(sessionId)) return;
-        failure ||= new Error('Failed to apply native browser regional locale', { cause: error });
+        const cause = new Error('Failed to apply native browser regional locale', { cause: error });
+        if (!startup && (diagnosticTargets.has(targetId) || await isDiagnostic(targetId))) {
+          if (closed || !children.has(sessionId)) return;
+          quarantined.add(sessionId); // Never resumed / never re-applied.
+          let closedOk = false;
+          // Closure must be confirmed within CLOSE_CONFIRM_MS: a closeTarget that
+          // rejects, reports success:false, or never answers is unconfirmed unless
+          // the target has actually detached, and falls through to fail-closed.
+          const closing = root.send('Target.closeTarget', { targetId });
+          let timer;
+          closedOk = await Promise.race([
+            closing.then(r => r?.success !== false, () => !children.has(sessionId)),
+            new Promise(resolve => { timer = setTimeout(() => resolve(!children.has(sessionId)), CLOSE_CONFIRM_MS); }),
+          ]).finally(() => clearTimeout(timer));
+          if (closed) return;
+          if (closedOk) { settleDiagnostic(targetId, cause); return; }
+          settleDiagnostic(targetId, cause); // Could not close: fall through to fail-closed.
+        }
+        failure ||= cause;
         if (!startup) {
           await context.close().catch(() => {});
           await onFailure(failure);
@@ -61,6 +101,7 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
     if (closed) return Promise.resolve();
     const jobs = [];
     for (const [id, live] of children) {
+      if (quarantined.has(id)) continue; // Paused target: no script can run in it.
       const work = applyLocale(live.child).catch(async error => {
         if (closed || !children.has(id)) return;
         failure ||= new Error('Failed to retain native browser regional locale', { cause: error });
@@ -75,6 +116,7 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
   const detach = ({ sessionId }) => {
     const entry = children.get(sessionId);
     children.delete(sessionId);
+    quarantined.delete(sessionId);
     entry?.parent.disposeChildSession(sessionId);
     void retainSurvivors();
   };
@@ -112,6 +154,7 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
     parent.removeListener('Target.attachedToTarget', onAttach);
     parent.removeListener('Target.detachedFromTarget', detach);
     for (const sessionId of [...children.keys()]) detach({ sessionId });
+    for (const targetId of [...diagnosticTargets.keys()]) settleDiagnostic(targetId, new Error('Browser closed'));
   });
   await root.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true, filter });
   // Flush initial attach events before considering the launch configured.
@@ -119,4 +162,22 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
   while (pending.size) await Promise.all([...pending]);
   startup = false;
   if (failure) throw failure;
+  return {
+    // Server-internal only. Creates one app-owned page target and resolves once
+    // its native regional setup succeeded; rejects if that setup failed.
+    async createDiagnosticTarget() {
+      if (closed || failure) throw new Error('Regional locale unavailable');
+      let waiter;
+      const ready = new Promise((resolve, reject) => { waiter = { resolve, reject }; });
+      ready.catch(() => {});
+      const creation = root.send('Target.createTarget', { url: 'about:blank' })
+        .then(({ targetId }) => { if (closed) waiter.reject(new Error('Browser closed')); else diagnosticTargets.set(targetId, waiter); return targetId; });
+      diagnosticCreates.add(creation);
+      try {
+        return { targetId: await creation, ready };
+      } finally {
+        diagnosticCreates.delete(creation);
+      }
+    },
+  };
 }

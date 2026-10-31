@@ -1,0 +1,15 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> profile-manager@0.5.0-alpha.3 build
+> vite build web
+
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 49 modules transformed.
+rendering chunks...
+computing gzip size...
+web/dist/index.html                   0.27 kB │ gzip:  0.21 kB
+web/dist/assets/index-D1IpTua-.css   19.77 kB │ gzip:  5.03 kB
+web/dist/assets/index-Dn-AUfUY.js   328.48 kB │ gzip: 94.95 kB
+
+✓ built in 295ms

@@ -1,10 +1,29 @@
+import { assertProfileOperationAvailable } from './recovery-journal.js';
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
+import { chromiumPolicyArgs, validateWebRtcSettings } from './webrtc-policy.js';
+import { applyWebRtcPreference, verifyWebRtcLaunchArgs } from './webrtc-settings.js';
+import { advancedLaunchPlan, applyAdvancedPreferences, applyDocumentPermissions, installUserAgent } from './advanced-launch.js';
+import { canvasPrototypeInitScript, canvasPrototypeSeed } from './experimental/canvas-readback-prototype.js';
+import { webglReadPixelsPrototypeInitScript, webglReadPrototypeSeed } from './experimental/webgl-readpixels-prototype.js';
+import { verifyFingerprintLaunchArgs } from './fingerprint-settings.js';
+import { executableCompatibility } from './chromium-lifecycle.js';
+import { assertLaunchResources } from './launch-limits.js';
+import { classifyLaunchError } from './launch-errors.js';
+import { beginLaunchMetrics, finalizeLaunchMetrics, getLaunchMetrics, markBrowserReady, markContextReady } from './launch-metrics.js';
+import { runWithLaunchQueue, launchQueueState, pendingLaunchCount } from './launch-queue.js';
+export { pendingLaunchCount };
+import { hostResourceSample, profileResourceRows } from './resource-monitor.js';
+import { recoverySnapshot, sweepAbandonedLocks } from './crash-recovery.js';
+import { chromiumIdentity } from './chromium-identity.js';
+import { extensionLaunchPlan } from './extensions.js';
 import { installRegionalLocale } from './regional-locale.js';
 // Browser engine: launch/stop with per-profile locks, persisted running state, startup recovery,
 // crash detection (health monitor), safe shutdown, a local proxy relay and (opt-in) CDP endpoints.
 // The remote-debugging port is OFF unless the launch option `automation` is truthy: an open CDP port
 // gives any local process full control of the session.
 import fs from 'fs';
+import { diagnosticProcessStart, observeProcessPolicy } from './diagnostic-process.js';
+export { summarizeWebRtcArguments } from './diagnostic-process.js';
 import { randomUUID } from 'crypto';
 import { readPreferences, observePreferences, captureTermination, waitForTermination, processCorrelation } from './termination-evidence.js';
 import net from 'net';
@@ -16,12 +35,21 @@ import { db, userDataDir, getSetting } from './db.js';
 import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
-import { automationDefault, proxyLoopback } from './testflags.js';
+import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
+import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
+import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
+import { launchNativeChromium } from './browser-runtime/native-chromium.js';
+import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
+import { harvestNativeTabUrls, resolveNativeTabUrlsForSave } from './session-harvest.js';
+import { stopWebDriverBridge } from './webdriver-bridge.js';
+import { stopGeckodriverBridge } from './geckodriver-bridge.js';
 
 export const events = new EventEmitter();
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
+const launchAbort = new Map(); // id -> true when user cancelled during startup
+let healthTicks = 0;
 // Read-only, in-process evidence for the installed offline smoke; no HTTP surface.
 // Select fields explicitly: running rows also contain CDP/relay connection details.
 export function lifecycleSmokeSnapshot(id) {
@@ -43,6 +71,11 @@ export function lifecycleSmokeSnapshot(id) {
 }
 export const isRunning = id => live.has(id) || settling.has(id);
 export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()])];
+export const liveContext = id => live.get(id)?.ctx || null;
+export const launchEvidence = id => {
+  const entry = live.get(id);
+  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null };
+};
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
 const emit = (type, id, extra = {}) => events.emit('event', { type, id, at: new Date().toISOString(), ...extra });
@@ -127,74 +160,221 @@ export async function recoverAfterRestart() {
     clearChromeLocks(dir); releaseLock(dir, lock?.ownerPid);
     db.prepare('DELETE FROM running WHERE id=?').run(r.id);
     report.cleared++;
+    try {
+      setStatus(r.id, { last_error: 'Previous browser session did not shut down cleanly. Storage was kept; launch again when ready.' });
+    } catch {}
   }
-  // Locks without a running row (e.g. crash mid-launch)
-  const root = path.dirname(userDataDir('00000000-0000-0000-0000-000000000000'));
-  for (const id of fs.existsSync(root) ? fs.readdirSync(root) : []) {
-    const dir = path.join(root, id), lock = readLock(dir);
-    if (!lock || !isStale(lock)) continue;
-    const pid = lock.browserPid;
-    if (await browserOwnedByProfile(pid, dir)) {
-      if (await killTree(pid, { expect: dir })) report.killed++;
-      else if (await browserOwnedByProfile(pid, dir)) continue;
-    }
-    fs.rmSync(path.join(dir, LOCK_NAME), { force: true }); clearChromeLocks(dir); report.staleLocks++;
-  }
+  const abandoned = await sweepAbandonedLocks({ browserOwnedByProfile, killTree });
+  report.staleLocks += abandoned.abandonedLocks;
+  report.skipped += abandoned.skippedLive;
   return report;
 }
 
+export function recoveryStatus() {
+  return recoverySnapshot({ liveCount: live.size, launchingCount: launching.size });
+}
+
 export function launch(p, opts = {}) {
+  assertProfileOperationAvailable(p.id);
   if (live.has(p.id) || settling.has(p.id)) return Promise.resolve(runInfo(p.id));
   if (launching.has(p.id)) return launching.get(p.id);
-  const pr = doLaunch(p, opts).finally(() => launching.delete(p.id));
+  const pr = runWithLaunchQueue(p.id, () => doLaunch(p, opts)).finally(() => {
+    launching.delete(p.id);
+    launchAbort.delete(p.id);
+  });
   launching.set(p.id, pr);
   return pr;
 }
 
+function assertLaunchNotCancelled(id) {
+  if (launchAbort.get(id)) {
+    launchAbort.delete(id);
+    throw httpErr(499, 'Launch was cancelled before the browser finished starting.', 'LAUNCH_CANCELLED');
+  }
+}
+
+export function cancelLaunch(id) {
+  if (live.has(id)) throw httpErr(409, 'Profile is already running. Stop it instead of cancelling startup.', 'ALREADY_RUNNING');
+  if (!launching.has(id)) return { cancelled: false, phase: 'not_launching' };
+  launchAbort.set(id, true);
+  return { cancelled: true, phase: 'launching' };
+}
+
+export function launchStatus(id) {
+  return {
+    launching: launching.has(id),
+    running: live.has(id),
+    settling: settling.has(id),
+    cancelRequested: !!launchAbort.get(id),
+    metrics: getLaunchMetrics(id),
+    queue: launchQueueState(),
+  };
+}
+
+export function monitoringSessions() {
+  return runningIds().map(rid => {
+    const row = runInfo(rid);
+    const profile = db.prepare('SELECT name, last_error FROM profiles WHERE id=?').get(rid);
+    const entry = live.get(rid);
+    let dir = null;
+    try { dir = userDataDir(rid); } catch {}
+    return {
+      id: rid,
+      name: profile?.name ?? null,
+      pid: entry?.browserPid ?? row?.pid ?? null,
+      userDataDir: dir,
+      lastError: profile?.last_error ?? null,
+      status: launching.has(rid) ? 'launching' : (live.has(rid) ? 'running' : 'settling'),
+      launchMetrics: getLaunchMetrics(rid),
+    };
+  });
+}
+
+export function resourceSnapshot() {
+  const sessions = monitoringSessions().map(({ launchMetrics, ...session }) => session);
+  return {
+    generatedAt: new Date().toISOString(),
+    host: hostResourceSample(),
+    browsers: profileResourceRows(sessions),
+    queue: launchQueueState(),
+    launchSlotsInUse: launching.size,
+    runningProfiles: live.size,
+  };
+}
+
+async function reconcileOrphanRunningRows() {
+  for (const row of db.prepare('SELECT * FROM running').all()) {
+    if (live.has(row.id) || launching.has(row.id)) continue;
+    let dir;
+    try { dir = userDataDir(row.id); } catch {
+      db.prepare('DELETE FROM running WHERE id=?').run(row.id);
+      continue;
+    }
+    if (!(await browserOwnedByProfile(row.pid, dir))) {
+      clearChromeLocks(dir);
+      releaseLock(dir);
+      db.prepare('DELETE FROM running WHERE id=?').run(row.id);
+    }
+  }
+}
+
 async function doLaunch(p, opts = {}) {
+  assertProfileOperationAvailable(p.id);
+  const current = db.prepare('SELECT deleted_at,purge_error FROM profiles WHERE id=?').get(p.id);
+  if (!current || current.deleted_at || current.purge_error) throw httpErr(409, 'Profile was deleted or requires recovery', 'PROFILE_RECOVERY_REQUIRED');
+  assertLaunchResources(live.size + launching.size + Math.max(0, pendingLaunchCount() - 1));
+  const metricsHandle = beginLaunchMetrics(p.id);
+  assertLaunchNotCancelled(p.id);
   const { headless, url } = opts, automation = automationEnabled(opts);
-  const regional = validateBrowserSettings(p.browserSettings || {});
-  const contextSettings = browserContextSettings(regional);
   const dir = userDataDir(p.id);
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
   await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null, entry = null;
+  let launchPlan = null;
   try {
-    const cdpPort = automation ? await freePort() : null;
-    const args = automation ? [`--remote-debugging-port=${cdpPort}`, '--remote-debugging-address=127.0.0.1'] : [];
-    const executablePath = getSetting('executablePath', '') || undefined;
-    if (!executablePath) { const miss = chromiumMissingError(!!headless); if (miss) throw miss; }
-    // We own shutdown: Playwright's own signal handlers would kill browsers before cookies/storage are flushed.
-    const launchOpts = { ...contextSettings, headless, viewport: null, args, executablePath, timeout: 30000, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false };
-    if (p.proxy) {
-      if (p.proxy.username) {
-        // Chromium can't authenticate to SOCKS proxies (and prompts for HTTP); use a local no-auth relay.
-        const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
-        relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
-        launchOpts.proxy = { server: relayUrl };
-      } else launchOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
-      if (proxyLoopback()) args.push('--proxy-bypass-list=<-loopback>'); // dev/test only; packaged builds ignore it
+    if ((p.browserEngine || 'chromium') === 'firefox') {
+      const adv = (await import('./advanced-settings.js')).validateAdvancedSettings(p.advancedSettings || {});
+      const restoreTabs = adv.preferences.restoreTabs === true;
+      const saved = restoreTabs ? readSavedTabs(dir) : { urls: [] };
+      const ffOpenUrls = chooseLaunchUrls({ explicitUrl: opts.url, startupUrls: adv.preferences.startupUrls, savedUrls: saved.urls });
+      const fxPlan = await buildFirefoxLaunchPlan(p, { userDataDir: dir, userDataDirFn: userDataDir, opts: { ...opts, openUrls: ffOpenUrls, restoreTabs } });
+      const native = await launchFirefoxNative(fxPlan);
+      markContextReady(metricsHandle);
+      entry = {
+        ctx: null, runtime: 'native', engine: 'firefox', relayUrl: fxPlan.relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
+        stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
+        exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline: readPreferences(dir), closeReason: null,
+        launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
+        requestedArgs: native.argv, restoreTabs: fxPlan.restoreTabs, rememberWindow: adv.preferences.rememberLastWindow === true,
+        tabUrls: [], geckoDir: fxPlan.profileDir,
+        marionettePort: fxPlan.marionettePort || null, automation: !!fxPlan.automation,
+      };
+      captureTermination(entry, native.proc);
+      const owned = await browserOwnedByProfile(native.browserPid, fxPlan.profileDir);
+      entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, []);
+      markBrowserReady(metricsHandle);
+      native.proc.on('exit', () => onClosed(p.id, null));
+      const marionettePort = fxPlan.marionettePort || null;
+      updateLock(dir, { browserPid: native.browserPid, cdpPort: marionettePort });
+      live.set(p.id, entry);
+      db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, marionettePort, null, fxPlan.relayUrl, new Date().toISOString());
+      setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
+      emit('profile:started', p.id, { runtime: 'native', engine: 'firefox' });
+      console.log('FIREFOX-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid }));
+      finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native', engine: 'firefox' });
+      return runInfo(p.id);
     }
-    // Preserve native ordered languages: Playwright's locale option otherwise replaces
-    // Accept-Language and navigator.languages with a single locale.
-    if (regional.languages.length) {
-      args.push('--accept-lang=' + regional.languages.join(','));
-      args.push('--lang=' + (regional.locale || regional.languages[0]));
-    }
+    launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
+    relayUrl = launchPlan.relayUrl;
+    const { args, plan, regional, cdpPort } = launchPlan;
     const preferencesBaseline = readPreferences(dir);
+    assertLaunchNotCancelled(p.id);
+
+    if (launchPlan.runtime === 'native') {
+      const native = await launchNativeChromium(launchPlan);
+      markContextReady(metricsHandle);
+      entry = {
+        ctx: null, runtime: 'native', engine: 'chromium', relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
+        stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
+        exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
+        launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
+        requestedArgs: native.argv, restoreTabs: launchPlan.restoreTabs, rememberWindow: launchPlan.rememberWindow, tabUrls: [],
+      };
+      captureTermination(entry, native.proc);
+      const owned = await browserOwnedByProfile(native.browserPid, dir);
+      entry.processCorrelation = processCorrelation(native.spawnPid, native.browserPid, owned, []);
+      readExit(entry);
+      applyProfileExit(entry, dir);
+      markBrowserReady(metricsHandle);
+      native.proc.on('exit', () => onClosed(p.id, null));
+      updateLock(dir, { browserPid: native.browserPid, cdpPort: null });
+      live.set(p.id, entry);
+      try {
+        db.prepare('INSERT INTO running VALUES (?,?,?,?,?,?)').run(p.id, native.browserPid, null, null, relayUrl, new Date().toISOString());
+      } catch (e) {
+        live.delete(p.id);
+        throw e;
+      }
+      setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
+      emit('profile:started', p.id, { runtime: 'native' });
+      console.log('NATIVE-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid, spawnPid: native.spawnPid }));
+      finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native' });
+      return runInfo(p.id);
+    }
+
+    const launchOpts = { ...launchPlan.playwrightOpts };
+    if (process.platform === 'win32' && isPackaged()) launchOpts.chromiumSandbox = true;
     try { ctx = await chromium.launchPersistentContext(dir, launchOpts); }
     catch (e) {
-      if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !executablePath) throw chromiumMissingError(!!headless, true);
+      if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !launchPlan.executablePath) throw chromiumMissingError(!!headless, true);
       const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
       throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
     }
-    entry = { ctx, relayUrl, launchId: randomUUID(), browserPid: null,
+    markContextReady(metricsHandle);
+    assertLaunchNotCancelled(p.id);
+    if (plan.settings.experimental?.canvasReadback === 'prototype') {
+      await ctx.addInitScript(canvasPrototypeInitScript(canvasPrototypeSeed(p.id)));
+    }
+    if (plan.settings.experimental?.webglReadback === 'prototype') {
+      await ctx.addInitScript(webglReadPixelsPrototypeInitScript(webglReadPrototypeSeed(p.id)));
+    }
+    if (plan.userAgent) await installUserAgent(ctx, plan.userAgent);
+    const watchPermissions = page => page.on('framenavigated', frame => {
+      if (frame === page.mainFrame()) applyDocumentPermissions(page, frame.url(), plan.permissions).catch(() => {});
+    });
+    for (const page of ctx.pages()) watchPermissions(page);
+    ctx.on('page', watchPermissions);
+    entry = { ctx, runtime: 'playwright', relayUrl, launchId: randomUUID(), browserPid: null,
       stopping: false, closed: false, proc: null, exitCode: null, exitSignal: null,
-      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null };
+      exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
+      // Sanitized launch-time proxy only. The classifier never reads this field.
+      launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null,
+      requestedArgs: [...args] };
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
-    if (regional.languages.length) await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
+    const diagnosticStart = diagnosticProcessStart(Number(entry.childPid));
+    if (regional.languages.length) entry.regional = await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
       onFailure: async error => {
         // Let normal close bookkeeping finish before recording the regional
         // failure; otherwise a clean process exit can clear its error message.
@@ -207,6 +387,9 @@ async function doLaunch(p, opts = {}) {
     const ws = automation ? await waitWs(cdpPort) : null;
     const browserPid = (ws && await cdpBrowserPid(ws)) || await pipeBrowserPid(ctx);
     entry.browserPid = browserPid;
+    markBrowserReady(metricsHandle);
+    // Bind identity to the launched child, never to a later PID-only lookup.
+    entry.diagnosticStart = Number(browserPid) === Number(entry.childPid) ? await diagnosticStart : null;
     const owned = await browserOwnedByProfile(browserPid, dir);
     const parents = entry.childPid && browserPid && Number(entry.childPid) !== Number(browserPid)
       ? await processParents() : [];
@@ -226,16 +409,46 @@ async function doLaunch(p, opts = {}) {
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
     ctx.on('close', () => onClosed(p.id, ctx));
     emit('profile:started', p.id);
-    if (url) await (ctx.pages()[0] || await ctx.newPage()).goto(url).catch(() => {});
+    entry.restoreTabs = launchPlan.restoreTabs;
+    entry.rememberWindow = launchPlan.rememberWindow;
+    entry.tabUrls = [];
+    const openUrls = launchPlan.openUrls;
+    if (openUrls.length) {
+      const first = ctx.pages()[0] || await ctx.newPage();
+      await first.goto(openUrls[0]).catch(() => {});
+      await applyDocumentPermissions(first, first.url(), plan.permissions).catch(() => {});
+      for (const extra of openUrls.slice(1)) {
+        const page = await ctx.newPage();
+        await page.goto(extra).catch(() => {});
+        await applyDocumentPermissions(page, page.url(), plan.permissions).catch(() => {});
+      }
+    }
+    if (launchPlan.restoreTabs) {
+      const note = () => {
+        const next = snapshotTabUrls(ctx.pages());
+        if (next) entry.tabUrls = next;
+      };
+      const watch = page => page.on?.('framenavigated', frame => {
+        try { if (!page.mainFrame || frame === page.mainFrame()) note(); } catch { note(); }
+      });
+      for (const page of ctx.pages()) watch(page);
+      ctx.on('page', page => { watch(page); note(); });
+      note();
+    }
+    finalizeLaunchMetrics(metricsHandle, { success: true });
     return runInfo(p.id);
   } catch (e) {
     entry?.detachTermination?.();
     if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
     if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
     releaseLock(dir);
-    try { setStatus(p.id, { last_error: e.message }); } catch {}
-    emit('profile:launch-failed', p.id, { error: e.message });
-    throw e.status ? e : httpErr(500, `Failed to launch browser: ${e.message}`, 'LAUNCH_FAILED');
+    const classified = classifyLaunchError(e.status ? e : httpErr(500, e.message, 'LAUNCH_FAILED'));
+    finalizeLaunchMetrics(metricsHandle, { success: false, errorCode: classified.code });
+    if (classified.code !== 'LAUNCH_CANCELLED') {
+      try { setStatus(p.id, { last_error: classified.message }); } catch {}
+    }
+    emit('profile:launch-failed', p.id, { error: classified.message, launch: classified });
+    throw e.status ? e : httpErr(500, classified.message, classified.code);
   }
 }
 
@@ -264,7 +477,8 @@ export function browserProcess(ctx) {
 // (https://chromium.googlesource.com/chromium/src/+/refs/heads/main/chrome/browser/profiles/profile_impl.cc).
 // The service writes Crashed as the profile opens, and Normal only when it shuts down cleanly.
 export function trackExit(entry) {
-  captureTermination(entry, browserProcess(entry.ctx));
+  const proc = entry.runtime === 'native' ? entry.proc : browserProcess(entry.ctx);
+  captureTermination(entry, proc);
   if (!entry.proc) console.warn('CLASSIFIER-FALLBACK playwright browser process handle is missing; not treating that as a crash');
 }
 function readExit(entry) { entry.readTermination?.(); }
@@ -476,6 +690,19 @@ async function finishClose(id, e) {
       emit('profile:stopped', id, { error: message });
     } else if (outcome === 'stopped') {
       try { setStatus(id, { last_error: null }); } catch {}
+      if (e.restoreTabs && dir) {
+        try {
+          const tabs = e.runtime === 'native'
+            ? resolveNativeTabUrlsForSave({
+              engine: e.engine || 'chromium',
+              chromiumDir: dir,
+              geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+              existing: e.tabUrls || [],
+            })
+            : (e.tabUrls || []);
+          writeSavedTabs(dir, tabs);
+        } catch { /* a tab list must not change the stop result */ }
+      }
       emit('profile:stopped', id, { error: null });
     } else {
       // No new persisted/UI status. Release dead-process resources, preserve the
@@ -496,30 +723,292 @@ let healthTimer = null;
 export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INTERVAL || 3000)) {
   stopHealthMonitor();
   healthTimer = setInterval(() => {
+    healthTicks += 1;
     for (const [id, e] of live) {
       if (!e.stopping && e.browserPid && !isAlive(e.browserPid)) onClosed(id, e.ctx, 'Browser process died (detected by health monitor)');
-      else if (!e.stopping) applyProfileExit(e, userDataDir(id));
+      else if (!e.stopping) {
+        applyProfileExit(e, userDataDir(id));
+        if (e.restoreTabs && e.runtime === 'native' && healthTicks % 10 === 0) {
+          try {
+            const dir = userDataDir(id);
+            const tabs = resolveNativeTabUrlsForSave({
+              engine: e.engine || 'chromium',
+              chromiumDir: dir,
+              geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+              existing: e.tabUrls || [],
+            });
+            if (tabs.length) {
+              e.tabUrls = tabs;
+              writeSavedTabs(dir, tabs);
+            }
+          } catch { /* periodic snapshot only */ }
+        }
+      }
     }
+    if (healthTicks % 10 === 0) reconcileOrphanRunningRows().catch(() => {});
   }, intervalMs);
   healthTimer.unref?.();
 }
 export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTimer); healthTimer = null; };
 
 export async function stop(id, { timeoutMs = 5000 } = {}) {
+  stopWebDriverBridge(id);
+  stopGeckodriverBridge(id);
   if (launching.has(id)) await launching.get(id).catch(() => {});
   const e = live.get(id) || settling.get(id);
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
   e.stopping = true;
+  if (e.restoreTabs && e.ctx) {
+    try {
+      const next = snapshotTabUrls(e.ctx.pages());
+      if (next) e.tabUrls = next;
+    } catch { /* keep the last navigation snapshot */ }
+  } else if (e.restoreTabs && e.runtime === 'native') {
+    try {
+      const dir = userDataDir(id);
+      const tabs = resolveNativeTabUrlsForSave({
+        engine: e.engine || 'chromium',
+        chromiumDir: dir,
+        geckoDir: e.geckoDir || geckoUserDataDir(id, userDataDir),
+        existing: e.tabUrls || [],
+      });
+      if (tabs.length) {
+        e.tabUrls = tabs;
+        writeSavedTabs(dir, tabs);
+      }
+    } catch { /* best effort */ }
+  }
   if (!live.has(id)) { if (e.done) await e.done; return; }
+  if (e.rememberWindow) {
+    try {
+      const { captureWindowStateForSession } = await import('./window-state.js');
+      await captureWindowStateForSession(id, e);
+    } catch { /* best effort */ }
+  }
   // 1) graceful: close the context  2) force: kill the process tree
-  await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
-  if (e.browserPid && isAlive(e.browserPid)) await killTree(e.browserPid, { expect: userDataDir(id) });
+  if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
+  if (e.browserPid && isAlive(e.browserPid)) {
+    const killOpts = { expect: userDataDir(id) };
+    // Stock Firefox needs time to flush cookies/localStorage into the gecko profile on SIGTERM.
+    if (e.engine === 'firefox' && e.runtime === 'native') Object.assign(killOpts, { graceMs: 8000, waitMs: 15000 });
+    await killTree(e.browserPid, killOpts);
+  }
   if (e.done) await e.done;
   else await onClosed(id, e.ctx);
 }
 export async function shutdown() {
   stopHealthMonitor();
+  const { stopAllWebDriverBridges } = await import('./webdriver-bridge.js');
+  const { stopAllGeckodriverBridges } = await import('./geckodriver-bridge.js');
+  stopAllWebDriverBridges();
+  stopAllGeckodriverBridges();
   // Parallel close, each bounded, so a stuck browser cannot hold shutdown open.
   await Promise.all(runningIds().map(id => stop(id, { timeoutMs: 10000 })));
+}
+
+// --- Read-only diagnostics observation. Not used by the lifecycle classifier. ---
+const PROXY_TYPES = new Set(['http', 'https', 'socks5']);
+
+function isRelayHost(host) {
+  const h = String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '::1' || h === '::' || h === '0.0.0.0' || /^127(?:\.\d{1,3}){3}$/.test(h);
+}
+
+// Launch-time proxy with credentials and local relay endpoints removed.
+// `{ configured: false }` means no proxy. `{ unsafe: true }` means a proxy existed
+// but must not be published. The returned object never keeps username, password, or a URL.
+export function proxyLaunchSnapshot(proxy) {
+  try {
+    if (!proxy || typeof proxy !== 'object') return { configured: false };
+    const host = proxy.host;
+    if (host == null || host === '') return { configured: false };
+    if (typeof host !== 'string' || typeof proxy.type !== 'string') return { unsafe: true };
+    if (!PROXY_TYPES.has(proxy.type)) return { unsafe: true };
+    if (host.length === 0 || host.length > 253 || /[\s@/\\?#]/.test(host)) return { unsafe: true };
+    const hostOk = /^[A-Za-z0-9.-]+$/.test(host) || /^\[[0-9A-Fa-f:.]+\]$/.test(host);
+    if (!hostOk) return { unsafe: true };
+    const port = typeof proxy.port === 'number' ? proxy.port : Number(proxy.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return { unsafe: true };
+    const bare = host.startsWith('[') ? host.slice(1, -1) : host;
+    if (isRelayHost(bare)) return { unsafe: true };
+    return { configured: true, type: proxy.type, host, port };
+  } catch {
+    return { unsafe: true };
+  }
+}
+
+function relayMatches(snapshot, relayUrl) {
+  if (!snapshot || snapshot.configured !== true || typeof relayUrl !== 'string' || !relayUrl) return false;
+  try {
+    const url = new URL(relayUrl);
+    const port = Number(url.port);
+    const host = url.hostname;
+    if (!host || !Number.isInteger(port)) return false;
+    const snapHost = snapshot.host.startsWith('[') ? snapshot.host.slice(1, -1) : snapshot.host;
+    return snapHost.toLowerCase() === host.toLowerCase() && snapshot.port === port;
+  } catch {
+    return false;
+  }
+}
+
+function publishProxy(snapshot, relayUrl) {
+  if (!snapshot || snapshot.unsafe || relayMatches(snapshot, relayUrl)) return { state: 'suppressed' };
+  if (snapshot.configured === false) return { state: 'off' };
+  if (snapshot.configured === true && PROXY_TYPES.has(snapshot.type)) {
+    return { state: 'on', value: { configured: true, type: snapshot.type, host: snapshot.host, port: snapshot.port } };
+  }
+  return { state: 'suppressed' };
+}
+
+function chromiumVersionFromProduct(product) {
+  if (typeof product !== 'string' || product.length > 256) return null;
+  const match = /^(?:HeadlessChrome|Chrome)\/(\d{1,8}(?:\.\d{1,8}){1,3})$/.exec(product);
+  if (!match || match[1].length > 128) return null;
+  return match[1];
+}
+
+function userAgentFromProtocol(userAgent) {
+  if (typeof userAgent !== 'string' || userAgent.length < 1 || userAgent.length > 1024) return null;
+  if (!/^[\x20-\x7E]+$/.test(userAgent)) return null;
+  return userAgent;
+}
+
+// Browser.getVersion only on the existing Playwright pipe. OS policy is separate.
+export async function readPipeBrowserFacts(browser, hooks = {}) {
+  const empty = { chromiumVersion: null, userAgent: null, webrtc: { kind: 'unreadable' } };
+  if (!browser || typeof browser.newBrowserCDPSession !== 'function') return empty;
+  let session;
+  try { session = await browser.newBrowserCDPSession(); } catch { return empty; }
+  try { hooks.trackSession?.(session); } catch { /* ignore */ }
+  try {
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    let versionRaw = null;
+    try { versionRaw = await session.send('Browser.getVersion'); } catch { versionRaw = null; }
+    if (hooks.cancelled?.()) return { ...empty, cancelled: true };
+    return {
+      chromiumVersion: chromiumVersionFromProduct(versionRaw && versionRaw.product),
+      userAgent: userAgentFromProtocol(versionRaw && versionRaw.userAgent),
+      webrtc: { kind: 'unreadable' },
+    };
+  } finally {
+    try { await session.detach(); } catch { /* ignore */ }
+  }
+}
+
+function publishedLaunchId(launchId) {
+  if (typeof launchId !== 'string' || launchId.length < 1 || launchId.length > 128) return null;
+  if (!/^[\x21-\x7E]+$/.test(launchId)) return null;
+  return launchId;
+}
+
+function connectedBrowser(entry) {
+  try {
+    const browser = entry.ctx?.browser?.();
+    if (!browser) return null;
+    if (typeof browser.isConnected === 'function' && browser.isConnected() === false) return null;
+    return browser;
+  } catch {
+    return null;
+  }
+}
+
+// Plain view of one live entry. Browser objects and command lines are not copied onto it.
+export function inspectDiagnosticEntry(entry, current = () => true) {
+  const launchId = publishedLaunchId(entry?.launchId);
+  const suppressed = { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  if (!entry || !entry.ctx) return suppressed;
+  if (entry.stopping) return { phase: 'stopping', launchId, proxy: { state: 'suppressed' } };
+  const browser = connectedBrowser(entry);
+  if (!browser) return { phase: 'disconnected', launchId, proxy: { state: 'suppressed' } };
+  const proxy = publishProxy(entry.launchSnapshot, entry.relayUrl);
+  return {
+    phase: 'connected',
+    launchId,
+    proxy,
+    headless: entry.diagnosticHeadless !== false,
+    readPipeFacts: async hooks => {
+      const launchId = entry.launchId, pid = entry.browserPid, start = entry.diagnosticStart;
+      const stillCurrent = () => current() && entry.launchId === launchId && entry.browserPid === pid
+        && entry.diagnosticStart === start && !entry.stopping && !entry.closed
+        && connectedBrowser(entry) === browser;
+      const [facts, webrtc] = await Promise.all([
+        readPipeBrowserFacts(browser, hooks),
+        observeProcessPolicy({ pid, start, launchId, stillCurrent, signal: hooks.signal }),
+      ]);
+      return { ...facts, webrtc };
+    },
+    openDiagnosticPage: async hooks => {
+      if (entry.diagnosticHeadless !== false) throw new Error('headless');
+      const page = entry.regional ? await openRegionalDiagnosticPage(entry, hooks) : await entry.ctx.newPage();
+      // Dedicated page session: detaching cancels pending Runtime.evaluate without
+      // closing the visible tab or touching the shared browser connection.
+      page.diagnosticEvaluate = async fn => {
+        const session = await entry.ctx.newCDPSession(page);
+        hooks.trackSession(session);
+        try {
+          if (hooks.cancelled()) throw new Error('cancelled');
+          const result = await session.send('Runtime.evaluate', {
+            expression: `(${fn.toString()})()`, returnByValue: true,
+          });
+          if (result.exceptionDetails) throw new Error('evaluation failed');
+          return result.result?.value;
+        } finally { await session.detach().catch(() => {}); }
+      };
+      return page;
+    },
+  };
+}
+
+// Pinned playwright-core 1.64.1 bridge (see browserProcess()): server page targetId.
+const pageTargetId = page => {
+  try { return page._connection?.toImpl?.(page)?.delegate?._targetId; } catch { return undefined; }
+};
+
+// M3 regional profiles: the diagnostic tab is created by the regional-locale
+// controller so its targetId is registered before any failure is judged.
+async function openRegionalDiagnosticPage(entry, hooks) {
+  const ctx = entry.ctx, signal = hooks.signal;
+  const before = new Set(ctx.pages());
+  let onAbort, onPage;
+  const aborted = new Promise((_, reject) => {
+    onAbort = () => reject(new Error('cancelled'));
+    if (signal?.aborted) onAbort(); else signal?.addEventListener?.('abort', onAbort, { once: true });
+  });
+  aborted.catch(() => {});
+  try {
+    const { targetId, ready } = await Promise.race([entry.regional.createDiagnosticTarget(), aborted]);
+    await Promise.race([ready, aborted]);
+    const found = new Promise((resolve, reject) => {
+      const check = page => {
+        if (before.has(page)) return;
+        const id = pageTargetId(page);
+        if (!id) return reject(new Error('Diagnostic target bridge unavailable'));
+        if (id === targetId) resolve(page);
+      };
+      onPage = check;
+      ctx.on('page', onPage);
+      for (const page of ctx.pages()) check(page);
+    });
+    return await Promise.race([found, aborted]);
+  } finally {
+    if (onPage) ctx.off('page', onPage);
+    signal?.removeEventListener?.('abort', onAbort);
+  }
+}
+
+export function diagnosticObservation(id) {
+  try {
+    if (live.has(id)) {
+      const entry = live.get(id);
+      return inspectDiagnosticEntry(entry, () => live.get(id) === entry);
+    }
+    if (launching.has(id)) return { phase: 'launching', launchId: null, proxy: { state: 'suppressed' } };
+    // t48u §8: an app Stop settles as 'stopping'; a browser that closed or died on
+    // its own (crash, kill, last window closed) settles as 'disconnected'.
+    if (settling.has(id)) return { phase: settling.get(id).stopping ? 'stopping' : 'disconnected', launchId: null, proxy: { state: 'suppressed' } };
+    return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  } catch {
+    return { phase: 'not_running', launchId: null, proxy: { state: 'suppressed' } };
+  }
 }
 

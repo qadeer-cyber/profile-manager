@@ -1,17 +1,62 @@
+import { RecoveryPanel } from '../components/RecoveryPanel.jsx';
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
+import { ProfileDiagnostics } from '../components/ProfileDiagnostics.jsx';
 
 export function DiagnosticsPage({ eventsLog }) {
   const toast = useToast();
-  const [d, setD] = useState(null), [b, setB] = useState(null);
-  const load = useCallback(() => { api('/api/diagnostics').then(setD); api('/api/browser').then(setB); }, []);
+  const [d, setD] = useState(null), [b, setB] = useState(null), [upd, setUpd] = useState(null), [backups, setBackups] = useState(null);
+  const [stock, setStock] = useState(null), [stockError, setStockError] = useState('');
+  const load = useCallback(() => {
+    api('/api/diagnostics').then(setD);
+    api('/api/browser').then(setB);
+    api('/api/browser-engine/update-manager').then(setUpd).catch(() => {});
+    api('/api/browser/backups').then(setBackups).catch(() => {});
+    api('/api/browser-engine/stock-report').then(r => { setStock(r); setStockError(''); }).catch(e => setStockError(e.message));
+  }, []);
   useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t); }, [load]);
-  if (!d || !b) return null;
+  if (!d || !b) return <p className="muted" aria-busy="true">Loading diagnostics…</p>;
   const install = async () => { try { await api('/api/browser/install', { method: 'POST' }); toast('Downloading Chromium…'); load(); } catch (e) { toast(e.message, 'error'); } };
+  const exportGoogleCompat = async () => {
+    try {
+      const report = await api('/api/google-compat/report', { method: 'POST', body: JSON.stringify({ probe: true }) });
+      const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `profile-manager-google-compat-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('Google compatibility report downloaded (local only).');
+    } catch (e) { toast(e.message, 'error'); }
+  };
   const Row = ({ k, v }) => <tr><th>{k}</th><td>{v}</td></tr>;
   return <>
-    <header className="page-head"><h1>Diagnostics</h1><button onClick={load}>Refresh</button></header>
+    <header className="page-head"><h1>Diagnostics</h1>
+      <button type="button" onClick={exportGoogleCompat} aria-label="Export Google compatibility diagnostic">Export Google compatibility (local JSON)</button>
+      <button onClick={load} aria-label="Refresh app information">Refresh</button></header>
+    <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Profile Manager servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
+    <RecoveryPanel />
+    <ProfileDiagnostics />
+    <section className="panel"><h2>Stock browser engines (M2 / M3)</h2>
+      {stockError && <p className="err-text">{stockError}</p>}
+      {!stock && !stockError && <p className="muted" aria-busy="true">Loading engine report…</p>}
+      {stock && <div className="cols">
+        <table className="kv"><tbody>
+          <Row k="Chromium (M2)" v={<><span className="pill unavailable">Not Mimic</span> {stock.m2.productLabel} · {stock.m2.installed ? <span className="ok-text">installed</span> : <span className="err-text">not installed</span>} · v{stock.m2.browserVersion || '?'}</>} />
+          <Row k="Chromium manual launch" v={stock.m2.manualLaunchRuntime} />
+          <Row k="Firefox (M3)" v={<><span className="pill unavailable">Not Stealthfox</span> {stock.m3.productLabel} · {stock.m3.installed ? <span className="ok-text">found</span> : <span className="muted">not on PATH</span>}</>} />
+          <Row k="Firefox prefs" v={stock.m3.prefsSurface} />
+          {stock.m2.executablePath && <Row k="Chromium path" v={<code className="small">{stock.m2.executablePath}</code>} />}
+          {stock.m3.executablePath && <Row k="Firefox path" v={<code className="small">{stock.m3.executablePath}</code>} />}
+        </tbody></table>
+        <p className="muted small">{stock.m2.note} {stock.m3.note}</p>
+        {stock.capabilityMatrix?.rows && <details className="muted small"><summary>Engine capability rows ({stock.capabilityMatrix.rows.length})</summary>
+          <ul>{stock.capabilityMatrix.rows.filter(r => /fingerprint|canvas|webgl|webgpu|audio|font|media|port|google|custom/i.test(r.id + r.title)).map(r => <li key={r.id}><strong>{r.state}</strong> — {r.title}{r.note ? ` · ${r.note}` : ''}</li>)}</ul>
+          <p>Fingerprint masking limits (M20–M30): stock CfT/Firefox only — see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> and feasible-local acceptance <code>FEASIBLE_LOCAL_ACCEPTANCE_M20_M30.md</code>.</p>
+        </details>}
+      </div>}
+    </section>
     <div className="cols">
       <section className="panel"><h2>App</h2><table className="kv"><tbody>
         <Row k="Version" v={`${d.app.version} (${d.app.mode})`} /><Row k="Platform" v={d.platform} />
@@ -27,6 +72,15 @@ export function DiagnosticsPage({ eventsLog }) {
       </tbody></table>
         {!b.installed && !b.custom && <button className="primary" disabled={b.install.state === 'running'} onClick={install}>{b.install.state === 'running' ? 'Downloading…' : 'Download Chromium'}</button>}
         {b.install.log && <pre className="log">{b.install.log.slice(-1200)}</pre>}
+        {upd?.rollback?.supported && <>
+          <h3 className="muted">CfT rollback slots</h3>
+          <p className="muted small">Reinstall moves the current tree to a timestamped backup. Roll back swaps the active slot with the latest backup.</p>
+          {upd.slots?.map(slot => <div key={slot.name} className="muted small">{slot.name}: {slot.active?.present ? 'installed' : 'missing'} · backups {slot.backups?.length || 0}</div>)}
+          {upd.rollback.available && backups && <div className="row" style={{ marginTop: 8 }}>
+            <button disabled={!backups.chromium?.length} onClick={async () => { try { await api('/api/browser/rollback', { method: 'POST', body: { name: 'chromium' } }); toast('Chromium rolled back', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Rollback Chromium</button>
+            <button disabled={!backups['chromium-headless-shell']?.length} onClick={async () => { try { await api('/api/browser/rollback', { method: 'POST', body: { name: 'chromium-headless-shell' } }); toast('Headless shell rolled back', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Rollback headless shell</button>
+          </div>}
+        </>}
       </section>
     </div>
     <section className="panel"><h2>Recent events</h2>

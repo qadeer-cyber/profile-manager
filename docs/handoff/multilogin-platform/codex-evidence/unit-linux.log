@@ -1,0 +1,175 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> profile-manager@0.5.0-alpha.3 test:unit
+> node --test --experimental-test-module-mocks test/unit.test.js test/app-security.test.js test/shutdown-ack.test.js test/shutdown-durable.test.js test/testflags.test.js test/ui-status.test.js test/offline-smoke-phase.test.js test/diagnostics-unit.test.js test/diagnostic-process.test.js
+
+(node:41) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:41) DeprecationWarning: mock.module(): options.namedExports is deprecated. Use options.exports instead.
+✔ UI token: accepted via X-UI-Token header (50.677525ms)
+✔ UI token: rejected via ?token= query string (4.722455ms)
+✔ UI token: rejected on the SSE stream via query too (3.145068ms)
+✔ UI token: missing/wrong header rejected (4.158536ms)
+✔ startup scrub: legacy plaintext password is gone from the raw db file and WAL (secure_delete + VACUUM) (0.720652ms)
+✔ startup: migration v6 moved the inline proxy to the library and re-encrypted; it still decrypts (3.825039ms)
+[secrets] rejected a stored secret without an enc:/ss: prefix (value not logged)
+✔ after startup, an unprefixed secret written behind the app's back is rejected (not returned) (16.378572ms)
+✔ automation_enabled: defaults to false, exposed as automationEnabled, raw column hidden (7.635026ms)
+✔ automation_enabled: settable on create via /api/v1 and on update via UI PUT and v1 PATCH (11.898648ms)
+✔ automation_enabled: non-boolean rejected (2.03717ms)
+✔ launch passes `automation` to browsers.js: profile flag by default (8.311964ms)
+✔ v1 launch: per-launch {automation:true} override wins over the profile flag (4.46433ms)
+✔ v1 launch: non-boolean override rejected; UI launch ignores override (3.698521ms)
+✔ classifyProxyError maps errors to auth_failed/connect_refused/timeout/dns/protocol_unsupported/unknown (0.727372ms)
+✔ parseProxyLine handles all accepted formats (2.288404ms)
+✔ running entry WITHOUT a debugging port: top-level pid, no cdp (UI + v1 launch + v1 running) (8.214849ms)
+✔ running entry WITH a debugging port: cdp present (incl. cdp.pid for compatibility) and top-level pid (1.744555ms)
+✔ stopped profiles carry neither pid nor cdp (1.347754ms)
+✔ CHROMIUM_MISSING -> HTTP 503 {error:"CHROMIUM_MISSING", message} in UI API, /api/v1 and bulk launch (6.522982ms)
+✔ GET /api/browser includes chromiumStatus() (pinned revision, per-browser verified state) (2.598816ms)
+✔ installBrowser uses the verified installer (injected): success and failure states + events (3.377123ms)
+✔ app.js no longer shells out to the Playwright CLI installer (0.408598ms)
+✔ Chromium syntax, allowlist, terminator and privacy (linux) (2.18473ms)
+✔ Chromium syntax, allowlist, terminator and privacy (win32) (0.51759ms)
+✔ OS observation rejects a wrong process start and obsolete launch (23.201271ms)
+✔ real host process identity and policy read (4.569587ms)
+▶ profile diagnostics
+  ✔ constants match the collection deadline and freshness ceiling (1.454093ms)
+  ✔ decideObservationState: each state for GET and POST (1.49909ms)
+  ✔ GET observation state complete (2.326ms)
+  ✔ GET complete accepts absent and present WebRTC observations and a configured-false proxy (0.780981ms)
+  ✔ GET observation state partial (2.777241ms)
+  ✔ F3: not_running plus manifest is unavailable (0.575606ms)
+  ✔ F3: launching plus manifest is unavailable (0.405563ms)
+  ✔ F3: stopping plus manifest is unavailable (0.270993ms)
+  ✔ F3: disconnected plus manifest is unavailable (0.274358ms)
+  ✔ F3: failed live required facts plus manifest are unavailable (0.314307ms)
+  ✔ F3: deadline without a live fact is unavailable (53.783325ms)
+  ✔ GET observation state unavailable (0.618701ms)
+  ✔ GET observation state invalidated (0.503489ms)
+  ✔ GET timeout is unavailable with manifest-only metadata and drops late facts (51.681524ms)
+  ✔ POST observation state complete (2.051402ms)
+  ✔ POST observation state partial (0.365935ms)
+  ✔ POST observation state unavailable (0.689706ms)
+  ✔ POST does not open a tab unless the browser is connected, and timeout stays unavailable (51.75335ms)
+  ✔ POST observation state invalidated (1.099516ms)
+  ✔ headless consent never creates a diagnostic tab (0.267057ms)
+  ✔ a non-visible probe provides no environment facts (0.841341ms)
+  ✔ timed-out evaluation detaches before guard release, cleans routes and permits retry (26.46097ms)
+  ✔ navigation away and back during evaluation rejects facts and removes listeners (1.307295ms)
+  ✔ initial launch mismatch is 409 and does not hold the guard or open a tab (0.312114ms)
+  ✔ repeated observations get distinct ids (1.139339ms)
+  ✔ WebRTC argument summary stays inside the allowlist (0.418382ms)
+  ✔ pipe read returns only version, UA, and an allowlisted WebRTC summary (0.526213ms)
+  ✔ proxy snapshot drops credentials and local relay endpoints (0.403941ms)
+  ✔ diagnostic entry view does not copy the relay, command line, or page list (0.683366ms)
+  ✔ launch snapshot fields do not change termination classification (0.210643ms)
+  ✔ diagnostic module does not reach for protocol dumps, tabs, storage, or tokens (0.734593ms)
+  ✔ desktop and automation HTTP auth, profile lookup, and the legacy diagnostics route (76.926303ms)
+  ✔ malformed JSON stays on the contract path only for diagnostic routes (9.334906ms)
+  ✔ HTTP 429, 500, and a completed POST keep the contract envelope (21.078082ms)
+✔ profile diagnostics (337.652377ms)
+✔ selectSmokePhase accepts only the five phases and rejects everything else (1.528113ms)
+✔ each phase dispatches to its own handler and keeps that handler result (2.00959ms)
+✔ clean returns the diagnostics shape the install acceptance reads (0.339966ms)
+✔ upgrade returns the acceptance shape and detaches the dead proxy before the local read (11.472385ms)
+✔ lifecycle asks for CDP, closes that endpoint, and returns Stopped then Error then running (2.33938ms)
+✔ lifecycle CDP must be loopback and is not opened for a public address (0.362519ms)
+✔ lifecycle without a CDP endpoint fails instead of reporting a false Stopped (0.578711ms)
+✔ seed and check return the objects the acceptance script reads (5.921178ms)
+✔ the handler table is exactly the five phases (0.294338ms)
+✔ a missing phase is rejected only after both smoke gates are set (0.417561ms)
+✔ a rejected phase writes a result file the harness can read (0.486103ms)
+✔ packaged entry rejects a bad offline phase before the backend starts (0.390271ms)
+✔ workflow smoke steps that enter offline smoke set PM_SMOKE_PHASE explicitly (2.648219ms)
+✔ listening-port parsers keep only LISTEN sockets for the named pids (0.985536ms)
+✔ common facts keep the native and bundled-browser fields (0.467796ms)
+✔ lifecycle diagnostics retain taskkill failure and the original 80-poll timeout (3.981432ms)
+FAIL graceful shutdown: shutdown-done not received from pid 96 within 8000ms
+▶ shutdown ack requires a clean database close
+  ✔ failed db.close sends no shutdown-done and fails the harness (13623.103533ms)
+FAIL graceful shutdown: shutdown-done not received from pid 136 within 8000ms
+  ✔ failed wal_checkpoint sends no shutdown-done and fails the harness (13508.514256ms)
+✔ shutdown ack requires a clean database close (27133.179212ms)
+✔ durable shutdown checkpoints and closes after the browsers stop (2.237599ms)
+✔ a throwing checkpoint is logged and does not close the database (0.777276ms)
+✔ the shutdown cap logs and rejects when browser close does not finish (33.74591ms)
+✔ electron before-quit is a one-shot literal-import shutdown (1.124863ms)
+✔ non-packaged honors the three test flags (1.083362ms)
+✔ packaged ignores all three flags (0.216912ms)
+✔ applyPackagedFlag overwrites an inherited PM_PACKAGED=0 (0.178195ms)
+✔ main.js applies the packaged flag before the backend import (0.57093ms)
+✔ server/ reads the three flags only inside testflags.js (4.659881ms)
+✔ Chromium install root is never resources/browsers (1.153415ms)
+✔ normal close: no running row and no error shows Stopped (2.458016ms)
+✔ real crash shows Error with the message (0.130123ms)
+✔ running wins over a stale error (0.09408ms)
+✔ relaunch in flight hides the previous error and shows Starting (0.100209ms)
+✔ crash summaries are plain language and actionable (0.525061ms)
+✔ identical notifications within the window show once (0.204014ms)
+✔ every profile lifecycle event refreshes the list immediately (0.235861ms)
+✔ dedupe never hides a separate real failure (0.260768ms)
+✔ migrations: fresh database reaches latest version (6.466539ms)
+✔ migrations: idempotent (second run applies nothing) (5.010293ms)
+✔ migrations: legacy unversioned DB is adopted and data kept (5.887992ms)
+✔ migrations: failing migration rolls back and is not recorded (6.392784ms)
+✔ lock: acquire writes pid; second acquire by same owner is refused (1.098234ms)
+✔ lock: held by another live process -> LockedError (409) (0.408007ms)
+✔ lock: stale lock (dead owner) is replaced (0.363471ms)
+✔ lock: corrupt lock file is treated as stale (0.397011ms)
+✔ lock: release does not remove a lock owned by someone else (0.374006ms)
+✔ lock: updateLock merges browserPid (0.528726ms)
+✔ killTree (POSIX): terminates a running process (204.806507ms)
+✔ killTree (POSIX): escalates to SIGKILL when SIGTERM is ignored (606.540898ms)
+✔ killTree (Windows path): calls taskkill /PID <pid> /T /F (0.666521ms)
+✔ isAlive: false for a dead pid (0.130133ms)
+✔ closeOutcome: known exit status decides, unknown is not a crash, SessionEnded is Stopped (0.292014ms)
+✔ missing playwright process handle is logged and is not a crash (0.388648ms)
+✔ migrate copies a file database before changing it and keeps the rows (39.809694ms)
+✔ 0.5.0-alpha.3 keeps the v0.4.0 install identity and uninstall keeps data (0.569237ms)
+✔ upgrade from 0.5.0-alpha.1 schema 10 keeps profiles, proxies, secrets, and Chrome user-data (47.615962ms)
+✔ v0.4.0 migrations stay the be575c7 list (0.875392ms)
+✖ installed playwright-core 1.64.1 exposes the launched browser child (24.8347ms)
+✔ secrets: AES-GCM round trip, key file created, ciphertext differs per call (1.961918ms)
+✔ secrets: tampered ciphertext is rejected (0.225566ms)
+✔ secrets: external cipher (safeStorage-like) preferred; AES values still readable; migration detection (0.373776ms)
+✔ secrets: before strict mode, legacy plaintext is returned (for the startup migration) (0.072067ms)
+✔ secrets: in strict mode, unprefixed values are rejected and the value is never logged (0.321278ms)
+✔ migrations: v5 adds automation_enabled NOT NULL DEFAULT 0 (3.912128ms)
+✔ migrations: v6 moves inline proxies into the library (dedupe identical, keep ciphertext, skip invalid) with FK SET NULL (13.822631ms)
+✔ PID correlation distinguishes browser, legitimate launcher ancestry, mismatch and missing ownership (0.267308ms)
+✔ inherited clean Preferences and unrelated file rewrites remain unknown (0.350441ms)
+✔ current-launch crash-to-clean transition establishes fresh Normal or SessionEnded (0.192867ms)
+✔ known exit status wins over stale, missing or unreadable Preferences; Stop and fresh SessionEnded keep precedence (1.538909ms)
+✔ rapid close/relaunch/kill waits for delayed matching-child exit despite inherited Normal (51.755021ms)
+✔ missing or mismatched child and launcher-parent evidence never invent a browser exit (0.634143ms)
+✔ bounded missing-event timeout stays unknown; a late old event cannot affect a newer launch (10.492427ms)
+✔ already-delivered status, signals and duplicate exit/close events preserve the first terminal evidence (0.5113ms)
+✔ Preferences snapshots distinguish missing, unreadable and content changes without timestamps (1.651286ms)
+✔ production close-evidence wait does not stop at PID death or inherited Normal (25.870532ms)
+ℹ tests 134
+ℹ suites 2
+ℹ pass 133
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 27295.364896
+
+✖ failing tests:
+
+test at test/unit.test.js:245:1
+✖ installed playwright-core 1.64.1 exposes the launched browser child (24.8347ms)
+  browserType.launchPersistentContext: Executable doesn't exist at /root/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell
+  ╔════════════════════════════════════════════════════════════╗
+  ║ Looks like Playwright was just installed or updated.       ║
+  ║ Please run the following command to download new browsers: ║
+  ║                                                            ║
+  ║     npx playwright install                                 ║
+  ║                                                            ║
+  ║ <3 Playwright Team                                         ║
+  ╚════════════════════════════════════════════════════════════╝
+      at async TestContext.<anonymous> (/workspace/scratch/4338da826884/profile-manager/test/unit.test.js:253:15) {
+    name: 'Error',
+    log: []
+  }

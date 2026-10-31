@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { DEFAULT_ADVANCED_SETTINGS } from './advanced-settings.js';
 // Versioned schema migrations. Each migration runs once, in order, inside a transaction.
 // Versions 1-6 are the v0.4.0 schema (be575c770a8b76596e6bbcb9f8dda1b12cc79be0).
 // Later versions are additive: they add objects and do not rewrite or delete profile rows.
@@ -58,6 +59,120 @@ export const migrations = [
     } },
   { version: 8, name: 'per-profile browser regional settings', up: db => {
       db.exec(`ALTER TABLE profiles ADD COLUMN browser_settings TEXT NOT NULL DEFAULT '{"locale":"","timezoneId":"","languages":[]}'`);
+    } },
+  { version: 9, name: 'per-profile WebRTC policy', up: db => {
+      db.exec(`ALTER TABLE profiles ADD COLUMN webrtc_settings TEXT NOT NULL DEFAULT '{"mode":"browser_default"}'`);
+    } },
+  { version: 10, name: 'extension library and profile assignments', up: db => {
+      db.exec(`CREATE TABLE extensions (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, version TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '', manifest_version INTEGER NOT NULL,
+        permissions TEXT NOT NULL DEFAULT '[]', host_permissions TEXT NOT NULL DEFAULT '[]',
+        optional_permissions TEXT NOT NULL DEFAULT '[]', optional_host_permissions TEXT NOT NULL DEFAULT '[]',
+        storage_dir TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE profile_extensions (
+        profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        extension_id TEXT NOT NULL REFERENCES extensions(id) ON DELETE CASCADE,
+        enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+        PRIMARY KEY (profile_id, extension_id))`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profile_extensions_extension ON profile_extensions(extension_id)');
+    } },
+  { version: 11, name: 'per-profile advanced browser settings', up: db => {
+      const defaults = JSON.stringify(DEFAULT_ADVANCED_SETTINGS).replaceAll("'", "''");
+      db.exec(`ALTER TABLE profiles ADD COLUMN advanced_settings TEXT NOT NULL DEFAULT '${defaults}'`);
+    } },
+  { version: 12, name: 'saved views, proxy check history, provider accounts, bulk jobs', up: db => {
+      db.exec(`CREATE TABLE saved_views (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        surface TEXT NOT NULL DEFAULT 'profiles',
+        query_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE proxy_checks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        proxy_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('ok','failed')),
+        latency_ms INTEGER,
+        error TEXT,
+        tested_at TEXT NOT NULL)`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_proxy_checks_proxy ON proxy_checks(proxy_id, tested_at)');
+      db.exec(`CREATE TABLE provider_accounts (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        label TEXT NOT NULL,
+        secret TEXT NOT NULL DEFAULT '',
+        api_token TEXT NOT NULL DEFAULT '',
+        config TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE bulk_jobs (
+        id TEXT PRIMARY KEY,
+        action TEXT NOT NULL,
+        status TEXT NOT NULL,
+        total INTEGER NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        summary TEXT NOT NULL DEFAULT '[]',
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      const cols = db.prepare('PRAGMA table_info(proxies)').all().map(column => column.name);
+      if (!cols.includes('provider')) db.exec('ALTER TABLE proxies ADD COLUMN provider TEXT');
+      if (!cols.includes('provider_ref')) db.exec('ALTER TABLE proxies ADD COLUMN provider_ref TEXT');
+      if (!cols.includes('provider_meta')) db.exec("ALTER TABLE proxies ADD COLUMN provider_meta TEXT NOT NULL DEFAULT '{}'");
+    } },
+  { version: 13, name: 'profiles.browser_engine chromium|firefox', up: db => {
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('browser_engine')) {
+        db.exec(`ALTER TABLE profiles ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium' CHECK (browser_engine IN ('chromium','firefox'))`);
+      }
+    } },
+  { version: 14, name: 'profiles quick flag and trash', up: db => {
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('is_quick')) db.exec('ALTER TABLE profiles ADD COLUMN is_quick INTEGER NOT NULL DEFAULT 0');
+      if (!cols.includes('deleted_at')) db.exec('ALTER TABLE profiles ADD COLUMN deleted_at TEXT');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_deleted_at ON profiles(deleted_at)');
+    } },
+  { version: 15, name: 'profile_templates library', up: db => {
+      db.exec(`CREATE TABLE IF NOT EXISTS profile_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+    } },
+  { version: 16, name: 'local workspaces and cookie robot jobs', up: db => {
+      db.exec(`CREATE TABLE IF NOT EXISTS workspaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        vault_locked INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      db.exec(`CREATE TABLE IF NOT EXISTS cookie_robot_jobs (
+        id TEXT PRIMARY KEY,
+        profile_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        tasks_json TEXT NOT NULL,
+        delay_ms INTEGER NOT NULL DEFAULT 1500,
+        error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL)`);
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('workspace_id')) db.exec('ALTER TABLE profiles ADD COLUMN workspace_id TEXT REFERENCES workspaces(id)');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_profiles_workspace ON profiles(workspace_id)');
+    } },
+  { version: 17, name: 'profiles purge_error for recovery-safe trash purge', up: db => {
+      const cols = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name);
+      if (!cols.includes('purge_error')) db.exec('ALTER TABLE profiles ADD COLUMN purge_error TEXT');
+    } },
+  { version: 18, name: 'extensions browser_engine and gecko id', up: db => {
+      const cols = db.prepare('PRAGMA table_info(extensions)').all().map(c => c.name);
+      if (!cols.includes('browser_engine')) {
+        db.exec(`ALTER TABLE extensions ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium' CHECK (browser_engine IN ('chromium','firefox'))`);
+      }
+      if (!cols.includes('gecko_extension_id')) db.exec('ALTER TABLE extensions ADD COLUMN gecko_extension_id TEXT');
     } },
 ];
 

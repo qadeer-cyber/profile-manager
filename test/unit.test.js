@@ -162,9 +162,9 @@ test('migrate copies a file database before changing it and keeps the rows', () 
   assert.equal(fs.readdirSync(dir).filter(n => n.endsWith('.bak')).length, 2);
   db.close();
 });
-test('0.5.0-alpha.1 keeps the v0.4.0 install identity and uninstall keeps data', () => {
+test('0.5.0-alpha.3 keeps the v0.4.0 install identity and uninstall keeps data', () => {
   const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '0.5.0-alpha.1');
+  assert.equal(pkg.version, '0.5.0-alpha.3');
   assert.equal(pkg.name, 'profile-manager');
   assert.equal(pkg.build.appId, 'local.profilemanager.app');
   assert.equal(pkg.build.productName, 'Profile Manager');
@@ -173,6 +173,66 @@ test('0.5.0-alpha.1 keeps the v0.4.0 install identity and uninstall keeps data',
   assert.match(offline, /deleteAppDataOnUninstall:\s*false/);
   const main = fs.readFileSync(new URL('../electron/main.js', import.meta.url), 'utf8');
   assert.match(main, /if \(process\.env\.PM_USER_DATA\) app\.setPath\('userData', process\.env\.PM_USER_DATA\)/);
+});
+test('upgrade from 0.5.0-alpha.1 schema 10 keeps profiles, proxies, secrets, and Chrome user-data', async () => {
+  const { DEFAULT_ADVANCED_SETTINGS } = await import('../server/advanced-settings.js');
+  const dir = fs.mkdtempSync(path.join(tmp, 'up10-'));
+  const file = path.join(dir, 'profiles.db');
+  const profileId = '22222222-2222-2222-2222-222222222222';
+  const userData = path.join(dir, 'profiles', profileId, 'Default');
+  fs.mkdirSync(path.join(userData, 'Network'), { recursive: true });
+  const cookieFile = path.join(userData, 'Network', 'Cookies');
+  const prefFile = path.join(userData, 'Preferences');
+  const cookieBytes = Buffer.from('cookie-bytes-v10');
+  const prefBytes = Buffer.from('{"exit_type":"Normal"}');
+  fs.writeFileSync(cookieFile, cookieBytes);
+  fs.writeFileSync(prefFile, prefBytes);
+  const secret = 'enc:v1:kept-ciphertext';
+  const db = new Database(file);
+  const to10 = migrate(db, migrations.filter(m => m.version <= 10));
+  assert.equal(to10.to, 10);
+  const now = '2026-01-01T00:00:00.000Z';
+  const proxyId = '33333333-3333-3333-3333-333333333333';
+  db.prepare('INSERT INTO proxies (id,name,type,host,port,username,password,tags,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+    .run(proxyId, 'KeptProxy', 'http', '127.0.0.1', 8080, 'user', secret, '[]', now, now);
+  db.prepare(`INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at,proxy_id,browser_settings,webrtc_settings)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(profileId, 'KeptProfile', '["alpha"]', 'Folder', 'note', now, now, proxyId,
+      '{"locale":"en-US","timezoneId":"UTC","languages":["en-US"]}',
+      '{"mode":"disable_non_proxied_udp"}');
+  db.close();
+  const db2 = new Database(file);
+  const upgraded = migrate(db2);
+  assert.equal(upgraded.from, 10);
+  assert.deepEqual(upgraded.applied, migrations.filter(m => m.version > 10).map(m => m.version));
+  assert.equal(upgraded.to, migrations.at(-1).version);
+  assert.ok(upgraded.backup && fs.existsSync(upgraded.backup));
+  const profile = db2.prepare('SELECT name, tags, folder, notes, proxy_id, browser_settings, webrtc_settings, advanced_settings, automation_enabled FROM profiles WHERE id=?').get(profileId);
+  assert.equal(profile.name, 'KeptProfile');
+  assert.equal(profile.tags, '["alpha"]');
+  assert.equal(profile.folder, 'Folder');
+  assert.equal(profile.notes, 'note');
+  assert.equal(profile.proxy_id, proxyId);
+  assert.equal(profile.automation_enabled, 0);
+  assert.equal(profile.browser_settings, '{"locale":"en-US","timezoneId":"UTC","languages":["en-US"]}');
+  assert.equal(profile.webrtc_settings, '{"mode":"disable_non_proxied_udp"}');
+  assert.deepEqual(JSON.parse(profile.advanced_settings), DEFAULT_ADVANCED_SETTINGS);
+  const proxy = db2.prepare('SELECT name, type, host, port, username, password, provider, provider_ref, provider_meta FROM proxies WHERE id=?').get(proxyId);
+  assert.equal(proxy.name, 'KeptProxy');
+  assert.equal(proxy.type, 'http');
+  assert.equal(proxy.host, '127.0.0.1');
+  assert.equal(proxy.port, 8080);
+  assert.equal(proxy.username, 'user');
+  assert.equal(proxy.password, secret);
+  assert.equal(proxy.provider, null);
+  assert.equal(proxy.provider_ref, null);
+  assert.equal(proxy.provider_meta, '{}');
+  for (const table of ['provider_accounts', 'saved_views', 'bulk_jobs', 'proxy_checks']) {
+    assert.equal(db2.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table).name, table);
+  }
+  db2.close();
+  assert.deepEqual(fs.readFileSync(cookieFile), cookieBytes);
+  assert.deepEqual(fs.readFileSync(prefFile), prefBytes);
 });
 test('v0.4.0 migrations stay the be575c7 list', async () => {
   const { migrationsV040 } = await import('./fixtures/schema-v0.4.0.mjs');
@@ -261,7 +321,7 @@ test('migrations: v6 moves inline proxies into the library (dedupe identical, ke
   ins.run('a', 'A', px('enc:v1:SAME')); ins.run('b', 'B', px('enc:v1:SAME')); ins.run('c', 'C', px('enc:v1:OTHER'));
   ins.run('d', 'D', null); ins.run('e', 'E', JSON.stringify({ type: 'ftp', host: 'h', port: 1 }));
   const r = migrate(db);
-  assert.deepEqual(r.applied, [6, 7, 8]);
+  assert.deepEqual(r.applied, migrations.filter(m => m.version > 5).map(m => m.version));
   const rows = db.prepare('SELECT * FROM proxies ORDER BY password').all();
   assert.equal(rows.length, 2, 'identical endpoint+ciphertext deduped; different password kept separate');
   assert.equal(rows[1].password, 'enc:v1:SAME'); assert.equal(rows[1].name, 'socks5://h:1080');

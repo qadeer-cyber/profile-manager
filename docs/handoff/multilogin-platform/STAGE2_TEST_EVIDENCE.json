@@ -1,0 +1,125 @@
+{
+  "source_parent": "401b0a4d86d30728458b816c047ce0e65f71e7b2",
+  "platform": "Linux 6.18.57 x64",
+  "node": "v24.22.1",
+  "note": "Suite counts overlap. Final portable/API/purge tests reran after hardening; full data-recovery aggregate preceded the final container-size guard and partial-recovery reporting refinements. No tests were removed or skipped to turn missing browser gates green. Final snapshot changes are covered by 13 export/WAL/API tests and two focused Firefox/older-schema tests, followed by stabilization. No full browser qualification is claimed.",
+  "checks": [
+    {
+      "suite": "stabilization",
+      "command": "npm run test:stabilization",
+      "tests": 90.0,
+      "pass": 90.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 4228.730935
+    },
+    {
+      "suite": "data_recovery",
+      "command": "npm run test:data-recovery",
+      "tests": 47.0,
+      "pass": 47.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 84814.000575
+    },
+    {
+      "suite": "final_portable",
+      "command": "node --test --test-timeout=120000 test/portable-recovery.test.js",
+      "tests": 27.0,
+      "pass": 27.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 80129.768467
+    },
+    {
+      "suite": "final_purge_locks",
+      "command": "node --test --test-timeout=30000 test/recovery-locks.test.js test/profile-lifecycle-purge.test.js",
+      "tests": 10.0,
+      "pass": 10.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 455.351508
+    },
+    {
+      "suite": "http_api",
+      "command": "node --test --test-timeout=30000 test/portable-api.test.js",
+      "tests": 1.0,
+      "pass": 1.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 3043.159259
+    },
+    {
+      "suite": "source_subset",
+      "command": "node --test --test-timeout=30000 --experimental-test-module-mocks test/browser-runtime-native-launch.test.js test/native-tab-restore-launch.test.js test/profile-table-workspace.test.js test/profile-config-engine.test.js test/profile-lifecycle-trash.test.js test/firefox-launch-plan.test.js test/firefox-proxy-locale.test.js test/firefox-gecko-prefs.test.js test/firefox-gecko-userjs.test.js test/gecko-cookies.test.js test/firefox-cookies-api.test.js test/profile-lifecycle.test.js test/profile-lifecycle-purge.test.js test/upgrade-data-depth.test.js test/session-harvest.test.js test/automation-cli-smoke.test.js test/p1-google-compat.test.js test/extensions.test.js test/extensions-launch.test.js test/update-manager.test.js test/webdriver-bridge.test.js test/webdriver-api.test.js test/geckodriver-bridge.test.js test/firefox-spawn-smoke.test.js test/migration-v13-v16.test.js test/workspaces.test.js test/cookie-robot-jobs.test.js test/cookie-robot-url.test.js test/cookie-robot-cancel.test.js test/advanced-launch-window.test.js test/proxy-duplicate.test.js test/launch-limits-local.test.js test/profile-browser-export.test.js test/adb-adapter.test.js test/browser-window-actions.test.js test/automation-drivers.test.js test/firefox-regional-observable.test.js test/fingerprint-privacy-launch.test.js test/gecko-extensions.test.js test/firefox-launch-window.test.js test/profile-backup-export.test.js test/backup-selective.test.js test/gecko-xpi.test.js test/window-state.test.js test/workspaces-api.test.js test/adb-devices-parse.test.js test/proxy-providers.test.js test/portable-api.test.js",
+      "tests": 142.0,
+      "pass": 141.0,
+      "fail": 0.0,
+      "skipped": 1.0,
+      "cancelled": 0.0,
+      "duration_ms": 7122.646772
+    },
+    {
+      "suite": "full_unit",
+      "command": "npm run test:unit",
+      "tests": 134.0,
+      "pass": 132.0,
+      "fail": 2.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 27729.390874
+    },
+    {
+      "suite": "human_input_gate",
+      "command": "node --test --test-timeout=30000 test/human-input.test.js",
+      "tests": 2.0,
+      "pass": 1.0,
+      "fail": 1.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 521.681699
+    },
+    {
+      "suite": "export_snapshot",
+      "command": "node --test --experimental-test-module-mocks --test-timeout=30000 test/backup.test.js test/backup-encrypted.test.js test/backup-selective.test.js test/portable-api.test.js",
+      "tests": 13.0,
+      "pass": 13.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 4152.673118
+    },
+    {
+      "suite": "final_snapshot_compatibility",
+      "command": "node --test --test-timeout=30000 --test-name-pattern='encrypted portable firefox|older supported source' test/portable-recovery.test.js",
+      "tests": 2.0,
+      "pass": 2.0,
+      "fail": 0.0,
+      "skipped": 0.0,
+      "cancelled": 0.0,
+      "duration_ms": 3865.013368
+    }
+  ],
+  "build": {
+    "command": "npm run build",
+    "passed": true,
+    "vite_duration_ms": 351
+  },
+  "static_checks": {
+    "commands": [
+      "node --check server/portable-backup.js",
+      "node --check server/recovery-journal.js",
+      "node --check server/backup.js",
+      "node --check server/profile-lifecycle.js",
+      "node --check server/app.js",
+      "node --check server/browsers.js",
+      "git diff --check"
+    ],
+    "passed": true
+  }
+}

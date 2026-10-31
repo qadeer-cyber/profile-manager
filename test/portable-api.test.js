@@ -1,0 +1,44 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { spawnServer, stopServer } from './_ports.mjs';
+const worker = fileURLToPath(new URL('./fixtures/portable-recovery-worker.mjs', import.meta.url));
+const token = 'disposable-portable-api-test';
+const headers = { Authorization: `Bearer ${token}`, 'X-UI-Token': token, 'Content-Type': 'application/json' };
+function seed(dir) {
+  const env = { ...process.env, PM_DATA_DIR: dir, PM_TEST_ARGS: JSON.stringify({ mode: 'seed' }) }; delete env.NODE_TEST_CONTEXT; delete env.PM_SECRET;
+  const result = spawnSync(process.execPath, [worker], { env, encoding: 'utf8', timeout: 15000 });
+  assert.equal(result.status, 0, result.stderr); return JSON.parse(result.stdout).value;
+}
+test('real local API exports encrypted v2, restores into a fresh server and exposes confirmed recovery controls', { timeout: 30000 }, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-portable-api-'));
+  const a = path.join(root, 'A'), b = path.join(root, 'B'), ids = seed(a);
+  let first, second;
+  t.after(async () => { if (first) assert.equal(await stopServer(first), true); if (second) assert.equal(await stopServer(second), true); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });
+  const env = dir => { const e = { ...process.env, PM_DATA_DIR: dir, PM_API_TOKEN: token, PM_UI_TOKEN: token }; delete e.PM_SECRET; return e; };
+  first = await spawnServer(env(a));
+  const url = first.url + `/api/profiles/${ids.chromium}/backup/export`;
+  assert.equal((await fetch(url, { method: 'POST', headers, body: '{}' })).status, 400);
+  assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ confirmSensitive: true }) })).status, 400);
+  const exported = await fetch(url, { method: 'POST', headers, body: JSON.stringify({ confirmSensitive: true, passphrase: 'portable API passphrase' }) });
+  assert.equal(exported.status, 200); assert.equal(exported.headers.get('cache-control'), 'no-store');
+  const bytes = Buffer.from(await exported.arrayBuffer()); assert.equal(bytes.subarray(0, 4).toString(), 'PMBE');
+  assert.equal(bytes.includes(Buffer.from('fixture-proxy-password')), false);
+  assert.equal(await stopServer(first), true); first = null;
+  second = await spawnServer(env(b));
+  const rawHeaders = { Authorization: `Bearer ${token}`, 'X-UI-Token': token, 'Content-Type': 'application/octet-stream', 'X-Backup-Passphrase': 'portable API passphrase' };
+  const preview = await fetch(second.url + '/api/backup/inspect', { method: 'POST', headers: rawHeaders, body: bytes });
+  assert.equal(preview.status, 200); assert.equal((await preview.json()).profiles[0].id, ids.chromium);
+  const restored = await fetch(second.url + '/api/backup/restore', { method: 'POST', headers: rawHeaders, body: bytes });
+  assert.equal(restored.status, 200); assert.equal((await restored.json()).added.length, 1);
+  const profiles = await fetch(second.url + '/api/v1/profiles', { headers });
+  assert.equal((await profiles.json()).length, 1);
+  const denied = await fetch(second.url + '/api/recovery/operations'); assert.equal(denied.status, 401);
+  const ops = await fetch(second.url + '/api/recovery/operations', { headers }); assert.equal(ops.status, 200); assert.deepEqual(await ops.json(), []);
+  const missing = '77777777-7777-4777-8777-777777777777';
+  assert.equal((await fetch(second.url + `/api/recovery/operations/${missing}/recover`, { method: 'POST', headers, body: '{}' })).status, 400);
+});

@@ -6,8 +6,21 @@ on:
         description: Build Windows installers
         type: boolean
         default: false
+      m17_validation_only:
+        description: M17 validation only (M10–M17 regressions, no installers, no artifacts)
+        type: boolean
+        default: false
   push:
-    branches: [windows-validation, development/v0.5.0]
+    branches:
+      - windows-validation
+      - development/v0.5.0
+      # M17 validation-only when workflow_dispatch is unavailable to integration tokens
+      - feature/m10-local-parity
+    paths-ignore:
+      - 'release/**'
+      - 'docs/**'
+      - 'LOCAL_PRODUCT_PARITY_SCORECARD.md'
+      - '.github/workflows/alpha3-release-validation.yml'
   pull_request:
     branches: [main]
     paths-ignore:
@@ -15,7 +28,81 @@ on:
       - '.github/workflows/windows-native-validation.yml'
 
 jobs:
+  m17-windows-validation:
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/feature/m10-local-parity') || (github.event_name == 'workflow_dispatch' && github.event.inputs.m17_validation_only == 'true') }}
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      PM_API_TOKEN: m17-gha-validation
+    steps:
+      - name: Checkout exact ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - name: Record environment (redacted summary inputs)
+        shell: pwsh
+        run: |
+          $env:PM_DATA_DIR = Join-Path $env:RUNNER_TEMP 'pm-m17-isolated-data'
+          New-Item -ItemType Directory -Path $env:PM_DATA_DIR -Force | Out-Null
+          "PM_DATA_DIR=$($env:PM_DATA_DIR)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $summary = @"
+          ## M17 Windows validation
+          - **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          - **Event:** ${{ github.event_name }}
+          - **SHA:** ${{ github.sha }}
+          - **Ref:** ${{ github.ref }}
+          - **Runner:** $env:RUNNER_OS $env:RUNNER_ARCH
+          - **Image:** windows-2022 (GitHub-hosted; not physical Latitude 5480)
+          "@
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value $summary
+          Write-Host "OS=$([Environment]::OSVersion.VersionString)"
+          Write-Host "Node=$(node -v)"
+      - name: Install Node 22 x64
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: npm ci
+        timeout-minutes: 15
+        run: npm ci
+      - name: Install pinned Chromium (Playwright)
+        timeout-minutes: 15
+        run: npx playwright install chromium
+      - name: Build React UI
+        timeout-minutes: 10
+        run: npm run build
+      - name: M10–M17 regression suites
+        timeout-minutes: 45
+        run: npm run test:m17-regression
+      - name: Windows-native CI tests (CIM, concurrent profiles, UI 1366x768)
+        timeout-minutes: 20
+        run: npm run test:m17-windows-ci
+      - name: Run M17 Latitude smoke script (isolated data dir, SkipDeps)
+        timeout-minutes: 45
+        shell: pwsh
+        run: |
+          $isolated = Join-Path $env:RUNNER_TEMP "pm-m17-smoke-$([guid]::NewGuid().ToString('n'))"
+          New-Item -ItemType Directory -Path $isolated -Force | Out-Null
+          $env:PM_DATA_DIR = $isolated
+          & ./scripts/windows-smoke/Run-M17-Latitude5480.ps1 -ExpectedCommit '${{ github.sha }}' -SkipDeps
+      - name: Win32 GPU observation (informational, not Latitude HD 620 proof)
+        if: always()
+        shell: pwsh
+        run: |
+          $gpu = Get-CimInstance Win32_VideoController | Select-Object Name, DriverVersion, AdapterRAM
+          $json = ($gpu | ConvertTo-Json -Compress)
+          Write-Host "GPU_OBSERVATION $json"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### GPU (runner VM)`n``````json`n$json`n``````"
+      - name: Validation result
+        if: always()
+        shell: pwsh
+        run: |
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### Result`nM17 validation job completed. Inspect step logs above for PASS/FAIL."
+
   windows-build:
+    if: ${{ (github.event_name != 'push' || github.ref != 'refs/heads/feature/m10-local-parity') && (github.event_name != 'workflow_dispatch' || github.event.inputs.m17_validation_only != 'true') }}
     runs-on: windows-2022
     timeout-minutes: 120
     permissions:
@@ -94,7 +181,6 @@ jobs:
         timeout-minutes: 15
         shell: bash
         env:
-          # ui-smoke.mjs: 5 min watchdog, screenshots in the OS temp dir unless OUT_DIR is set.
           PM_UI_TIMEOUT_MS: "300000"
         run: |
           set -o pipefail
@@ -145,15 +231,13 @@ jobs:
           }
           EOF
       - name: Upload test logs
-        if: always()
+        if: false
         uses: actions/upload-artifact@v4
         with:
           name: windows-test-logs
           path: test-logs/**
           if-no-files-found: warn
           retention-days: 14
-      # Node suites above loaded the Node prebuild. Confirm that, then delete the
-      # prebuilds so install-app-deps actually compiles the Electron ABI binary.
       - name: Confirm Node suites loaded the Node prebuild
         timeout-minutes: 5
         run: node scripts/confirm-node-native.mjs
@@ -169,8 +253,6 @@ jobs:
       - name: Electron desktop smoke on Windows
         timeout-minutes: 15
         run: npm run test:electron
-      # One deliverable, and only when explicitly dispatched: the offline NSIS setup.
-      # test/electron-smoke.js stays the standard-build smoke and is not used here.
       - name: Build offline Windows setup EXE
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         timeout-minutes: 45
@@ -231,7 +313,6 @@ jobs:
             if (-not (Test-Path -LiteralPath $path)) { Write-Error "missing $path"; exit 1 }
             Write-Output "present $path"
           }
-      # Each launch in test/electron-smoke-offline.js sets PM_SMOKE_PHASE to clean, upgrade, seed, check, or lifecycle.
       - name: Offline smoke of the installed app
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.build_installers }}
         timeout-minutes: 35
@@ -252,7 +333,6 @@ jobs:
           $db = Join-Path $env:APPDATA 'profile-manager\data\profiles.db'
           if (-not (Test-Path -LiteralPath $un)) { Write-Error "uninstaller missing: $un"; exit 1 }
           if (-not (Test-Path -LiteralPath $db)) { Write-Error "profile database missing before uninstall: $db"; exit 1 }
-          # _?= keeps NSIS from respawning, so -Wait covers the real uninstall. It must be last and unquoted.
           $p = Start-Process -FilePath $un -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
           if ($p.ExitCode -ne 0) { Write-Error "uninstaller exited $($p.ExitCode)"; exit 1 }
           $deadline = (Get-Date).AddSeconds(30)
@@ -268,7 +348,7 @@ jobs:
           Write-Output "kept $db"
           Write-Output "kept $($baks.Count) migration backup(s)"
       - name: Upload binaries and verification reports
-        if: always()
+        if: false
         uses: actions/upload-artifact@v4
         with:
           name: profile-manager-windows-native-artifacts

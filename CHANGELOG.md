@@ -2,6 +2,22 @@
 
 This project records changes by **verified milestones**. Git tags and package versions are not inferred from branch names. Release artifacts are separate from source acceptance.
 
+## Unreleased — local fingerprint controls on `feature/m10-local-parity`
+
+Source only. No installer, release tag, or main merge.
+
+- Per-profile fingerprint settings can turn WebGL off, deny local-font access, and deny camera and microphone. Canvas, audio, and port-scan results stay the browser’s own. Substitute GPU, font, device, and noise values are rejected.
+- A consistency report compares those settings with a live page. It does not mark a signal passed when the page was not read.
+- The comparison with Multilogin’s fingerprint section is `FINGERPRINT_PARITY_MATRIX.md`.
+
+## Unreleased — M8 and M9 on `feature/m8-m9-professional-parity`
+
+Source only. No installer, release tag, or main merge is part of this branch.
+
+- Dashboard, profile table, saved views, bulk jobs, and stopped-profile storage cleanup use the database and the live process.
+- Optional AES-256-GCM backups use scrypt (N=16384, r=8, p=1). Older PMB1 backups still restore.
+- Local automation adds batch operations and job status. Bright Data, Oxylabs Residential, and Webshare adapters follow those providers' published APIs. Manual proxy configuration remains.
+
 ## Unreleased — M1 integration to `main`
 
 ### Added and validated

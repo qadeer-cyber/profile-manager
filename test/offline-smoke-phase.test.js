@@ -67,11 +67,11 @@ test('clean returns the diagnostics shape the install acceptance reads', async (
   const out = await runCleanPhase(base({
     userData: 'C:\\Users\\me\\AppData\\Roaming\\profile-manager',
     call: async () => ({ s: 200, d: {
-      app: { version: '0.5.0-alpha.1' }, schemaVersion: 7,
+      app: { version: '0.5.0-alpha.3' }, schemaVersion: 7,
       migration: { from: 0, backup }, dataDir: 'C:\\Users\\me\\AppData\\Roaming\\profile-manager\\data',
     } }),
   }));
-  assert.equal(out.clean.version, '0.5.0-alpha.1');
+  assert.equal(out.clean.version, '0.5.0-alpha.3');
   assert.equal(out.clean.schemaVersion, 7);
   assert.equal(out.clean.from, 0);
   assert.equal(out.clean.backup, backup);
@@ -91,7 +91,7 @@ test('upgrade returns the acceptance shape and detaches the dead proxy before th
     dataDir: dir,
     call: async (m, u, b) => {
       calls.push({ m, u, b });
-      if (u === '/api/diagnostics') return { s: 200, d: { app: { version: '0.5.0-alpha.1' }, schemaVersion: 7, migration: { from: 6, backup }, dataDir: dir } };
+      if (u === '/api/diagnostics') return { s: 200, d: { app: { version: '0.5.0-alpha.3' }, schemaVersion: 7, migration: { from: 6, backup }, dataDir: dir } };
       if (u === '/api/profiles' && m === 'GET') return { s: 200, d: [{ id: 'leg', name: 'Legacy', secretError: null, proxy: { name: 'LegacyProxy', hasPassword: true } }] };
       if (u === '/api/proxies') return { s: 200, d: [{ name: 'LegacyProxy' }] };
       if (u.endsWith('/launch')) return { s: 200, d: { running: true } };

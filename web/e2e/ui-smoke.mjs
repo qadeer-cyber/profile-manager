@@ -57,11 +57,19 @@ await pg.screenshot({ path: OUT + 'light.png' });
 await step('dark theme persists', async () => { await pg.click('[title="Dark theme"]'); await pg.reload(); await pg.waitForSelector('.side'); if (await pg.evaluate(() => document.documentElement.dataset.theme) !== 'dark') throw new Error('not dark'); });
 await rows(3); await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input');
 await pg.screenshot({ path: OUT + 'dark-bulk.png' });
+await pg.click('.bulkbar >> text=Clear');
 await pg.click('[aria-label="Edit Bravo"]'); await pg.click('.drawer [role=tab]:has-text("Proxy")'); await pg.screenshot({ path: OUT + 'drawer.png' }); await pg.keyboard.press('Escape');
 await pg.click('[data-nav=proxies]');
 await step('delete in-use proxy asks to force', async () => { await pg.click('[aria-label="Delete Local dead"]'); await pg.waitForSelector('.card >> text=Proxy is in use'); await pg.click('text=Unassign and delete'); await pg.waitForFunction(() => document.querySelectorAll('tbody td.name').length === 3); });
 await pg.click('[data-nav=profiles]'); await rows(3);
-await step('bulk delete 2 profiles', async () => { await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input'); await pg.click('.bulkbar >> text=Delete'); await pg.click('.card >> text=Delete all'); await rows(1); });
+await step('bulk delete 2 profiles', async () => {
+  if (await pg.locator('.bulkbar').count()) await pg.click('.bulkbar >> text=Clear');
+  await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input');
+  await pg.waitForSelector('.bulkbar >> text=2 selected');
+  await pg.locator('.bulkbar').getByRole('button', { name: 'Delete' }).click();
+  await pg.locator('.card').getByRole('button', { name: 'Move to trash' }).click();
+  await rows(1);
+});
 await pg.setViewportSize({ width: 820, height: 700 }); await pg.screenshot({ path: OUT + 'narrow.png' });
 await step('settings and diagnostics render', async () => { await pg.click('[data-nav=settings]'); await pg.waitForSelector('h1:has-text("Settings")'); await pg.click('[data-nav=diagnostics]'); await pg.waitForSelector('h1:has-text("Diagnostics")'); });
 await step('lifecycle events update status once', async () => {

@@ -1,0 +1,30 @@
+[
+  {
+    "ProcessId": 4000,
+    "ParentProcessId": 900,
+    "Name": "chrome.exe",
+    "CommandLine": "\"C:\\Chromium\\chrome.exe\" --user-data-dir=\"C:\\Data\\profiles\\aaa\" --no-first-run",
+    "WorkingSetSize": 120000000
+  },
+  {
+    "ProcessId": 4001,
+    "ParentProcessId": 4000,
+    "Name": "chrome.exe",
+    "CommandLine": "\"C:\\Chromium\\chrome.exe\" --type=gpu-process --user-data-dir=\"C:\\Data\\profiles\\aaa\"",
+    "WorkingSetSize": 45000000
+  },
+  {
+    "ProcessId": 5000,
+    "ParentProcessId": 900,
+    "Name": "chrome.exe",
+    "CommandLine": "\"C:\\Chromium\\chrome.exe\" --user-data-dir=\"C:\\Data\\profiles\\bbb\"",
+    "WorkingSetSize": 80000000
+  },
+  {
+    "ProcessId": 5001,
+    "ParentProcessId": 5000,
+    "Name": "chrome.exe",
+    "CommandLine": "\"C:\\Chromium\\chrome.exe\" --type=renderer --user-data-dir=\"C:\\Data\\profiles\\bbb\"",
+    "WorkingSetSize": 60000000
+  }
+]
