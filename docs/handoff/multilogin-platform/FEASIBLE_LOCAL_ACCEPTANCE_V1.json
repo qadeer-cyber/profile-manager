@@ -118,8 +118,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Stage 2 encrypted portable v2 plus Stage 3 bounded disk-backed streaming, 96 MiB fresh-install API round trip, integrity/crash tests and real-engine/UI acceptance harness. See STAGE3_RECOVERY_CHECKPOINT.md.",
-      "missing": "Actual Chromium/Firefox and Windows end-to-end acceptance pending; cross-machine OS-bound credential decryption is not claimed. Maximum-size/hardware interruption qualification pending.",
+      "implementation_evidence": "Encrypted portable v2, bounded streaming and atomic workspace restore; Windows Chromium/Firefox UI export, fresh local installation restore and cookie/localStorage restart readback using application Stop passed at 9e7be08.",
+      "missing": "Bookmarks/session/extension-settings readback, maximum-size/hardware interruption and installed Windows 10 gates remain. Cross-machine OS-bound credential decryption is not claimed.",
       "status": "INCOMPLETE",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },
@@ -174,8 +174,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Exact multi-display/DPI/maximized-state workflows and physical Windows evidence missing.",
-      "missing": "Exact multi-display/DPI/maximized-state workflows and physical Windows evidence missing.",
+      "implementation_evidence": "Win32/X11 observed bounds and maximized-state persistence, negative coordinates and disconnected-monitor fallback. Windows Chromium observed restart passed at c02f5b2. Firefox launcher identity and empty MOZ_HEADLESS inheritance repaired.",
+      "missing": "Firefox real-window rerun and physical mixed-DPI/multi-monitor disconnect qualification remain; no synthetic observation is credited.",
       "status": "BLOCKED",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },
@@ -202,8 +202,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Safe library import and inventory only. Genuine signed extension installation/enable/disable/remove/restart/isolation through supported Firefox mechanisms remains incomplete.",
-      "missing": "Safe library import and inventory only. Genuine signed extension installation/enable/disable/remove/restart/isolation through supported Firefox mechanisms remains incomplete.",
+      "implementation_evidence": "Confirmed permanent Firefox AddonManager install/removal with strict signing policy, profile/PID validation and installed-package checksum. Genuine signed installation/restart/isolation/removal passed Windows at c02f5b2. UI and altered-signature negative acceptance strengthened at 9e7be08.",
+      "missing": "Strengthened real UI/invalid-signature acceptance pending; enable/disable remains through Firefox about:addons and has not passed the full app workflow gate.",
       "status": "INCOMPLETE",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },
@@ -524,8 +524,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Workspaces UI + local export bundle API; vault lock; no team cloud",
-      "missing": "Current revision has not passed the complete frozen acceptance gate for this capability; retain the historical matrix evidence without treating it as new qualification.",
+      "implementation_evidence": "Complete encrypted workspace snapshot/import, shared dependency mapping, recovery locks and actual Windows UI restart acceptance; authenticated TLS ciphertext relay with ACLs and revision conflicts tested between two local installations.",
+      "missing": "Complete combined defaults/vault/bulk/movement UI workflows on this revision remain unqualified. Deployed independent-device sync is additional Track C scope, not an extra condition on this frozen local group; local snapshot tests are not cloud-team evidence.",
       "status": "INCOMPLETE",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },

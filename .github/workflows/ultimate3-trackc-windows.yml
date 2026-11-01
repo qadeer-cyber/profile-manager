@@ -1,0 +1,49 @@
+name: Ultimate 3 Track C Windows acceptance
+on:
+  push:
+    branches: [feature/ultimate3-profile-firefox-workspaces]
+permissions:
+  contents: read
+jobs:
+  trackc-windows:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Native dependencies and real browsers
+        id: setup
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          New-Item -ItemType Directory -Force build-evidence/trackc | Out-Null
+          # Upstream signed release; Firefox must still validate Mozilla's chain.
+          $xpi = Join-Path $env:RUNNER_TEMP 'ublock-1.75.0.signed.xpi'
+          Invoke-WebRequest 'https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.firefox.signed.xpi' -OutFile $xpi
+          $expected = '5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287'
+          if ((Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Signed XPI fixture checksum mismatch' }
+          "PM_SIGNED_XPI=$xpi" >> $env:GITHUB_ENV
+          "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Source, recovery, UI and real browser gates
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        shell: pwsh
+        run: node scripts/qualify-trackc.mjs
+      - name: Preserve exact test evidence even after failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trackc-windows-${{ github.sha }}
+          path: build-evidence/trackc
+          if-no-files-found: warn
+          retention-days: 14

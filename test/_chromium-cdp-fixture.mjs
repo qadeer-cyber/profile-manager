@@ -5,12 +5,12 @@ import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { freePort, trackProcess, hardKill } from './_ports.mjs';
 
-export async function startChromiumCdpFixture(t) {
+export async function startChromiumCdpFixture(t, { url = 'about:blank' } = {}) {
   const exe = chromium.executablePath();
   if (!fs.existsSync(exe)) throw new Error('Pinned Chromium is unavailable; install it with npx playwright install chromium');
   const port = await freePort(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-cdp-fixture-'));
   let spawnError, stderr = '';
-  const proc = trackProcess(spawn(exe, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${dir}`, '--headless=new', '--no-first-run', '--no-default-browser-check', ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []), 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', windowsHide: true }));
+  const proc = trackProcess(spawn(exe, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${dir}`, '--headless=new', '--no-first-run', '--no-default-browser-check', ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []), url], { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', windowsHide: true }));
   proc.on('error', e => { spawnError = e; });
   proc.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-2000); });
   const closed = new Promise(resolve => proc.once('close', resolve));

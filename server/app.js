@@ -1,4 +1,6 @@
-import { createStreamedPortableBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
+import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
+import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
+import { createStreamedPortableBackup, createStreamedWorkspaceBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
 import { pipeline as streamPipeline } from 'node:stream/promises';
 import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
@@ -791,6 +793,14 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
       profileIds,
     }));
   }));
+  router.post('/workspaces/:id/backup/export-stream', wrap(async (req, res) => {
+    rejectPassphraseQuery(req);
+    const transfer = await createStreamedWorkspaceBackup(req.params.id, { passphrase: req.body?.passphrase, confirmSensitive: req.body?.confirmSensitive === true, ids: engine.runningIds() });
+    try {
+      res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': String(transfer.size), 'Content-Disposition': 'attachment; filename="workspace.pmp"', 'Cache-Control': 'no-store', 'X-Backup-Encrypted': 'aes-256-gcm' });
+      await streamPipeline(fs.createReadStream(transfer.file), res);
+    } finally { transfer.cleanup(); }
+  }));
   router.post('/profiles/:id/backup/export-stream', wrap(async (req, res) => {
     must(req.params.id); rejectPassphraseQuery(req);
     const transfer = await createStreamedPortableBackup(req.params.id, { passphrase: req.body?.passphrase, confirmSensitive: req.body?.confirmSensitive === true, ids: engine.runningIds() });
@@ -803,7 +813,7 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     rejectPassphraseQuery(req);
     const transfer = await spoolBackupUpload(req);
     try {
-      res.json(await processStreamedBackup(transfer, { passphrase: req.get('x-backup-passphrase') || undefined, collision: String(req.query.collision || 'abort'), profileIds: req.query.profileIds || undefined, running: engine.runningIds(), inspect: action === 'inspect' }));
+      res.json(await processStreamedBackup(transfer, { passphrase: req.get('x-backup-passphrase') || undefined, collision: String(req.query.collision || 'abort'), profileIds: req.query.profileIds || undefined, running: engine.runningIds(), inspect: action === 'inspect', workspaceId: req.query.workspaceId || undefined }));
     } finally { transfer.cleanup(); }
   }));
   router.post('/profiles/:id/backup/export', wrap((req, res) => {
@@ -1067,6 +1077,12 @@ function mountExtensionRoutes(r) {
       : importUnpackedGeckoExtension(p);
     res.status(201).json(publicExtension(row));
   }));
+  r.post('/profiles/:id/gecko-extensions/:extensionId/install', wrap(async (req, res) => {
+    must(req.params.id); res.json(await installGeckoExtension(req.params.id, req.params.extensionId, req.body || {}));
+  }));
+  r.post('/profiles/:id/gecko-extensions/:extensionId/remove', wrap(async (req, res) => {
+    must(req.params.id); res.json(await removeGeckoExtension(req.params.id, req.params.extensionId, req.body || {}));
+  }));
   r.get('/profiles/:id/gecko-extensions', wrap((req, res) => {
     const p = must(req.params.id);
     if (p.browserEngine !== 'firefox') throw err(400, 'Profile is not Firefox');
@@ -1220,6 +1236,12 @@ function mountProxyRoutes(r) {
   }));
 }
 function mountWorkspace(router) {
+  router.post('/workspaces/:id/sync/push', wrap(async (req, res) => {
+    res.json(await pushWorkspaceSnapshot(req.params.id, req.body || {}));
+  }));
+  router.post('/workspaces/sync/pull', wrap(async (req, res) => {
+    res.json(await pullWorkspaceSnapshot(req.body || {}));
+  }));
   router.get('/workspaces/vault-status', wrap((req, res) => res.json({ vaultStorageAvailable: vaultStorageAvailable(), backend: encryptionStatus().backend })));
   router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces({ q: req.query.q }))));
   router.post('/workspaces', wrap((req, res) => res.status(201).json(createWorkspace(req.body || {}))));

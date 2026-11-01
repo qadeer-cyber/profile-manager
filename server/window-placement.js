@@ -76,7 +76,7 @@ export function assessWindowPlacement(screen = {}, displays = null) {
 export function parseXrandr(text) {
   const displays = [];
   for (const line of String(text || '').split('\n')) {
-    const match = line.match(/^(\S+)\s+connected(?:\s+primary)?\s+(\d+)x(\d+)\+(\d+)\+(\d+)/);
+    const match = line.match(/^(\S+)\s+connected(?:\s+primary)?\s+(\d+)x(\d+)([+-]\d+)([+-]\d+)/);
     if (!match) continue;
     displays.push({
       name: match[1],
@@ -91,7 +91,13 @@ export function parseXrandr(text) {
 
 /** Best-effort host displays. Null when there is no X display or xrandr fails. */
 export function readHostDisplays() {
-  if (process.platform !== 'linux' || !process.env.DISPLAY) return null;
+  if (process.platform === 'win32') {
+    try {
+      const text = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Add-Type -AssemblyName System.Windows.Forms; @([System.Windows.Forms.Screen]::AllScreens | Sort-Object -Property @{Expression={-not $_.Primary}} | ForEach-Object { @{x=$_.WorkingArea.X;y=$_.WorkingArea.Y;width=$_.WorkingArea.Width;height=$_.WorkingArea.Height} }) | ConvertTo-Json -Compress'], { timeout: 3000, windowsHide: true, encoding: 'utf8', maxBuffer: 65536 });
+      const parsed = JSON.parse(text); return Array.isArray(parsed) ? parsed : [parsed];
+    } catch { return null; }
+  }
+  if (process.platform !== 'linux'  || !process.env.DISPLAY) return null;
   try {
     const text = execFileSync('xrandr', ['--query'], {
       timeout: 1500,
