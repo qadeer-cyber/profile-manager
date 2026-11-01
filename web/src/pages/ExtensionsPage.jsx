@@ -161,7 +161,7 @@ function ManageGeckoDialog({ extension, onClose }) {
     <button disabled={busy || !selected || !confirmed} onClick={() => act('remove')}>Remove from profile</button>
   </>}>
     <p>Launch the target Firefox profile with automation enabled. Other automation clients must disconnect before this operation. Firefox verifies Mozilla signing and compatibility; unsigned or unpacked packages cannot be permanently installed here.</p>
-    <label>Firefox profile<select value={selected} onChange={e => { setSelected(e.target.value); setConfirmed(false); inspect(e.target.value).catch(e => setStatus(e.message)); }}><option value="">Choose profile</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}{p.running ? ' (running)' : ' (stopped)'}</option>)}</select></label>
+    <label>Firefox profile<select aria-label="Firefox profile" value={selected} onChange={e => { setSelected(e.target.value); setConfirmed(false); inspect(e.target.value).catch(e => setStatus(e.message)); }}><option value="">Choose profile</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}{p.running ? ' (running)' : ' (stopped)'}</option>)}</select></label>
     <label className="check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I confirm this change to the selected profile.</label>
     {addons.filter(a => a.id === extension.geckoExtensionId).map(a => <p key={a.id}>Recorded version {a.version}; {a.signatureVerified ? 'Firefox signature accepted' : 'signature unverified'}; {a.active ? 'active' : 'inactive'}. Enable/disable in about:addons.</p>)}
     {status && <p role="status">{status}</p>}

@@ -54,7 +54,8 @@ for (const engine of ['chromium','firefox']) test(`M12 real ${engine} OS geometr
   await app.api(`/profiles/${p.id}/stop`, {});
   if (engine === 'firefox') {
     launched = await app.api(`/profiles/${p.id}/launch`, { headless: false, automation: false });
-    await eventually(() => observeNativeWindow(launched.cdp.pid), s => s?.maximized, 'Manual Firefox launch did not restore its real browser window');
+    assert.equal(launched.cdp, undefined); assert.ok(Number.isSafeInteger(launched.pid));
+    await eventually(() => observeNativeWindow(launched.pid), s => s?.maximized, 'Manual Firefox launch did not restore its real browser window');
     await app.api(`/profiles/${p.id}/stop`, {});
   }
 });

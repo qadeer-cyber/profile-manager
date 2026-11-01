@@ -78,6 +78,17 @@ now exercises the actual application Install/Remove controls and asks Firefox to
 reject altered signed manifest bytes with valid ZIP CRCs. These stronger gates
 are pending the next run; prior passes do not substitute for them.
 
+Third Windows run [41281229928](https://github.com/qadeer-cyber/profile-manager/actions/runs/41281229928)
+at `9e7be080dfec8c93514db2127dbb7f7bd542a227` proved both M8 workflows using
+application Stop. Track C source tests passed 18/18, including concurrent failed
+Stop preservation. The run still failed: human-input Unicode hit a startup
+navigation abort; M12 Firefox completed normal/maximized restart assertions but
+its added manual-mode test incorrectly accessed `cdp.pid`; and M14's exact label
+lookup timed out before installation. The follow-up launches Chromium directly
+at the local fixture URL, reads the documented top-level PID in manual mode,
+and gives the Firefox profile selector a stable accessible name. Input-value,
+real-window and cryptographic rejection assertions remain unchanged in substance.
+
 The Track C Windows workflow runs only on this branch, with read-only repository
 permissions. It pins the upstream signed uBlock Origin 1.75.0 XPI and its release
 SHA-256; Firefox must independently accept its signature. It builds no installer,
