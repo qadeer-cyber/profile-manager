@@ -41,6 +41,7 @@ import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
+import { requestFirefoxShutdown } from './firefox-shutdown.js';
 import { harvestNativeTabUrls, resolveNativeTabUrlsForSave } from './session-harvest.js';
 import { stopWebDriverBridge } from './webdriver-bridge.js';
 import { stopGeckodriverBridge } from './geckodriver-bridge.js';
@@ -647,7 +648,10 @@ export function onClosed(id, ctx, reason) {
   live.delete(id);
   settling.set(id, e);
   if (reason && !e.closeReason) e.closeReason = reason;
-  e.done = finishClose(id, e).finally(() => { if (settling.get(id) === e) settling.delete(id); });
+  e.done = finishClose(id, e).finally(() => {
+    if (settling.get(id) === e) settling.delete(id);
+    if (!e.closed) e.done = null; // failed stop remains available for explicit retry
+  });
   return e.done;
 }
 function ownsLock(lock, browserPid) {
@@ -669,7 +673,17 @@ async function finishClose(id, e) {
     await waitUntilDead(e, 2000);
   }
   readExit(e);
-  e.stillAlive = !browserDead(e);
+  e.stillAlive = e.browserPid ? isAlive(e.browserPid) : !browserDead(e);
+  if (e.stillAlive) {
+    // An access-denied kill or locked process is not a successful stop. Keep
+    // both ownership records, the relay and the live entry; exports stay blocked.
+    e.cleaned = false; e.stopping = false;
+    if (!live.has(id)) live.set(id, e);
+    const error = 'Browser is still running. Profile data remains locked; close the browser or explicitly retry Stop.';
+    setStatus(id, { last_error: error });
+    emit('profile:stop-failed', id, { error, code: 'BROWSER_STOP_FAILED' });
+    return;
+  }
   if (browserDead(e) && !e.exitTypeState) applyProfileExit(e, dir);
   const outcome = terminationOutcome(e);
   const crashed = outcome === 'error';
@@ -784,7 +798,11 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
       }
     } catch { /* best effort */ }
   }
-  if (!live.has(id)) { if (e.done) await e.done; return; }
+  if (!live.has(id)) {
+    if (e.done) await e.done;
+    if (e.stillAlive) throw httpErr(409, 'Browser is still running. Profile data remains locked; close the browser or explicitly retry Stop.', 'BROWSER_STOP_FAILED');
+    return;
+  }
   if (e.rememberWindow) {
     try {
       const { captureWindowStateForSession } = await import('./window-state.js');
@@ -793,14 +811,20 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   }
   // 1) graceful: close the context  2) force: kill the process tree
   if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
+  if (e.engine === 'firefox' && e.runtime === 'native' && e.browserPid && isAlive(e.browserPid)) {
+    const requested = await requestFirefoxShutdown({ pid: e.browserPid, profileDir: e.geckoDir, marionettePort: e.marionettePort });
+    if (requested) await waitUntilDead(e, Math.max(timeoutMs, 8000));
+  }
   if (e.browserPid && isAlive(e.browserPid)) {
     const killOpts = { expect: userDataDir(id) };
-    // Stock Firefox needs time to flush cookies/localStorage into the gecko profile on SIGTERM.
+    // SIGTERM is a fallback on Unix; Windows taskkill is forceful and is used
+    // only after the graceful protocol/window-close request has failed to stop.
     if (e.engine === 'firefox' && e.runtime === 'native') Object.assign(killOpts, { graceMs: 8000, waitMs: 15000 });
     await killTree(e.browserPid, killOpts);
   }
   if (e.done) await e.done;
   else await onClosed(id, e.ctx);
+  if (e.stillAlive) throw httpErr(409, 'Browser is still running. Profile data remains locked; close the browser or explicitly retry Stop.', 'BROWSER_STOP_FAILED');
 }
 export async function shutdown() {
   stopHealthMonitor();

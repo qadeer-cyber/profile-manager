@@ -21,7 +21,7 @@ unsupported as a CAPTCHA-free guarantee.
 
 ## Reproducible qualification
 
-- `npm run test:trackc`: 16 source/protocol/API/database/TLS tests, including two
+- `npm run test:trackc`: 18 source/protocol/API/database/TLS tests, including two
   independent local app processes, encrypted relay storage, reader/writer ACLs,
   concurrent revision conflict rejection, fresh restore and restart.
 - `npm run test:data-recovery`: existing crash, integrity, rollback, purge and
@@ -60,6 +60,23 @@ prove the process stopped. Windows uses `-wait-for-browser`; Mozilla launcher or
 signature security is never disabled. Headless sessions cannot overwrite observed
 desktop geometry, and explicit start-maximized settings take precedence.
 These source fixes require a new Windows run; the first run is not relabeled.
+
+Second Windows run [41223556986](https://github.com/qadeer-cyber/profile-manager/actions/runs/41223556986)
+at `c02f5b20d74a92c804a99d2ae6e2f14e2e5b21c0` passed all nine regression suites.
+Real acceptance was **5 PASS / 1 FAIL / 0 SKIP**: signed Firefox installation,
+restart, isolation and removal now passed; Firefox HWND observation still failed.
+Mozilla's `gfxPlatform::IsHeadless` checks the presence of `MOZ_HEADLESS`, including
+an empty value. Explicit headed launches now remove that variable from the child
+environment. The parent environment is preserved. This needs Windows requalification.
+
+The strengthened M8 gate now calls application Stop instead of pre-quitting
+Firefox in the test. Production Stop requests a profile/PID-verified Marionette
+quit or an owned native window close before forced termination. Failed termination
+retains the running row, lock and data, reports an error, and supports explicit
+retry; concurrent failed Stop calls cannot report success. The signed-XPI gate
+now exercises the actual application Install/Remove controls and asks Firefox to
+reject altered signed manifest bytes with valid ZIP CRCs. These stronger gates
+are pending the next run; prior passes do not substitute for them.
 
 The Track C Windows workflow runs only on this branch, with read-only repository
 permissions. It pins the upstream signed uBlock Origin 1.75.0 XPI and its release

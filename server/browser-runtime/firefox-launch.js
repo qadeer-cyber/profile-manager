@@ -45,6 +45,7 @@ export function resolveFirefoxExecutable() {
 
 export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, opts = {} } = {}) {
   const automation = automationEnabled(opts);
+  const headless = opts.headless === true || (opts.headless !== false && Object.hasOwn(process.env, 'MOZ_HEADLESS'));
   const exe = resolveFirefoxExecutable();
   if (!exe) {
     throw Object.assign(new Error('Firefox is not installed. Set Settings → firefoxExecutablePath or install Firefox.'), { status: 503, code: 'FIREFOX_MISSING' });
@@ -77,7 +78,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   const advanced = validateAdvancedSettings(mergedAdvanced);
   const args = ['-no-remote', '-profile', profileDir];
   if (process.platform === 'win32') args.push('-wait-for-browser');
-  if (opts.headless === true) args.push('-headless');
+  if (headless) args.push('-headless');
   const screen = advanced.screen || {};
   if (screen.startMaximized) {
     // Firefox uses -width/-height; maximized is best-effort via large window on manual launch.
@@ -98,7 +99,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   return {
     runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls,
     restoreTabs: !!opts.restoreTabs, automation, marionettePort, timezoneId,
-    headless: opts.headless === true || !!process.env.MOZ_HEADLESS,
+    headless,
   };
 }
 
@@ -131,10 +132,18 @@ export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs 
   return null;
 }
 
-export async function launchFirefoxNative(plan) {
-  const env = { ...process.env };
+export function firefoxProcessEnv(plan, base = process.env) {
+  const env = { ...base };
   if (plan.marionettePort) env.MARIONETTE_PORT = String(plan.marionettePort);
   if (plan.timezoneId) env.TZ = plan.timezoneId;
+  // gfxPlatform::IsHeadless checks PR_GetEnv's pointer, not a nonempty value.
+  // Explicit visible launches must remove MOZ_HEADLESS, never set it to ''.
+  if (plan.headless === false) delete env.MOZ_HEADLESS;
+  else if (plan.headless === true) env.MOZ_HEADLESS = '1';
+  return env;
+}
+export async function launchFirefoxNative(plan) {
+  const env = firefoxProcessEnv(plan);
   const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false, env });
   proc.once('error', () => {}); // startup failure is returned through this operation
   if (!proc.pid) throw Object.assign(new Error('Failed to spawn Firefox'), { status: 500, code: 'FIREFOX_SPAWN_FAILED' });

@@ -10,6 +10,7 @@ import { buildXpi, demoManifest } from './_xpi-fixture.mjs';
 import { importXpiGeckoExtension, readGeckoProfileExtensions } from '../server/gecko-extensions.js';
 import { validatePermanentXpi, installGeckoExtension, removeGeckoExtension } from '../server/gecko-install.js';
 import { firefoxSessionIdentity } from '../server/firefox-session.js';
+import { requestFirefoxShutdown } from '../server/firefox-shutdown.js';
 
 function profile() {
   const id = crypto.randomUUID(), now = new Date().toISOString();
@@ -29,6 +30,20 @@ test('Firefox runtime identity accepts only the canonical profile and a valid ex
     assert.throws(() => firefoxSessionIdentity({ capabilities: { ...capabilities, ...changed } }, p.dir), e => e.code === 'GECKO_SESSION_MISMATCH');
   }
   assert.throws(() => firefoxSessionIdentity({ capabilities }, p.dir, 456), e => e.code === 'GECKO_SESSION_MISMATCH');
+});
+test('Firefox graceful shutdown requests quit only from the matching browser and always closes its session', async () => {
+  const p = profile(), commands = []; let closed = 0, windowRequests = 0, reportedPid = 123;
+  const client = { command: async name => { commands.push(name); if (name === 'WebDriver:NewSession') return { capabilities: { browserName: 'firefox', 'moz:profile': p.dir, 'moz:processID': reportedPid } }; if (name === 'Marionette:Quit') throw Error('Marionette connection closed'); }, close: () => closed++ };
+  const params = { pid: 123, profileDir: p.dir, marionettePort: 12345 };
+  const controls = { connect: async () => client, matches: async () => true, closeWindow: async () => { windowRequests++; return false; } };
+  assert.equal(await requestFirefoxShutdown(params, controls), true);
+  assert.deepEqual(commands, ['WebDriver:NewSession', 'Marionette:Quit']); assert.equal(closed, 1); assert.equal(windowRequests, 0);
+  commands.length = 0; reportedPid = 456;
+  assert.equal(await requestFirefoxShutdown(params, controls), false);
+  assert.deepEqual(commands, ['WebDriver:NewSession', 'WebDriver:DeleteSession']); assert.equal(closed, 2); assert.equal(windowRequests, 1);
+  commands.length = 0;
+  assert.equal(await requestFirefoxShutdown(params, { ...controls, matches: async () => false }), false);
+  assert.deepEqual(commands, []); assert.equal(windowRequests, 1);
 });
 async function protocolFixture(t, p, mismatch = false) {
   const commands = [], sockets = new Set();

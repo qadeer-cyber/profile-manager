@@ -73,3 +73,17 @@ export async function restoreNativeWindow(pid, state) {
   }
   return false;
 }
+
+// Ask the owning application to flush and close. This never force-terminates it.
+export async function requestNativeWindowClose(pid) {
+  pidValue(pid);
+  if (process.platform === 'win32') {
+    const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `(Get-Process -Id ${pid} -ErrorAction Stop).CloseMainWindow()`], { timeout: 5000, windowsHide: true, maxBuffer: 1024 });
+    return stdout.trim().toLowerCase() === 'true';
+  }
+  if (process.platform === 'linux' && process.env.DISPLAY) {
+    const observed = await observeNativeWindow(pid); if (!observed) return false;
+    await exec('wmctrl', ['-ic', observed.handle], { timeout: 1500 }); return true;
+  }
+  return false;
+}

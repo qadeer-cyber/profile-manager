@@ -10,6 +10,8 @@ import { chromium } from 'playwright';
 import { spawnServer, stopServer } from './_ports.mjs';
 import { observeNativeWindow, restoreNativeWindow } from '../server/native-window-state.js';
 import { readHostDisplays } from '../server/window-placement.js';
+import { validateXpiArchive } from '../server/gecko-xpi.js';
+import { buildXpi } from './_xpi-fixture.mjs';
 
 async function installation(t, prefix, extraEnv = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix)), token = crypto.randomBytes(24).toString('hex'); let server;
@@ -56,7 +58,7 @@ for (const engine of ['chromium','firefox']) test(`M12 real ${engine} OS geometr
     await app.api(`/profiles/${p.id}/stop`, {});
   }
 });
-test('M14 real signed Firefox XPI: permanent installation, restart, profile isolation and removal', { timeout: 120000 }, async t => {
+test('M14 real signed Firefox XPI: UI installation, restart, profile isolation and UI removal', { timeout: 120000 }, async t => {
   const file = process.env.PM_SIGNED_XPI, expectedHash = process.env.PM_SIGNED_XPI_SHA256;
   assert.ok(file && fs.existsSync(file) && /^[0-9a-f]{64}$/i.test(expectedHash || ''), 'A genuine Mozilla-signed XPI and pinned PM_SIGNED_XPI_SHA256 are required');
   assert.equal(crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'), expectedHash.toLowerCase());
@@ -64,16 +66,42 @@ test('M14 real signed Firefox XPI: permanent installation, restart, profile isol
   const p = await app.api('/profiles', { name: 'Signed add-on target', browserEngine: 'firefox' });
   const isolated = await app.api('/profiles', { name: 'Separate profile', browserEngine: 'firefox' });
   const addon = await app.api('/gecko-extensions/import', { path: path.resolve(file) });
+  // Keep valid ZIP CRCs and Mozilla signature metadata, but change signed
+  // manifest bytes. Only real Firefox's cryptographic policy can accept/reject it.
+  const entries = validateXpiArchive(fs.readFileSync(file)), manifest = JSON.parse(entries.get('manifest.json'));
+  manifest.name = 'Tampered signed XPI fixture'; entries.set('manifest.json', Buffer.from(JSON.stringify(manifest)));
+  const damagedFile = path.join(app.dir, 'tampered.xpi'); fs.writeFileSync(damagedFile, buildXpi(Object.fromEntries(entries), { deflate: true }));
+  const damaged = await app.api('/gecko-extensions/import', { path: damagedFile });
+  const ui = await chromium.launch({ headless: true, ...(process.platform === 'linux' && process.getuid?.() === 0 ? { args: ['--no-sandbox'] } : {}) }); t.after(() => ui.close());
+  const page = await ui.newPage();
+  const manage = async (action, selectedAddon = addon, expectSuccess = true) => {
+    await page.goto(app.url()); await page.locator('[data-nav="extensions"]').click();
+    await page.getByRole('row').filter({ has: page.getByRole('cell', { name: selectedAddon.name, exact: true }) }).getByRole('button', { name: 'Manage in profile', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: `Manage ${selectedAddon.name} in Firefox` });
+    await dialog.getByLabel('Firefox profile', { exact: true }).selectOption(p.id);
+    const button = dialog.getByRole('button', { name: action === 'install' ? 'Install signed XPI' : 'Remove from profile', exact: true });
+    assert.equal(await button.isDisabled(), true);
+    await dialog.getByRole('checkbox').check();
+    const responding = page.waitForResponse(r => r.url().endsWith(`/profiles/${p.id}/gecko-extensions/${selectedAddon.id}/${action}`) && r.request().method() === 'POST');
+    await button.click(); const response = await responding, result = await response.json();
+    if (!expectSuccess) { assert.equal(response.ok(), false, 'Modified signed bytes must be rejected by Firefox'); assert.match(JSON.stringify(result), /sign|corrupt|install/i); return result; }
+    assert.ok(response.ok(), JSON.stringify(result));
+    await dialog.getByRole('status').filter({ hasText: action === 'install' ? 'Permanent installation and signed package verified' : 'Removal verified' }).waitFor();
+    return result;
+  };
   const launch = id => app.api(`/profiles/${id}/launch`, { headless: true, automation: true });
   await launch(p.id);
-  const installed = await app.api(`/profiles/${p.id}/gecko-extensions/${addon.id}/install`, { confirm: true });
+  await manage('install', damaged, false);
+  assert.equal(typeof addon.geckoExtensionId, 'string');
+  assert.equal((await app.api(`/profiles/${p.id}/gecko-extensions`)).addons.some(a => a.id === addon.geckoExtensionId), false);
+  const installed = await manage('install');
   assert.equal(installed.permanent, true); assert.equal(installed.addon.signatureVerified, true); assert.equal(installed.addon.active, true);
   await app.api(`/profiles/${p.id}/stop`, {}); await app.restart(); await launch(p.id);
   await eventually(() => app.api(`/profiles/${p.id}/gecko-extensions`), report => report.addons.some(a => a.id === installed.addon.id && a.active && a.signatureVerified), 'Signed add-on was not active after restart');
   await launch(isolated.id);
   assert.equal((await app.api(`/profiles/${isolated.id}/gecko-extensions`)).addons.some(a => a.id === installed.addon.id), false);
   await app.api(`/profiles/${isolated.id}/stop`, {});
-  assert.equal((await app.api(`/profiles/${p.id}/gecko-extensions/${addon.id}/remove`, { confirm: true })).removed, true);
+  assert.equal((await manage('remove')).removed, true);
   await app.api(`/profiles/${p.id}/stop`, {}); await app.restart(); await launch(p.id);
   assert.equal((await app.api(`/profiles/${p.id}/gecko-extensions`)).addons.some(a => a.id === installed.addon.id), false);
   await app.api(`/profiles/${p.id}/stop`, {});

@@ -58,8 +58,7 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
         const script = (seed ? "localStorage.setItem('m8','persistent-value'); document.cookie='m8=persistent-cookie; Max-Age=3600; SameSite=Lax; Path=/';" : '') + "return {storage:localStorage.getItem('m8'),cookie:document.cookie};";
         const result = await client.command('WebDriver:ExecuteScript', { script, args: [], newSandbox: false, sandbox: 'default' });
         value = result?.value ?? result;
-        try { await client.command('Marionette:Quit', { flags: ['eAttemptQuit'] }); } catch (e) { if (!/connection closed/.test(e.message)) throw e; }
-        await new Promise(r => setTimeout(r, 500));
+        await client.command('WebDriver:DeleteSession');
       } finally { client.close(); }
     }
     assert.equal(value.storage, 'persistent-value'); assert.match(value.cookie, /m8=persistent-cookie/);

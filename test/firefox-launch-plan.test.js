@@ -5,13 +5,24 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { buildFirefoxLaunchPlan, geckoUserDataDir, geckoDescendants, discoverGeckoBrowserPid } from '../server/browser-runtime/firefox-launch.js';
+import { buildFirefoxLaunchPlan, geckoUserDataDir, geckoDescendants, discoverGeckoBrowserPid, firefoxProcessEnv } from '../server/browser-runtime/firefox-launch.js';
 
 test('gecko profile dir is under chromium userDataDir', () => {
   const id = randomUUID();
   const base = path.join(os.tmpdir(), 'pm-gecko');
   const g = geckoUserDataDir(id, () => path.join(base, id));
   assert.ok(g.includes('gecko'));
+});
+
+test('explicit headed Firefox removes even empty inherited MOZ_HEADLESS without mutating the parent environment', () => {
+  for (const value of ['', '1', '0']) {
+    const parent = { MOZ_HEADLESS: value, TZ: 'Europe/London', PATH: 'unchanged' };
+    const visible = firefoxProcessEnv({ headless: false, marionettePort: 12345, timezoneId: 'UTC' }, parent);
+    assert.equal(Object.hasOwn(visible, 'MOZ_HEADLESS'), false);
+    assert.equal(visible.MARIONETTE_PORT, '12345'); assert.equal(visible.TZ, 'UTC'); assert.equal(visible.PATH, 'unchanged');
+    assert.equal(parent.MOZ_HEADLESS, value); assert.equal(parent.TZ, 'Europe/London');
+    assert.equal(firefoxProcessEnv({ headless: true }, parent).MOZ_HEADLESS, '1');
+  }
 });
 
 test('firefox launch plan uses -no-remote and -profile', async () => {
