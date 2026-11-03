@@ -169,31 +169,40 @@ function insertRow(table, record) {
   const keys = Object.keys(record).filter(k => columns.has(k));
   db.prepare(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(k => '@' + k).join(',')})`).run(Object.fromEntries(keys.map(k => [k, record[k]])));
 }
-export function restorePortableV2(files, meta, { encrypted, collision, running, onlyIds, fault } = {}) {
+function planPortableRestore(files, meta, { encrypted, collision, running = [], onlyIds, workspaceId: targetWorkspace } = {}, context = {}) {
   const { row, deps } = validatePortableV2(files, meta, { encrypted });
   if (onlyIds && (onlyIds.size !== 1 || !onlyIds.has(row.id))) throw fail('Selected profile does not match this archive', 'INVALID_RESTORE');
-  const existing = db.prepare('SELECT id FROM profiles WHERE id=?').get(row.id);
+  const existing = db.prepare('SELECT id,workspace_id FROM profiles WHERE id=?').get(row.id);
+  if (existing && collision === 'replace') assertWorkspaceAccess(existing.workspace_id);
   if (existing && collision === 'abort') throw fail('Profile already exists; choose rename or replace', 'COLLISION', 409);
   if (existing && collision === 'replace' && running.includes(row.id)) throw fail('Stop the profile before replacing it', 'PROFILES_RUNNING', 409);
   const id = existing && collision === 'rename' ? crypto.randomUUID() : row.id;
   if (!existing && fs.existsSync(userDataDir(id))) throw fail('An orphan profile directory blocks restore', 'COLLISION', 409);
-  const mapping = { profiles: { [row.id]: id }, workspaces: {}, proxies: {}, extensions: {} };
+  const mapping = context.mapping ||= { profiles: {}, workspaces: {}, proxies: {}, extensions: {} };
+  mapping.profiles[row.id] = id;
+  const inserted = context.inserted ||= new Set();
+  const first = key => { if (inserted.has(key)) return false; inserted.add(key); return true; };
   const remap = (table, sourceId) => {
+    if (mapping[table][sourceId]) return mapping[table][sourceId];
     let dest = sourceId;
     if (db.prepare(`SELECT id FROM ${table} WHERE id=?`).get(dest) || (table === 'extensions' && (fs.existsSync(path.join(DATA_DIR, 'extensions', dest)) || fs.existsSync(path.join(DATA_DIR, 'gecko-extensions', dest))))) dest = crypto.randomUUID();
     mapping[table][sourceId] = dest; return dest;
   };
-  const workspaceId = deps.workspace ? remap('workspaces', deps.workspace.id) : null;
+  if (targetWorkspace) { validateId(targetWorkspace); if (!context.newWorkspace) assertWorkspaceAccess(targetWorkspace); }
+  const workspaceId = targetWorkspace || (deps.workspace ? remap('workspaces', deps.workspace.id) : null);
+  if (deps.workspace && targetWorkspace) mapping.workspaces[deps.workspace.id] = targetWorkspace;
   const proxyId = deps.proxy ? remap('proxies', deps.proxy.id) : null;
   for (const e of deps.extensions) remap('extensions', e.id);
   const treeFor = (prefix, target) => ({ target, files: files.filter(f => f.path.startsWith(prefix + '/')).map(f => ({ path: f.path.slice(prefix.length + 1), ...(f.source ? { source: f.source, sha256: f.sha256 } : { data: f.data }) })) });
-  const trees = [treeFor(`profiles/${row.id}`, `profiles/${id}`), ...deps.extensions.map(e => treeFor(extensionPrefix(e), `${e.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${mapping.extensions[e.id]}`))];
+  const newExtensions = deps.extensions.filter(e => first('extensions:' + e.id));
+  const newProxy = deps.proxy && first('proxies:' + deps.proxy.id);
+  const trees = [treeFor(`profiles/${row.id}`, `profiles/${id}`), ...newExtensions.map(e => treeFor(extensionPrefix(e), `${e.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${mapping.extensions[e.id]}`))];
   const now = new Date().toISOString();
   const result = { added: [], replaced: [], renamed: [], proxyDetached: [], extensionsSkipped: 0, dependencyMap: mapping, warnings: meta.limitations || [] };
-  runRecoverableRestore({ profileIds: [id], trees, fault, applyDatabase: () => {
-    if (deps.workspace) insertRow('workspaces', { ...deps.workspace, id: workspaceId, created_at: now, updated_at: now });
-    if (deps.proxy) insertRow('proxies', { ...deps.proxy, id: proxyId, password: encrypt(deps.proxy.password), created_at: now, updated_at: now });
-    for (const e of deps.extensions) insertRow('extensions', { ...e, id: mapping.extensions[e.id], storage_dir: `${e.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${mapping.extensions[e.id]}`, created_at: now, updated_at: now });
+  const applyDatabase = () => {
+    if (deps.workspace && !targetWorkspace) insertRow('workspaces', { ...deps.workspace, id: workspaceId, created_at: now, updated_at: now });
+    if (newProxy) insertRow('proxies', { ...deps.proxy, id: proxyId, password: encrypt(deps.proxy.password), created_at: now, updated_at: now });
+    for (const e of newExtensions) insertRow('extensions', { ...e, id: mapping.extensions[e.id], storage_dir: `${e.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${mapping.extensions[e.id]}`, created_at: now, updated_at: now });
     const record = { ...row, id, workspace_id: workspaceId, proxy_id: proxyId, proxy: null, deleted_at: null, purge_error: null, updated_at: now, last_launched_at: null, last_error: null };
     if (existing && collision === 'replace') {
       db.prepare('DELETE FROM profile_extensions WHERE profile_id=?').run(id);
@@ -201,7 +210,72 @@ export function restorePortableV2(files, meta, { encrypted, collision, running, 
       db.prepare(`UPDATE profiles SET ${columns.map(k => k + '=@' + k).join(',')} WHERE id=@id`).run(Object.fromEntries(['id', ...columns].map(k => [k, record[k]])));
     } else insertRow('profiles', record);
     for (const link of deps.assignments) insertRow('profile_extensions', { profile_id: id, extension_id: mapping.extensions[link.extension_id], enabled: link.enabled, created_at: now, updated_at: now });
-  } });
+  };
   result[existing ? collision === 'rename' ? 'renamed' : 'replaced' : 'added'].push({ id, sourceId: row.id, name: row.name });
-  return result;
+  return { id, trees, applyDatabase, result };
+}
+
+export function restorePortableV2(files, meta, options = {}) {
+  const plan = planPortableRestore(files, meta, options);
+  runRecoverableRestore({ profileIds: [plan.id], trees: plan.trees, applyDatabase: plan.applyDatabase, fault: options.fault });
+  return plan.result;
+}
+
+
+// A workspace envelope contains complete portable-v2 members and shared assets once.
+export function createPortableWorkspaceDescriptors(workspaceId, options = {}) {
+  return db.transaction(() => {
+    assertWorkspaceAccess(workspaceId);
+    const workspace = db.prepare('SELECT * FROM workspaces WHERE id=?').get(workspaceId);
+    if (!workspace) throw fail('Workspace not found', 'NOT_FOUND', 404);
+    if (options.confirmSensitive !== true || typeof options.passphrase !== 'string' || options.passphrase.length < 8 || options.passphrase.length > 1024) throw fail('Confirm sensitive workspace export and provide a passphrase', 'SENSITIVE_EXPORT_CONFIRMATION');
+    const profiles = db.prepare('SELECT id FROM profiles WHERE workspace_id=? AND deleted_at IS NULL ORDER BY id').all(workspaceId);
+    if (profiles.length > 100) throw fail('Workspace export supports up to 100 profiles', 'UNSAFE_ARCHIVE');
+    const members = [], assets = new Map();
+    for (const { id } of profiles) {
+      const snapshot = createPortableSnapshot(id, { ...options, descriptorMode: true });
+      members.push(snapshot.meta);
+      for (const f of snapshot.files) assets.set(f.path, f);
+    }
+    const files = [...assets.values()];
+    if (files.length > 99999 || files.reduce((n, f) => n + f.size, 0) > 8 * 1024 ** 3) throw fail('Workspace payload exceeds portable limits', 'UNSAFE_ARCHIVE');
+    return { files, meta: { format: 'profile-manager-workspace-backup', version: 1, workspace, members,
+      profiles: members.flatMap(m => m.profiles), createdAt: new Date().toISOString(),
+      limitations: ['OS-bound browser credentials may not decrypt on another computer. Team synchronization transfers encrypted snapshots and requires explicit conflict resolution.'] } };
+  }).immediate();
+}
+export function validatePortableWorkspace(files, meta, { encrypted } = {}) {
+  const w = meta?.workspace;
+  if (!encrypted || meta?.format !== 'profile-manager-workspace-backup' || meta.version !== 1 || !w || !UUID.test(w.id || '') || typeof w.name !== 'string' || !w.name.trim() || w.name.length > 120 || typeof w.notes !== 'string' || w.notes.length > 2000 || ![0, 1].includes(w.vault_locked) || !Array.isArray(meta.members) || meta.members.length > 100) throw fail('Invalid encrypted workspace manifest');
+  const ids = new Set(), allowed = new Set(['meta.json']), dependencies = new Map();
+  for (const member of meta.members) {
+    if (ids.has(member?.profileSnapshot?.id) || member?.profileSnapshot?.workspace_id !== w.id || JSON.stringify(member?.dependencies?.workspace) !== JSON.stringify(w)) throw fail('Workspace membership mapping is invalid');
+    const paths = Object.keys(member.fileChecksums || {});
+    validatePortableV2(files.filter(f => paths.includes(f.path)), member, { encrypted: true });
+    ids.add(member.profileSnapshot.id); paths.forEach(p => allowed.add(p));
+    for (const [kind, rows] of [['proxy', member.dependencies.proxy ? [member.dependencies.proxy] : []], ['extension', member.dependencies.extensions]]) {
+      for (const row of rows) {
+        const key = kind + ':' + row.id, encoded = JSON.stringify(row);
+        if (dependencies.has(key) && dependencies.get(key) !== encoded) throw fail('Conflicting shared dependency');
+        dependencies.set(key, encoded);
+      }
+    }
+  }
+  if (files.some(f => !allowed.has(f.path))) throw fail('Unreferenced workspace asset');
+  if (!Array.isArray(meta.profiles) || meta.profiles.length !== ids.size || meta.profiles.some(p => !ids.delete(p.id)) || ids.size) throw fail('Workspace profile index is invalid');
+  return w;
+}
+export function restorePortableWorkspace(files, meta, options = {}) {
+  const source = validatePortableWorkspace(files, meta, options);
+  if (options.profileIds || options.onlyIds || options.workspaceId) throw fail('Workspace snapshots restore as a complete new workspace');
+  const id = db.prepare('SELECT id FROM workspaces WHERE id=?').get(source.id) ? crypto.randomUUID() : source.id;
+  const context = { newWorkspace: true }, plans = meta.members.map(member => planPortableRestore(files.filter(f => Object.hasOwn(member.fileChecksums, f.path)), member, { ...options, workspaceId: id }, context));
+  const now = new Date().toISOString();
+  const applyDatabase = () => {
+    insertRow('workspaces', { ...source, id, created_at: now, updated_at: now });
+    for (const plan of plans) plan.applyDatabase();
+  };
+  if (plans.length) runRecoverableRestore({ profileIds: plans.map(p => p.id), trees: plans.flatMap(p => p.trees), applyDatabase, fault: options.fault });
+  else db.transaction(applyDatabase).immediate(); // Empty workspace has no filesystem mutations.
+  return { workspaceId: id, added: plans.flatMap(p => p.result.added), renamed: plans.flatMap(p => p.result.renamed), replaced: plans.flatMap(p => p.result.replaced), dependencyMap: context.mapping || { workspaces: { [source.id]: id } }, warnings: meta.limitations || [] };
 }
