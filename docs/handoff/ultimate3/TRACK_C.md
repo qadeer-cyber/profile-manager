@@ -89,6 +89,19 @@ at the local fixture URL, reads the documented top-level PID in manual mode,
 and gives the Firefox profile selector a stable accessible name. Input-value,
 real-window and cryptographic rejection assertions remain unchanged in substance.
 
+Fourth Windows run [41282069470](https://github.com/qadeer-cyber/profile-manager/actions/runs/41282069470)
+at `860c888762f3869286936f577452e68753aa4123` passed **all six real acceptance
+cases, 6 PASS / 0 FAIL / 0 SKIP**. This includes both engines' app-Stop M8
+readback, Win32 normal/maximized restart, manual Firefox window restoration,
+actual signed-XPI UI install/removal with tampered-signature rejection, and
+workspace UI restore/restart. The overall run still failed because both raw-spawn
+human-input fixtures timed out initializing CDP after websocket connection.
+The fixture now uses the same Playwright-owned persistent launch mechanism that
+passed application acceptance, waits for actual browser/page readiness, and
+checks typed values through the owned page while the production typing function
+connects independently over real CDP. Windows runs this targeted gate before
+broad regression; a failure stays red and prevents an unnecessary broad run.
+
 The Track C Windows workflow runs only on this branch, with read-only repository
 permissions. It pins the upstream signed uBlock Origin 1.75.0 XPI and its release
 SHA-256; Firefox must independently accept its signature. It builds no installer,

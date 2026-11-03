@@ -174,8 +174,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Win32/X11 observed bounds and maximized-state persistence, negative coordinates and disconnected-monitor fallback. Windows Chromium observed restart passed at c02f5b2. Firefox launcher identity and empty MOZ_HEADLESS inheritance repaired.",
-      "missing": "Firefox real-window rerun and physical mixed-DPI/multi-monitor disconnect qualification remain; no synthetic observation is credited.",
+      "implementation_evidence": "Win32/X11 observed bounds and maximized persistence, negative coordinates and disconnected-monitor fallback. Real Windows Chromium and Firefox normal/maximized restart and manual Firefox launch acceptance passed at 860c888.",
+      "missing": "Physical mixed-DPI/multi-monitor disconnect and installed Windows 10 qualification remain. Unit fallback tests do not substitute for physical observations.",
       "status": "BLOCKED",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },
@@ -202,8 +202,8 @@
         "Actual end-to-end application workflow and supported-engine observable tests where applicable.",
         "Windows source/desktop qualification; real-device or multi-display evidence where applicable."
       ],
-      "implementation_evidence": "Confirmed permanent Firefox AddonManager install/removal with strict signing policy, profile/PID validation and installed-package checksum. Genuine signed installation/restart/isolation/removal passed Windows at c02f5b2. UI and altered-signature negative acceptance strengthened at 9e7be08.",
-      "missing": "Strengthened real UI/invalid-signature acceptance pending; enable/disable remains through Firefox about:addons and has not passed the full app workflow gate.",
+      "implementation_evidence": "Real Windows signed Firefox XPI UI install/restart/isolation/UI removal and rejection of altered signed bytes with valid ZIP CRCs passed at 860c888. Mozilla signature/trust verification is performed by Firefox AddonManager with strict policy and verified profile/PID.",
+      "missing": "Enable/disable remains through Firefox about:addons and has not passed the full application workflow gate; broader supported-version and installed Windows qualification remain.",
       "status": "INCOMPLETE",
       "platform_requirements": "Windows 10 compatible desktop; engine/browser, authorized Android device, or display hardware as required by the scope."
     },

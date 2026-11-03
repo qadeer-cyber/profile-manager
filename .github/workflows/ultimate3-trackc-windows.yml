@@ -35,8 +35,14 @@ jobs:
           "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify real Chromium CDP input readiness before broad regression
+        id: cdp
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 --test-timeout=30000 test/human-input.test.js 2>&1 | Tee-Object -FilePath build-evidence/trackc/cdp-readiness.log
+          exit $LASTEXITCODE
       - name: Source, recovery, UI and real browser gates
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.cdp.outcome == 'success' }}
         shell: pwsh
         run: node scripts/qualify-trackc.mjs
       - name: Preserve exact test evidence even after failures
