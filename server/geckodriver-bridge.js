@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { resolveGeckodriverForBridge, automationDriversReport } from './automation-drivers.js';
 
+import { acquireFirefoxSession } from './firefox-session-lock.js';
 const bridges = new Map();
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
 
@@ -52,6 +53,8 @@ export async function startGeckodriverBridge(profileId, marionettePort) {
   if (!profileId || !marionettePort) throw fail(400, 'marionettePort is required', 'INVALID_GECKODRIVER');
   const existing = bridges.get(profileId);
   if (existing) return { ...existing.public, reused: true };
+  const release = acquireFirefoxSession(profileId, 'geckodriver');
+  try {
   const port = await freePort();
   const executable = resolveGeckodriverExecutable();
   const shell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(executable);
@@ -67,7 +70,8 @@ export async function startGeckodriverBridge(profileId, marionettePort) {
     throw fail(503, `Geckodriver spawn failed: ${error.message}`, 'GECKODRIVER_MISSING');
   }
   if (!proc?.pid) throw fail(503, 'Geckodriver is not installed or not on PATH. Set PM_GECKODRIVER_PATH.', 'GECKODRIVER_MISSING');
-  proc.on('exit', () => bridges.delete(profileId));
+  proc.on('error', () => {});
+  proc.on('exit', () => { if (bridges.get(profileId)?.proc === proc) bridges.delete(profileId); release(); });
   try {
     await waitForPort(port);
   } catch (error) {
@@ -82,6 +86,7 @@ export async function startGeckodriverBridge(profileId, marionettePort) {
   };
   bridges.set(profileId, { proc, port, marionettePort, public: publicInfo });
   return { ...publicInfo, reused: false };
+  } catch (error) { release(); throw error; }
 }
 
 export function stopGeckodriverBridge(profileId) {

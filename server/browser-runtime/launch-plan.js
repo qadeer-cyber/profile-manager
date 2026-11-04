@@ -6,6 +6,7 @@ import { browserContextSettings, validateBrowserSettings } from '../browser-sett
 import { chromiumPolicyArgs, validateWebRtcSettings } from '../webrtc-policy.js';
 import { verifyWebRtcLaunchArgs, applyWebRtcPreference } from '../webrtc-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences } from '../advanced-launch.js';
+import { applyChromiumLanguagePreferences } from '../regional-preferences.js';
 import { verifyFingerprintLaunchArgs, assertPrivateNetworkLaunchPolicy } from '../fingerprint-settings.js';
 import { readHostDisplays } from '../window-placement.js';
 import { executableCompatibility } from '../chromium-lifecycle.js';
@@ -103,6 +104,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
 
   if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
   applyAdvancedPreferences(dir, p.advancedSettings || {});
+  applyChromiumLanguagePreferences(dir, regional);
 
   const restoreTabs = plan.settings.preferences.restoreTabs === true;
   const rememberWindow = plan.settings.preferences.rememberLastWindow === true;

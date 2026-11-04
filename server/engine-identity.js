@@ -32,3 +32,27 @@ export function compareEngineIdentity({ engineVersion, userAgent = '', clientHin
     reducedMajor,
   };
 }
+
+const HINT_PLATFORM = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
+
+// Extra client-hint fields when the page exposed them. Missing fields are not
+// a failure. A different platform, a mobile flag, or a brand list without
+// Chromium is an inconsistency. This does not invent a browser version.
+export function assessPinnedClientHints({ engineVersion, clientHints = null, hostPlatform = process.platform } = {}) {
+  if (!clientHints || clientHints.availability !== 'observed') {
+    return { status: 'unavailable', issues: ['Client hints were not observed.'] };
+  }
+  const issues = [];
+  const expectedPlatform = HINT_PLATFORM[hostPlatform];
+  if (clientHints.platform && expectedPlatform && clientHints.platform !== expectedPlatform) {
+    issues.push(`Client hint platform is ${clientHints.platform}. This computer expects ${expectedPlatform}.`);
+  }
+  if (clientHints.mobile === true) issues.push('Client hints mark a mobile device. The pinned desktop Chromium is not mobile.');
+  if (Array.isArray(clientHints.brands) && clientHints.brands.length && !clientHints.brands.includes('Chromium')) {
+    issues.push('Client hint brands do not include Chromium.');
+  }
+  if (clientHints.uaFullVersion && engineVersion && clientHints.uaFullVersion !== engineVersion) {
+    issues.push(`Client hint full version ${clientHints.uaFullVersion} does not match installed Chromium ${engineVersion}.`);
+  }
+  return { status: issues.length ? 'inconsistent' : 'coherent', issues };
+}

@@ -115,8 +115,8 @@ function validateScreen(value) {
   let deviceScaleFactor = nullableNumber(input.deviceScaleFactor, 'window', 'deviceScaleFactor');
   if (deviceScaleFactor != null && !SCALE.has(deviceScaleFactor)) invalid('deviceScaleFactor must be 1, 1.25, 1.5, 2, or 3', 'window');
   if (deviceScaleFactor != null && viewportWidth == null) invalid('deviceScaleFactor requires a viewport', 'window');
-  const windowX = integerIn(input.windowX, 0, 10000, 'window', 'windowX');
-  const windowY = integerIn(input.windowY, 0, 10000, 'window', 'windowY');
+  const windowX = integerIn(input.windowX, -32768, 32767, 'window', 'windowX');
+  const windowY = integerIn(input.windowY, -32768, 32767, 'window', 'windowY');
   if ((windowX == null) !== (windowY == null)) invalid('window position requires both windowX and windowY', 'window');
   if (startMaximized && windowX != null) invalid('startMaximized cannot be combined with a window position', 'window');
   return { preset, width, height, viewportWidth, viewportHeight, deviceScaleFactor, windowX, windowY, startMaximized };

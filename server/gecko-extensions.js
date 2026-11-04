@@ -112,17 +112,22 @@ export function readGeckoProfileExtensions(profileDir) {
   const file = path.join(profileDir, 'extensions.json');
   if (!fs.existsSync(file)) return { schemaVersion: null, addons: [] };
   try {
+    const st = fs.lstatSync(file);
+    if (!st.isFile() || st.isSymbolicLink() || st.size > 4 * 1024 * 1024 || fs.lstatSync(profileDir).isSymbolicLink()) throw Error('Unsafe Firefox extension metadata');
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
     const addons = Array.isArray(data.addons) ? data.addons : [];
+    if (addons.length > 1000 || addons.some(a => !a || typeof a.id !== 'string' || a.id.length > 128)) throw Error('Invalid Firefox extension metadata');
     return {
       schemaVersion: data.schemaVersion ?? null,
       addons: addons.map(a => ({
         id: a.id,
         version: a.version,
-        active: a.active !== false,
+        active: a.active === true,
         userDisabled: !!a.userDisabled,
         appDisabled: !!a.appDisabled,
         type: a.type || 'extension',
+        signedState: Number.isInteger(a.signedState) ? a.signedState : null,
+        signatureVerified: [1, 2, 3, 4].includes(a.signedState) && a.appDisabled === false,
       })),
     };
   } catch {
@@ -148,8 +153,10 @@ export function geckoExtensionReport() {
     signingPolicy: 'Signature and compatibility verification are performed by Firefox on installation, never by this importer.',
     importFormats: ['unpacked development directory', '.xpi (stored or deflated ZIP)'],
     automaticInstallation: false,
+    confirmedPermanentInstallation: true,
+    verificationAuthority: 'Firefox AddonManager; no independent trust-anchor implementation',
     offlineToggle: false,
-    note: 'Library assignments are inventory only. Install signed XPI files using Firefox about:addons > Install Add-on From File. Enable, disable, and remove there. Unpacked development extensions use about:debugging and are temporary.',
+    note: 'Library import and assignment do not prove signing. Use Install signed XPI on a running automation-enabled Firefox profile. Firefox validates trust, signing and compatibility. Enable/disable in about:addons. Restart verification remains a separate acceptance gate.',
   };
 }
 

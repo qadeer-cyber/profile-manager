@@ -48,29 +48,29 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
       try {
         const page = browser.contexts()[0].pages()[0]; await page.goto(fixture.origin);
         if (seed) await page.evaluate(() => { localStorage.setItem('m8', 'persistent-value'); document.cookie = 'm8=persistent-cookie; Max-Age=3600; SameSite=Lax; Path=/'; });
-        value = await page.evaluate(() => ({ storage: localStorage.getItem('m8'), cookie: document.cookie }));
+        value = await page.evaluate(() => ({ storage: localStorage.getItem('m8'), cookie: document.cookie, language: navigator.language }));
       } finally { await browser.close(); }
     } else {
       const client = await connectMarionette(launched.cdp.marionettePort);
       try {
         await client.command('WebDriver:NewSession', {});
         await client.command('WebDriver:Navigate', { url: fixture.origin });
-        const script = (seed ? "localStorage.setItem('m8','persistent-value'); document.cookie='m8=persistent-cookie; Max-Age=3600; SameSite=Lax; Path=/';" : '') + "return {storage:localStorage.getItem('m8'),cookie:document.cookie};";
+        const script = (seed ? "localStorage.setItem('m8','persistent-value'); document.cookie='m8=persistent-cookie; Max-Age=3600; SameSite=Lax; Path=/';" : '') + "return {storage:localStorage.getItem('m8'),cookie:document.cookie,language:navigator.language};";
         const result = await client.command('WebDriver:ExecuteScript', { script, args: [], newSandbox: false, sandbox: 'default' });
         value = result?.value ?? result;
-        try { await client.command('Marionette:Quit', { flags: ['eAttemptQuit'] }); } catch (e) { if (!/connection closed/.test(e.message)) throw e; }
-        await new Promise(r => setTimeout(r, 500));
+        await client.command('WebDriver:DeleteSession');
       } finally { client.close(); }
     }
+    assert.equal(value.language, 'de-DE');
     assert.equal(value.storage, 'persistent-value'); assert.match(value.cookie, /m8=persistent-cookie/);
     await call(server, `/profiles/${id}/stop`, {});
   }
   a = await spawnServer(env(path.join(root, 'A')));
-  const profile = await call(a, '/profiles', { name: 'M8 real ' + engine, browserEngine: engine, automationEnabled: true, browserSettings: { locale: 'en-US', languages: ['en-US'], timezoneId: 'UTC' } });
+  const profile = await call(a, '/profiles', { name: 'M8 real ' + engine, browserEngine: engine, automationEnabled: true, browserSettings: { locale: 'de-DE', languages: ['de-DE'], timezoneId: 'Europe/Berlin' } });
   await browse(a, profile.id, true);
   let bytes, uiBrowser, uiPage;
   const archivePath = path.join(root, 'ui-export.pmp');
-  if (engine === 'chromium') {
+  {
     uiBrowser = await chromium.launch({ headless: true, ...(process.platform === 'linux' && process.getuid?.() === 0 ? { args: ['--no-sandbox'] } : {}) });
     t.after(() => uiBrowser.close());
     const context = await uiBrowser.newContext({ acceptDownloads: true, viewport: { width: 1366, height: 768 } });
@@ -84,9 +84,6 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
     await dialog.getByRole('checkbox').check();
     const downloading = uiPage.waitForEvent('download'); await dialog.getByRole('button', { name: 'Download encrypted .pmp' }).click();
     await (await downloading).saveAs(archivePath); bytes = fs.readFileSync(archivePath);
-  } else {
-    const exported = await fetch(a.url + `/api/v1/profiles/${profile.id}/backup/export-stream`, { method: 'POST', headers, body: JSON.stringify({ passphrase: 'disposable browser passphrase', confirmSensitive: true }) });
-    assert.equal(exported.status, 200); bytes = Buffer.from(await exported.arrayBuffer());
   }
   assert.equal(bytes.subarray(0, 4).toString(), 'PMBE');
   assert.equal(await stopServer(a), true); a = null;

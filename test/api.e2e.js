@@ -144,8 +144,17 @@ try {
     await sp.goto(B); await sp.waitForSelector('.mono'); await sp.screenshot({ path: 'screenshot.png' }); await sb.close();
     ok(true, 'UI screenshot -> screenshot.png');
   }
-  r = await j('DELETE', `/api/profiles/${b.id}`); ok(r.s === 204 && !fs.existsSync(path.join(dataDir, 'profiles', b.id)), 'delete running profile (stops + removes data)');
+  r = await j('DELETE', `/api/profiles/${b.id}`);
+  ok(r.s === 204 && fs.existsSync(path.join(dataDir, 'profiles', b.id)), 'delete running profile stops it and preserves recoverable data in Trash');
   r = await j('GET', `/api/profiles/${b.id}`); ok(r.s === 404, 'deleted profile 404');
+  r = await j('GET', '/api/trash');
+  const trashed = r.d.find(p => p.id === b.id);
+  ok(r.s === 200 && trashed?.deletedAt && trashed.running === false, 'trashed profile is stopped and visible for recovery');
+  r = await j('DELETE', `/api/trash/${b.id}`, { confirmName: 'not-the-name' });
+  ok(r.s === 400 && fs.existsSync(path.join(dataDir, 'profiles', b.id)), 'incorrect purge confirmation retains all profile data');
+  r = await j('DELETE', `/api/trash/${b.id}`, { confirmName: trashed.name });
+  ok(r.s === 200 && !fs.existsSync(path.join(dataDir, 'profiles', b.id)), 'explicit confirmed purge removes the disposable profile data');
+  r = await j('GET', '/api/trash'); ok(!r.d.some(p => p.id === b.id), 'confirmed purge also removes the Trash record');
 } catch (e) { fail++; console.error(e); }
 finally {
   if (srv) await stopServer(srv);

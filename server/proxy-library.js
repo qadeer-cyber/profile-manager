@@ -1,5 +1,6 @@
 // Proxy library helpers: tag groups, measurable health analytics (no invented bandwidth).
 import { db } from './db.js';
+import { TRAFFIC_SAVINGS_NOTE, trafficMeasurementSummary } from './proxy-traffic.js';
 
 export const PROXY_ANALYTICS_NOTE = 'Statistics are from local proxy_checks rows and profile assignment counts only. Provider usage requires an explicit Usage API call per account.';
 
@@ -31,6 +32,7 @@ export function proxyHealthAnalytics() {
     WHERE tested_at >= datetime('now', '-7 days')`).get();
   const profilesDirect = db.prepare('SELECT COUNT(*) n FROM profiles WHERE proxy_id IS NULL AND deleted_at IS NULL').get().n;
   const profilesAssigned = db.prepare('SELECT COUNT(*) n FROM profiles WHERE proxy_id IS NOT NULL AND deleted_at IS NULL').get().n;
+  const measured = trafficMeasurementSummary();
   return {
     note: PROXY_ANALYTICS_NOTE,
     checksLast7Days: row?.total || 0,
@@ -40,6 +42,10 @@ export function proxyHealthAnalytics() {
     profilesDirect,
     profilesAssigned,
     trafficSaverSupported: false,
+    measuredHttpSavingsSupported: true,
+    httpsConnectBlocking: false,
+    measuredTrafficSessions: measured.sessions,
+    trafficNote: TRAFFIC_SAVINGS_NOTE,
   };
 }
 

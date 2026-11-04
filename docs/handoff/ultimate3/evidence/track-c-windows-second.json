@@ -1,0 +1,167 @@
+{
+  "sourceCommit": "c02f5b20d74a92c804a99d2ae6e2f14e2e5b21c0",
+  "platform": "win32",
+  "node": "v22.23.4",
+  "results": [
+    {
+      "suite": "test:unit",
+      "start": "2026-10-31T17:16:43.345Z",
+      "finished": "2026-10-31T17:17:16.090Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 134,
+        "pass": 134,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unit.log",
+      "logSHA256": "f658760bebb8b696025a830ee967e3ad7568809d32697d06dbe7644aaf76040f"
+    },
+    {
+      "suite": "test:stabilization",
+      "start": "2026-10-31T17:17:16.093Z",
+      "finished": "2026-10-31T17:17:23.004Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 90,
+        "pass": 89,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-stabilization.log",
+      "logSHA256": "87ea04ded1c1011a8499fffea9d47fa487104e176312a27f48e3cb84e84a4885"
+    },
+    {
+      "suite": "test:data-recovery",
+      "start": "2026-10-31T17:17:23.005Z",
+      "finished": "2026-10-31T17:18:53.114Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 63,
+        "pass": 62,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-data-recovery.log",
+      "logSHA256": "99360f182248f26a169b15aa4d8be1f71b681b285faee57029873dd0b5df40e0"
+    },
+    {
+      "suite": "test:browser-runtime",
+      "start": "2026-10-31T17:18:53.114Z",
+      "finished": "2026-10-31T17:19:50.985Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 189,
+        "pass": 188,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-browser-runtime.log",
+      "logSHA256": "74d9fb0fc8ee810eefd85795fd408cb416051c46bd8ce72b33a4e30728f287fe"
+    },
+    {
+      "suite": "test:m4",
+      "start": "2026-10-31T17:19:50.986Z",
+      "finished": "2026-10-31T17:19:54.997Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-m4.log",
+      "logSHA256": "2766d31b52fc80135b958291d049945fe65cbcc37babd99bbb2cbc1ccd36803e"
+    },
+    {
+      "suite": "test:trackc",
+      "start": "2026-10-31T17:19:54.998Z",
+      "finished": "2026-10-31T17:20:00.631Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 16,
+        "pass": 16,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc.log",
+      "logSHA256": "36e95323e021b9010872435799eb3ac4e3ae6d07bc7935d7e77601448160c147"
+    },
+    {
+      "suite": "test:api",
+      "start": "2026-10-31T17:20:00.632Z",
+      "finished": "2026-10-31T17:20:29.243Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 45,
+        "fail": 0,
+        "tests": 45
+      },
+      "log": "test-api.log",
+      "logSHA256": "17a1ab13a6ff1e5bed9884f09aae3351d3569dd5eb93f8c140b769da1fb5b035"
+    },
+    {
+      "suite": "test:security",
+      "start": "2026-10-31T17:20:29.243Z",
+      "finished": "2026-10-31T17:20:52.257Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 41,
+        "fail": 0,
+        "tests": 41
+      },
+      "log": "test-security.log",
+      "logSHA256": "8d9ce95e1c7c177289aefc1c32ddb711ff710814b12686981de4ed7271f66879"
+    },
+    {
+      "suite": "test:ui",
+      "start": "2026-10-31T17:20:52.257Z",
+      "finished": "2026-10-31T17:21:38.818Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 25,
+        "fail": 0,
+        "tests": 25
+      },
+      "log": "test-ui.log",
+      "logSHA256": "5c552582e8d16ad5de677fe4f6ee3f2e5de7e492b509fc2cb9a54a02c7fc5913"
+    },
+    {
+      "suite": "test:trackc:acceptance",
+      "start": "2026-10-31T17:21:38.819Z",
+      "finished": "2026-10-31T17:24:03.129Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 6,
+        "pass": 5,
+        "fail": 1,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc-acceptance.log",
+      "logSHA256": "ec475f910a96a4638bd6930d76e5ed1a4fa88a787b047e4a6383e010a43b8ff6"
+    }
+  ],
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/41223556986",
+  "conclusion": "failure",
+  "artifactId": 13051570424,
+  "artifactSHA256": "2d41ad394a84b082b4383720223a12328291ae11b153b43ed60ae3c66aa1ce09",
+  "remainingFailure": "M12 Firefox: native window never appeared; empty MOZ_HEADLESS inherited by child",
+  "scope": "Windows Server 2022 x64; source qualification; suites overlap; M8 Firefox still used fixture-level quit before app Stop"
+}

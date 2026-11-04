@@ -45,11 +45,18 @@ export async function discoverOwnedBrowserPid(userDataDir, candidates, { timeout
   return candidates.find(p => p && isAlive(p)) ?? null;
 }
 
+export function nativeChromiumEnv(plan, baseEnv = process.env) {
+  const env = { ...baseEnv };
+  const tz = typeof plan?.regional?.timezoneId === 'string' ? plan.regional.timezoneId : '';
+  if (tz) env.TZ = tz;
+  return env;
+}
+
 export async function launchNativeChromium(plan) {
   const exe = plan.executablePath;
   if (!exe) throw Object.assign(new Error('Chromium executable path is missing'), { status: 503, code: 'CHROMIUM_MISSING' });
   const argv = nativeArgv(plan);
-  const proc = spawn(exe, argv, { stdio: 'ignore', windowsHide: false, detached: false });
+  const proc = spawn(exe, argv, { env: nativeChromiumEnv(plan), stdio: 'ignore', windowsHide: false, detached: false });
   if (!proc.pid) throw Object.assign(new Error('Failed to spawn Chromium'), { status: 500, code: 'NATIVE_SPAWN_FAILED' });
   const browserPid = await discoverOwnedBrowserPid(plan.dir, [proc.pid]);
   return { proc, browserPid, argv, spawnPid: proc.pid };

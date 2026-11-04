@@ -33,7 +33,12 @@ const call = async (method, url, body, headers = {}) => {
   return { status: response.status, body: parsed, text };
 };
 before(async () => { server = await startServer({ port: 0, staticDir: null }); });
-after(async () => { await server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => {
+  await server.close();
+  const { db } = await import('../server/db.js');
+  if (db.open) db.close();
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+});
 
 test('old plaintext backups restore, and encrypted backups hide the passphrase and profile bytes', async () => {
   const marker = 'marker-' + 'Z'.repeat(40);

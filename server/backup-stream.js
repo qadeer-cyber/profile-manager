@@ -9,7 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import { DATA_DIR } from './db.js';
 import { createBackupHeader, deriveBackupKey, readBackupHeader, assertBackupPassphrase } from './backup-crypto.js';
 import { assertArchivePath } from './archive.js';
-import { createPortableDescriptors, restorePortableV2, validatePortableV2 } from './portable-backup.js';
+import { createPortableDescriptors, restorePortableV2, validatePortableV2, createPortableWorkspaceDescriptors, validatePortableWorkspace, restorePortableWorkspace } from './portable-backup.js';
 import { inspectBackup, restoreBackup } from './backup.js';
 
 export const STREAM_BACKUP_LIMITS = Object.freeze({ file: 4 * 1024 ** 3, payload: 8 * 1024 ** 3, container: 9 * 1024 ** 3, files: 100000, manifest: 16 * 1024 * 1024, chunk: 128 * 1024 });
@@ -63,8 +63,13 @@ async function* archiveChunks(meta, files) {
 }
 
 export async function createStreamedPortableBackup(profileId, options) {
+  return encryptSnapshot(createPortableDescriptors(profileId, options), options);
+}
+export async function createStreamedWorkspaceBackup(workspaceId, options) {
+  return encryptSnapshot(createPortableWorkspaceDescriptors(workspaceId, options), options);
+}
+async function encryptSnapshot({ meta, files }, options) {
   if (activeTransfers >= 2) throw Object.assign(new Error('Two backup transfers are already active'), { status: 409, code: 'BACKUP_TRANSFER_BUSY' });
-  const { meta, files } = createPortableDescriptors(profileId, options);
   ensureDisk(files.reduce((n, f) => n + f.size, 0));
   const tmp = temporary(), file = path.join(tmp.dir, 'export.pmp');
   const { header, salt, iv } = createBackupHeader();
@@ -149,7 +154,7 @@ async function unpackPrivateFile(file, dir) {
 }
 
 /** Caller owns an authenticated encrypted upload in an application-owned private spool directory. */
-export async function processStreamedBackup(spool, { passphrase, collision = 'abort', running = [], profileIds, inspect = false, fault } = {}) {
+export async function processStreamedBackup(spool, { passphrase, collision = 'abort', running = [], profileIds, inspect = false, fault, workspaceId } = {}) {
   const head = Buffer.alloc(4), fd = await fsp.open(spool.file, 'r');
   try { await fd.read(head, 0, 4, 0); } finally { await fd.close(); }
   if (head.toString() !== 'PMBE') {
@@ -160,6 +165,12 @@ export async function processStreamedBackup(spool, { passphrase, collision = 'ab
   const plain = path.join(spool.dir, 'authenticated.pmb');
   await decryptToPrivateFile(spool.file, plain, passphrase);
   const { meta, files } = await unpackPrivateFile(plain, spool.dir);
+  if (meta?.format === 'profile-manager-workspace-backup') {
+    validatePortableWorkspace(files, meta, { encrypted: true });
+    if (inspect) return { encrypted: true, format: meta.format, version: meta.version, profiles: meta.profiles, workspace: { id: meta.workspace.id, name: meta.workspace.name }, warnings: meta.limitations };
+    if (!['abort', 'rename', 'replace'].includes(collision)) throw bad('Invalid restore collision strategy');
+    return restorePortableWorkspace(files, meta, { encrypted: true, collision, running, profileIds, workspaceId, fault });
+  }
   if (meta?.format !== 'profile-manager-profile-backup' || meta.version !== 2) {
     if (spool.size > 64 * 1024 * 1024) throw bad('Legacy backup exceeds its supported limit');
     const bytes = await fsp.readFile(spool.file); return inspect ? inspectBackup(bytes, { passphrase }) : restoreBackup(bytes, { passphrase, collision, running, profileIds, fault });
@@ -168,7 +179,7 @@ export async function processStreamedBackup(spool, { passphrase, collision = 'ab
   if (inspect) return { encrypted: true, format: meta.format, version: 2, schemaVersion: meta.schemaVersion, profiles: meta.profiles, fileChecksumCount: files.length - 1, containsDatabase: false, requiresPassphrase: true };
   if (!['abort', 'rename', 'replace'].includes(collision)) throw bad('Invalid restore collision strategy');
   const onlyIds = profileIds == null ? null : new Set(Array.isArray(profileIds) ? profileIds : String(profileIds).split(','));
-  return restorePortableV2(files, meta, { encrypted: true, collision, running, onlyIds, fault });
+  return restorePortableV2(files, meta, { encrypted: true, collision, running, onlyIds, fault, workspaceId });
 }
 
 function transferDirectory(name) {

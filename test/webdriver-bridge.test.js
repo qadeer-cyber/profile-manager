@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
 import {
-  startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport, resolveChromedriverExecutable,
+  startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport, webDriverNewSessionBody, resolveChromedriverExecutable,
 } from '../server/webdriver-bridge.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-wd-'));
@@ -54,6 +54,9 @@ process.on('SIGTERM', () => { server.close(() => process.exit(0)); });
 test('webDriverBridgeReport is honest about chromedriver requirement', () => {
   const r = webDriverBridgeReport();
   assert.equal(r.bundled, false);
+  assert.equal(r.fullParity, false);
+  assert.equal(r.realPath.fullParity, false);
+  assert.equal(r.realPath.env, 'PM_REAL_WEBDRIVER=1');
   assert.match(r.note, /automation/i);
 });
 
@@ -63,6 +66,7 @@ test('startWebDriverBridge listens when chromedriver stub is configured', async 
   const info = await startWebDriverBridge(id, '127.0.0.1:59999');
   assert.match(info.webdriverUrl, /^http:\/\/127\.0\.0\.1:\d+$/);
   assert.equal(info.debuggerAddress, '127.0.0.1:59999');
+  assert.equal(info.newSession.capabilities.alwaysMatch['goog:chromeOptions'].debuggerAddress, '127.0.0.1:59999');
   const port = Number(new URL(info.webdriverUrl).port);
   await new Promise((res, rej) => {
     const c = net.connect(port, '127.0.0.1', () => { c.destroy(); res(); });
@@ -73,7 +77,7 @@ test('startWebDriverBridge listens when chromedriver stub is configured', async 
   const session = await fetch(`${info.webdriverUrl}/session`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ capabilities: { alwaysMatch: { browserName: 'chrome' } } }),
+    body: JSON.stringify(info.newSession),
   });
   assert.equal(session.status, 200);
   const body = await session.json();
@@ -89,6 +93,12 @@ test('startWebDriverBridge listens when chromedriver stub is configured', async 
   assert.equal((await current.json()).value, 'https://example.com/');
   stopWebDriverBridge(id);
   delete process.env.PM_CHROMEDRIVER_PATH;
+});
+
+test('webDriverNewSessionBody rejects an unusable debugger address before spawn', () => {
+  const body = webDriverNewSessionBody('127.0.0.1:9222');
+  assert.equal(body.capabilities.alwaysMatch.browserName, 'chrome');
+  assert.throws(() => webDriverNewSessionBody('not-a-port'), /debuggerAddress/);
 });
 
 test('resolveChromedriverExecutable prefers PM_CHROMEDRIVER_PATH', () => {

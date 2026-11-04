@@ -6,7 +6,10 @@ import { anonymizeProxy } from 'proxy-chain';
 import net from 'node:net';
 import { validateBrowserSettings } from '../browser-settings.js';
 import { getSetting } from '../db.js';
-import { pidMatches, isAlive } from '../proc.js';
+import { pidMatches, isAlive, processParents, killTree } from '../proc.js';
+import { connectMarionette } from '../marionette-client.js';
+import { firefoxSessionIdentity } from '../firefox-session.js';
+import { observeNativeWindow } from '../native-window-state.js';
 import { automationDefault } from '../testflags.js';
 import { buildManagedGeckoPrefLines, writeManagedGeckoUserJs } from '../firefox-gecko-userjs.js';
 import { materializeGeckoExtensions } from '../gecko-extensions.js';
@@ -42,6 +45,7 @@ export function resolveFirefoxExecutable() {
 
 export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, opts = {} } = {}) {
   const automation = automationEnabled(opts);
+  const headless = opts.headless === true || (opts.headless !== false && Object.hasOwn(process.env, 'MOZ_HEADLESS'));
   const exe = resolveFirefoxExecutable();
   if (!exe) {
     throw Object.assign(new Error('Firefox is not installed. Set Settings → firefoxExecutablePath or install Firefox.'), { status: 503, code: 'FIREFOX_MISSING' });
@@ -62,6 +66,7 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     regional,
     webrtcSettings: p.webrtcSettings,
   });
+  managed.push('user_pref("xpinstall.signatures.required", true);', 'user_pref("xpinstall.signatures.dev-root", false);');
   if (marionettePort) managed.push(`user_pref("marionette.port", ${marionettePort});`);
   writeManagedGeckoUserJs(profileDir, managed);
   materializeGeckoExtensions(profileDir, p.id);
@@ -72,6 +77,8 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   if (screenOverride != null) mergedAdvanced.screen = screenOverride;
   const advanced = validateAdvancedSettings(mergedAdvanced);
   const args = ['-no-remote', '-profile', profileDir];
+  if (process.platform === 'win32') args.push('-wait-for-browser');
+  if (headless) args.push('-headless');
   const screen = advanced.screen || {};
   if (screen.startMaximized) {
     // Firefox uses -width/-height; maximized is best-effort via large window on manual launch.
@@ -92,26 +99,72 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   return {
     runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls,
     restoreTabs: !!opts.restoreTabs, automation, marionettePort, timezoneId,
+    headless,
   };
 }
 
-export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs = 15000) {
+export function geckoDescendants(candidates, parents) {
+  const seen = new Set(candidates), found = [];
+  let level = candidates;
+  for (let depth = 0; depth < 16 && level.length; depth++) {
+    const next = parents.filter(p => level.includes(p.parentPid) && !seen.has(p.pid)).map(p => p.pid);
+    next.forEach(pid => seen.add(pid)); found.push(...next); level = next;
+  }
+  return found;
+}
+export async function discoverGeckoBrowserPid(profileDir, candidates, timeoutMs = 15000, { platform = process.platform, parents = processParents, matches = pidMatches, alive = isAlive, observeWindow = observeNativeWindow } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    for (const pid of candidates) {
-      if (pid && await pidMatches(pid, profileDir)) return pid;
+    // With -wait-for-browser, Windows' launcher remains alive while its owned
+    // child has the real browser HWND. Prefer that child, never an arbitrary PID.
+    const descendants = platform === 'win32' ? geckoDescendants(candidates, await parents()) : [];
+    for (const pid of descendants.slice(0, 32)) {
+      if (pid && await matches(pid, profileDir)) return pid;
     }
+    for (const pid of candidates) {
+      // Firefox configurations without a separate launcher can own the window
+      // directly. A live launcher alone is not sufficient evidence of readiness.
+      if (pid && await matches(pid, profileDir) && (platform !== 'win32' || await observeWindow(pid))) return pid;
+    }
+    if (!candidates.some(alive)) break;
     await new Promise(r => setTimeout(r, 100));
   }
-  return candidates.find(p => p && isAlive(p)) ?? null;
+  return null;
 }
 
-export async function launchFirefoxNative(plan) {
-  const env = { ...process.env };
+export function firefoxProcessEnv(plan, base = process.env) {
+  const env = { ...base };
   if (plan.marionettePort) env.MARIONETTE_PORT = String(plan.marionettePort);
   if (plan.timezoneId) env.TZ = plan.timezoneId;
+  // gfxPlatform::IsHeadless checks PR_GetEnv's pointer, not a nonempty value.
+  // Explicit visible launches must remove MOZ_HEADLESS, never set it to ''.
+  if (plan.headless === false) delete env.MOZ_HEADLESS;
+  else if (plan.headless === true) env.MOZ_HEADLESS = '1';
+  return env;
+}
+export async function launchFirefoxNative(plan) {
+  const env = firefoxProcessEnv(plan);
   const proc = spawn(plan.executablePath, plan.args, { stdio: 'ignore', windowsHide: false, detached: false, env });
+  proc.once('error', () => {}); // startup failure is returned through this operation
   if (!proc.pid) throw Object.assign(new Error('Failed to spawn Firefox'), { status: 500, code: 'FIREFOX_SPAWN_FAILED' });
-  const browserPid = await discoverGeckoBrowserPid(plan.profileDir, [proc.pid]);
-  return { proc, browserPid, spawnPid: proc.pid, argv: plan.args };
+  let client, sessionCreated = false;
+  try {
+    let browserPid;
+    if (plan.marionettePort) {
+      client = await connectMarionette(plan.marionettePort, 15000);
+      const session = await client.command('WebDriver:NewSession', {}); sessionCreated = true;
+      browserPid = firefoxSessionIdentity(session, plan.profileDir).pid;
+      if (!await pidMatches(browserPid, plan.profileDir)) throw Error('Firefox runtime process ownership could not be verified');
+    } else browserPid = await discoverGeckoBrowserPid(plan.profileDir, [proc.pid]);
+    if (!browserPid) throw Error('Firefox browser process did not become ready with verified profile ownership');
+    const parents = browserPid === proc.pid ? [] : await processParents();
+    return { proc, browserPid, spawnPid: proc.pid, argv: plan.args, parents };
+  } catch (error) {
+    const stopped = await killTree(proc.pid, { expect: plan.profileDir });
+    if (!stopped && isAlive(proc.pid)) { error.preserveProfileLock = true; error.browserPid = proc.pid; }
+    throw error;
+  } finally {
+    if (sessionCreated) await client.command('WebDriver:DeleteSession').catch(() => {});
+    client?.close();
+  }
 }

@@ -1,6 +1,8 @@
+import { WorkspaceSyncDialog } from '../components/WorkspaceSyncDialog.jsx';
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
+import { WorkspaceTransferDialog } from '../components/WorkspaceTransferDialog.jsx';
 import { Dialog } from '../components/Dialog.jsx';
 
 export function WorkspacesPage({ onOpenProfiles }) {
@@ -18,8 +20,8 @@ export function WorkspacesPage({ onOpenProfiles }) {
   }, [toast, q]);
   useEffect(() => { load(); }, [load]);
   return <>
-    <header className="page-head"><div><h1>Workspaces</h1><p className="muted">Local project folders. No cloud sync. Optional vault lock when OS secure storage is available ({vault?.backend || '…'}).</p></div>
-      <div className="row">
+    <header className="page-head"><div><h1>Workspaces</h1><p className="muted">Local workspaces with encrypted snapshots and an optional self-hosted sync relay. Optional vault lock when OS secure storage is available ({vault?.backend || '…'}).</p></div>
+      <div className="row"><button onClick={() => setDialog({ kind: 'sync' })}>Pull shared workspace</button><button onClick={() => setDialog({ kind: 'restoreEncrypted' })}>Restore encrypted workspace</button>
         <label className="file-btn">Import JSON<input type="file" accept="application/json,.json" onChange={async e => {
           const file = e.target.files?.[0];
           e.target.value = '';
@@ -36,8 +38,9 @@ export function WorkspacesPage({ onOpenProfiles }) {
     <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Profiles</th><th>Vault</th><th></th></tr></thead><tbody>
       {items.map(w => <tr key={w.id}><td>{w.name}{w.notes && <div className="muted small">{w.notes}</div>}</td><td>{w.profileCount}</td>
         <td>{w.vaultLocked ? 'Locked' : '—'}</td>
-        <td className="actions">
+        <td className="actions"><button onClick={() => setDialog({ kind: 'sync', data: w })}>Synchronize</button>
           {w.profileCount > 0 && onOpenProfiles && <button onClick={() => onOpenProfiles(w.id)}>View profiles</button>}
+          <button onClick={() => setDialog({ kind: 'exportEncrypted', data: w })}>Encrypted export</button>
           <button onClick={async () => {
             try {
               const bundle = await api(`/api/workspaces/${w.id}/export`);
@@ -49,11 +52,13 @@ export function WorkspacesPage({ onOpenProfiles }) {
               URL.revokeObjectURL(a.href);
               toast('Workspace export downloaded', 'success');
             } catch (e) { toast(e.message, 'error'); }
-          }}>Export</button>
+          }}>Export metadata JSON</button>
           <button onClick={() => setDialog({ kind: 'edit', data: w })}>Edit</button>
           <button className="ghost-danger" onClick={async () => { try { await api(`/api/workspaces/${w.id}`, { method: 'DELETE' }); toast('Deleted', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Delete</button></td></tr>)}
       {!items.length && <tr><td colSpan="4" className="empty">No workspaces yet.</td></tr>}
     </tbody></table></div>
+    {dialog?.kind === 'sync' && <WorkspaceSyncDialog workspace={dialog.data} onClose={() => setDialog(null)} onDone={load} />}
+    {['exportEncrypted', 'restoreEncrypted'].includes(dialog?.kind) && <WorkspaceTransferDialog workspace={dialog.data} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); toast('Encrypted workspace operation completed', 'success'); }} />}
     {dialog?.kind === 'new' && <NewWorkspace vault={vault} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} toast={toast} />}
     {dialog?.kind === 'edit' && <EditWorkspace vault={vault} workspace={dialog.data} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} toast={toast} />}
   </>;
@@ -82,7 +87,7 @@ function EditWorkspace({ vault, workspace, onClose, onDone, toast }) {
   const [vaultLocked, setVaultLocked] = useState(!!workspace.vaultLocked);
   return <Dialog title="Edit workspace" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!name.trim()} onClick={async () => {
     try {
-      await api(`/api/workspaces/${workspace.id}`, { method: 'PATCH', body: { name: name.trim(), notes, vaultLocked: vaultLocked && vault?.vaultStorageAvailable } });
+      await api(`/api/workspaces/${workspace.id}`, { method: 'PATCH', body: { name: name.trim(), notes, expectedUpdatedAt: workspace.updatedAt, vaultLocked: vaultLocked && vault?.vaultStorageAvailable } });
       toast('Workspace updated', 'success'); onDone();
     } catch (e) { toast(e.message, 'error'); }
   }}>Save</button></>}>

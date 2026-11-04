@@ -1,0 +1,7 @@
+{
+  "balance": 12.5,
+  "credit": 1,
+  "prepayment": 0,
+  "pending_costs": 2,
+  "password": "fixture-bright-password-must-not-leak"
+}
