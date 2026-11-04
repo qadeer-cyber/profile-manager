@@ -35,6 +35,10 @@ export function compareEngineIdentity({ engineVersion, userAgent = '', clientHin
 
 const HINT_PLATFORM = { linux: 'Linux', win32: 'Windows', darwin: 'macOS' };
 
+export function expectedClientHintPlatform(hostPlatform = process.platform) {
+  return HINT_PLATFORM[hostPlatform] ?? null;
+}
+
 // Extra client-hint fields when the page exposed them. Missing fields are not
 // a failure. A different platform, a mobile flag, or a brand list without
 // Chromium is an inconsistency. This does not invent a browser version.
@@ -43,7 +47,7 @@ export function assessPinnedClientHints({ engineVersion, clientHints = null, hos
     return { status: 'unavailable', issues: ['Client hints were not observed.'] };
   }
   const issues = [];
-  const expectedPlatform = HINT_PLATFORM[hostPlatform];
+  const expectedPlatform = expectedClientHintPlatform(hostPlatform);
   if (clientHints.platform && expectedPlatform && clientHints.platform !== expectedPlatform) {
     issues.push(`Client hint platform is ${clientHints.platform}. This computer expects ${expectedPlatform}.`);
   }

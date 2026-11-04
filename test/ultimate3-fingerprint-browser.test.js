@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { expectedClientHintPlatform } from '../server/engine-identity.js';
 import { chromium } from 'playwright';
 import { spawnServer, stopServer } from './_ports.mjs';
 import { withBrowserTestEnv, chromiumAvailableForTests } from './_browser-env.mjs';
@@ -340,7 +341,9 @@ test('Ultimate 3 fingerprint surfaces match the profile in a live browser', { ti
     assert.ok(record('m22-screen-size', first.screenWidth === 1280 && first.screenHeight === 800, `${first.screenWidth}x${first.screenHeight}`));
     assert.ok(record('m22-device-scale', first.scale === 2, String(first.scale)));
     assert.ok(record('m23-pinned-full', first.ua.includes(version), first.ua));
-    const hintsOk = first.hints.full === version && first.hints.chromium === version && first.hints.mobile === false && first.hints.platform === 'Linux' && first.hints.brands.includes('Chromium');
+    const expectedPlatform = expectedClientHintPlatform();
+    assert.ok(expectedPlatform, 'Unsupported host platform: ' + process.platform);
+    const hintsOk = first.hints.full === version && first.hints.chromium === version && first.hints.mobile === false && first.hints.platform === expectedPlatform && first.hints.brands.includes('Chromium');
     details['m23-hints-full'] = first.hints;
     assert.ok(record('m23-client-hints-match-binary', hintsOk, JSON.stringify(first.hints)));
     const fontsOk = first.localFonts.api === 'missing' || first.localFonts.api === 'rejected';

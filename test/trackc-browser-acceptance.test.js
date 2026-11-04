@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { startLocalHttpFixture } from './_local-http-fixture.mjs';
 import { connectMarionette } from './_marionette-client.mjs';
 import { chromium } from 'playwright';
 import { spawnServer, stopServer } from './_ports.mjs';
@@ -92,10 +93,16 @@ test('M14 real signed Firefox XPI: UI installation, restart, profile isolation a
     return result;
   };
   const launch = id => app.api(`/profiles/${id}/launch`, { headless: true, automation: true });
+  const fixture = await startLocalHttpFixture();
+  t.after(() => fixture.close());
   const initial = await launch(p.id);
   const automation = await connectMarionette(initial.cdp.marionettePort);
   try {
     await automation.command('WebDriver:NewSession', {});
+    await automation.command('Marionette:SetContext', { value: 'content' });
+    await automation.command('WebDriver:Navigate', { url: fixture.origin });
+    const current = await automation.command('WebDriver:GetCurrentURL');
+    assert.equal(current?.value ?? current, fixture.origin);
     const surface = await automation.command('WebDriver:ExecuteScript', { script: 'return navigator.language;', args: [], newSandbox: false, sandbox: 'default' });
     assert.equal(surface?.value ?? surface, 'de-DE');
     await manage('install', addon, false);

@@ -244,3 +244,11 @@ test('acceptance contract v1 names every release gate', () => {
     for (const remainder of contract.remainders) assert.ok(markdown.includes(remainder.id), remainder.id);
   }
 });
+
+import { expectedClientHintPlatform } from '../server/engine-identity.js';
+test('desktop client hint platforms correspond to their host OS', () => {
+  assert.equal(expectedClientHintPlatform('linux'), 'Linux');
+  assert.equal(expectedClientHintPlatform('win32'), 'Windows');
+  assert.equal(expectedClientHintPlatform('darwin'), 'macOS');
+  assert.equal(expectedClientHintPlatform('unknown'), null);
+});
