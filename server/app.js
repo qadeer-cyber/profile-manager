@@ -36,6 +36,7 @@ import { readWindowState } from './window-state.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
 import { buildAttachDescriptor } from './automation-attach.js';
+import { firefoxSessionStatus, firefoxAutomationCommand } from './firefox-session-manager.js';
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
   listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
@@ -203,6 +204,8 @@ const publicP = p => {
   const ri = p.running && engine.runInfo(p.id);
   if (ri) {
     out.pid = ri.pid ?? null;
+    const firefoxRemote = p.browserEngine === 'firefox' && firefoxSessionStatus(p.id);
+    if (firefoxRemote) out.firefoxSession = firefoxRemote;
     if (ri.cdp_port && p.browserEngine === 'firefox') {
       out.cdp = { marionettePort: ri.cdp_port, debuggerAddress: `127.0.0.1:${ri.cdp_port}`, automation: true, pid: ri.pid ?? null };
     } else if (ri.cdp_port) {
@@ -646,6 +649,13 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     const row = engine.runInfo(req.params.id);
     if (!row?.cdp_port) throw err(409, 'WebDriver bridge requires a running automation session (CDP port). Manual native launches cannot attach.');
     res.json(await startWebDriverBridge(req.params.id, `127.0.0.1:${row.cdp_port}`));
+  }));
+  router.post('/profiles/:id/firefox/command', wrap(async (req, res) => {
+    const profile = must(req.params.id);
+    if (profile.browserEngine !== 'firefox') throw err(400, 'Choose a Firefox profile');
+    assertProfileOperationAvailable(profile.id);
+    assertWorkspaceAccess(profile.workspaceId);
+    res.json(await firefoxAutomationCommand(profile.id, req.body?.method, req.body?.params || {}));
   }));
   router.get('/geckodriver', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');

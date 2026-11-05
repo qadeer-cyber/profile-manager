@@ -1,5 +1,5 @@
 // Bounded loopback WebDriver BiDi transport. No page scripts are patched.
-export async function connectFirefoxBidi(port, timeoutMs = 15000) {
+export async function connectFirefoxBidi(port, timeoutMs = 15000, onDisconnect = () => {}) {
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw Error('Invalid Firefox BiDi port');
   const deadline = Date.now() + timeoutMs;
   let socket;
@@ -18,7 +18,7 @@ export async function connectFirefoxBidi(port, timeoutMs = 15000) {
   let sequence = 0;
   const pending = new Map();
   const fail = error => { for (const item of pending.values()) { clearTimeout(item.timer); item.reject(error); } pending.clear(); };
-  socket.addEventListener('close', () => fail(Error('Firefox BiDi connection closed')));
+  socket.addEventListener('close', () => { fail(Error('Firefox BiDi connection closed')); onDisconnect(); });
   socket.addEventListener('error', () => fail(Error('Firefox BiDi transport failed')));
   socket.addEventListener('message', event => {
     try {

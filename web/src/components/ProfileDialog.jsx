@@ -128,6 +128,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     {tab === 'regional' && <div className="form">
       <label>Locale<input value={regional.locale} onChange={e => setRegional('locale', e.target.value)} placeholder="Host default (e.g. en-US)" /></label>
       <label>Timezone<input value={regional.timezoneId} onChange={e => setRegional('timezoneId', e.target.value)} placeholder="Host default (e.g. Asia/Karachi)" /></label>
+      {f.browserEngine === 'firefox' && <label>Firefox session mode<select value={regional.firefoxSessionMode || 'marionette'} onChange={e => setRegional('firefoxSessionMode', e.target.value)}><option value="marionette">Marionette / geckodriver (Windows host timezone)</option><option value="bidi">Managed BiDi timezone (independent geckodriver unavailable)</option></select></label>}
       <label>Preferred languages, in order<input value={languageText} onChange={e => setLanguageText(e.target.value)} placeholder="e.g. en-US, ur-PK" /></label>
       <p className="muted hint">Leave fields empty for host/browser defaults. Use IANA timezones and BCP 47 language tags. The first preferred language must match an explicit locale. Changes apply on the next launch; timezone does not change your IP address.</p>
     </div>}

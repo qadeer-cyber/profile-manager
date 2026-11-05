@@ -1,4 +1,5 @@
 // Firefox/Gecko manual launch (no Chromium flags, separate profile tree).
+import { ownFirefoxSession, borrowFirefoxSession, releaseFirefoxSession, firefoxSessionStatus } from '../firefox-session-manager.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -59,7 +60,9 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
     const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
     relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
   }
-  const marionettePort = automation ? await freePort() : null;
+  const bidi = regional.firefoxSessionMode === 'bidi';
+  const bidiPort = bidi ? await freePort() : null;
+  const marionettePort = automation && !bidi ? await freePort() : null;
   const managed = buildManagedGeckoPrefLines({
     proxy: p.proxy && !p.proxy.username ? p.proxy : null,
     relayUrl,
@@ -88,18 +91,19 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   } else if (screen.width && screen.height) {
     args.push('-width', String(screen.width), '-height', String(screen.height));
   }
-  if (automation) args.push('-marionette');
+  if (bidi) args.push('--remote-debugging-port', String(bidiPort));
+  else if (automation) args.push('-marionette');
   if (regional.languages.length) args.push('-lang', regional.locale || regional.languages[0]);
   const openUrls = Array.isArray(opts.openUrls) ? opts.openUrls.slice(0, 20) : (opts.url ? [opts.url] : []);
   for (const u of openUrls) {
-    if (typeof u === 'string' && u.trim()) args.push(u.trim());
+    if (!bidi && typeof u === 'string' && u.trim()) args.push(u.trim());
   }
 
   const timezoneId = geckoTimezoneEnv(regional.timezoneId);
   return {
     runtime: 'native', engine: 'firefox', executablePath: exe, args, profileDir, relayUrl, openUrls,
     restoreTabs: !!opts.restoreTabs, automation, marionettePort, timezoneId,
-    headless,
+    headless, bidiPort, profileId: p.id, locale: regional.locale,
   };
 }
 
@@ -150,7 +154,16 @@ export async function launchFirefoxNative(plan) {
   let client, sessionCreated = false;
   try {
     let browserPid;
-    if (plan.marionettePort) {
+    if (plan.bidiPort) {
+      browserPid = (await ownFirefoxSession({ id: plan.profileId, port: plan.bidiPort, profileDir: plan.profileDir, timezone: plan.timezoneId, locale: plan.locale })).pid;
+      await borrowFirefoxSession(plan.profileId, 'startup', async bidi => {
+        const tree = await bidi.command('browsingContext.getTree');
+        for (const [index, url] of plan.openUrls.entries()) {
+          const context = index === 0 ? tree.contexts[0].context : (await bidi.command('browsingContext.create', { type: 'tab' })).context;
+          await bidi.command('browsingContext.navigate', { context, url, wait: 'complete' });
+        }
+      });
+    } else if (plan.marionettePort) {
       client = await connectMarionette(plan.marionettePort, 15000);
       const session = await client.command('WebDriver:NewSession', {}); sessionCreated = true;
       browserPid = firefoxSessionIdentity(session, plan.profileDir).pid;
@@ -160,6 +173,8 @@ export async function launchFirefoxNative(plan) {
     const parents = browserPid === proc.pid ? [] : await processParents();
     return { proc, browserPid, spawnPid: proc.pid, argv: plan.args, parents };
   } catch (error) {
+    const status = firefoxSessionStatus(plan.profileId);
+    if (status) releaseFirefoxSession(plan.profileId, status.pid);
     const stopped = await killTree(proc.pid, { expect: plan.profileDir });
     if (!stopped && isAlive(proc.pid)) { error.preserveProfileLock = true; error.browserPid = proc.pid; }
     throw error;

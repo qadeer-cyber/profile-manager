@@ -1,5 +1,6 @@
 // Permanent installation is delegated to Firefox's AddonManager, including Mozilla
 // signing roots, certificate chains and version compatibility policy.
+import { firefoxSessionStatus, borrowFirefoxSession } from './firefox-session-manager.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -29,7 +30,7 @@ function targetProfile(id) {
   if (!profile || profile.browser_engine !== 'firefox') throw fail('Choose an active Firefox profile.', 'INVALID_PROFILE', 400);
   assertWorkspaceAccess(profile.workspace_id);
   const running = db.prepare('SELECT * FROM running WHERE id=?').get(id);
-  if (!running?.cdp_port) throw fail('Launch this Firefox profile with automation enabled before managing signed add-ons.', 'FIREFOX_AUTOMATION_REQUIRED');
+  if (!running || (!running.cdp_port && !firefoxSessionStatus(id))) throw fail('Launch this Firefox profile with automation enabled before managing signed add-ons.', 'FIREFOX_AUTOMATION_REQUIRED');
   return { profile, running, dir: path.join(userDataDir(id), 'gecko') };
 }
 function checkedXpi(row) {
@@ -49,7 +50,13 @@ function strictProfile(dir) {
   }
 }
 async function sessionFor(id, action) {
-  const target = targetProfile(id); strictProfile(target.dir); const release = acquireFirefoxSession(id, 'addons'); let client, created = false;
+  const target = targetProfile(id); strictProfile(target.dir);
+  if (firefoxSessionStatus(id)) return borrowFirefoxSession(id, 'addons', async bidi => action({ command: async (method, params) => {
+    if (method === 'Addon:Install') return (await bidi.command('webExtension.install', { extensionData: { type: 'path', path: params.path }, 'moz:permanent': true })).extension;
+    if (method === 'Addon:Uninstall') return bidi.command('webExtension.uninstall', { extension: params.id });
+    throw fail('Unsupported Firefox management operation');
+  } }, target));
+  const release = acquireFirefoxSession(id, 'addons'); let client, created = false;
   try {
     let session;
     try {

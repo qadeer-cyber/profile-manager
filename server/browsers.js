@@ -41,6 +41,7 @@ import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
+import { firefoxSessionStatus, borrowFirefoxSession, releaseFirefoxSession } from './firefox-session-manager.js';
 import { requestFirefoxShutdown } from './firefox-shutdown.js';
 import { harvestNativeTabUrls, resolveNativeTabUrlsForSave } from './session-harvest.js';
 import { stopWebDriverBridge } from './webdriver-bridge.js';
@@ -685,6 +686,7 @@ async function finishClose(id, e) {
     emit('profile:stop-failed', id, { error, code: 'BROWSER_STOP_FAILED' });
     return;
   }
+  if (e.engine === 'firefox') releaseFirefoxSession(id, e.browserPid);
   if (browserDead(e) && !e.exitTypeState) applyProfileExit(e, dir);
   const outcome = terminationOutcome(e);
   const crashed = outcome === 'error';
@@ -773,6 +775,7 @@ export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTi
 
 export async function stop(id, { timeoutMs = 5000 } = {}) {
   assertFirefoxAddonIdle(id);
+  if (firefoxSessionStatus(id)?.busy) throw httpErr(409, 'Wait for the active Firefox operation to finish before stopping.', 'FIREFOX_SESSION_BUSY');
   stopWebDriverBridge(id);
   stopGeckodriverBridge(id);
   if (launching.has(id)) await launching.get(id).catch(() => {});
@@ -814,7 +817,12 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   // 1) graceful: close the context  2) force: kill the process tree
   if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
   if (e.engine === 'firefox' && e.runtime === 'native' && e.browserPid && isAlive(e.browserPid)) {
-    const requested = await requestFirefoxShutdown({ pid: e.browserPid, profileDir: e.geckoDir, marionettePort: e.marionettePort });
+    const ownedSession = firefoxSessionStatus(id);
+    let requested = false;
+    if (ownedSession?.state === 'ready') {
+      try { await borrowFirefoxSession(id, 'shutdown', client => client.command('browser.close')); requested = true; } catch {}
+    }
+    if (!requested) requested = await requestFirefoxShutdown({ pid: e.browserPid, profileDir: e.geckoDir, marionettePort: e.marionettePort });
     if (requested) await waitUntilDead(e, Math.max(timeoutMs, 8000));
   }
   if (e.browserPid && isAlive(e.browserPid)) {

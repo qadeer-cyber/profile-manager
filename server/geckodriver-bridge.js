@@ -1,4 +1,5 @@
 // Optional localhost geckodriver bridge — Firefox marionette sessions only.
+import { firefoxSessionStatus } from './firefox-session-manager.js';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import { resolveGeckodriverForBridge, automationDriversReport } from './automation-drivers.js';
@@ -50,6 +51,7 @@ export function geckodriverBridgeReport() {
 }
 
 export async function startGeckodriverBridge(profileId, marionettePort) {
+  if (firefoxSessionStatus(profileId)) throw fail(409, 'This profile uses the application-owned BiDi session. Independent geckodriver sessions are unavailable in this mode.', 'FIREFOX_SESSION_BUSY');
   if (!profileId || !marionettePort) throw fail(400, 'marionettePort is required', 'INVALID_GECKODRIVER');
   const existing = bridges.get(profileId);
   if (existing) return { ...existing.public, reused: true };
