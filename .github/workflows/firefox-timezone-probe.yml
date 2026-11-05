@@ -1,8 +1,6 @@
 name: Firefox supported timezone mechanism probe
 on:
-  push:
-    branches: [integration/ultimate3-unified]
-    paths: ['server/firefox-bidi.js', 'test/firefox-timezone-windows.test.js', 'test/firefox-session-acceptance.test.js', 'server/firefox-session-manager.js', '.github/workflows/firefox-timezone-probe.yml']
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:

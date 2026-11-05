@@ -42,6 +42,12 @@ jobs:
         run: |
           node --test --test-concurrency=1 --test-timeout=30000 test/human-input.test.js 2>&1 | Tee-Object -FilePath build-evidence/unified/cdp-readiness.log
           exit $LASTEXITCODE
+      - name: Qualify managed Firefox timezone and permanent extensions first
+        id: owner
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 test/firefox-session-acceptance.test.js 2>&1 | Tee-Object build-evidence/unified/firefox-owner.log
+          exit $LASTEXITCODE
       - name: Verify fingerprint and signed Firefox extension regressions independently
         shell: pwsh
         run: |
@@ -50,7 +56,7 @@ jobs:
           node --test --test-name-pattern="M14 real signed" test/trackc-browser-acceptance.test.js 2>&1 | Tee-Object build-evidence/unified/firefox-addon-targeted.log
           if ($LASTEXITCODE -ne 0 -or $fingerprint -ne 0) { exit 1 }
       - name: Source, recovery, UI and real browser gates
-        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.cdp.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.cdp.outcome == 'success' && steps.owner.outcome == 'success' }}
         shell: pwsh
         run: node scripts/qualify-unified.mjs
       - name: Preserve exact test evidence even after failures
