@@ -52,7 +52,7 @@ function strictProfile(dir) {
 async function sessionFor(id, action) {
   const target = targetProfile(id); strictProfile(target.dir);
   if (firefoxSessionStatus(id)) return borrowFirefoxSession(id, 'addons', async bidi => action({ command: async (method, params) => {
-    if (method === 'Addon:Install') return (await bidi.command('webExtension.install', { extensionData: { type: 'path', path: params.path }, 'moz:permanent': true })).extension;
+    if (method === 'Addon:Install') return (await bidi.command('webExtension.install', { extensionData: { type: 'archivePath', path: params.path }, 'moz:permanent': true })).extension;
     if (method === 'Addon:Uninstall') return bidi.command('webExtension.uninstall', { extension: params.id });
     throw fail('Unsupported Firefox management operation');
   } }, target));

@@ -2,7 +2,6 @@
 // Headless Linux is not a Windows qualification and not an undetectability claim.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -11,15 +10,12 @@ import { expectedClientHintPlatform } from '../server/engine-identity.js';
 import { chromium } from 'playwright';
 import { spawnServer, stopServer } from './_ports.mjs';
 import { withBrowserTestEnv, chromiumAvailableForTests } from './_browser-env.mjs';
-import { connectMarionette } from './_marionette-client.mjs';
 import { MANIFEST, expectedExecutable } from '../server/chromium.js';
 import { validateBrowserSettings } from '../server/browser-settings.js';
 import { validateAdvancedSettings } from '../server/advanced-settings.js';
 import { advancedLaunchPlan, applyAdvancedPreferences } from '../server/advanced-launch.js';
 import { assertPrivateNetworkLaunchPolicy, privateNetworkWeakening } from '../server/fingerprint-settings.js';
 import { processCommandLine } from '../server/proc.js';
-import { resolveFirefoxExecutable, firefoxProcessEnv } from '../server/browser-runtime/firefox-launch.js';
-import { buildManagedGeckoPrefLines, writeManagedGeckoUserJs } from '../server/firefox-gecko-userjs.js';
 import { languageListMatchesStock, timezoneOffsetMinutes, assessAcceptLanguage } from '../server/regional-consistency.js';
 import { summarizeCausalProbe } from '../server/local-network-probe.js';
 import { describeFingerprintPaths, restrictedPreferenceSnapshot } from '../server/fingerprint-path-gaps.js';
@@ -172,52 +168,20 @@ async function localNetworkProbe({ executablePath, deny, space, allow }) {
   }
 }
 
-async function observeFirefox(regional) {
-  const executablePath = process.env.PM_FIREFOX_EXECUTABLE || resolveFirefoxExecutable() || '';
-  if (!executablePath || !fs.existsSync(executablePath)) return { availability: 'not_run', reason: 'firefox_missing' };
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-u3-ff-'));
-  const marionettePort = await new Promise((resolve, reject) => {
-    const socket = http.createServer();
-    socket.listen(0, '127.0.0.1', () => {
-      const chosen = socket.address().port;
-      socket.close(() => resolve(chosen));
-    });
-    socket.on('error', reject);
-  });
-  const managed = buildManagedGeckoPrefLines({ regional });
-  managed.push(`user_pref("marionette.port", ${marionettePort});`);
-  managed.push('user_pref("browser.shell.checkDefaultBrowser", false);');
-  writeManagedGeckoUserJs(profileDir, managed);
-  const plan = {
-    executablePath,
-    profileDir,
-    timezoneId: regional.timezoneId,
-    marionettePort,
-    args: ['--headless', '-no-remote', '-profile', profileDir, '-marionette'],
-  };
-  const env = { ...firefoxProcessEnv(plan), MOZ_DISABLE_CONTENT_SANDBOX: '1' };
-  const proc = spawn(executablePath, plan.args, { env, stdio: 'ignore' });
-  let client;
+async function observeFirefox(regional, api) {
+  const profile = await api('POST', '/profiles', { name: 'Firefox regional acceptance', browserEngine: 'firefox', browserSettings: { ...regional, firefoxSessionMode: 'bidi' } });
   try {
-    client = await connectMarionette(marionettePort, 20000);
-    await client.command('WebDriver:NewSession', {
-      capabilities: { alwaysMatch: { browserName: 'firefox', acceptInsecureCerts: true } },
+    const launched = await api('POST', `/profiles/${profile.id}/launch`, { headless: true, automation: true });
+    assert.equal(launched.firefoxSession.state, 'ready');
+    const command = (method, params = {}) => api('POST', `/profiles/${profile.id}/firefox/command`, { method, params });
+    const tree = await command('browsingContext.getTree');
+    const result = await command('script.evaluate', {
+      expression: 'JSON.stringify({timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,timezoneOffset:new Date().getTimezoneOffset(),locale:navigator.language,languages:Array.from(navigator.languages),intlLocale:Intl.DateTimeFormat().resolvedOptions().locale})',
+      target: { context: tree.contexts[0].context }, awaitPromise: true,
     });
-    await client.command('Marionette:SetContext', { value: 'content' });
-    await client.command('WebDriver:Navigate', { url: 'about:blank' });
-    const payload = await client.command('WebDriver:ExecuteScript', {
-      script: 'return { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, timezoneOffset: new Date().getTimezoneOffset(), locale: navigator.language, languages: Array.from(navigator.languages || []), intlLocale: Intl.DateTimeFormat().resolvedOptions().locale }',
-      args: [],
-    });
-    await client.command('Marionette:Quit').catch(() => {});
-    return { availability: 'observed', ...(payload?.value || payload || {}) };
-  } finally {
-    client?.close();
-    if (proc.exitCode == null) {
-      try { process.kill(proc.pid, 'SIGKILL'); } catch { /* already gone */ }
-    }
-    fs.rmSync(profileDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-  }
+    assert.equal(result.type, 'success', JSON.stringify(result));
+    return { availability: 'observed', ...JSON.parse(result.result.value) };
+  } finally { await api('POST', `/profiles/${profile.id}/stop`, {}); }
 }
 
 test('Ultimate 3 fingerprint surfaces match the profile in a live browser', { timeout: 300000, skip }, async () => {
@@ -444,7 +408,7 @@ test('Ultimate 3 fingerprint surfaces match the profile in a live browser', { ti
     assert.equal(byKey['public:allow'].permissionState, 'granted');
     assert.equal(causal.causal, false, causal.note);
 
-    const firefox = await observeFirefox({ locale: 'de-DE', timezoneId: 'Europe/Berlin', languages: ['de-DE', 'en-US'] });
+    const firefox = await observeFirefox({ locale: 'de-DE', timezoneId: 'Europe/Berlin', languages: ['de-DE', 'en-US'] }, api);
     details['m20-firefox'] = firefox;
     if (firefox.availability === 'not_run') {
       results['m20-firefox-timezone-id'] = 'not_run';
