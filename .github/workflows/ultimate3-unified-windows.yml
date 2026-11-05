@@ -2,6 +2,7 @@ name: Ultimate 3 Unified Windows acceptance
 on:
   push:
     branches: [integration/ultimate3-unified]
+    paths-ignore: ['server/firefox-bidi.js', 'test/firefox-timezone-windows.test.js', '.github/workflows/firefox-timezone-probe.yml']
 permissions:
   contents: read
 jobs:
