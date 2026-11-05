@@ -22,7 +22,7 @@ const NAV = [['activation', 'Office activation'], ['dashboard', 'Dashboard'], ['
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
-  useEffect(()=>{api('/api/activation').then(state=>{if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
+  useEffect(()=>{api('/api/activation').then(state=>{if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
   const [folder, setFolder] = useState('__all');
   const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [theme, setTheme] = useTheme();

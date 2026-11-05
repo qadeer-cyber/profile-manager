@@ -1,5 +1,5 @@
 import fs from 'node:fs';
-// Packaging metadata, never an environment-variable licensing bypass.
+// Explicit distribution policy fixed in package metadata, never an environment switch.
 const metadata = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
-export const isRestrictedPreview = metadata.azwahEdition === 'restricted-preview';
-export const productName = isRestrictedPreview ? 'Azwah Multi Browser Preview' : 'Azwah Multi Browser';
+export const isOwnerEdition = metadata.name === 'azwah-multi-browser-owner' && metadata.azwahEdition === 'owner-personal' && metadata.azwahLicensePolicy === 'personal-no-activation';
+export const productName = isOwnerEdition ? 'Azwah Multi Browser Owner' : 'Azwah Multi Browser';

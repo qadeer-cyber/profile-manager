@@ -15,8 +15,8 @@ permissions:
   contents: read
 jobs:
   isolated-package:
-    # Restricted preview has its own narrow installed-release contract; Office gates are unchanged.
-    if: "!contains(github.event.head_commit.message, '[restricted-preview]')"
+    # Owner release has its own installed functional acceptance; Office gates are unchanged.
+    if: "!contains(github.event.head_commit.message, '[owner-release]')"
     runs-on: windows-2022
     timeout-minutes: 40
     env:

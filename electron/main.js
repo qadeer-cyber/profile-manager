@@ -1,6 +1,6 @@
 // Electron main process: runs the backend in-process on a random loopback port (protected by a
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
-import { isRestrictedPreview, productName } from '../server/office/edition.js';
+import { isOwnerEdition, productName } from '../server/office/edition.js';
 import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
 import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog } from 'electron';
 import crypto from 'crypto';
@@ -20,9 +20,9 @@ if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
-app.setPath('userData', isRestrictedPreview ? path.join(app.getPath('appData'),'azwah-multi-browser-preview') : officeUserDataPath(app.getPath('appData')));
+app.setPath('userData', isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : officeUserDataPath(app.getPath('appData')));
 if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
-if (!isRestrictedPreview) adoptLegacyData(app.getPath('userData'));
+if (!isOwnerEdition) adoptLegacyData(app.getPath('userData'));
 app.setName(productName);
 process.env.AZWAH_OFFICE_ENFORCE = '1';
 process.env.AZWAH_OFFICE_PACKAGED = app.isPackaged ? '1' : '0';
@@ -114,7 +114,7 @@ function createWindow() {
 
 ipcMain.on('pm:get-ui-token', e => { e.returnValue = uiToken; });
 ipcMain.handle('pm:open-data-dir', () => shell.openPath(process.env.PM_DATA_DIR));
-ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isRestrictedPreview ? 'Restricted Preview' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
+ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isOwnerEdition ? 'Owner / Personal' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
