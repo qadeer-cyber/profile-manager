@@ -7,12 +7,12 @@ import { NATIVE_GEO_COORDINATE_OVERRIDE } from './geolocation-launch.js';
 export const HISTORICAL_MATRIX = Object.freeze({
   id: 'A',
   denominator: 43,
-  verified: 21,
-  partial: 17,
+  verified: 22,
+  partial: 16,
   unsupported: 5,
   cloudExcluded: 2,
   formula: '(VERIFIED + 0.5 × PARTIAL) / 43',
-  partialIds: Object.freeze(["M2","M3","M8","M12","M14","M17","M18","M20","M21","M23","M28","M29","M30","M33","M37","M38","M40"]),
+  partialIds: Object.freeze(["M2","M3","M8","M12","M14","M17","M18","M21","M23","M28","M29","M30","M33","M37","M38","M40"]),
   unsupportedIds: Object.freeze(['M24', 'M25', 'M26', 'M27', 'M42']),
   cloudIds: Object.freeze(['M16', 'M39']),
 });
@@ -25,12 +25,12 @@ export const STOCK_FEASIBLE_BASELINE = Object.freeze({
   ownerPass: 23,
   ownerBlockedExcluded: 7,
   publishedNamedPassRows: 23,
-  note: 'Stock-feasible scorecard stays 23/23 PASS with 7 BLOCKED_CUSTOM_ENGINE criteria excluded. It is not the strict matrix. Strict release-qualification is 21 VERIFIED / 17 PARTIAL / 5 UNSUPPORTED / 2 cloud-excluded after integrated M22/M35/M36 qualification. Grok 80.2% belongs to its separate source branch.',
+  note: 'Stock-feasible scorecard stays 23/23 PASS with 7 BLOCKED_CUSTOM_ENGINE criteria excluded. It is not the strict matrix. Strict release-qualification is 22 VERIFIED / 16 PARTIAL / 5 UNSUPPORTED / 2 cloud-excluded after integrated M20/M22/M35/M36 qualification. Grok 80.2% belongs to its separate source branch.',
 });
 
 export const PARTIAL_REQUIREMENTS = Object.freeze({
   M20: Object.freeze({
-    matrixStatus: 'PARTIAL',
+    matrixStatus: 'VERIFIED',
     satisfied: Object.freeze([
       'Per-profile locale, IANA timezone, and language list are validated and stored.',
       'The first preferred language must match locale when both are set.',
@@ -41,7 +41,7 @@ export const PARTIAL_REQUIREMENTS = Object.freeze({
     ]),
     engineRequired: Object.freeze([
       'Mimic-class agreement across every locale-sensitive API.',
-      'A documented stock Firefox preference that overrides timezone on Windows. privacy.timezone.override is written for visibility and is not a stock Gecko timezone control. TZ is the Unix mechanism.',
+      'Windows legacy Marionette uses host timezone. Select managed BiDi mode for the qualified per-profile override; independent geckodriver cannot attach in this mode.',
     ]),
   }),
   M21: Object.freeze({

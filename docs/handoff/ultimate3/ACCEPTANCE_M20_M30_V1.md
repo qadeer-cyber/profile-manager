@@ -27,7 +27,7 @@ Release gates:
 - `m20-chromium-intl-locale` — `Intl` locale equals the profile locale.
 - `m20-chromium-accept-language` — `Accept-Language` lists the profile languages in order. Stock Chromium may insert the base language of a regional tag (`de` after `de-DE`) at a lower q. An unrelated tag fails.
 - `m20-chromium-isolation` — a second profile observes its own zone, not the first profile’s zone.
-- `m20-firefox-timezone-id` — a live Firefox process started with the product `TZ` env observes that zone.
+- `m20-firefox-timezone-id` — a live Firefox process launched through the product observes the configured zone. Managed BiDi mode provides the supported Windows override.
 - `m20-firefox-timezone-offset` — that process’s `getTimezoneOffset` matches the zone.
 
 Remainders (not claims):
@@ -35,7 +35,7 @@ Remainders (not claims):
 - `m20-undetectable` — not claimed. Phase 4 not required for this non-claim.
 - `m20-every-locale-api` — speech voices and other locale-implied surfaces are not aligned. Phase 4 custom engine required for Mimic-class agreement across every API.
 - `m20-firefox-pref-is-not-the-control` — `privacy.timezone.override` is not a stock Firefox control. Linux uses `TZ`.
-- `m20-windows-tz` — Windows timezone qualification was not run.
+- `m20-windows-tz` — Windows managed BiDi timezone qualification passed in run 42037368611. Legacy Marionette mode retains host timezone.
 
 `m20-firefox-locale` is a stock check, not a release gate: Firefox may keep the host `navigator.language`.
 

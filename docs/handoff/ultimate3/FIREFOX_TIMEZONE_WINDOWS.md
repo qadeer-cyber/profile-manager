@@ -1,4 +1,6 @@
-# Windows Firefox timezone investigation — 2026-11-05
+# Historical Windows Firefox timezone investigation — 2026-11-05
+
+Superseded by FIREFOX_SESSION_MANAGER.md and Windows success run 42037368611. This document preserves the earlier independent-session failure and proposed routes. Managed BiDi mode now applies timezone through one owner and signed permanent add-on operations share that session.
 
 Current product launches remain blocked for per-profile Windows timezone qualification. M20 is PARTIAL. The timezone probe is experimental and is not called by production launch code.
 
