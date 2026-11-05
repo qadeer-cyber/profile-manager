@@ -47,7 +47,7 @@ test('supported Firefox BiDi timezone overrides isolate Date/Intl, frames, worke
         }
         const children = (await client.command('browsingContext.getTree', { root: context })).contexts[0].children;
         for (const frame of children) assert.equal((await read(`JSON.stringify(${surface})`, frame.context)).timezone, profile.zone);
-        const worker = await read(`new Promise((resolve,reject)=>{const w=new Worker(URL.createObjectURL(new Blob(['postMessage(${surface})'],{type:'text/javascript'})));w.onmessage=e=>{w.terminate();resolve(JSON.stringify(e.data));};w.onerror=reject;})`);
+        const worker = await read(`new Promise((resolve,reject)=>{const w=new Worker(URL.createObjectURL(new Blob([${JSON.stringify('postMessage(' + surface + ')')}],{type:'text/javascript'})));w.onmessage=e=>{w.terminate();resolve(JSON.stringify(e.data));};w.onerror=reject;})`);
         assert.equal(worker.timezone, profile.zone); assert.deepEqual([worker.jan,worker.jul], offsets);
         const marionette = await connectMarionette(plan.marionettePort);
         try {
