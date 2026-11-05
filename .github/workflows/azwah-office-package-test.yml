@@ -1,0 +1,41 @@
+name: Azwah Office isolated NSIS qualification
+on:
+  push:
+    branches: [feature/azwah-office-edition]
+    paths:
+      - '.github/workflows/azwah-office-package-test.yml'
+      - 'scripts/office-package-qualification.mjs'
+      - 'electron-builder.office-test.cjs'
+permissions:
+  contents: read
+jobs:
+  isolated-package:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    env:
+      AZWAH_ISOLATED_PACKAGE_TEST: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install native build dependencies
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build, inspect, install and test disposable installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/office-package | Out-Null
+          node scripts/office-package-qualification.mjs 2>&1 | Tee-Object build-evidence/office-package/transcript.log
+          exit $LASTEXITCODE
+      - name: Preserve safe evidence only, never test installer or signing fixtures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: office-package-evidence-${{ github.sha }}
+          path: build-evidence/office-package
+          if-no-files-found: warn
+          retention-days: 14
