@@ -1,0 +1,17 @@
+name: Stop superseded restricted-preview release
+on:
+  push:
+    branches: [feature/azwah-office-edition]
+    paths: ['.github/workflows/stop-superseded-preview.yml']
+permissions:
+  actions: write
+  contents: read
+jobs:
+  stop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Cancel only the superseded inspection-preview run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method POST repos/qadeer-cyber/profile-manager/actions/runs/42084510401/cancel
