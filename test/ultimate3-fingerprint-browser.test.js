@@ -168,10 +168,10 @@ async function localNetworkProbe({ executablePath, deny, space, allow }) {
   }
 }
 
-async function observeFirefox(regional, api) {
+async function observeFirefox(regional, api, url) {
   const profile = await api('POST', '/profiles', { name: 'Firefox regional acceptance', browserEngine: 'firefox', browserSettings: { ...regional, firefoxSessionMode: 'bidi' } });
   try {
-    const launched = await api('POST', `/profiles/${profile.id}/launch`, { headless: true, automation: true });
+    const launched = await api('POST', `/profiles/${profile.id}/launch`, { headless: true, automation: true, url });
     assert.equal(launched.firefoxSession.state, 'ready');
     const command = (method, params = {}) => api('POST', `/profiles/${profile.id}/firefox/command`, { method, params });
     const tree = await command('browsingContext.getTree');
@@ -408,7 +408,7 @@ test('Ultimate 3 fingerprint surfaces match the profile in a live browser', { ti
     assert.equal(byKey['public:allow'].permissionState, 'granted');
     assert.equal(causal.causal, false, causal.note);
 
-    const firefox = await observeFirefox({ locale: 'de-DE', timezoneId: 'Europe/Berlin', languages: ['de-DE', 'en-US'] }, api);
+    const firefox = await observeFirefox({ locale: 'de-DE', timezoneId: 'Europe/Berlin', languages: ['de-DE', 'en-US'] }, api, pageUrl);
     details['m20-firefox'] = firefox;
     if (firefox.availability === 'not_run') {
       results['m20-firefox-timezone-id'] = 'not_run';
