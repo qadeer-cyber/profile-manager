@@ -17,6 +17,7 @@ test('supported Firefox BiDi timezone overrides isolate Date/Intl, frames, worke
   const page = await startLocalHttpFixture(); t.after(() => page.close());
   const otherOrigin = await startLocalHttpFixture(); t.after(() => otherOrigin.close());
   const profiles = ['Europe/Berlin','Asia/Tokyo','UTC'].map(zone => ({ id: crypto.randomUUID(), zone }));
+  const sessionConflicts = [];
   for (let restart = 0; restart < 2; restart++) {
     const browsers = [];
     try {
@@ -49,6 +50,7 @@ test('supported Firefox BiDi timezone overrides isolate Date/Intl, frames, worke
         for (const frame of children) assert.equal((await read(`JSON.stringify(${surface})`, frame.context)).timezone, profile.zone);
         const worker = await read(`new Promise((resolve,reject)=>{const w=new Worker(URL.createObjectURL(new Blob([${JSON.stringify('postMessage(' + surface + ')')}],{type:'text/javascript'})));w.onmessage=e=>{w.terminate();resolve(JSON.stringify(e.data));};w.onerror=reject;})`);
         assert.equal(worker.timezone, profile.zone); assert.deepEqual([worker.jan,worker.jul], offsets);
+        console.log('FIREFOX_TIMEZONE_REALMS', JSON.stringify({ restart, zone: profile.zone, iframeCount: children.length, worker }));
         const marionette = await connectMarionette(plan.marionettePort);
         try {
           await marionette.command('WebDriver:NewSession', {});
@@ -57,6 +59,9 @@ test('supported Firefox BiDi timezone overrides isolate Date/Intl, frames, worke
           const observed = await marionette.command('WebDriver:ExecuteScript', { script: 'return Intl.DateTimeFormat().resolvedOptions().timeZone;', args: [] });
           assert.equal(observed?.value ?? observed, profile.zone);
           await marionette.command('WebDriver:DeleteSession');
+        } catch (error) {
+          sessionConflicts.push({ restart, zone: profile.zone, error: error.message });
+          console.log('FIREFOX_SESSION_CONFLICT', JSON.stringify(sessionConflicts.at(-1)));
         } finally { marionette.close(); }
       }
       for (const browser of browsers) assert.equal((await browser.read(`JSON.stringify(${surface})`)).timezone, browser.profile.zone);
@@ -68,4 +73,5 @@ test('supported Firefox BiDi timezone overrides isolate Date/Intl, frames, worke
       }
     }
   }
+  assert.deepEqual(sessionConflicts, [], 'Timezone ownership must coexist with extension/lifecycle Marionette sessions');
 });
