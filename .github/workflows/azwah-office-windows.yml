@@ -28,9 +28,38 @@ jobs:
           New-Item -ItemType Directory -Force build-evidence/office | Out-Null
           # Upstream signed release; Firefox must still validate Mozilla's chain.
           $xpi = Join-Path $env:RUNNER_TEMP 'ublock-1.75.0.signed.xpi'
-          Invoke-WebRequest 'https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.firefox.signed.xpi' -OutFile $xpi -TimeoutSec 60 -MaximumRetryCount 2 -RetryIntervalSec 2
           $expected = '5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287'
-          if ((Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Signed XPI fixture checksum mismatch' }
+          $downloadLog = Join-Path 'build-evidence/office' 'signed-xpi-download.log'
+          $verified = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            "$(Get-Date -Format o) attempt=$attempt starting pinned signed-XPI download" | Add-Content $downloadLog
+            if (Test-Path $xpi) { Remove-Item $xpi -Force -ErrorAction Stop }
+            try {
+              Invoke-WebRequest 'https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.firefox.signed.xpi' -OutFile $xpi -TimeoutSec 60 -ErrorAction Stop
+            } catch {
+              $detail = $_.Exception.Message -replace '(https?://[^\s?]+)\?\S+', '$1?[redacted]'
+              "$(Get-Date -Format o) attempt=$attempt transport_failure=$detail" | Add-Content $downloadLog
+              if (Test-Path $xpi) { Remove-Item $xpi -Force -ErrorAction Stop }
+              if ($attempt -eq 3) {
+                'INFRASTRUCTURE_DOWNLOAD_FAILURE: pinned signed-XPI transport exhausted 3 attempts' | Add-Content $downloadLog
+                throw 'INFRASTRUCTURE_DOWNLOAD_FAILURE: pinned signed-XPI download failed after 3 bounded attempts. See signed-xpi-download.log.'
+              }
+              $backoff = [int][Math]::Pow(2, $attempt)
+              "$(Get-Date -Format o) retry_backoff_seconds=$backoff" | Add-Content $downloadLog
+              Start-Sleep -Seconds $backoff
+              continue
+            }
+            $actual = (Get-FileHash $xpi -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) {
+              "ARTIFACT_INTEGRITY_FAILURE: expected=$expected actual=$actual" | Add-Content $downloadLog
+              Remove-Item $xpi -Force -ErrorAction Stop
+              throw 'ARTIFACT_INTEGRITY_FAILURE: signed-XPI fixture checksum mismatch'
+            }
+            "$(Get-Date -Format o) verified_sha256=$actual" | Add-Content $downloadLog
+            $verified = $true
+            break
+          }
+          if (-not $verified) { throw 'INFRASTRUCTURE_DOWNLOAD_FAILURE: no verified signed-XPI fixture available' }
           "PM_SIGNED_XPI=$xpi" >> $env:GITHUB_ENV
           "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
           npm run build
