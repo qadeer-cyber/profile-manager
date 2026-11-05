@@ -47,8 +47,8 @@ try{
   fixtureToken ||= /AZW1\.[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{80,}/.test(text);
  }
  check(!privateMaterial&&!fixtureToken,'Packaged content has no PEM private key blocks or serialized office activation fixtures');
- const verifier=asar.extractFile(archive,'server/office/license.js').toString();check(!/createPrivateKey|crypto\.sign|function issueLicense/.test(verifier),'Installed employee license module is verification-only');
- check(asar.extractFile(archive,'server/office/issuer-public.pem').toString()===issuer.publicKey,'Isolated test public verification root matches intended fixture');
+ const verifier=asar.extractFile(archive,path.join('server','office','license.js')).toString();check(!/createPrivateKey|crypto\.sign|function issueLicense/.test(verifier),'Installed employee license module is verification-only');
+ check(asar.extractFile(archive,path.join('server','office','issuer-public.pem')).toString()===issuer.publicKey,'Isolated test public verification root matches intended fixture');
  const setup=spawnSync(installer,['/S','/D='+install],{timeout:180000,stdio:'inherit'});check(setup.status===0,'NSIS clean silent installation succeeds');
  check(fs.existsSync(path.join(install,'Azwah Multi Browser.exe')),'Installed branded Windows executable exists');
  let page=await launch(true);const info=await page.evaluate(()=>window.pm.appInfo());check(info.packaged&&info.product==='Azwah Multi Browser'&&info.bundledBrowsers,'Installed application starts packaged with offline Chromium');
