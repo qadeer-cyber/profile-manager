@@ -146,25 +146,27 @@ function AssignDialog({ extension, onClose, onSaved }) {
 }
 
 function ManageGeckoDialog({ extension, onClose }) {
-  const [profiles, setProfiles] = useState([]), [selected, setSelected] = useState(''), [confirmed, setConfirmed] = useState(false);
+  const [profiles, setProfiles] = useState([]), [selected, setSelected] = useState(''), [confirmed, setConfirmed] = useState(false), [stopConfirmed, setStopConfirmed] = useState(false);
   const [busy, setBusy] = useState(false), [status, setStatus] = useState(''), [addons, setAddons] = useState([]);
   useEffect(() => { api('/api/profiles').then(rows => setProfiles(rows.filter(p => p.browserEngine === 'firefox'))).catch(e => setStatus(e.message)); }, []);
   async function inspect(id) { if (id) setAddons((await api(`/api/profiles/${id}/gecko-extensions`)).addons); }
   async function act(action) {
     setBusy(true); setStatus('');
     try {
-      const result = await api(`/api/profiles/${selected}/gecko-extensions/${extension.id}/${action}`, { method: 'POST', body: { confirm: confirmed } });
-      setStatus(result.removed ? 'Removal verified in Firefox profile data.' : 'Permanent installation and signed package verified by Firefox. Restart persistence must be checked after reopening.');
+      const result = await api(`/api/profiles/${selected}/gecko-extensions/${extension.id}/${action}`, { method: 'POST', body: { confirm: confirmed, ...(action === 'remove' ? { stopForVerification: stopConfirmed } : {}) } });
+      setStatus(result.removed ? 'Removal verified in Firefox profile data. Profile stopped.' : 'Permanent installation and signed package verified by Firefox. Restart persistence must be checked after reopening.');
       await inspect(selected); setConfirmed(false);
     } catch (e) { setStatus(e.message); } finally { setBusy(false); }
   }
   return <Dialog title={`Manage ${extension.name} in Firefox`} onClose={onClose} footer={<>
     <button onClick={onClose}>Close</button><button disabled={busy || !selected || !confirmed} onClick={() => act('install')}>Install signed XPI</button>
-    <button disabled={busy || !selected || !confirmed} onClick={() => act('remove')}>Remove from profile</button>
+    <button disabled={busy || !selected || !confirmed || !stopConfirmed} onClick={() => act('remove')}>Remove from profile</button>
   </>}>
     <p>Launch the target Firefox profile with automation enabled. Other automation clients must disconnect before this operation. Firefox verifies Mozilla signing and compatibility; unsigned or unpacked packages cannot be permanently installed here.</p>
-    <label>Firefox profile<select aria-label="Firefox profile" value={selected} onChange={e => { setSelected(e.target.value); setConfirmed(false); inspect(e.target.value).catch(e => setStatus(e.message)); }}><option value="">Choose profile</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}{p.running ? ' (running)' : ' (stopped)'}</option>)}</select></label>
+    <label>Firefox profile<select aria-label="Firefox profile" value={selected} onChange={e => { setSelected(e.target.value); setConfirmed(false); setStopConfirmed(false); inspect(e.target.value).catch(e => setStatus(e.message)); }}><option value="">Choose profile</option>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}{p.running ? ' (running)' : ' (stopped)'}</option>)}</select></label>
     <label className="check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} />I confirm this change to the selected profile.</label>
+    <label className="check"><input type="checkbox" checked={stopConfirmed} onChange={e => setStopConfirmed(e.target.checked)} />I authorize stopping this profile to verify removal.</label>
+    <p className="muted">Removal closes the profile after the uninstall command so Firefox can flush its add-on database. Reopen it when verification completes.</p>
     {addons.filter(a => a.id === extension.geckoExtensionId).map(a => <p key={a.id}>Recorded version {a.version}; {a.signatureVerified ? 'Firefox signature accepted' : 'signature unverified'}; {a.active ? 'active' : 'inactive'}. Enable/disable in about:addons.</p>)}
     {status && <p role="status">{status}</p>}
   </Dialog>;

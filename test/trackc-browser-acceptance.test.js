@@ -84,7 +84,11 @@ test('M14 real signed Firefox XPI: UI installation, restart, profile isolation a
     await dialog.getByLabel('Firefox profile', { exact: true }).selectOption(p.id);
     const button = dialog.getByRole('button', { name: action === 'install' ? 'Install signed XPI' : 'Remove from profile', exact: true });
     assert.equal(await button.isDisabled(), true);
-    await dialog.getByRole('checkbox').check();
+    await dialog.getByLabel('I confirm this change to the selected profile.').check();
+    if (action === 'remove') {
+      assert.equal(await button.isDisabled(), true);
+      await dialog.getByLabel('I authorize stopping this profile to verify removal.').check();
+    }
     const responding = page.waitForResponse(r => r.url().endsWith(`/profiles/${p.id}/gecko-extensions/${selectedAddon.id}/${action}`) && r.request().method() === 'POST');
     await button.click(); const response = await responding, result = await response.json();
     if (!expectSuccess) { assert.equal(response.ok(), false, 'Modified signed bytes must be rejected by Firefox'); assert.match(JSON.stringify(result), /sign|corrupt|install|session|busy/i); return result; }

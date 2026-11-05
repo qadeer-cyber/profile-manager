@@ -99,7 +99,8 @@ test('owned Firefox signed extensions, busy automation, encrypted restore and sh
   assert.equal((await evaluate(fresh,p.id,freshTree.contexts[0].context,`JSON.stringify(${expression})`)).timezone,'Asia/Tokyo');
   await fresh.api(`/profiles/${p.id}/stop`,{});
   await launch();
-  await app.api(`/profiles/${p.id}/gecko-extensions/${addon.id}/remove`,{confirm:true});
+  const removed=await app.api(`/profiles/${p.id}/gecko-extensions/${addon.id}/remove`,{confirm:true,stopForVerification:true});
+  assert.equal(removed.removed,true);assert.equal(removed.profileStopped,true);assert.equal((await app.api(`/profiles/${p.id}`)).running,false);
   await app.api(`/profiles/${p.id}/stop`,{});await launch();
   assert.equal((await app.api(`/profiles/${p.id}/gecko-extensions`)).addons.some(a=>a.id===installed.addon.id),false);
   await app.api(`/profiles/${p.id}/stop`,{});
