@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 export function OfficeActivation() {
   const [status,setStatus]=useState(null),[token,setToken]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[confirm,setConfirm]=useState(false);
-  const load=()=>api('/api/activation').then(setStatus).catch(e=>setMessage(e.message));
+  const load=()=>api('/api/activation').then(value=>{setStatus(value);if(value.preview)document.title='Azwah Multi Browser Preview';}).catch(e=>setMessage(e.message));
   useEffect(()=>{load();const timer=setInterval(load,60000);return()=>clearInterval(timer);},[]);
   async function activate(event) {
     event.preventDefault();setBusy(true);setMessage('');
     try {setStatus(await api('/api/activation',{method:'POST',body:{token:token.trim(),confirm}}));setToken('');setConfirm(false);setMessage('This device is activated for offline use.');}
     catch(error){setMessage(error.message);}finally{setBusy(false);}
   }
+  if(status?.preview)return <section className="panel" aria-label="Restricted preview"><h2>Azwah Multi Browser — Restricted Preview</h2><p role="status">Experimental inspection preview. Not approved for office deployment.</p><p>Activation, profile changes, browser launch and Office licenses are disabled. You can inspect branding, application pages and read-only diagnostics. This preview uses a separate data directory and does not adopt existing Office data.</p></section>;
   return <section className="panel" aria-label="Office activation"><h2>Azwah Multi Browser — Office Edition</h2><p className="muted">Local browser profiles, encrypted backups and device-bound office activation. Built on the protected Ultimate 3.0 baseline.</p>
     <p>{status?.active ? `Activated${status.label ? ' — '+status.label : ''}. Expires ${new Date(status.expiresAt).toLocaleString()}.` : 'An administrator-issued device license enables office functionality. Your existing data and backup exports remain accessible.'}</p>
     <label>Device identity code<input readOnly value={status?.deviceCode||'Unavailable'} /></label>
