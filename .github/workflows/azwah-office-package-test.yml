@@ -6,6 +6,11 @@ on:
       - '.github/workflows/azwah-office-package-test.yml'
       - 'scripts/office-package-qualification.mjs'
       - 'electron-builder.office-test.cjs'
+      - 'package-lock.json'
+      - 'package.json'
+      - 'server/**'
+      - 'electron/**'
+      - 'web/**'
 permissions:
   contents: read
 jobs:

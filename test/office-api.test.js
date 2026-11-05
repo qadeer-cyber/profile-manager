@@ -35,3 +35,17 @@ test('office activation API rejects unauthenticated/foreign tokens, permits offl
  assert.equal(await stopServer(app),true);app=await spawnServer(env);
  assert.equal((await request('/profiles',{name:'Expired after restart'})).status,402);assert.equal((await request(`/profiles/${profile.id}`)).status,200);
 });
+
+test('compressed request trailing bytes cannot terminate the real application server', {timeout:30000}, async t=>{
+ const {gzipSync,deflateSync,brotliCompressSync}=await import('node:zlib');
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'azwah-request-safety-'));
+ const app=await spawnServer({...process.env,PM_DATA_DIR:root,PM_API_TOKEN:'disposable-request-safety',AZWAH_OFFICE_ENFORCE:'0'});
+ t.after(async()=>{assert.equal(await stopServer(app),true);fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});});
+ for(const [encoding,compress] of [['gzip',gzipSync],['deflate',deflateSync],['br',brotliCompressSync]]){
+  const response=await fetch(app.url+'/api/v1/profiles',{method:'POST',headers:{'Content-Type':'application/json','Content-Encoding':encoding},body:Buffer.concat([compress(Buffer.from('{}')),Buffer.from([255,255,255,255])]),signal:AbortSignal.timeout(5000)});
+  assert.ok([400,401].includes(response.status),`${encoding}: unexpected response ${response.status}`);await response.arrayBuffer();
+  await new Promise(resolve=>setTimeout(resolve,100));
+  const healthy=await fetch(app.url+'/api/v1/profiles',{headers:{Authorization:'Bearer disposable-request-safety'},signal:AbortSignal.timeout(5000)});
+  assert.equal(healthy.status,200,`${encoding}: server must remain available after decompression failure`);assert.deepEqual(await healthy.json(),[]);
+ }
+});
