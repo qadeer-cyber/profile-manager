@@ -33,3 +33,17 @@ Existing encrypted profile/workspace backups continue preserving browser files a
 ## Pending release qualification
 
 No office installer or stable release is approved by these source changes. Real Windows 10 clean install, installed upgrade, official Cookie-Editor browser installation, restart/backup readback, organization trust-root provisioning and full office regression evidence are release gates. The administrator utility is currently a CLI rather than a separate graphical application. The protected Ultimate 3.0 branch and installer artifacts remain separate.
+
+## Verified Windows source checkpoint
+
+Windows Server 2022 run 42072744963 passed on runtime source 9874009392e4a6871b233a0c99df4499aeda21d7. Unit tests are 145/0/0, office security/activation/admin tests 13/0/0, and real office browser acceptance 2/0/0. Full suite counts and SHA-256 log hashes are recorded in handoff/ultimate3/evidence/azwah-office-windows-green.json.
+
+The exact pinned uBlock 1.75.0 fixture is fetched with three bounded attempts, 60-second request timeouts, 2/4-second exponential backoff and partial-file cleanup. The fixture path is exposed only after its unchanged SHA-256 verifies. Exhausted transport requests report INFRASTRUCTURE_DOWNLOAD_FAILURE. Integrity failures fail closed without switching versions or endpoints. The green run verified the hash on its first attempt.
+
+Branding tests now expect Azwah Multi Browser while retaining profile-manager, local.profilemanager.app, the explicit PM_USER_DATA override and data-preserving uninstall assertions. License issuance code resides only in the excluded scripts/license-admin directory. The employee license module verifies signatures and contains no issuance helper. Packaging policy tests reject a missing organization verification root.
+
+Real Firefox 1.13.0 Cookie-Editor acceptance passed signed installation, identity/version checks, cookies after real shutdown/restart, encrypted restore, isolation, tampered-signature rejection and removal. Chromium's real UI setup test opens the official store in the selected browser profile and asserts installed=false and manualActionRequired=true. Chromium automatic installation is not claimed.
+
+A later functional failure showed Firefox had removed an XPI while extensions.json still contained active metadata. The persistence assertion was retained. Removal now offers a separate explicit consent to stop the selected profile, requests graceful shutdown through its existing owner, verifies process termination and persisted absence, then removes the assignment. Without stop consent, the original strict live-state verification remains. Tests verify successful removal and actual stopped state before restart.
+
+The office source checkpoint is green. Employee installer packaging remains BLOCKED — ORGANIZATION KEY REQUIRED. Real Electron native rebuilding, bundled browser asset verification, Windows 10 clean installation, installed upgrade, DPAPI-backed activation and final payload scanning remain installer gates. No production signing key was generated in CI, no employee installer was published, and the protected Ultimate 3.0 parity remains 69.8%.
