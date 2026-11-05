@@ -104,3 +104,24 @@ test('owned Firefox signed extensions, busy automation, encrypted restore and sh
   assert.equal((await app.api(`/profiles/${p.id}/gecko-extensions`)).addons.some(a=>a.id===installed.addon.id),false);
   await app.api(`/profiles/${p.id}/stop`,{});
 });
+
+test('owned Firefox connection loss reports inactive timezone, retains running profile and recovers by explicit Stop', {timeout:120000}, async t=>{
+  const app=await installation(t), fixture=await startLocalHttpFixture();t.after(()=>fixture.close());
+  const p=await app.api('/profiles',{name:'Disposable lost session',browserEngine:'firefox',browserSettings:{timezoneId:'Europe/Berlin',firefoxSessionMode:'bidi'}});
+  const launch=()=>app.api(`/profiles/${p.id}/launch`,{headless:true,automation:true,url:fixture.origin});
+  await launch();
+  const tree=await app.api(`/profiles/${p.id}/firefox/command`,{method:'browsingContext.getTree',params:{}});
+  const context=tree.contexts[0].context;
+  await evaluate(app,p.id,context,"JSON.stringify(localStorage.setItem('session-marker','preserved') ?? true)");
+  const failure=await app.response(`/profiles/${p.id}/firefox/command`,{method:'script.evaluate',params:{expression:'new Promise(()=>{})',target:{context},awaitPromise:true}});
+  assert.equal(failure.ok,false);assert.match(await failure.text(),/timeout/i);
+  const status=await app.api(`/profiles/${p.id}`);
+  assert.equal(status.running,true);assert.equal(status.firefoxSession.state,'disconnected');assert.equal(status.firefoxSession.timezone,null);assert.equal(status.firefoxSession.busy,false);
+  const retry=await app.response(`/profiles/${p.id}/firefox/command`,{method:'browsingContext.getTree',params:{}});assert.equal(retry.status,409);
+  await app.api(`/profiles/${p.id}/stop`,{});
+  const restored=await launch();assert.equal(restored.firefoxSession.timezone,'Europe/Berlin');
+  const next=await app.api(`/profiles/${p.id}/firefox/command`,{method:'browsingContext.getTree',params:{}});
+  assert.equal(await evaluate(app,p.id,next.contexts[0].context,"JSON.stringify(localStorage.getItem('session-marker'))"),'preserved');
+  assert.equal((await evaluate(app,p.id,next.contexts[0].context,`JSON.stringify(${expression})`)).timezone,'Europe/Berlin');
+  await app.api(`/profiles/${p.id}/stop`,{});
+});

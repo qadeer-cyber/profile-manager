@@ -8,7 +8,7 @@ const sessions = new Map();
 const fail = (message, code = 'FIREFOX_SESSION_UNAVAILABLE') => Object.assign(Error(message), { status: 409, code });
 export function firefoxSessionStatus(id) {
   const s = sessions.get(id);
-  return s ? { mode: 'bidi', pid: s.pid, timezone: s.timezone, state: s.state, busy: s.busy } : null;
+  return s ? { mode: 'bidi', pid: s.pid, timezone: s.state === 'ready' ? s.timezone : null, requestedTimezone: s.timezone, state: s.state, busy: s.busy } : null;
 }
 export async function ownFirefoxSession({ id, port, profileDir, timezone, locale }) {
   if (sessions.has(id)) throw fail('A Firefox session already owns this profile', 'FIREFOX_SESSION_BUSY');
