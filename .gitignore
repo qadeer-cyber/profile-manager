@@ -17,3 +17,7 @@ build/bundled-browsers/
 *.cer
 id_rsa*
 *.keystore
+
+# Office administrator secrets never belong in an employee source/build artifact.
+*admin.vault*
+azwah-license-vault*

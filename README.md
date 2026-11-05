@@ -1,3 +1,7 @@
+# Azwah Multi Browser — Office Edition
+
+This office-edition branch preserves Ultimate 3.0 data and identifiers. See [office activation, upgrade and extension documentation](docs/AZWAH_OFFICE.md) for implementation scope and pending qualification. Historical product documentation follows.
+
 # Profile Manager
 
 Local browser profile manager: Electron, React, Express, SQLite, and Playwright Chromium. Each profile is its own Chromium user-data directory, with an optional proxy and a local automation API.

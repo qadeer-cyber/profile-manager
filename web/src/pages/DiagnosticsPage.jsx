@@ -35,7 +35,7 @@ export function DiagnosticsPage({ eventsLog }) {
     <header className="page-head"><h1>Diagnostics</h1>
       <button type="button" onClick={exportGoogleCompat} aria-label="Export Google compatibility diagnostic">Export Google compatibility (local JSON)</button>
       <button onClick={load} aria-label="Refresh app information">Refresh</button></header>
-    <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Profile Manager servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
+    <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Azwah Multi Browser servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
     <RecoveryPanel />
     <ProfileDiagnostics />
     <section className="panel"><h2>Stock browser engines (M2 / M3)</h2>

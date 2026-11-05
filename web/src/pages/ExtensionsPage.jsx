@@ -1,3 +1,4 @@
+import { CookieEditorSetup } from '../components/CookieEditorSetup.jsx';
 import React, { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
@@ -19,6 +20,7 @@ export function ExtensionsPage() {
     catch (e) { if (/assigned/i.test(e.message) && !force) setDialog({ kind: 'force', data: ext, msg: e.message }); else toast(e.message, 'error'); }
   };
   return <>
+    <CookieEditorSetup />
     <header className="page-head"><div><h1>Extensions</h1><div className="muted">{plural(list.length, 'extension')} in the library</div></div>
       <button className="primary" onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import Chromium</button>
       <button onClick={() => setDialog({ kind: 'importGecko' })}>Import Firefox (gecko)</button></header>

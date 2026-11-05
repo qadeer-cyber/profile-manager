@@ -18,7 +18,7 @@ export function rowStatus(p, busy) {
 // visible as a tooltip so the diagnostic detail is never hidden.
 export function crashSummary(raw) {
   const s = String(raw || '').trim();
-  if (/detected by health monitor/i.test(s)) return 'The browser process was ended outside Profile Manager (for example from Task Manager). Launch the profile again.';
+  if (/detected by health monitor/i.test(s)) return 'The browser process was ended outside Azwah Multi Browser (for example from Task Manager). Launch the profile again.';
   if (/^Browser exited unexpectedly|exit_type (Crashed|missing|unreadable)/i.test(s)) return 'The browser closed unexpectedly (it crashed or another program ended it). Launch the profile again; if it keeps happening, open Diagnostics.';
   return s || 'The browser closed unexpectedly.';
 }

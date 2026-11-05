@@ -1,5 +1,6 @@
 // Electron main process: runs the backend in-process on a random loopback port (protected by a
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
+import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
 import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -18,7 +19,11 @@ if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
-if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
+app.setPath('userData', officeUserDataPath(app.getPath('appData'), process.env.PM_USER_DATA));
+adoptLegacyData(app.getPath('userData'));
+app.setName('Azwah Multi Browser');
+process.env.AZWAH_OFFICE_ENFORCE = '1';
+process.env.AZWAH_OFFICE_PACKAGED = app.isPackaged ? '1' : '0';
 const userData = app.getPath('userData');
 process.env.PM_DATA_DIR = path.join(userData, 'data');
 // Browser location, in priority order:
@@ -85,7 +90,7 @@ async function restartBackend(reason) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 960, minHeight: 600, show: !SMOKE || process.env.PM_SMOKE_SHOW === '1',
-    title: 'Profile Manager', backgroundColor: '#f5f6f8',
+    title: 'Azwah Multi Browser', backgroundColor: '#f5f6f8',
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
   });
   const origin = new URL(backend.url).origin;
@@ -98,7 +103,7 @@ function createWindow() {
     if (quitStarted || d.reason === 'clean-exit') return;
     crashes = crashes.filter(t => Date.now() - t < 60000).concat(Date.now());
     if (crashes.length <= 3 && backend) win.loadURL(backend.url);
-    else dialog.showErrorBox('Profile Manager', `The window crashed repeatedly (${d.reason}). Details: ${logFile}`);
+    else dialog.showErrorBox('Azwah Multi Browser', `The window crashed repeatedly (${d.reason}). Details: ${logFile}`);
   });
   win.webContents.on('unresponsive', () => logErr('renderer unresponsive'));
   win.loadURL(backend.url);
@@ -107,7 +112,7 @@ function createWindow() {
 
 ipcMain.on('pm:get-ui-token', e => { e.returnValue = uiToken; });
 ipcMain.handle('pm:open-data-dir', () => shell.openPath(process.env.PM_DATA_DIR));
-ipcMain.handle('pm:app-info', () => ({ version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
+ipcMain.handle('pm:app-info', () => ({ product: 'Azwah Multi Browser', edition: 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
@@ -152,7 +157,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
   if (!SMOKE) Menu.setApplicationMenu(null);
   try { await startBackend(); }
-  catch (e) { logErr('backend failed to start', e); dialog.showErrorBox('Profile Manager could not start', `${e.message}\n\nLog: ${logFile}`); app.exit(1); return; }
+  catch (e) { logErr('backend failed to start', e); dialog.showErrorBox('Azwah Multi Browser could not start', `${e.message}\n\nLog: ${logFile}`); app.exit(1); return; }
   createWindow();
   if (SMOKE) runSmoke().catch(err => { console.error(err); fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ error: String(err.stack || err) })); app.quit(); });
 });

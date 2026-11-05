@@ -5,7 +5,7 @@ import { DATA_DIR, db } from './db.js';
 import { durableShutdown } from './shutdown.js';
 
 const s = await startServer();
-console.log(`Profile manager on ${s.url}`);
+console.log(`Azwah Multi Browser on ${s.url}`);
 console.log(`API token: ${process.env.PM_API_TOKEN ? '(from PM_API_TOKEN)' : path.join(DATA_DIR, 'api-token')}`);
 if (s.migration.applied.length) console.log(`Database migrated v${s.migration.from} -> v${s.migration.to}`);
 const { killed, cleared, staleLocks } = s.recovery;
