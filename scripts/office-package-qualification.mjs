@@ -9,7 +9,7 @@ import {createRequire} from 'node:module';
 import {adminAction} from './license-admin/admin.mjs';
 import {deviceIdentity} from '../server/office/device.js';
 import {startLocalHttpFixture} from '../test/_local-http-fixture.mjs';
-import {_electron} from 'playwright';
+import {_electron,chromium} from 'playwright';
 const require=createRequire(import.meta.url),asar=require('@electron/asar');
 if(process.platform!=='win32'||process.env.CI!=='true'||process.env.AZWAH_ISOLATED_PACKAGE_TEST!=='1')throw Error('An isolated authorized Windows CI worker is required');
 const root=fs.mkdtempSync(path.join(process.env.RUNNER_TEMP||os.tmpdir(),'azwah-package-'));
@@ -64,13 +64,34 @@ try{
  check(fs.readFileSync(path.join(userData,'data','azwah-activation.json'),'utf8').startsWith('ss:v1:'),'Activation is encrypted by Electron safeStorage on actual Windows');
  fixture=await startLocalHttpFixture();const created=await api(page,'/profiles',{name:'Installed persistence',automationEnabled:true});check(created.status===201,'Installed native SQLite backend persists a profile');const id=created.body.id;
  const opened=await api(page,`/profiles/${id}/launch`,{headless:true,automation:true,url:fixture.origin});check(opened.status===200,'Installed offline Chromium profile launches without development checkout');
+ const readChromium=async(profileId,seed=false)=>{
+  const profile=await api(page,`/profiles/${profileId}`),browser=await chromium.connectOverCDP(profile.body.cdp.httpEndpoint,{timeout:15000});
+  try {const tab=browser.contexts()[0].pages()[0];await tab.goto(fixture.origin);return await tab.evaluate(seed=>{if(seed){document.cookie='package=persistent; Max-Age=3600; Path=/; SameSite=Lax';localStorage.setItem('package','isolated');}return {cookie:document.cookie,storage:localStorage.getItem('package')};},seed);}finally{await browser.close();}
+ };
+ check((await readChromium(id,true)).storage==='isolated','Installed Chromium writes actual persistent browser data');
+ check((await api(page,`/profiles/${id}/stop`,{})).status===200,'Installed browser shuts down through application Stop');
+ await application.close();application=null;page=await launch();
+ check((await api(page,`/profiles/${id}/launch`,{headless:true,automation:true,url:fixture.origin})).status===200,'Profile reopens after installed application restart');
+ const persisted=await readChromium(id);check(persisted.cookie.includes('package=persistent')&&persisted.storage==='isolated','Installed Chromium cookies and localStorage survive genuine shutdown and application restart');
  await api(page,`/profiles/${id}/stop`,{});
+ const transfer=await page.evaluate(async({id})=>{const headers={'Content-Type':'application/json','X-UI-Token':window.pm.uiToken},passphrase='isolated-package-backup-passphrase';const exported=await fetch(`/api/profiles/${id}/backup/export-stream`,{method:'POST',headers,body:JSON.stringify({passphrase,confirmSensitive:true})});if(!exported.ok)return {status:exported.status};const bytes=await exported.arrayBuffer();const restored=await fetch('/api/backup/restore-stream?collision=rename',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-UI-Token':window.pm.uiToken,'X-Backup-Passphrase':passphrase},body:bytes});return {status:restored.status,magic:String.fromCharCode(...new Uint8Array(bytes).slice(0,4)),body:await restored.json()};},{id});
+ check(transfer.status===200&&transfer.magic==='PMBE','Installed application performs encrypted profile export and collision-safe restore');
+ const copy=transfer.body.renamed[0].id;check(copy!==id,'Restored installed profile receives an isolated identity');
+ await api(page,`/profiles/${copy}/launch`,{headless:true,automation:true,url:fixture.origin});const restoredData=await readChromium(copy);check(restoredData.cookie.includes('package=persistent')&&restoredData.storage==='isolated','Installed encrypted restore preserves supported Chromium cookies and localStorage');await api(page,`/profiles/${copy}/stop`,{});
+ const editorSetup=await api(page,`/profiles/${id}/cookie-editor/setup`,{confirm:true});check(editorSetup.status===200&&editorSetup.body.manualActionRequired===true&&editorSetup.body.installed===false,'Installed Cookie-Editor setup honestly requires official-store user confirmation');await api(page,`/profiles/${id}/stop`,{});
+ const firefox=await api(page,'/profiles',{name:'Installed system Firefox',browserEngine:'firefox',browserSettings:{firefoxSessionMode:'bidi',timezoneId:'UTC'}});check(firefox.status===201,'Installed application creates a separate Firefox profile');
+ const firefoxId=firefox.body.id;check((await api(page,`/profiles/${firefoxId}/launch`,{headless:true,automation:true,url:fixture.origin})).status===200,'Installed application launches supported system Firefox');
+ const tree=await api(page,`/profiles/${firefoxId}/firefox/command`,{method:'browsingContext.getTree',params:{}});
+ const observed=await api(page,`/profiles/${firefoxId}/firefox/command`,{method:'script.evaluate',params:{expression:'Intl.DateTimeFormat().resolvedOptions().timeZone',target:{context:tree.body.contexts[0].context},awaitPromise:true}});
+ check(observed.status===200&&observed.body.result.value==='UTC','Installed Firefox executes real BiDi readback with configured timezone');await api(page,`/profiles/${firefoxId}/stop`,{});
  await application.close();application=null;
  const reinstall=spawnSync(installer,['/S','/D='+install],{timeout:180000,stdio:'inherit'});check(reinstall.status===0,'Office installer in-place reinstall succeeds');
  page=await launch();check((await api(page,`/profiles/${id}`)).status===200,'Office in-place reinstall preserves SQLite profile data');
  await application.close();application=null;
  const uninstaller=fs.readdirSync(install).find(name=>/^Uninstall.*\.exe$/i.test(name));check(!!uninstaller,'Branded uninstaller exists');
- const removed=spawnSync(path.join(install,uninstaller),['/S'],{timeout:180000,stdio:'inherit'});check(removed.status===0,'Silent uninstaller completes');
+ const removed=spawnSync(path.join(install,uninstaller),['/S'],{timeout:180000,stdio:'inherit'});check(removed.status===0,'Silent uninstaller starts successfully');
+ const uninstallDeadline=Date.now()+60000;while(fs.existsSync(path.join(install,'Azwah Multi Browser.exe'))&&Date.now()<uninstallDeadline)await new Promise(resolve=>setTimeout(resolve,250));
+ check(!fs.existsSync(path.join(install,'Azwah Multi Browser.exe')),'Silent uninstall actually removes the installed executable');
  check(fs.existsSync(path.join(userData,'data','profiles.db')),'Uninstall retains user profile database');
  check(fs.existsSync(path.join(userData,'data','azwah-activation.json')),'Uninstall retains encrypted activation state');
 }catch(error){console.error('PACKAGING_QUALIFICATION_FAILURE',error.message);results.push({pass:false,message:error.message});process.exitCode=1;}
