@@ -64,7 +64,7 @@ async function sessionFor(id, action) {
       session = await client.command('WebDriver:NewSession', {});
       created = true;
     } catch (error) {
-      if (!/Marionette connection closed|session is already started|session already exists/i.test(error.message)) throw error;
+      if (!/Marionette connection closed|session is already started|session already exists|Maximum number of active sessions/i.test(error.message)) throw error;
       throw fail('Firefox declined a new management session. Finish any active automation session and retry.', 'GECKO_SESSION_UNAVAILABLE');
     }
     firefoxSessionIdentity(session, target.dir, target.running.pid);
@@ -73,10 +73,12 @@ async function sessionFor(id, action) {
 }
 async function observed(dir, id, installed, expected = {}) {
   const deadline = Date.now() + 6000;
+  let lastObserved = null;
   do {
     const report = readGeckoProfileExtensions(dir);
     if (report.corrupt) throw fail('Firefox extension database is unreadable; inspect about:addons.', 'GECKO_INSTALL_UNVERIFIED');
     const addon = report.addons.find(a => a.id === id);
+    lastObserved = addon ? { active: addon.active, userDisabled: addon.userDisabled, appDisabled: addon.appDisabled, version: addon.version } : null;
     let packageMatches = false;
     if (installed && addon?.version === expected.version) {
       const file = path.join(dir, 'extensions', id + '.xpi');
@@ -85,7 +87,9 @@ async function observed(dir, id, installed, expected = {}) {
     if (installed ? packageMatches && addon?.signatureVerified && !addon.appDisabled && addon.active : !addon) return addon || { id, removed: true };
     await new Promise(resolve => setTimeout(resolve, 100));
   } while (Date.now() < deadline);
-  throw fail('Firefox completed the command, but persisted add-on state could not be verified. Inspect about:addons before retrying.', 'GECKO_INSTALL_UNVERIFIED');
+  const error = fail('Firefox completed the command, but persisted add-on state could not be verified. Inspect about:addons before retrying.', 'GECKO_INSTALL_UNVERIFIED');
+  console.warn('FIREFOX_ADDON_PERSISTENCE_UNVERIFIED', JSON.stringify({ installed, addon: lastObserved, packagePresent: fs.existsSync(path.join(dir, 'extensions', id + '.xpi')) }));
+  throw error;
 }
 export async function installGeckoExtension(profileId, extensionId, { confirm = false } = {}) {
   if (confirm !== true) throw fail('Confirm installation into this profile.', 'CONFIRM_REQUIRED', 400);

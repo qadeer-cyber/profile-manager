@@ -35,7 +35,10 @@ export async function borrowFirefoxSession(id, owner, action) {
   const release = acquireFirefoxSession(id, owner);
   record.busy = true;
   try {
-    if (!await pidMatches(record.pid, record.profileDir)) throw fail('Firefox process no longer matches its profile');
+    if (!await pidMatches(record.pid, record.profileDir)) {
+      record.state = 'disconnected';
+      throw fail('Firefox process no longer matches its profile');
+    }
     const client = { command: async (method, params) => {
       try { return await record.client.command(method, params); }
       catch (error) {
