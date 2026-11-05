@@ -105,7 +105,10 @@ test('M14 real signed Firefox XPI: UI installation, restart, profile isolation a
     assert.equal(current?.value ?? current, fixture.origin);
     const surface = await automation.command('WebDriver:ExecuteScript', { script: 'return navigator.language;', args: [], newSandbox: false, sandbox: 'default' });
     assert.equal(surface?.value ?? surface, 'de-DE');
-    await manage('install', addon, false);
+    const declined = await manage('install', addon, false);
+    assert.match(declined.error, /Firefox declined a new management session/);
+    const stillOwned = await automation.command('WebDriver:GetCurrentURL');
+    assert.equal(stillOwned?.value ?? stillOwned, fixture.origin);
     await automation.command('WebDriver:DeleteSession');
   } finally { automation.close(); }
   await manage('install', damaged, false);

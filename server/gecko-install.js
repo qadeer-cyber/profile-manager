@@ -51,8 +51,15 @@ function strictProfile(dir) {
 async function sessionFor(id, action) {
   const target = targetProfile(id); strictProfile(target.dir); const release = acquireFirefoxSession(id, 'addons'); let client, created = false;
   try {
-    client = await connectMarionette(target.running.cdp_port, 10000);
-    const session = await client.command('WebDriver:NewSession', {}); created = true;
+    let session;
+    try {
+      client = await connectMarionette(target.running.cdp_port, 10000);
+      session = await client.command('WebDriver:NewSession', {});
+      created = true;
+    } catch (error) {
+      if (!/Marionette connection closed|session is already started|session already exists/i.test(error.message)) throw error;
+      throw fail('Firefox declined a new management session. Finish any active automation session and retry.', 'GECKO_SESSION_UNAVAILABLE');
+    }
     firefoxSessionIdentity(session, target.dir, target.running.pid);
     return await action(client, target);
   } finally { if (created) await client.command('WebDriver:DeleteSession').catch(() => {}); client?.close(); release(); }
