@@ -70,7 +70,7 @@ test('owned Firefox signed extensions, busy automation, encrypted restore and sh
   const bytes=fs.readFileSync(file); assert.equal(crypto.createHash('sha256').update(bytes).digest('hex'),process.env.PM_SIGNED_XPI_SHA256);
   const archive=validateXpiArchive(bytes);
   const manifest=JSON.parse(archive.get('manifest.json').toString());manifest.name += ' modified';
-  const modified=buildXpi([...archive].map(([name,data])=>({name,data:name==='manifest.json'?JSON.stringify(manifest):data})),{deflate:true});
+  const modified=buildXpi(Object.fromEntries([...archive].map(([name,data])=>[name,name==='manifest.json'?JSON.stringify(manifest):data])),{deflate:true});
   const modifiedFile=path.join(os.tmpdir(),crypto.randomUUID()+'.xpi');fs.writeFileSync(modifiedFile,modified);t.after(()=>fs.rmSync(modifiedFile,{force:true}));
   const damaged=await app.api('/gecko-extensions/import',{path:modifiedFile});
   const imported=await app.api('/gecko-extensions/import',{path:file});
