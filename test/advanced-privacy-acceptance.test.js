@@ -43,15 +43,15 @@ test('strict matrix denominator stays 43 and matches the scorecard', () => {
   const scored = scoreHistoricalMarkdown(fs.readFileSync(matrixPath, 'utf8'));
   assert.equal(scored.denominator, HISTORICAL_MATRIX.denominator);
   assert.equal(scored.denominator, 43);
-  assert.equal(scored.verified, 20);
-  assert.equal(scored.partial, 18);
+  assert.equal(scored.verified, 21);
+  assert.equal(scored.partial, 17);
   assert.equal(scored.unsupported, 5);
   assert.equal(scored.cloudExcluded, 2);
   assert.deepEqual(scored.partialIds, [...HISTORICAL_MATRIX.partialIds]);
   assert.deepEqual(scored.unsupportedIds, [...HISTORICAL_MATRIX.unsupportedIds]);
   const coverage = historicalCoverage();
-  assert.equal(coverage, (20 + 9) / 43);
-  assert.ok(Math.abs(coverage - (29 / 43)) < 1e-12);
+  assert.equal(coverage, (21 + 8.5) / 43);
+  assert.ok(Math.abs(coverage - (29.5 / 43)) < 1e-12);
   const report = advancedPrivacyScorecards();
   assert.equal(report.A.file.denominator, 43);
   assert.equal(report.B.frozen, true);
@@ -66,7 +66,7 @@ test('strict matrix denominator stays 43 and matches the scorecard', () => {
 test('fingerprint rows keep engine requirements and only promoted rows are VERIFIED', () => {
   for (const id of Object.keys(PARTIAL_REQUIREMENTS)) {
     const row = PARTIAL_REQUIREMENTS[id];
-    const expected = id === 'M20' || id === 'M22' ? 'VERIFIED' : 'PARTIAL';
+    const expected = id === 'M22' ? 'VERIFIED' : 'PARTIAL';
     assert.equal(row.matrixStatus, expected, id);
     assert.ok(row.satisfied.length >= 3, id);
     assert.ok(row.engineRequired.length >= 1, id);

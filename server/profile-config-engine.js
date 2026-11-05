@@ -27,6 +27,9 @@ export function normalizeProfileConfigInput(body = {}, previous = {}) {
 export function profileConfigWarnings(config) {
   const warnings = [];
   if (config.browserEngine === 'firefox') {
+    if (process.platform === 'win32' && config.browserSettings?.timezoneId) {
+      warnings.push({ code: 'FIREFOX_WINDOWS_TIMEZONE_UNSUPPORTED', message: 'This Firefox launch uses the Windows host timezone. The saved IANA timezone is not applied by TZ or privacy.timezone.override. A supported BiDi override exists, but cannot yet coexist with the application Marionette extension and lifecycle sessions.' });
+    }
     warnings.push({ code: 'FIREFOX_CHROMIUM_EXTENSIONS_IGNORED', message: 'Chromium unpacked extensions are not loaded on Firefox. Firefox library imports are inventory only; install signed XPI files and manage add-ons in each profile using about:addons.' });
     warnings.push({ code: 'FIREFOX_CHROMIUM_FLAGS_IGNORED', message: 'Chromium-only launch flags (WebGL disable, force-DPR, CDP locale probes) are not applied to Firefox.' });
     warnings.push({ code: 'FIREFOX_FINGERPRINT_LIMITS', message: 'Firefox timezone on Linux is the TZ environment variable. privacy.timezone.override is written for visibility and is not a stock Gecko control. Locale uses intl.locale.requested and intl.accept_languages. Screen is -width/-height only. This is not an undetectability claim. Client hints, canvas/audio/WebGL noise, and screen API replacement stay unsupported on stock Firefox.' });

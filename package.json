@@ -56,7 +56,7 @@
     "test:ultimate3-track-b": "node --test --test-timeout=180000 test/proxy-traffic.test.js test/proxy-provider-contracts.test.js test/human-input-timing.test.js test/human-input-parse.test.js test/human-input-geckodriver.test.js test/human-input.test.js test/pm-cli-script.test.js test/pm-cli-exec-cdp.test.js test/automation-attach.test.js test/automation-attach-reconnect.test.js test/webdriver-api.test.js test/webdriver-bridge.test.js test/proxy-library-m17.test.js test/proxy-duplicate.test.js test/proxy-providers.test.js test/migration-v13-v16.test.js test/playwright-cdp-reconnect.test.js test/puppeteer-cdp-attach.test.js test/pm-cli-workflow.test.js",
     "test:trackc": "node --test --experimental-test-module-mocks --test-timeout=30000 test/trackc-gecko.test.js test/trackc-window.test.js test/trackc-workspace.test.js test/trackc-workspace-sync.test.js test/browser-stop-recovery.test.js",
     "test:trackc:acceptance": "npm run build && node --test --test-concurrency=1 --test-timeout=180000 test/m8-browser-acceptance.test.js test/trackc-browser-acceptance.test.js",
-    "test:unified": "node --test --experimental-test-module-mocks --test-timeout=30000 test/unified-integration.test.js"
+    "test:unified": "node --test --experimental-test-module-mocks --test-timeout=30000 test/unified-integration.test.js test/advanced-privacy-acceptance.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
