@@ -1,0 +1,13 @@
+{
+  "reportedDate": "2026-10-31",
+  "source": "Owner report in conversation; not independently executed by Codex",
+  "product": "Ultimate 2.0",
+  "sourceCommit": null,
+  "platform": "Windows",
+  "browser": "Chrome for Testing 156.0.8078.4",
+  "search": { "query": "hi", "googleResults": "PASS", "aiOverview": "visible", "captchaObserved": false },
+  "proxy": { "type": "SOCKS5", "configuredExitMatchedObservedIPv4": true, "actualAddressProvided": false },
+  "scope": "One reported search and preceding IPv4 exit check; not proof of persistent profile state or leak prevention",
+  "pending": ["Browser profile persistence", "WebRTC leak verification", "DNS leak verification", "Full Windows acceptance"],
+  "M42": "UNSUPPORTED: no CAPTCHA-free guarantee; no score promotion"
+}

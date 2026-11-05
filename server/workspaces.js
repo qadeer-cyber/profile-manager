@@ -63,12 +63,15 @@ export function createWorkspace({ name, notes = '', vaultLocked = false }) {
   return getWorkspace(id);
 }
 
-export function updateWorkspace(id, { name, notes, vaultLocked }) {
+function updateWorkspaceInTransaction(id, { name, notes, vaultLocked, expectedUpdatedAt }) {
   const row = db.prepare('SELECT * FROM workspaces WHERE id=?').get(id);
   if (!row) throw fail(404, 'Workspace not found', 'NOT_FOUND');
-  const now = new Date().toISOString();
+  assertWorkspaceAccess(id);
+  if (expectedUpdatedAt && expectedUpdatedAt !== row.updated_at) throw fail(409, 'Workspace changed; reload before saving', 'WORKSPACE_CONFLICT');
+  for (const profile of db.prepare('SELECT id FROM profiles WHERE workspace_id=?').all(id)) assertProfileOperationAvailable(profile.id);
+  const now = new Date(Math.max(Date.now(), (Date.parse(row.updated_at) || 0) + 1)).toISOString();
   const nextName = name != null ? String(name).trim() : row.name;
-  if (!nextName) throw fail(400, 'name is required', 'INVALID_WORKSPACE');
+  if (!nextName || nextName.length > 120) throw fail(400, 'name must be 1-120 characters', 'INVALID_WORKSPACE');
   let locked = !!row.vault_locked;
   if (vaultLocked != null) {
     if (vaultLocked && !vaultStorageAvailable()) throw fail(400, 'Vault lock requires OS secure storage', 'VAULT_UNAVAILABLE');
@@ -81,31 +84,32 @@ export function updateWorkspace(id, { name, notes, vaultLocked }) {
 }
 
 function guardProfileMutation(profileId) {
-  const row = db.prepare('SELECT id FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
-  if (row) assertProfileOperationAvailable(profileId);
+  const row = db.prepare('SELECT id,workspace_id FROM profiles WHERE id=? AND deleted_at IS NULL').get(profileId);
+  if (row) { assertProfileOperationAvailable(profileId); assertWorkspaceAccess(row.workspace_id); }
   return row;
 }
 
-export function deleteWorkspace(id) {
+function deleteWorkspaceInTransaction(id) {
+  assertWorkspaceAccess(id);
   const row = db.prepare('SELECT id FROM workspaces WHERE id=?').get(id);
   if (!row) throw fail(404, 'Workspace not found', 'NOT_FOUND');
-  const profiles = db.prepare('SELECT id FROM profiles WHERE workspace_id=? AND deleted_at IS NULL').all(id);
+  const profiles = db.prepare('SELECT id FROM profiles WHERE workspace_id=?').all(id);
   for (const profile of profiles) assertProfileOperationAvailable(profile.id);
   db.prepare('UPDATE profiles SET workspace_id=NULL, updated_at=? WHERE workspace_id=?').run(new Date().toISOString(), id);
   db.prepare('DELETE FROM workspaces WHERE id=?').run(id);
   return { id, deleted: true };
 }
 
-export function assignProfileWorkspace(profileId, workspaceId) {
-  if (profileId) guardProfileMutation(profileId);
+function assignProfileWorkspaceInTransaction(profileId, workspaceId) {
+  if (!guardProfileMutation(profileId)) throw fail(404, 'Profile not found', 'NOT_FOUND');
   if (workspaceId) assertWorkspaceAccess(workspaceId);
   db.prepare('UPDATE profiles SET workspace_id=?, updated_at=? WHERE id=? AND deleted_at IS NULL')
     .run(workspaceId || null, new Date().toISOString(), profileId);
 }
 
-export function bulkAssignProfilesToWorkspace(workspaceId, profileIds) {
+function bulkAssignProfilesToWorkspaceInTransaction(workspaceId, profileIds) {
   assertWorkspaceAccess(workspaceId);
-  if (!Array.isArray(profileIds) || !profileIds.length || profileIds.length > 100) {
+  if (!Array.isArray(profileIds) || !profileIds.length || profileIds.length > 100 || new Set(profileIds).size !== profileIds.length) {
     throw fail(400, 'profileIds must be an array of 1-100 profile ids', 'INVALID_WORKSPACE');
   }
   const ids = profileIds.map(profileId => {
@@ -149,6 +153,7 @@ export function importWorkspaceBundle(payload) {
 }
 
 export function exportWorkspaceBundle(workspaceId) {
+  assertWorkspaceAccess(workspaceId);
   const ws = getWorkspace(workspaceId);
   if (!ws) throw fail(404, 'Workspace not found', 'NOT_FOUND');
   const profiles = db.prepare(`
@@ -170,3 +175,10 @@ export function exportWorkspaceBundle(workspaceId) {
     note: 'Local workspace metadata only. Profile user-data is exported separately via profile backup.',
   };
 }
+
+// All membership checks and writes share one reserved SQLite writer transaction.
+export const assignProfileWorkspace = (id, workspaceId) => db.transaction(() => assignProfileWorkspaceInTransaction(id, workspaceId)).immediate();
+export const bulkAssignProfilesToWorkspace = (id, profileIds) => db.transaction(() => bulkAssignProfilesToWorkspaceInTransaction(id, profileIds)).immediate();
+export const deleteWorkspace = id => db.transaction(() => deleteWorkspaceInTransaction(id)).immediate();
+
+export const updateWorkspace = (id, values) => db.transaction(() => updateWorkspaceInTransaction(id, values)).immediate();

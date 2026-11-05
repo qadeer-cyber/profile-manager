@@ -181,16 +181,16 @@ export async function applyDocumentPermissions(page, url, permissions) {
 export async function installUserAgent(ctx, userAgent) {
   if (!userAgent) return;
   const apply = async page => {
-    const session = await ctx.newCDPSession(page);
-    try {
-      await session.send('Emulation.setUserAgentOverride', {
-        userAgent: userAgent.userAgent,
-        platform: userAgent.navigatorPlatform,
-        userAgentMetadata: userAgent.metadata,
-      });
-    } finally {
-      await session.detach().catch(() => {});
-    }
+    // Emulation.setUserAgentOverride is tied to the CDP session that sent it.
+    // Detaching that session drops the client-hint metadata, so the session
+    // stays with the page for the life of the page.
+    if (!page.__pmUserAgentSession) page.__pmUserAgentSession = await ctx.newCDPSession(page);
+    const session = page.__pmUserAgentSession;
+    await session.send('Emulation.setUserAgentOverride', {
+      userAgent: userAgent.userAgent,
+      platform: userAgent.navigatorPlatform,
+      userAgentMetadata: userAgent.metadata,
+    });
   };
   ctx.on('page', page => { apply(page).catch(() => {}); });
   for (const page of ctx.pages()) await apply(page);

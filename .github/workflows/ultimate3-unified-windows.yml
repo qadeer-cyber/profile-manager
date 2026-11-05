@@ -1,0 +1,69 @@
+name: Ultimate 3 Unified Windows acceptance
+on:
+  push:
+    branches: [integration/ultimate3-unified]
+    paths-ignore: ['server/firefox-bidi.js', 'test/firefox-timezone-windows.test.js', '.github/workflows/firefox-timezone-probe.yml']
+permissions:
+  contents: read
+jobs:
+  unified-windows:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Native dependencies and real browsers
+        id: setup
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          New-Item -ItemType Directory -Force build-evidence/unified | Out-Null
+          # Upstream signed release; Firefox must still validate Mozilla's chain.
+          $xpi = Join-Path $env:RUNNER_TEMP 'ublock-1.75.0.signed.xpi'
+          Invoke-WebRequest 'https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.firefox.signed.xpi' -OutFile $xpi
+          $expected = '5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287'
+          if ((Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Signed XPI fixture checksum mismatch' }
+          "PM_SIGNED_XPI=$xpi" >> $env:GITHUB_ENV
+          "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify real Chromium CDP input readiness before broad regression
+        id: cdp
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 --test-timeout=30000 test/human-input.test.js 2>&1 | Tee-Object -FilePath build-evidence/unified/cdp-readiness.log
+          exit $LASTEXITCODE
+      - name: Qualify managed Firefox timezone and permanent extensions first
+        id: owner
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 test/firefox-session-acceptance.test.js 2>&1 | Tee-Object build-evidence/unified/firefox-owner.log
+          exit $LASTEXITCODE
+      - name: Verify fingerprint and signed Firefox extension regressions independently
+        shell: pwsh
+        run: |
+          node --test test/ultimate3-fingerprint-browser.test.js 2>&1 | Tee-Object build-evidence/unified/fingerprint-targeted.log
+          $fingerprint = $LASTEXITCODE
+          node --test --test-name-pattern="M14 real signed" test/trackc-browser-acceptance.test.js 2>&1 | Tee-Object build-evidence/unified/firefox-addon-targeted.log
+          if ($LASTEXITCODE -ne 0 -or $fingerprint -ne 0) { exit 1 }
+      - name: Source, recovery, UI and real browser gates
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.cdp.outcome == 'success' && steps.owner.outcome == 'success' }}
+        shell: pwsh
+        run: node scripts/qualify-unified.mjs
+      - name: Preserve exact test evidence even after failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unified-windows-${{ github.sha }}
+          path: build-evidence/unified
+          if-no-files-found: warn
+          retention-days: 14

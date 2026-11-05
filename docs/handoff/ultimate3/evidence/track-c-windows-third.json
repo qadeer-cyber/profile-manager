@@ -1,0 +1,171 @@
+{
+  "sourceCommit": "9e7be080dfec8c93514db2127dbb7f7bd542a227",
+  "platform": "win32",
+  "node": "v22.23.4",
+  "results": [
+    {
+      "suite": "test:unit",
+      "start": "2026-11-01T06:34:35.882Z",
+      "finished": "2026-11-01T06:35:08.595Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 134,
+        "pass": 134,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unit.log",
+      "logSHA256": "015bb62b7ad31ffd9f0ed33654b1590bd6c42f6eede4884a231d95912e68393a"
+    },
+    {
+      "suite": "test:stabilization",
+      "start": "2026-11-01T06:35:08.598Z",
+      "finished": "2026-11-01T06:35:15.751Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 90,
+        "pass": 89,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-stabilization.log",
+      "logSHA256": "2b6f00b3a47cc9ee102a2aa8b18a5fa1184ac255c9f97197d058199a1fa0d7ce"
+    },
+    {
+      "suite": "test:data-recovery",
+      "start": "2026-11-01T06:35:15.752Z",
+      "finished": "2026-11-01T06:36:46.954Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 63,
+        "pass": 62,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-data-recovery.log",
+      "logSHA256": "a92cdfd19803f2ee5c02d55c45c352cc253e5be2964cfd17a929885d5e4717dd"
+    },
+    {
+      "suite": "test:browser-runtime",
+      "start": "2026-11-01T06:36:46.955Z",
+      "finished": "2026-11-01T06:37:43.329Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 190,
+        "pass": 188,
+        "fail": 1,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-browser-runtime.log",
+      "logSHA256": "4da12813ce4b7649709fd0958a5a6c68ad5c77ad5699d719af9d6c6029b8afae"
+    },
+    {
+      "suite": "test:m4",
+      "start": "2026-11-01T06:37:43.330Z",
+      "finished": "2026-11-01T06:37:47.398Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-m4.log",
+      "logSHA256": "d2f3f6ca434fbe83fae4e02f2c94e71c7690968ebd50d4d52dca39122a9efb17"
+    },
+    {
+      "suite": "test:trackc",
+      "start": "2026-11-01T06:37:47.399Z",
+      "finished": "2026-11-01T06:37:53.973Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc.log",
+      "logSHA256": "9b33c05c585b7c6c1b9044a542ae4b1cb252f0636918d82b962718224e4cdde4"
+    },
+    {
+      "suite": "test:api",
+      "start": "2026-11-01T06:37:53.974Z",
+      "finished": "2026-11-01T06:38:23.094Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 45,
+        "fail": 0,
+        "tests": 45
+      },
+      "log": "test-api.log",
+      "logSHA256": "37fc2e4ced8c9f70e8e75aef0e71cd89b6ef443829df9bcb41cd899c9e23bad8"
+    },
+    {
+      "suite": "test:security",
+      "start": "2026-11-01T06:38:23.095Z",
+      "finished": "2026-11-01T06:38:46.230Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 41,
+        "fail": 0,
+        "tests": 41
+      },
+      "log": "test-security.log",
+      "logSHA256": "cc93e62870162ddb046b713fda6f37eb9aef8e1e39cefba407cf24e472e32852"
+    },
+    {
+      "suite": "test:ui",
+      "start": "2026-11-01T06:38:46.230Z",
+      "finished": "2026-11-01T06:39:33.122Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 25,
+        "fail": 0,
+        "tests": 25
+      },
+      "log": "test-ui.log",
+      "logSHA256": "5c552582e8d16ad5de677fe4f6ee3f2e5de7e492b509fc2cb9a54a02c7fc5913"
+    },
+    {
+      "suite": "test:trackc:acceptance",
+      "start": "2026-11-01T06:39:33.123Z",
+      "finished": "2026-11-01T06:42:12.969Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 6,
+        "pass": 4,
+        "fail": 2,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc-acceptance.log",
+      "logSHA256": "1ccb516d76003881fe46375296d6a329d5889fef87e4411789a845bcb8ca6354"
+    }
+  ],
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/41281229928",
+  "conclusion": "failure",
+  "artifactId": 13074030081,
+  "artifactSHA256": "fa5019535e550c16fb6d9f49113d599df82bad9ebadad75897e9ac6a3f50d661",
+  "scope": "Windows Server 2022; overlapping suites; both M8 engines pass using application Stop",
+  "failures": [
+    "Human-input Unicode: startup navigation ERR_ABORTED",
+    "M12 Firefox: normal/maximized restart assertions completed, manual-mode test read missing cdp.pid instead of top-level pid",
+    "M14: exact accessible-name lookup of nested profile select timed out before installation"
+  ]
+}

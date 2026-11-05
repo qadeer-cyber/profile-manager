@@ -15,7 +15,7 @@ export function geckoWebRtcUserPrefLines(webrtcSettings = DEFAULT_WEBRTC_SETTING
   return [];
 }
 
-export const GECKO_TIMEZONE_PREF_NOTE = 'privacy.timezone.override is not a documented stock Firefox preference. Unix launches set TZ. This line does not change the timezone by itself.';
+export const GECKO_TIMEZONE_PREF_NOTE = 'privacy.timezone.override is not a documented stock Firefox preference. Unix launches set TZ. Windows uses the host timezone; arbitrary TZ values are not applied. This line does not change the timezone by itself.';
 
 export function geckoTimezoneUserPrefLine(timezoneId) {
   const tz = String(timezoneId || '').trim();

@@ -55,5 +55,8 @@ test('typeHumanTextOverWebDriver sends key actions via geckodriver stub', async 
   assert.equal(result.transport, 'geckodriver');
   assert.equal(result.typed, 4);
   assert.equal(result.deterministic, true);
+  assert.equal(result.timingMeasured, false);
+  assert.equal(result.measuredIntervalsMs, null);
+  assert.equal(result.scheduleMs.length, 4);
   stopGeckodriverBridge('hi-prof');
 });

@@ -1,0 +1,42 @@
+{
+  "parentCommit": "2549682877f484d17f1e65fc2218dd314240565b",
+  "scope": "Windows fixes in this source tree; local Linux source tests only; suites overlap",
+  "results": [
+    {
+      "log": "windows-fixes-local.log",
+      "tests": 25,
+      "pass": 25,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "eaecfe7d9127ca23f0cc29692a0cb79776e5146c3eea87ae9f9e17b2fc7b1494"
+    },
+    {
+      "log": "trackc-followup.log",
+      "tests": 16,
+      "pass": 16,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "d338476a42d434c84cf89257284331922d8f7fbe4140531976452bc1fd8f99c2"
+    },
+    {
+      "log": "stabilization-followup.log",
+      "tests": 90,
+      "pass": 90,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "89ff4caa22e8f9acfb8fb6c8ada81fbffbd6e879e5e242a90c93d004b3127d2d"
+    },
+    {
+      "log": "gecko-regression.log",
+      "tests": 21,
+      "pass": 21,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "4dab0f1d3128556ffde181e21da22ea0419ff9df76b59cecb50ccba4815ad507"
+    }
+  ]
+}

@@ -1,4 +1,6 @@
-import { createStreamedPortableBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
+import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
+import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
+import { createStreamedPortableBackup, createStreamedWorkspaceBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
 import { pipeline as streamPipeline } from 'node:stream/promises';
 import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
@@ -33,6 +35,8 @@ import { buildEngineStockReport } from './engine-stock-report.js';
 import { readWindowState } from './window-state.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
+import { buildAttachDescriptor } from './automation-attach.js';
+import { firefoxSessionStatus, firefoxAutomationCommand } from './firefox-session-manager.js';
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
   listWorkspaces, createWorkspace, updateWorkspace, deleteWorkspace, getWorkspace, assignProfileWorkspace,
@@ -93,6 +97,7 @@ import {
 } from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
 import { assertNotPausedTemplate, proxyHealthAnalytics, proxyTagGroups } from './proxy-library.js';
+import { compareTrafficSavings, copyTrafficPolicy, getTrafficPolicy, getTrafficSession, measureTrafficScript, saveTrafficPolicy } from './proxy-traffic.js';
 
 // ---- Browser (Chromium) install: pinned, SHA-256-verified download from the official CDN (server/chromium.js) ----
 const browserInstall = { state: 'idle', log: '', error: null, code: null };
@@ -199,6 +204,8 @@ const publicP = p => {
   const ri = p.running && engine.runInfo(p.id);
   if (ri) {
     out.pid = ri.pid ?? null;
+    const firefoxRemote = p.browserEngine === 'firefox' && firefoxSessionStatus(p.id);
+    if (firefoxRemote) out.firefoxSession = firefoxRemote;
     if (ri.cdp_port && p.browserEngine === 'firefox') {
       out.cdp = { marionettePort: ri.cdp_port, debuggerAddress: `127.0.0.1:${ri.cdp_port}`, automation: true, pid: ri.pid ?? null };
     } else if (ri.cdp_port) {
@@ -643,6 +650,13 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     if (!row?.cdp_port) throw err(409, 'WebDriver bridge requires a running automation session (CDP port). Manual native launches cannot attach.');
     res.json(await startWebDriverBridge(req.params.id, `127.0.0.1:${row.cdp_port}`));
   }));
+  router.post('/profiles/:id/firefox/command', wrap(async (req, res) => {
+    const profile = must(req.params.id);
+    if (profile.browserEngine !== 'firefox') throw err(400, 'Choose a Firefox profile');
+    assertProfileOperationAvailable(profile.id);
+    assertWorkspaceAccess(profile.workspaceId);
+    res.json(await firefoxAutomationCommand(profile.id, req.body?.method, req.body?.params || {}));
+  }));
   router.get('/geckodriver', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
     res.json(geckodriverBridgeReport());
@@ -661,6 +675,25 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.post('/profiles/:id/webdriver/stop', wrap((req, res) => {
     must(req.params.id);
     res.json(stopWebDriverBridge(req.params.id));
+  }));
+  router.get('/profiles/:id/automation-attach', wrap((req, res) => {
+    const p = must(req.params.id);
+    const row = engine.runInfo(p.id);
+    const desc = buildAttachDescriptor({
+      profileId: p.id,
+      engine: p.browserEngine,
+      cdpPort: row?.cdp_port,
+      wsEndpoint: row?.ws_endpoint,
+      running: !!row,
+    });
+    if (!desc.attachable) {
+      const code = p.browserEngine === 'firefox' ? 'FIREFOX_NO_CDP' : (!row ? 'NOT_RUNNING' : 'NO_CDP');
+      const error = code === 'FIREFOX_NO_CDP'
+        ? 'Firefox has no Playwright/Puppeteer CDP attach endpoint'
+        : 'Profile is not running with a CDP port';
+      return res.status(409).json({ ...desc, code, error });
+    }
+    res.json(desc);
   }));
   router.get('/profiles/:id/browser-config', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -791,6 +824,14 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
       profileIds,
     }));
   }));
+  router.post('/workspaces/:id/backup/export-stream', wrap(async (req, res) => {
+    rejectPassphraseQuery(req);
+    const transfer = await createStreamedWorkspaceBackup(req.params.id, { passphrase: req.body?.passphrase, confirmSensitive: req.body?.confirmSensitive === true, ids: engine.runningIds() });
+    try {
+      res.set({ 'Content-Type': 'application/octet-stream', 'Content-Length': String(transfer.size), 'Content-Disposition': 'attachment; filename="workspace.pmp"', 'Cache-Control': 'no-store', 'X-Backup-Encrypted': 'aes-256-gcm' });
+      await streamPipeline(fs.createReadStream(transfer.file), res);
+    } finally { transfer.cleanup(); }
+  }));
   router.post('/profiles/:id/backup/export-stream', wrap(async (req, res) => {
     must(req.params.id); rejectPassphraseQuery(req);
     const transfer = await createStreamedPortableBackup(req.params.id, { passphrase: req.body?.passphrase, confirmSensitive: req.body?.confirmSensitive === true, ids: engine.runningIds() });
@@ -803,7 +844,7 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     rejectPassphraseQuery(req);
     const transfer = await spoolBackupUpload(req);
     try {
-      res.json(await processStreamedBackup(transfer, { passphrase: req.get('x-backup-passphrase') || undefined, collision: String(req.query.collision || 'abort'), profileIds: req.query.profileIds || undefined, running: engine.runningIds(), inspect: action === 'inspect' }));
+      res.json(await processStreamedBackup(transfer, { passphrase: req.get('x-backup-passphrase') || undefined, collision: String(req.query.collision || 'abort'), profileIds: req.query.profileIds || undefined, running: engine.runningIds(), inspect: action === 'inspect', workspaceId: req.query.workspaceId || undefined }));
     } finally { transfer.cleanup(); }
   }));
   router.post('/profiles/:id/backup/export', wrap((req, res) => {
@@ -876,6 +917,7 @@ function publicProxy(r) {
   return { id: r.id, name: r.name, type: r.type, host: r.host, port: r.port, username: r.username, hasPassword: !!r.password, tags: JSON.parse(r.tags),
     provider: r.provider || null, providerRef: r.provider_ref || null, providerMeta: safeProviderMeta(r.provider_meta),
     lastTest: { status: r.last_test_status ?? null, ip: r.last_test_ip ?? null, latencyMs: r.last_test_latency_ms ?? null, error: r.last_test_error ?? null, testedAt: r.last_tested_at ?? null },
+    trafficPolicy: getTrafficPolicy(r.id),
     assignedProfiles: db.prepare('SELECT COUNT(*) n FROM profiles WHERE proxy_id=?').get(r.id).n, createdAt: r.created_at, updatedAt: r.updated_at };
 }
 function listProxies({ q = '', tag = '', status = '' } = {}) {
@@ -926,6 +968,7 @@ function duplicateProxy(id, { name, asTemplate = false, stripTemplate = false } 
     providerRef: null,
     providerMeta: JSON.parse(r.provider_meta || '{}'),
   });
+  copyTrafficPolicy(id, newId);
   return publicProxy(proxyRow(newId));
 }
 function assignProxy(profileId, proxyId) {
@@ -1067,6 +1110,12 @@ function mountExtensionRoutes(r) {
       : importUnpackedGeckoExtension(p);
     res.status(201).json(publicExtension(row));
   }));
+  r.post('/profiles/:id/gecko-extensions/:extensionId/install', wrap(async (req, res) => {
+    must(req.params.id); res.json(await installGeckoExtension(req.params.id, req.params.extensionId, req.body || {}));
+  }));
+  r.post('/profiles/:id/gecko-extensions/:extensionId/remove', wrap(async (req, res) => {
+    must(req.params.id); res.json(await removeGeckoExtension(req.params.id, req.params.extensionId, req.body || {}));
+  }));
   r.get('/profiles/:id/gecko-extensions', wrap((req, res) => {
     const p = must(req.params.id);
     if (p.browserEngine !== 'firefox') throw err(400, 'Profile is not Firefox');
@@ -1149,7 +1198,9 @@ function mountProxyRoutes(r) {
   }));
   r.post('/proxies/templates', wrap((req, res) => {
     const body = { ...(req.body || {}), tags: cleanTags([...(Array.isArray(req.body?.tags) ? req.body.tags : []), 'template']) };
-    res.status(201).json(publicProxy(proxyRow(createProxyRow(body))));
+    const id = createProxyRow(body);
+    if (req.body?.trafficPolicy) saveTrafficPolicy(id, req.body.trafficPolicy);
+    res.status(201).json(publicProxy(proxyRow(id)));
   }));
   r.patch('/proxies/templates/:id', wrap((req, res) => {
     const row = mustProxy(req.params.id);
@@ -1192,9 +1243,39 @@ function mountProxyRoutes(r) {
     }
     res.json({ total: rows.length, templates, testedOk, testedFailed, providerAccounts: providers.size });
   }));
+  r.post('/proxies/traffic/measure', wrap(async (req, res) => {
+    const proxyId = req.body?.proxyId || null;
+    if (proxyId) mustProxy(proxyId);
+    res.status(201).json(await measureTrafficScript({
+      scriptId: req.body?.scriptId,
+      requests: req.body?.requests,
+      policy: req.body?.policy,
+      proxyId,
+    }));
+  }));
+  r.get('/proxies/traffic/savings', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(compareTrafficSavings(req.query.baseline, req.query.controlled));
+  }));
+  r.get('/proxies/traffic/sessions/:id', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(getTrafficSession(req.params.id));
+  }));
   r.get('/proxies', (req, res) => res.json(listProxies(req.query)));
-  r.post('/proxies', wrap((req, res) => res.status(201).json(publicProxy(proxyRow(createProxyRow(req.body))))));
+  r.post('/proxies', wrap((req, res) => {
+    const id = createProxyRow(req.body || {});
+    if (req.body?.trafficPolicy) saveTrafficPolicy(id, req.body.trafficPolicy);
+    res.status(201).json(publicProxy(proxyRow(id)));
+  }));
   r.post('/proxies/import', wrap((req, res) => res.json(importProxies(req.body))));
+  r.get('/proxies/:id/traffic-policy', wrap((req, res) => {
+    mustProxy(req.params.id);
+    res.json(getTrafficPolicy(req.params.id));
+  }));
+  r.put('/proxies/:id/traffic-policy', wrap((req, res) => {
+    mustProxy(req.params.id);
+    res.json(saveTrafficPolicy(req.params.id, req.body || {}));
+  }));
   r.get('/proxies/:id', wrap((req, res) => res.json(publicProxy(mustProxy(req.params.id)))));
   r.patch('/proxies/:id', wrap((req, res) => res.json(patchProxy(req.params.id, req.body))));
   r.delete('/proxies/:id', wrap((req, res) => { deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true'); res.status(204).end(); }));
@@ -1220,6 +1301,12 @@ function mountProxyRoutes(r) {
   }));
 }
 function mountWorkspace(router) {
+  router.post('/workspaces/:id/sync/push', wrap(async (req, res) => {
+    res.json(await pushWorkspaceSnapshot(req.params.id, req.body || {}));
+  }));
+  router.post('/workspaces/sync/pull', wrap(async (req, res) => {
+    res.json(await pullWorkspaceSnapshot(req.body || {}));
+  }));
   router.get('/workspaces/vault-status', wrap((req, res) => res.json({ vaultStorageAvailable: vaultStorageAvailable(), backend: encryptionStatus().backend })));
   router.get('/workspaces', wrap((req, res) => res.json(listWorkspaces({ q: req.query.q }))));
   router.post('/workspaces', wrap((req, res) => res.status(201).json(createWorkspace(req.body || {}))));

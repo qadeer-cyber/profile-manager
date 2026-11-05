@@ -1,37 +1,36 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 import { chromium } from 'playwright';
 import { freePort, trackProcess, hardKill } from './_ports.mjs';
 
-export async function startChromiumCdpFixture(t) {
+export async function startChromiumCdpFixture(t, { url = 'about:blank' } = {}) {
   const exe = chromium.executablePath();
   if (!fs.existsSync(exe)) throw new Error('Pinned Chromium is unavailable; install it with npx playwright install chromium');
   const port = await freePort(), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-cdp-fixture-'));
-  let spawnError, stderr = '';
-  const proc = trackProcess(spawn(exe, [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', `--user-data-dir=${dir}`, '--headless=new', '--no-first-run', '--no-default-browser-check', ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : []), 'about:blank'], { stdio: ['ignore', 'ignore', 'pipe'], detached: process.platform !== 'win32', windowsHide: true }));
-  proc.on('error', e => { spawnError = e; });
-  proc.stderr.on('data', data => { stderr = (stderr + data.toString()).slice(-2000); });
-  const closed = new Promise(resolve => proc.once('close', resolve));
+  let context, proc;
   t.after(async () => {
-    if (proc.exitCode === null && proc.signalCode === null) {
-      hardKill(proc.pid); let timer;
-      try { await Promise.race([closed, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Chromium fixture cleanup timed out')), 5000); })]); }
-      finally { clearTimeout(timer); }
-    }
-    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
-  });
-  const endpoint = `http://127.0.0.1:${port}`, deadline = Date.now() + 20000;
-  while (Date.now() < deadline) {
-    if (spawnError) throw spawnError;
-    if (proc.exitCode !== null || proc.signalCode !== null) throw Error(`Chromium fixture exited before CDP readiness: ${stderr}`);
+    let timer;
     try {
-      const response = await fetch(endpoint + '/json/version', { signal: AbortSignal.timeout(1000) });
-      const version = await response.json();
-      if (response.ok && typeof version.webSocketDebuggerUrl === 'string') return { port, endpoint };
-    } catch { /* bounded polling; exit and spawn errors checked above */ }
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  throw Error(`Chromium fixture did not publish a CDP endpoint: ${stderr}`);
+      if (context) await Promise.race([context.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Chromium fixture graceful cleanup timed out')), 5000); })]);
+    } finally {
+      clearTimeout(timer);
+      if (proc && proc.exitCode === null && proc.signalCode === null) hardKill(proc.pid);
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
+  });
+  // Playwright's pipe launch waits for browser and initial-page initialization.
+  // A /json/version websocket alone was insufficient readiness on Windows.
+  // The operation under test still attaches independently over this real CDP port.
+  context = await chromium.launchPersistentContext(dir, {
+    executablePath: exe, headless: true, timeout: 20000,
+    args: [`--remote-debugging-port=${port}`, '--remote-debugging-address=127.0.0.1', ...(process.platform === 'linux' && process.getuid?.() === 0 ? ['--no-sandbox'] : [])],
+  });
+  const browser = context.browser();
+  proc = browser?._connection?.toImpl?.(browser)?.options?.browserProcess?.process;
+  if (!proc?.pid) throw Error('Owned Chromium fixture process is unavailable for failure cleanup');
+  trackProcess(proc);
+  const page = context.pages()[0] || await context.newPage();
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 10000 });
+  return { port, endpoint: `http://127.0.0.1:${port}`, context, page };
 }
