@@ -19,7 +19,8 @@ if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
-app.setPath('userData', officeUserDataPath(app.getPath('appData'), process.env.PM_USER_DATA));
+app.setPath('userData', officeUserDataPath(app.getPath('appData')));
+if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
 adoptLegacyData(app.getPath('userData'));
 app.setName('Azwah Multi Browser');
 process.env.AZWAH_OFFICE_ENFORCE = '1';

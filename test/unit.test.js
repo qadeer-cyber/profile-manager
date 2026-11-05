@@ -167,7 +167,7 @@ test('0.5.0-alpha.3 keeps the v0.4.0 install identity and uninstall keeps data',
   assert.equal(pkg.version, '0.5.0-alpha.3');
   assert.equal(pkg.name, 'profile-manager');
   assert.equal(pkg.build.appId, 'local.profilemanager.app');
-  assert.equal(pkg.build.productName, 'Profile Manager');
+  assert.equal(pkg.build.productName, 'Azwah Multi Browser');
   assert.equal(pkg.build.nsis.deleteAppDataOnUninstall, false);
   const offline = fs.readFileSync(new URL('../electron-builder.offline.cjs', import.meta.url), 'utf8');
   assert.match(offline, /deleteAppDataOnUninstall:\s*false/);

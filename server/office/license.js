@@ -6,13 +6,6 @@ export function validateLicenseClaims(claims) {
   if (!Number.isSafeInteger(claims.issuedAt) || !Number.isSafeInteger(claims.expiresAt) || claims.issuedAt < 0 || claims.expiresAt <= claims.issuedAt) throw fail('Invalid license dates', 'LICENSE_INVALID');
   return claims;
 }
-export function issueLicense(privateKey, input) {
-  const claims = validateLicenseClaims({ version: 1, product: OFFICE_PRODUCT, id: crypto.randomUUID(), status: 'active', ...input });
-  const body = Buffer.from(JSON.stringify(claims)).toString('base64url');
-  const key = crypto.createPrivateKey(privateKey);
-  if (key.asymmetricKeyType !== 'ed25519') throw fail('An Ed25519 signing key is required', 'LICENSE_KEY_INVALID');
-  return `AZW1.${body}.${crypto.sign(null, Buffer.from('AZW1.' + body), key).toString('base64url')}`;
-}
 export function verifyLicense(token, { publicKey, device, now = Date.now(), lastSeen = 0 } = {}) {
   if (typeof token !== 'string' || token.length > 8192 || !/^AZW1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(token)) throw fail('Invalid activation token', 'LICENSE_INVALID');
   const [, body, signature] = token.split('.');

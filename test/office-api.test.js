@@ -6,7 +6,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import {spawnServer,stopServer} from './_ports.mjs';
 import {deviceIdentity} from '../server/office/device.js';
-import {issueLicense} from '../server/office/license.js';
+import {issueLicense} from '../scripts/license-admin/issuer.mjs';
 test('office activation API rejects unauthenticated/foreign tokens, permits offline work then preserves data on real expiry', {timeout:30000},async t=>{
  const root=fs.mkdtempSync(path.join(os.tmpdir(),'azwah-employee-'));let app;t.after(async()=>{if(app)assert.equal(await stopServer(app),true);fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});});
  const keys=crypto.generateKeyPairSync('ed25519',{privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});const pub=path.join(root,'issuer-public.pem');fs.writeFileSync(pub,keys.publicKey);

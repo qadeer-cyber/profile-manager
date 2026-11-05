@@ -18,7 +18,7 @@ test('relaunch in flight hides the previous error and shows Starting', () => {
   assert.deepEqual(rowStatus({ running: false, last_error: 'old crash' }, true), { key: 'stopped', label: 'Starting', showError: false });
 });
 test('crash summaries are plain language and actionable', () => {
-  assert.match(crashSummary('Browser process died (detected by health monitor) (exit code 1, exit_type Crashed)'), /ended outside Profile Manager.*Launch the profile again/);
+  assert.match(crashSummary('Browser process died (detected by health monitor) (exit code 1, exit_type Crashed)'), /ended outside Azwah Multi Browser.*Launch the profile again/);
   assert.match(crashSummary('Browser exited unexpectedly (exit_type missing)'), /closed unexpectedly.*Diagnostics/);
   assert.match(crashSummary('Browser exited unexpectedly (signal SIGKILL)'), /closed unexpectedly/);
   assert.equal(crashSummary('Failed to launch browser: proxy refused'), 'Failed to launch browser: proxy refused');

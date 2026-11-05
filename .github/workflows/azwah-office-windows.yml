@@ -35,6 +35,11 @@ jobs:
           "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify corrected display names and unchanged upgrade identity
+        shell: pwsh
+        run: |
+          node --test --test-name-pattern="crash summaries|keeps the v0.4.0 install identity" test/ui-status.test.js test/unit.test.js 2>&1 | Tee-Object build-evidence/office/branding-targeted.log
+          exit $LASTEXITCODE
       - name: Verify real Chromium CDP input readiness before broad regression
         id: cdp
         shell: pwsh

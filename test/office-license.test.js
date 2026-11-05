@@ -5,7 +5,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {issueLicense,verifyLicense,OFFICE_PRODUCT} from '../server/office/license.js';
+import {verifyLicense,OFFICE_PRODUCT} from '../server/office/license.js';
+import {issueLicense} from '../scripts/license-admin/issuer.mjs';
 import {deviceIdentity} from '../server/office/device.js';
 import {adminAction} from '../scripts/license-admin/admin.mjs';
 const keys=crypto.generateKeyPairSync('ed25519',{privateKeyEncoding:{type:'pkcs8',format:'pem'},publicKeyEncoding:{type:'spki',format:'pem'}});
@@ -45,4 +46,13 @@ test('separate administrator CLI exports public roots and license files without 
  assert.equal(call(['issue',vault,device,String(Date.now()+60000),'Office CLI','--output',licenseFile]).exported,true);
  const token=fs.readFileSync(licenseFile,'utf8');assert.equal(verifyLicense(token,{publicKey:fs.readFileSync(publicFile,'utf8'),device}).label,'Office CLI');
  assert.doesNotMatch(fs.readFileSync(vault,'utf8'),/BEGIN PRIVATE KEY/);
+});
+
+test('employee payload excludes administrative signing code and refuses packaging without an organization public root',()=>{
+ const pkg=JSON.parse(fs.readFileSync(new URL('../package.json',import.meta.url),'utf8'));
+ assert.deepEqual(pkg.build.files.filter(pattern=>!pattern.startsWith('!')),['electron/**','server/**','web/dist/**','package.json']);
+ const verifier=fs.readFileSync(new URL('../server/office/license.js',import.meta.url),'utf8');assert.doesNotMatch(verifier,/createPrivateKey|crypto\.sign|generateKeyPair/);
+ assert.equal(fs.existsSync(new URL('../server/office/issuer-public.pem',import.meta.url)),false,'A disposable CI root must never be installed into the employee source');
+ let result;try{execFileSync(process.execPath,['scripts/office-build-preflight.mjs'],{encoding:'utf8',stdio:['ignore','pipe','pipe']});}catch(error){result=error;}
+ assert.equal(result?.status,1);assert.match(result.stderr,/Office employee packaging blocked/);
 });
