@@ -1,4 +1,5 @@
-import { _electron } from 'playwright';
+import { _electron,chromium } from 'playwright';
+import http from 'node:http';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -6,6 +7,7 @@ import os from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { open } from './license-admin/admin.mjs';
+import { windowsEmployeeIdentity } from './windows-employee-identity.mjs';
 const asar=createRequire(import.meta.url)('@electron/asar');
 import { startLocalHttpFixture } from '../test/_local-http-fixture.mjs';
 
@@ -14,12 +16,13 @@ const root=fs.mkdtempSync(path.join(os.tmpdir(),'azwah-license-gui-'));
 const adminDir=path.join(root,'admin'), officeDir=path.join(root,'office'), adminData=path.join(root,'admin-data');
 const backup=path.join(root,'backup.vault'), tokenFile=path.join(root,'employee.azwah');
 const password='Disposable Windows acceptance '+crypto.randomUUID();
-let admin, office, fixture;
+let admin, office, fixture, identity, proxy;
+const separate=process.env.AZWAH_QA_SEPARATE_IDENTITY==='1';
 const install=(file,dir)=>execFileSync(file,['/S','/D='+dir],{timeout:240000});
 const launch=(executablePath,args=[],env=process.env)=>_electron.launch({executablePath,args,env,timeout:60000});
 const press=(page,name)=>page.getByRole('button',{name,exact:true}).click();
 const fill=(page,label,value)=>page.getByLabel(label,{exact:true}).fill(value);
-const shown=(page,value)=>page.getByText(value,{exact:false}).first().waitFor({timeout:180000});
+const shown=(page,value)=>page.getByText(value,{exact:false}).first().waitFor({timeout:240000});
 try {
   install(path.resolve('release-license-admin/Azwah-License-Admin-Setup-x64.exe'),adminDir);
   admin=await launch(path.join(adminDir,'Azwah License Admin.exe'),['--user-data-dir='+adminData]);
@@ -56,8 +59,25 @@ try {
   console.log('PASS installed Office trust matches Admin public key and excludes Admin code');
 
   const env={...process.env,PM_USER_DATA:path.join(root,'employee-data')};
-  office=await launch(path.join(officeDir,'Azwah Multi Browser Office.exe'),[],env);
-  let e=await office.firstWindow();
+  const officeExe=path.join(officeDir,'Azwah Multi Browser Office.exe');
+  const xpi=path.join(officeDir,'qualification-cookie-editor.xpi');
+  if(separate)fs.copyFileSync(process.env.PM_COOKIE_EDITOR_XPI,xpi);
+  if(separate)identity=windowsEmployeeIdentity(officeDir,officeExe);
+  const startOffice=async()=>{
+    if(identity)return identity.launch();
+    office=await launch(officeExe,[],env);
+    return office.firstWindow();
+  };
+  const stopOffice=async()=>{
+    if(identity)return identity.close();
+    await office.close();
+    office=undefined;
+  };
+  let e=await startOffice();
+  if(separate)console.log('PASS installed Office runs under a separate standard Windows user account');
+  await e.waitForFunction(()=>!!window.pm?.uiToken);
+  const employeeData=(await e.evaluate(()=>window.pm.appInfo())).userData;
+
   await shown(e,'Activate Azwah Multi Browser Office');
   const device=await e.getByLabel('Device identity code').inputValue();
   assert.match(device,/^AZD1-[a-f0-9]{64}$/);
@@ -102,13 +122,46 @@ try {
   await press(a,'License History');
   await shown(a,'Replaced by ');
   console.log('PASS installed Admin GUI reissues and preserves replacement history');
+  let issuedCount=2;
+  if(separate){
+    const issueNegative=async(reference,code,expired)=>{
+      await press(a,'Employees');
+      await fill(a,'Employee reference',reference);
+      await fill(a,'Name',reference);
+      await fill(a,'Device code',code);
+      await press(a,'Save employee');
+      await shown(a,'Issued: '+issuedCount);
+      await press(a,'Generate License');
+      await fill(a,'Employee reference',reference);
+      await fill(a,'Validity in days (7, 30, 90, 180, 365 or custom)','1');
+      if(expired)await admin.evaluate(()=>{globalThis.qaRealNow=Date.now;Date.now=()=>globalThis.qaRealNow()-2*86400000;});
+      try {
+        await a.locator('section').getByRole('button',{name:'Generate License',exact:true}).click();
+        await shown(a,'Issued: '+(++issuedCount));
+      } finally {
+        if(expired)await admin.evaluate(()=>{Date.now=globalThis.qaRealNow;delete globalThis.qaRealNow;});
+      }
+      await press(a,expired?'Expired Licenses':'Active Licenses');
+      const record=a.locator('article').filter({hasText:reference});
+      await record.getByRole('button',{name:'Copy Activation Key',exact:true}).click();
+      await record.getByRole('button',{name:'Copy Activation Key',exact:true}).waitFor();
+      await a.waitForFunction(ref=>![...document.querySelectorAll('article')].find(row=>row.textContent.includes(ref))?.querySelector('button')?.disabled,reference);
+      const signed=await admin.evaluate(({clipboard})=>clipboard.readText());
+      return api('/activation',{token:signed,confirm:true});
+    };
+    const wrongDevice=await issueNegative('wrong-device-case','AZD1-'+(device.endsWith('a')?'b':'a').repeat(64),false);
+    assert.equal(wrongDevice.body.code,'LICENSE_DEVICE_MISMATCH');
+    const expired=await issueNegative('expired-case',device,true);
+    assert.equal(expired.body.code,'LICENSE_EXPIRED');
+    console.log('PASS installed Office rejects validly signed wrong-device and expired licenses');
+  }
 
-  await office.close();
-  office=await launch(path.join(officeDir,'Azwah Multi Browser Office.exe'),[],env);
-  e=await office.firstWindow();
+
+  await stopOffice();
+  e=await startOffice();
   await e.waitForFunction(()=>!!window.pm?.uiToken);
   assert.equal((await api('/activation')).body.active,true);
-  assert.ok(fs.readFileSync(path.join(env.PM_USER_DATA,'data','azwah-activation.json'),'utf8').startsWith('ss:v1:'));
+  assert.ok(fs.readFileSync(path.join(employeeData,'data','azwah-activation.json'),'utf8').startsWith('ss:v1:'));
   console.log('PASS installed Office persists OS-encrypted activation after restart');
   fixture=await startLocalHttpFixture();
   for(const engine of ['chromium','firefox']){
@@ -118,9 +171,71 @@ try {
     assert.equal((await api('/profiles/'+created.body.id+'/stop',{})).status,200);
     console.log('PASS installed activated Office '+engine+' launch and stop');
   }
-  const employeeData=env.PM_USER_DATA;
-  await office.close();
-  office=undefined;
+  if(separate){
+    let proxyHits=0;
+    proxy=http.createServer((req,res)=>{
+      let target;
+      try{target=new URL(req.url);}catch{res.writeHead(400).end();return;}
+      if(target.hostname!=='azwah-qualification.invalid'){res.writeHead(403).end();return;}
+      proxyHits++;
+      const forward=http.request(fixture.origin+target.pathname,{method:req.method},up=>{res.writeHead(up.statusCode,up.headers);up.pipe(res);});
+      forward.on('error',()=>res.destroy());
+      req.pipe(forward);
+    });
+    proxy.on('connect',(_req,socket)=>socket.destroy());
+    await new Promise(resolve=>proxy.listen(0,'127.0.0.1',resolve));
+    const proxyRecord=await api('/proxies',{name:'Office test proxy',type:'http',host:'127.0.0.1',port:proxy.address().port});
+    assert.equal(proxyRecord.status,201);
+    const profile=await api('/profiles',{name:'Office persistence',automationEnabled:true,proxyId:proxyRecord.body.id,browserSettings:{timezoneId:'Europe/Berlin',locale:'de-DE',languages:['de-DE']}});
+    assert.equal(profile.status,201);
+    const url='http://azwah-qualification.invalid/';
+    const browse=async(id,write=false)=>{
+      assert.equal((await api('/profiles/'+id+'/launch',{headless:true,automation:true,url})).status,200);
+      const profileInfo=(await api('/profiles/'+id)).body;
+      const client=await chromium.connectOverCDP(profileInfo.cdp.httpEndpoint,{timeout:15000});
+      try {
+        const tab=client.contexts()[0].pages()[0];
+        await tab.goto(url);
+        const observed=await tab.evaluate(write=>{
+          if(write){document.cookie='azwah=persisted; Max-Age=3600; Path=/';localStorage.setItem('azwah','persisted');}
+          return {cookie:document.cookie,storage:localStorage.getItem('azwah'),timezone:Intl.DateTimeFormat().resolvedOptions().timeZone};
+        },write);
+        assert.match(observed.cookie,/azwah=persisted/);
+        assert.equal(observed.storage,'persisted');
+        assert.equal(observed.timezone,'Europe/Berlin');
+      } finally {await client.close();}
+      assert.equal((await api('/profiles/'+id+'/stop',{})).status,200);
+    };
+    await browse(profile.body.id,true);
+    await browse(profile.body.id);
+    assert.ok(proxyHits>0);
+    console.log('PASS installed Office Chromium proxy routing, timezone, cookies and localStorage persist');
+    const restore=await e.evaluate(async id=>{
+      const common={'X-UI-Token':window.pm.uiToken},passphrase='Disposable encrypted qualification backup';
+      const response=await fetch('/api/profiles/'+id+'/backup/export-stream',{method:'POST',headers:{...common,'Content-Type':'application/json'},body:JSON.stringify({passphrase,confirmSensitive:true})});
+      if(!response.ok)throw Error('Office encrypted export failed');
+      const bytes=await response.arrayBuffer();
+      const imported=await fetch('/api/backup/restore-stream?collision=rename',{method:'POST',headers:{...common,'Content-Type':'application/octet-stream','X-Backup-Passphrase':passphrase},body:bytes});
+      return {status:imported.status,body:await imported.json(),magic:String.fromCharCode(...new Uint8Array(bytes).slice(0,4))};
+    },profile.body.id);
+    assert.equal(restore.status,200);
+    assert.equal(restore.magic,'PMBE');
+    const restored=restore.body.renamed[0].id;
+    assert.notEqual(restored,profile.body.id);
+    await browse(restored);
+    console.log('PASS installed Office encrypted restore and browser data readback');
+    const firefox=await api('/profiles',{name:'Office signed extension',browserEngine:'firefox',automationEnabled:true,browserSettings:{firefoxSessionMode:'bidi',timezoneId:'UTC'}});
+    assert.equal(firefox.status,201);
+    const id=firefox.body.id;
+    assert.equal((await api('/profiles/'+id+'/launch',{headless:true,automation:true,url:fixture.origin})).status,200);
+    const addon=await api('/gecko-extensions/import',{path:xpi});
+    assert.equal(addon.body.geckoExtensionId,'{c3c10168-4186-445c-9c5b-63f12b8e2c87}');
+    const installed=await api('/profiles/'+id+'/gecko-extensions/'+addon.body.id+'/install',{confirm:true});
+    assert.equal(installed.body.addon?.signatureVerified,true);
+    assert.equal((await api('/profiles/'+id+'/stop',{})).status,200);
+    console.log('PASS real installed Office Firefox accepts permanent Mozilla-signed Cookie-Editor');
+  }
+  await stopOffice();
   const uninstaller=path.join(officeDir,'Uninstall Azwah Multi Browser Office.exe');
   execFileSync(uninstaller,['/S'],{timeout:180000});
   const deadline=Date.now()+60000;
@@ -135,7 +250,7 @@ try {
   await press(a,'Backup & Restore');
   await press(a,'Save encrypted backup');
   await a.waitForFunction(()=>![...document.querySelectorAll('button')].find(button=>button.textContent==='Save encrypted backup')?.disabled);
-  assert.equal(open(latestBackup,password).records.length,2);
+  assert.equal(open(latestBackup,password).records.length,issuedCount);
   await admin.close();
   admin=undefined;
   const original=path.join(vaultPath,'organization.vault');
@@ -146,10 +261,12 @@ try {
   await admin.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},latestBackup);
   await fill(restored,'Backup password',password);
   await press(restored,'Choose encrypted backup');
-  await shown(restored,'Issued: 2');
+  await shown(restored,'Issued: '+issuedCount);
   console.log('PASS installed Admin restores the encrypted vault and persisted records');
 } finally {
+  if(identity)await identity.dispose();
   if(office)await office.close().catch(()=>{});
+  if(proxy){proxy.closeAllConnections();await new Promise(resolve=>proxy.close(resolve));}
   if(admin)await admin.close().catch(()=>{});
   if(fixture)await fixture.close();
   fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});
