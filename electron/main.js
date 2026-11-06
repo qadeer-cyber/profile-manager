@@ -1,6 +1,6 @@
 // Electron main process: runs the backend in-process on a random loopback port (protected by a
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
-import { isOwnerEdition, productName } from '../server/office/edition.js';
+import { isOwnerEdition, isProvisionedOffice, productName } from '../server/office/edition.js';
 import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
 import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog } from 'electron';
 import crypto from 'crypto';
@@ -20,9 +20,9 @@ if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
-app.setPath('userData', isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : officeUserDataPath(app.getPath('appData')));
+app.setPath('userData', isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : isProvisionedOffice ? path.join(app.getPath('appData'),'azwah-multi-browser-office') : officeUserDataPath(app.getPath('appData')));
 if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
-if (!isOwnerEdition) adoptLegacyData(app.getPath('userData'));
+if (!isOwnerEdition && !isProvisionedOffice) adoptLegacyData(app.getPath('userData'));
 app.setName(productName);
 process.env.AZWAH_OFFICE_ENFORCE = '1';
 process.env.AZWAH_OFFICE_PACKAGED = app.isPackaged ? '1' : '0';

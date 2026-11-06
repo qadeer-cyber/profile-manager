@@ -10,13 +10,13 @@ function seal(data,password) {
   const body=Buffer.concat([cipher.update(JSON.stringify(data),'utf8'),cipher.final()]);
   return JSON.stringify({version:1,salt:salt.toString('base64'),iv:iv.toString('base64'),tag:cipher.getAuthTag().toString('base64'),body:body.toString('base64')});
 }
-function open(file,password) {
+export function open(file,password) {
   const stat=fs.lstatSync(file);if(!stat.isFile()||stat.isSymbolicLink()||stat.size>8*1024*1024)throw Error('Unsafe admin vault');
   const value=JSON.parse(fs.readFileSync(file,'utf8'));if(value.version!==1)throw Error('Unsupported vault format');
   const decipher=crypto.createDecipheriv('aes-256-gcm',derive(password,Buffer.from(value.salt,'base64')),Buffer.from(value.iv,'base64'));decipher.setAuthTag(Buffer.from(value.tag,'base64'));
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(value.body,'base64')),decipher.final()]).toString('utf8'));
 }
-function save(file,data,password,create=false) {
+export function save(file,data,password,create=false) {
   const tmp=file+'.'+crypto.randomUUID()+'.tmp';
   try {
     const fd=fs.openSync(tmp,'wx',0o600);try{fs.writeFileSync(fd,seal(data,password));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}

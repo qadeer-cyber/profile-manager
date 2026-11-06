@@ -1,0 +1,98 @@
+import { _electron } from 'playwright';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { execFileSync } from 'node:child_process';
+import { startLocalHttpFixture } from '../test/_local-http-fixture.mjs';
+
+if (process.platform !== 'win32' || process.env.CI !== 'true') throw Error('Isolated Windows CI required');
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'azwah-license-gui-'));
+const adminDir=path.join(root,'admin'), officeDir=path.join(root,'office'), adminData=path.join(root,'admin-data');
+const backup=path.join(root,'backup.vault'), tokenFile=path.join(root,'employee.azwah');
+const password='Disposable Windows acceptance '+crypto.randomUUID();
+let admin, office, fixture;
+const install=(file,dir)=>execFileSync(file,['/S','/D='+dir],{timeout:240000});
+const launch=(executablePath,args=[],env=process.env)=>_electron.launch({executablePath,args,env,timeout:60000});
+const press=(page,name)=>page.getByRole('button',{name,exact:true}).click();
+const fill=(page,label,value)=>page.getByLabel(label,{exact:true}).fill(value);
+const shown=(page,value)=>page.getByText(value,{exact:false}).first().waitFor({timeout:180000});
+try {
+  install(path.resolve('release-license-admin/Azwah-License-Admin-Setup-x64.exe'),adminDir);
+  admin=await launch(path.join(adminDir,'Azwah License Admin.exe'),['--user-data-dir='+adminData]);
+  const a=await admin.firstWindow();
+  await shown(a,'Welcome to Azwah License Admin');
+  // Replace native picker responses only. All setup, signing and provisioning execute in the installed app.
+  await admin.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},backup);
+  await fill(a,'Organization','Disposable GUI qualification');
+  await fill(a,'Master password (14 characters minimum)',password);
+  await fill(a,'Confirm password',password);
+  await press(a,'Create identity and choose backup');
+  await shown(a,'Issued: 0');
+  assert.equal(JSON.parse(fs.readFileSync(backup,'utf8')).version,1);
+  assert.ok(!fs.readFileSync(backup,'utf8').includes('PRIVATE KEY'));
+  console.log('PASS installed Admin setup and encrypted backup');
+  await press(a,'Lock Admin Session');
+  await fill(a,'Master password','Incorrect password');
+  await press(a,'Unlock');
+  await shown(a,'Incorrect password');
+  await fill(a,'Master password',password);
+  await press(a,'Unlock');
+  await shown(a,'Issued: 0');
+  console.log('PASS wrong-password rejection and unlock');
+  await admin.evaluate(({dialog},dir)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[dir]});},root);
+  await press(a,'Office Installer');
+  await press(a,'Generate Office Installer');
+  await shown(a,'Created ');
+  install(path.join(root,'Azwah-Multi-Browser-Office-Setup-x64.exe'),officeDir);
+  const env={...process.env,PM_USER_DATA:path.join(root,'employee-data')};
+  office=await launch(path.join(officeDir,'Azwah Multi Browser Office.exe'),[],env);
+  let e=await office.firstWindow();
+  await shown(e,'Activate Azwah Multi Browser Office');
+  const device=await e.getByLabel('Device identity code').inputValue();
+  assert.match(device,/^AZD1-[a-f0-9]{64}$/);
+  const api=(route,body)=>e.evaluate(async ({route,body})=>{
+    const r=await fetch('/api'+route,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-UI-Token':window.pm.uiToken},body:body===undefined?undefined:JSON.stringify(body)});
+    return {status:r.status,body:await r.json()};
+  },{route,body});
+  assert.equal((await api('/profiles',{name:'Blocked'})).status,402);
+  await press(a,'Employees');
+  await fill(a,'Employee reference','test-employee');
+  await fill(a,'Name','Disposable employee');
+  await fill(a,'Device code',device);
+  await press(a,'Save employee');
+  await shown(a,'Devices: 1');
+  await press(a,'Generate License');
+  await fill(a,'Employee reference','test-employee');
+  await press(a,'Generate License');
+  await shown(a,'Issued: 1');
+  await press(a,'Active Licenses');
+  await admin.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},tokenFile);
+  await press(a,'Save License File');
+  await a.waitForFunction(()=>!document.querySelector('article button:nth-of-type(2)')?.disabled);
+  const token=fs.readFileSync(tokenFile,'utf8');
+  await press(a,'Copy Activation Key');
+  assert.equal(await admin.evaluate(({clipboard})=>clipboard.readText()),token);
+  await e.getByLabel('License file').setInputFiles(tokenFile);
+  await e.getByLabel('I authorize activation on this device.').check();
+  await press(e,'Activate offline');
+  await shown(e,'This device is activated');
+  console.log('PASS Admin GUI provisioning, issuance, copy, export and employee GUI activation');
+  await office.close();
+  office=await launch(path.join(officeDir,'Azwah Multi Browser Office.exe'),[],env);
+  e=await office.firstWindow();
+  assert.equal((await api('/activation')).body.active,true);
+  fixture=await startLocalHttpFixture();
+  for(const engine of ['chromium','firefox']){
+    const created=await api('/profiles',{name:'GUI qualification '+engine,browserEngine:engine,automationEnabled:true,browserSettings:engine==='firefox'?{firefoxSessionMode:'bidi',timezoneId:'UTC'}:{}});
+    assert.equal(created.status,201);
+    assert.equal((await api('/profiles/'+created.body.id+'/launch',{headless:true,automation:true,url:fixture.origin})).status,200);
+    assert.equal((await api('/profiles/'+created.body.id+'/stop',{})).status,200);
+    console.log('PASS installed activated Office '+engine+' launch and stop');
+  }
+} finally {
+  if(office)await office.close().catch(()=>{});
+  if(admin)await admin.close().catch(()=>{});
+  if(fixture)await fixture.close();
+  fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});
+}

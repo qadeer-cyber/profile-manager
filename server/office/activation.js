@@ -1,4 +1,4 @@
-import { isOwnerEdition } from './edition.js';
+import { isOwnerEdition, isProvisionedOffice } from './edition.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -10,7 +10,16 @@ import { deviceIdentity } from './device.js';
 const file = path.join(DATA_DIR, 'azwah-activation.json');
 let device;
 const identity = () => device ||= deviceIdentity();
+function organizationTrust() {
+  const source=path.join(process.resourcesPath,'office-trust.json');
+  const stat=fs.lstatSync(source);
+  if(!stat.isFile()||stat.isSymbolicLink()||stat.size>8192)throw Error('Invalid organization trust root.');
+  const trust=JSON.parse(fs.readFileSync(source,'utf8'));
+  if(typeof trust.organization!=='string'||!trust.organization.trim()||crypto.createPublicKey(trust.publicKey).asymmetricKeyType!=='ed25519'||!trust.publicKey.startsWith('-----BEGIN PUBLIC KEY-----'))throw Error('Invalid organization trust root.');
+  return trust;
+}
 function publicKey() {
+  if(isProvisionedOffice)return organizationTrust().publicKey;
   const source = process.env.AZWAH_OFFICE_PACKAGED === '1' ? fileURLToPath(new URL('./issuer-public.pem',import.meta.url)) : process.env.AZWAH_ISSUER_PUBLIC_KEY_FILE || fileURLToPath(new URL('./issuer-public.pem',import.meta.url));
   const stat = fs.lstatSync(source);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 8192) throw Error('Invalid issuer public key');
@@ -39,12 +48,12 @@ export function activationStatus() {
   if(isOwnerEdition)return {enforced:false,active:true,edition:'owner-personal',code:'OWNER_PERSONAL_EDITION',licensePolicy:'Personal evaluation: all implemented local browser-management features enabled without employee activation. No administrator license issuance.'};
   const enforced=process.env.AZWAH_OFFICE_ENFORCE === '1';
   try {
-    const deviceCode=identity(), record=read();
-    if (!record) return {enforced,active:false,deviceCode,code:'ACTIVATION_REQUIRED'};
+    const deviceCode=identity(), organization=isProvisionedOffice?organizationTrust().organization:undefined, record=read();
+    if (!record) return {enforced,active:false,deviceCode,organization,code:'ACTIVATION_REQUIRED'};
     const now=Date.now();
     const claims=verifyLicense(record.token,{publicKey:publicKey(),device:deviceCode,now,lastSeen:record.lastSeen});
     if (now-record.lastSeen>=60000) write({...record,lastSeen:now});
-    return {enforced,active:true,deviceCode,label:claims.label,expiresAt:claims.expiresAt,licenseId:claims.id,offline:true};
+    return {enforced,active:true,deviceCode,organization,label:claims.label,expiresAt:claims.expiresAt,licenseId:claims.id,offline:true};
   } catch (error) { return {enforced,active:false,deviceCode:device||null,code:error.code||'ACTIVATION_STORAGE_UNAVAILABLE',error:error.message}; }
 }
 export function activateOffice(token) {
