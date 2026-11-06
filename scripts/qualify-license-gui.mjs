@@ -13,11 +13,12 @@ import { startLocalHttpFixture } from '../test/_local-http-fixture.mjs';
 
 if (process.platform !== 'win32' || process.env.CI !== 'true') throw Error('Isolated Windows CI required');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'azwah-license-gui-'));
-const adminDir=path.join(root,'admin'), officeDir=path.join(root,'office'), adminData=path.join(root,'admin-data');
+const adminDir=path.join(root,'admin'), adminData=path.join(root,'admin-data');
 const backup=path.join(root,'backup.vault'), tokenFile=path.join(root,'employee.azwah');
 const password='Disposable Windows acceptance '+crypto.randomUUID();
 let admin, office, fixture, identity, proxy;
 const separate=process.env.AZWAH_QA_SEPARATE_IDENTITY==='1';
+const officeDir=separate?path.join(process.env.ProgramFiles,'Azwah Multi Browser Office'):path.join(root,'office');
 const install=(file,dir)=>execFileSync(file,['/S','/D='+dir],{timeout:240000});
 const launch=(executablePath,args=[],env=process.env)=>_electron.launch({executablePath,args,env,timeout:60000});
 const press=(page,name)=>page.getByRole('button',{name,exact:true}).click();
@@ -50,7 +51,10 @@ try {
   await press(a,'Office Installer');
   await press(a,'Generate Office Installer');
   await shown(a,'Created ');
-  install(path.join(root,'Azwah-Multi-Browser-Office-Setup-x64.exe'),officeDir);
+  if(fs.existsSync(officeDir))throw Error('Office qualification requires a clean installation path');
+  const officeInstaller=path.join(root,'Azwah-Multi-Browser-Office-Setup-x64.exe');
+  if(separate)execFileSync(officeInstaller,['/S'],{timeout:240000});
+  else install(officeInstaller,officeDir);
   const resources=path.join(officeDir,'resources');
   const trust=JSON.parse(fs.readFileSync(path.join(resources,'office-trust.json'),'utf8'));
   assert.deepEqual(trust,{organization:'Disposable GUI qualification',publicKey:open(backup,password).publicKey});
