@@ -27,6 +27,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           choco install nsis firefox -y --no-progress
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force build | Out-Null
           Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
           npm run build
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

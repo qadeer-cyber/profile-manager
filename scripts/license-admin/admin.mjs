@@ -17,9 +17,11 @@ export function open(file,password) {
   return JSON.parse(Buffer.concat([decipher.update(Buffer.from(value.body,'base64')),decipher.final()]).toString('utf8'));
 }
 export function save(file,data,password,create=false) {
+  const encrypted=seal(data,password);
+  if(Buffer.byteLength(encrypted)>8*1024*1024)throw Error('Vault capacity exceeded. No data was changed.');
   const tmp=file+'.'+crypto.randomUUID()+'.tmp';
   try {
-    const fd=fs.openSync(tmp,'wx',0o600);try{fs.writeFileSync(fd,seal(data,password));fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
+    const fd=fs.openSync(tmp,'wx',0o600);try{fs.writeFileSync(fd,encrypted);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}
     if(create)fs.linkSync(tmp,file);else fs.renameSync(tmp,file);
   } finally {fs.rmSync(tmp,{force:true});}
 }

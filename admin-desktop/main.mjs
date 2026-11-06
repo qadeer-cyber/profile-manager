@@ -54,7 +54,7 @@ ipcMain.handle('admin',async (event,action,input={}) => {
   const data=records();
   if(action==='list') return {organization:data.organization,records:data.records,audit:data.audit,employees:data.employees||[]};
   if(action==='employee') {
-    if(!input.reference?.trim()||!input.name?.trim()||!/^AZD1-[a-f0-9]{64}$/.test(input.device)) throw Error('Enter a name, reference and valid device code.');
+    if(!input.reference?.trim()||!input.name?.trim()||input.reference.length>120||input.name.length>120||(input.notes?.length||0)>2000||!/^AZD1-[a-f0-9]{64}$/.test(input.device)) throw Error('Enter a name, reference and valid device code.');
     data.employees=(data.employees||[]).filter(e=>e.reference!==input.reference);
     data.employees.push({reference:input.reference,name:input.name,device:input.device,notes:input.notes});
     return save(vault(),data,password);
@@ -62,6 +62,7 @@ ipcMain.handle('admin',async (event,action,input={}) => {
   if(action==='issue') {
     const employee=(data.employees||[]).find(e=>e.reference===input.reference);
     if(!employee)throw Error('Save the employee first.');
+    if(input.licenseId&&!data.records.some(record=>record.id===input.licenseId&&record.label===employee.reference))throw Error('Choose a previous license for this employee.');
     const days=Number(input.days);
     if(!Number.isInteger(days)||days<1||days>3650)throw Error('Validity must be 1–3650 days.');
     const {license}=adminAction({command:input.licenseId?'reissue':'issue',vault:vault(),password,device:employee.device,label:employee.reference,expiresAt:Date.now()+days*86400000,licenseId:input.licenseId});

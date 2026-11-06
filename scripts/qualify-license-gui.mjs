@@ -4,6 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { createRequire } from 'node:module';
+import { open } from './license-admin/admin.mjs';
+const asar=createRequire(import.meta.url)('@electron/asar');
 import { startLocalHttpFixture } from '../test/_local-http-fixture.mjs';
 
 if (process.platform !== 'win32' || process.env.CI !== 'true') throw Error('Isolated Windows CI required');
@@ -45,6 +48,13 @@ try {
   await press(a,'Generate Office Installer');
   await shown(a,'Created ');
   install(path.join(root,'Azwah-Multi-Browser-Office-Setup-x64.exe'),officeDir);
+  const resources=path.join(officeDir,'resources');
+  const trust=JSON.parse(fs.readFileSync(path.join(resources,'office-trust.json'),'utf8'));
+  assert.deepEqual(trust,{organization:'Disposable GUI qualification',publicKey:open(backup,password).publicKey});
+  const archive=path.join(resources,'app.asar');
+  assert.ok(!asar.listPackage(archive).some(name=>/license-admin|admin-desktop|issuer-public\.pem|\.vault$/i.test(name)));
+  console.log('PASS installed Office trust matches Admin public key and excludes Admin code');
+
   const env={...process.env,PM_USER_DATA:path.join(root,'employee-data')};
   office=await launch(path.join(officeDir,'Azwah Multi Browser Office.exe'),[],env);
   let e=await office.firstWindow();
@@ -64,7 +74,7 @@ try {
   await shown(a,'Devices: 1');
   await press(a,'Generate License');
   await fill(a,'Employee reference','test-employee');
-  await press(a,'Generate License');
+  await a.locator('section').getByRole('button',{name:'Generate License',exact:true}).click();
   await shown(a,'Issued: 1');
   await press(a,'Active Licenses');
   await admin.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},tokenFile);
@@ -72,16 +82,34 @@ try {
   await a.waitForFunction(()=>!document.querySelector('article button:nth-of-type(2)')?.disabled);
   const token=fs.readFileSync(tokenFile,'utf8');
   await press(a,'Copy Activation Key');
-  assert.equal(await admin.evaluate(({clipboard})=>clipboard.readText()),token);
+  await a.waitForFunction(()=>!document.querySelector('article button')?.disabled);
+  assert.ok((await admin.evaluate(({clipboard})=>clipboard.readText()))===token,'Clipboard did not receive the issued license');
+  const parts=token.split('.');
+  parts[2]=(parts[2][0]==='A'?'B':'A')+parts[2].slice(1);
+  const rejected=await api('/activation',{token:parts.join('.'),confirm:true});
+  assert.equal(rejected.status,400);
+  assert.equal(rejected.body.code,'LICENSE_SIGNATURE_INVALID');
+  console.log('PASS installed Office rejects tampered signature');
   await e.getByLabel('License file').setInputFiles(tokenFile);
   await e.getByLabel('I authorize activation on this device.').check();
   await press(e,'Activate offline');
   await shown(e,'This device is activated');
   console.log('PASS Admin GUI provisioning, issuance, copy, export and employee GUI activation');
+  await press(a,'Reissue');
+  await fill(a,'Employee reference','test-employee');
+  await a.locator('section').getByRole('button',{name:'Generate License',exact:true}).click();
+  await shown(a,'Issued: 2');
+  await press(a,'License History');
+  await shown(a,'Replaced by ');
+  console.log('PASS installed Admin GUI reissues and preserves replacement history');
+
   await office.close();
   office=await launch(path.join(officeDir,'Azwah Multi Browser Office.exe'),[],env);
   e=await office.firstWindow();
+  await e.waitForFunction(()=>!!window.pm?.uiToken);
   assert.equal((await api('/activation')).body.active,true);
+  assert.ok(fs.readFileSync(path.join(env.PM_USER_DATA,'data','azwah-activation.json'),'utf8').startsWith('ss:v1:'));
+  console.log('PASS installed Office persists OS-encrypted activation after restart');
   fixture=await startLocalHttpFixture();
   for(const engine of ['chromium','firefox']){
     const created=await api('/profiles',{name:'GUI qualification '+engine,browserEngine:engine,automationEnabled:true,browserSettings:engine==='firefox'?{firefoxSessionMode:'bidi',timezoneId:'UTC'}:{}});
@@ -90,6 +118,36 @@ try {
     assert.equal((await api('/profiles/'+created.body.id+'/stop',{})).status,200);
     console.log('PASS installed activated Office '+engine+' launch and stop');
   }
+  const employeeData=env.PM_USER_DATA;
+  await office.close();
+  office=undefined;
+  const uninstaller=path.join(officeDir,'Uninstall Azwah Multi Browser Office.exe');
+  execFileSync(uninstaller,['/S'],{timeout:180000});
+  const deadline=Date.now()+60000;
+  while(fs.existsSync(path.join(officeDir,'Azwah Multi Browser Office.exe'))&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,250));
+  assert.ok(!fs.existsSync(path.join(officeDir,'Azwah Multi Browser Office.exe')));
+  assert.ok(fs.existsSync(path.join(employeeData,'data','profiles.db')));
+  assert.ok(fs.existsSync(path.join(employeeData,'data','azwah-activation.json')));
+  console.log('PASS Office uninstall retains employee profiles and activation');
+  const vaultPath=await admin.evaluate(({app})=>app.getPath('userData'));
+  const latestBackup=path.join(root,'latest.vault');
+  await admin.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},latestBackup);
+  await press(a,'Backup & Restore');
+  await press(a,'Save encrypted backup');
+  await a.waitForFunction(()=>![...document.querySelectorAll('button')].find(button=>button.textContent==='Save encrypted backup')?.disabled);
+  assert.equal(open(latestBackup,password).records.length,2);
+  await admin.close();
+  admin=undefined;
+  const original=path.join(vaultPath,'organization.vault');
+  fs.renameSync(original,path.join(root,'pre-restore.vault'));
+  admin=await launch(path.join(adminDir,'Azwah License Admin.exe'),['--user-data-dir='+adminData]);
+  const restored=await admin.firstWindow();
+  await shown(restored,'Welcome to Azwah License Admin');
+  await admin.evaluate(({dialog},file)=>{dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},latestBackup);
+  await fill(restored,'Backup password',password);
+  await press(restored,'Choose encrypted backup');
+  await shown(restored,'Issued: 2');
+  console.log('PASS installed Admin restores the encrypted vault and persisted records');
 } finally {
   if(office)await office.close().catch(()=>{});
   if(admin)await admin.close().catch(()=>{});

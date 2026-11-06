@@ -21,3 +21,9 @@ id_rsa*
 # Office administrator secrets never belong in an employee source/build artifact.
 *admin.vault*
 azwah-license-vault*
+
+release-license-admin/
+release-office-payload/
+build/admin-nsis/
+*.vault
+*.azwah
