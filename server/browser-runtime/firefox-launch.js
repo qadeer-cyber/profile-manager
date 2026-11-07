@@ -28,20 +28,33 @@ export function geckoUserDataDir(profileId, dataDirFn) {
   return path.join(dataDirFn(profileId), 'gecko');
 }
 
-export function resolveFirefoxExecutable() {
-  const configured = getSetting('firefoxExecutablePath', '') || process.env.PM_FIREFOX_EXECUTABLE || '';
-  if (configured && fs.existsSync(configured)) return configured;
+export function bundledFirefoxExecutable(env = process.env) {
+  const candidates = [];
+  if (env.PM_FIREFOX_RESOURCES) candidates.push(path.join(env.PM_FIREFOX_RESOURCES, 'firefox.exe'));
+  if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'firefox', 'firefox.exe'));
+  return candidates.find(candidate => fs.existsSync(candidate)) || null;
+}
+function systemFirefoxExecutable(env = process.env) {
   if (process.platform === 'win32') {
     const candidates = [
-      path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Mozilla Firefox', 'firefox.exe'),
-      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Mozilla Firefox', 'firefox.exe'),
+      path.join(env.ProgramFiles || 'C:\\Program Files', 'Mozilla Firefox', 'firefox.exe'),
+      path.join(env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Mozilla Firefox', 'firefox.exe'),
     ];
-    return candidates.find(c => fs.existsSync(c)) || null;
+    return candidates.find(candidate => fs.existsSync(candidate)) || null;
   }
-  for (const c of ['/usr/bin/firefox', '/usr/bin/firefox-esr', '/Applications/Firefox.app/Contents/MacOS/firefox']) {
-    if (fs.existsSync(c)) return c;
+  for (const candidate of ['/usr/bin/firefox', '/usr/bin/firefox-esr', '/Applications/Firefox.app/Contents/MacOS/firefox']) {
+    if (fs.existsSync(candidate)) return candidate;
   }
   return null;
+}
+export function resolveFirefoxExecutable(env = process.env) {
+  const configured = getSetting('firefoxExecutablePath', '') || env.PM_FIREFOX_EXECUTABLE || '';
+  if (configured && fs.existsSync(configured)) return configured;
+  const bundled = bundledFirefoxExecutable(env);
+  if (bundled) return bundled;
+  // Packaged builds must not silently adopt a machine-wide Firefox.
+  if (env.PM_FIREFOX_NO_SYSTEM === '1' || env.PM_PACKAGED === '1') return null;
+  return systemFirefoxExecutable(env);
 }
 
 export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, opts = {} } = {}) {
@@ -49,7 +62,10 @@ export async function buildFirefoxLaunchPlan(p, { userDataDir, userDataDirFn, op
   const headless = opts.headless === true || (opts.headless !== false && Object.hasOwn(process.env, 'MOZ_HEADLESS'));
   const exe = resolveFirefoxExecutable();
   if (!exe) {
-    throw Object.assign(new Error('Firefox is not installed. Set Settings → firefoxExecutablePath or install Firefox.'), { status: 503, code: 'FIREFOX_MISSING' });
+    const closed = process.env.PM_PACKAGED === '1' || process.env.PM_FIREFOX_NO_SYSTEM === '1';
+    throw Object.assign(new Error(closed
+      ? 'The bundled Firefox runtime is not available and this build does not search the system for Firefox.'
+      : 'Firefox is not installed. Set Settings → firefoxExecutablePath or install Firefox.'), { status: 503, code: 'FIREFOX_MISSING' });
   }
   const regional = validateBrowserSettings(p.browserSettings || {});
   const profileDir = geckoUserDataDir(p.id, userDataDirFn || (() => userDataDir));

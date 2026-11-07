@@ -65,7 +65,7 @@ The checkpoint installers did not type into the Custom proxy field, and the prox
 | Column prefs | Browser `localStorage` key `pm.profileTable`. Not a server setting. |
 | Bulk | Launch, stop, tags, move, proxy, and delete jobs exist and the toolbar calls them. |
 | Chromium payload | `extraResources` copies `build/bundled-browsers` to `resources/browsers`. |
-| Firefox payload | No Firefox executable is packaged. Launch uses the host Firefox path from settings. A machine without Firefox is not an offline Firefox runtime. |
+| Firefox payload | Official unmodified Mozilla Firefox ESR 140.17.0 win64 is staged from the published installer `df6f7046d53ff17403e49092c0fe830e24cabd8dacbfad3225870955908fccf9` and copied to `resources/firefox`. MPL 2.0 and the source tarball URL are shipped beside it. Packaged launches do not search Program Files. |
 
 ## Verification limits recorded with the audit
 

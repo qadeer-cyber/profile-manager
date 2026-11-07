@@ -100,6 +100,7 @@ import {
   setExtensionEnabled, unassignExtension,
 } from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
+import { bundledFirefoxExecutable, resolveFirefoxExecutable } from './browser-runtime/firefox-launch.js';
 import { assertNotPausedTemplate, proxyHealthAnalytics, proxyTagGroups } from './proxy-library.js';
 import { compareTrafficSavings, copyTrafficPolicy, getTrafficPolicy, getTrafficSession, measureTrafficScript, saveTrafficPolicy } from './proxy-traffic.js';
 
@@ -108,7 +109,9 @@ const browserInstall = { state: 'idle', log: '', error: null, code: null };
 export function browserStatus() {
   let p = null; try { p = getSetting('executablePath', '') || chromium.executablePath(); } catch {}
   let verified = null; try { verified = chromiumStatus(); } catch (e) { verified = { error: e.message }; }
-  return { path: p, installed: !!p && fs.existsSync(p), custom: !!getSetting('executablePath', ''), browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default', install: browserInstall, chromium: verified };
+  const firefoxPath = resolveFirefoxExecutable();
+  return { path: p, installed: !!p && fs.existsSync(p), custom: !!getSetting('executablePath', ''), browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default', install: browserInstall, chromium: verified,
+    firefox: { path: firefoxPath, bundled: !!firefoxPath && firefoxPath === bundledFirefoxExecutable(), systemSearch: process.env.PM_PACKAGED !== '1' && process.env.PM_FIREFOX_NO_SYSTEM !== '1' } };
 }
 export function installBrowser({ install } = {}) {
   if (browserInstall.state === 'running') return null;

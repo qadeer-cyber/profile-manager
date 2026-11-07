@@ -1,0 +1,123 @@
+name: Azwah Ultimate bundled Firefox payload
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/azwah-ultimate-ui-release]
+    paths:
+      - scripts/fetch-bundled-firefox.mjs
+      - scripts/firefox-runtime-pin.mjs
+      - scripts/firefox-extra-resources.cjs
+      - scripts/ultimate-firefox-payload-acceptance.mjs
+      - server/browser-runtime/firefox-launch.js
+      - electron-builder.ultimate-firefox-owner.cjs
+      - electron-builder.office-payload.cjs
+      - .github/workflows/azwah-ultimate-firefox-payload.yml
+permissions:
+  contents: read
+jobs:
+  firefox:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install 7-Zip and NSIS without installing Firefox
+        shell: pwsh
+        run: |
+          if (Get-Command firefox -ErrorAction SilentlyContinue) { throw 'This runner already has Firefox; the payload test would not be clean.' }
+          choco install 7zip nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Owner and Admin with the pinned Firefox runtime
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-chromium.mjs win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-firefox.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder install-app-deps --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.ultimate-firefox-owner.cjs --win nsis --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.office-payload.cjs --win --dir --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npx electron-builder --config electron-builder.license-admin.cjs --win nsis --x64 --publish never
+          exit $LASTEXITCODE
+      - name: Prove Owner launches bundled Firefox with system search disabled
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-firefox | Out-Null
+          node scripts/ultimate-firefox-payload-acceptance.mjs owner 2>&1 | Tee-Object build-evidence/ultimate-firefox/owner.log
+          exit $LASTEXITCODE
+      - name: Prove Admin-generated Office launches the same bundled Firefox
+        shell: pwsh
+        run: |
+          node scripts/ultimate-firefox-payload-acceptance.mjs office 2>&1 | Tee-Object build-evidence/ultimate-firefox/office.log
+          exit $LASTEXITCODE
+      - name: Publish new Owner and Admin prereleases after both gates
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Publish-One($tagPrefix, $dir, $exe, $title) {
+            $hash = (Get-FileHash (Join-Path $dir $exe) -Algorithm SHA256).Hash.ToLowerInvariant()
+            $size = (Get-Item (Join-Path $dir $exe)).Length
+            $tag = "$tagPrefix-$($env:GITHUB_SHA.Substring(0,12))"
+            $ErrorActionPreference = 'Continue'
+            gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
+            if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists and will not be replaced." }
+            $ErrorActionPreference = 'Stop'
+            @"
+          $title
+
+          Source: $env:GITHUB_SHA
+          Windows Server 2022 evidence: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+          Not Windows 10. Unsigned. Firefox is unmodified Mozilla Firefox ESR 140.17.0, MPL 2.0, bundled under resources/firefox. System Firefox is not required and was not installed on the runner.
+
+          Bytes: $size
+          SHA256: $hash
+          "@ | Set-Content "$dir/RELEASE-NOTES.md"
+            "$hash  $exe" | Set-Content -Encoding ascii "$dir/SHA256SUMS.txt"
+            @(
+              "Source: $env:GITHUB_SHA"
+              "Installer: $exe"
+              "Bytes: $size"
+              "SHA256: $hash"
+              "Firefox: 140.17.0esr win64 en-US"
+              "Firefox installer SHA256: df6f7046d53ff17403e49092c0fe830e24cabd8dacbfad3225870955908fccf9"
+              "Host: Windows Server 2022"
+              "Windows 10: not qualified"
+              "Authenticode: NotSigned"
+            ) | Set-Content "$dir/BUILD-MANIFEST.txt"
+            gh release create $tag "$dir/$exe" "$dir/SHA256SUMS.txt" "$dir/BUILD-MANIFEST.txt" "$dir/RELEASE-NOTES.md" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title $title --notes-file "$dir/RELEASE-NOTES.md"
+            if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases were not changed.' }
+            $verify = Join-Path $env:RUNNER_TEMP $tag
+            New-Item -ItemType Directory -Force $verify | Out-Null
+            gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $exe --dir $verify
+            if ($LASTEXITCODE -ne 0) { throw 'Draft download failed. Release remains draft.' }
+            if ((Get-FileHash (Join-Path $verify $exe) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Uploaded EXE checksum mismatch. Release remains draft.' }
+            gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+            if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+          }
+          Publish-One 'azwah-multi-browser-ultimate-firefox' 'release-ultimate-owner' 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe' 'Azwah Multi Browser Ultimate with bundled Firefox'
+          Publish-One 'azwah-license-admin-ultimate-firefox' 'release-license-admin' 'Azwah-License-Admin-Ultimate-Setup-x64.exe' 'Azwah License Admin Ultimate with bundled Firefox Office payload'
+      - name: Preserve Firefox payload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-firefox-${{ github.sha }}
+          path: build-evidence/ultimate-firefox
+          retention-days: 30

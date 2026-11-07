@@ -7,8 +7,9 @@ export function SettingsPage() {
   const toast = useToast();
   const [theme, setTheme] = useTheme();
   const [edition, setEdition] = useState(null);
+  const [runtime, setRuntime] = useState(null);
   const [s, setS] = useState(null), [token, setToken] = useState(''), [show, setShow] = useState(false), [diag, setDiag] = useState(null);
-  useEffect(() => { api('/api/settings').then(setS); api('/api/diagnostics').then(setDiag); api('/api/api-token').then(r => setToken(r.token)).catch(() => {}); api('/api/activation').then(setEdition).catch(() => {}); }, []);
+  useEffect(() => { api('/api/settings').then(setS); api('/api/diagnostics').then(setDiag); api('/api/api-token').then(r => setToken(r.token)).catch(() => {}); api('/api/activation').then(setEdition).catch(() => {}); api('/api/browser').then(b => setRuntime(b.firefox || null)).catch(() => {}); }, []);
   if (!s) return <p className="muted" aria-busy="true">Loading settings…</p>;
   const save = async () => { try { setS(await api('/api/settings', { method: 'PUT', body: s })); toast('Settings saved', 'success'); } catch (e) { toast(e.message, 'error'); } };
   return <div className="settings-layout">
@@ -28,7 +29,8 @@ export function SettingsPage() {
     <section className="panel" id="launch"><h2>Browser</h2>
       <label className="check"><input type="checkbox" checked={s.defaultHeadless} onChange={e => setS({ ...s, defaultHeadless: e.target.checked })} /> Launch profiles without a visible window (headless)</label>
       <label>Custom Chromium executable (leave empty to use the bundled/downloaded Chromium)<input value={s.executablePath} onChange={e => setS({ ...s, executablePath: e.target.value })} placeholder="C:\\Path\\to\\chrome.exe" /></label>
-      <label>Custom Firefox executable (stock Mozilla Firefox — separate gecko profile tree)<input value={s.firefoxExecutablePath || ''} onChange={e => setS({ ...s, firefoxExecutablePath: e.target.value })} placeholder="C:\\Program Files\\Mozilla Firefox\\firefox.exe" /></label>
+      <label>Custom Firefox executable (stock Mozilla Firefox — separate gecko profile tree)<input value={s.firefoxExecutablePath || ''} onChange={e => setS({ ...s, firefoxExecutablePath: e.target.value })} placeholder="Leave empty to use the bundled runtime" /></label>
+      <p className="muted">Packaged builds launch the unmodified Mozilla Firefox ESR copied into resources/firefox. They do not search Program Files. A path entered here replaces that copy. Firefox is MPL 2.0; see FIREFOX-REDISTRIBUTION.txt beside the runtime. {runtime?.path ? <>Resolved executable: <code>{runtime.path}</code>.</> : 'No Firefox executable is resolved.'}</p>
       <label>Start page when a profile launches<input value={s.startUrl} onChange={e => setS({ ...s, startUrl: e.target.value })} placeholder="https://…" /></label>
       <label>Max running profiles at once (1–8)<input type="number" min={1} max={8} value={s.maxRunningProfiles ?? 4} onChange={e => setS({ ...s, maxRunningProfiles: Number(e.target.value) })} /></label>
       <label>Minimum free host memory guard (GiB, 0–4)<input type="number" min={0} max={4} value={s.minFreeMemoryGiB ?? 1} onChange={e => setS({ ...s, minFreeMemoryGiB: Number(e.target.value) })} /></label>
