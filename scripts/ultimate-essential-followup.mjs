@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {_electron} from 'playwright';
+import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, waitForIssuedToken} from './installed-acceptance-helpers.mjs';
 import {asarLookupPath} from './asar-entries.mjs';
 import {windowsEmployeeIdentity} from './windows-employee-identity.mjs';
 
@@ -54,11 +55,7 @@ function processImage(pid) {
 }
 async function replaceIssuedToken(page, previous) {
   await page.getByRole('button', {name: 'Issue license', exact: true}).click();
-  await page.waitForFunction(old => {
-    const value = document.querySelector('textarea')?.value || '';
-    return value.startsWith('AZW1.') && value !== old;
-  }, previous);
-  return page.locator('textarea').inputValue();
+  return waitForIssuedToken(page, previous);
 }
 function listen(server) {
   return new Promise((resolve, reject) => {
@@ -88,25 +85,25 @@ try {
   const port = await listen(proxy);
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   let page = await app.firstWindow();
-  await page.waitForFunction(() => !!window.pm, {timeout: 90000});
+  await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   const info = await page.evaluate(() => window.pm.appInfo());
   const userData = info.userData;
   const dbPath = path.join(userData, 'data', 'profiles.db');
   const init = await api(page, '/admin/init', {organization: 'Essential organization', password, confirm: password});
   check(init.status === 200 && init.body.publicKey && !init.body.publicKey.includes('PRIVATE'), 'Installed Ultimate created an organization identity');
   await page.locator('[data-nav=profiles]').click();
-  await page.getByRole('button', {name: 'New profile'}).click();
+  await page.getByRole('button', {name: 'New profile', exact: true}).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Name', {exact: true}).fill('GUI proxy');
-  await dialog.getByRole('tab', {name: 'Proxy'}).click();
-  await dialog.getByRole('radio', {name: 'Custom'}).click();
-  await dialog.getByRole('radiogroup', {name: 'Proxy protocol'}).getByRole('radio', {name: 'HTTP', exact: true}).click();
+  await dialog.getByRole('tab', {name: 'Proxy', exact: true}).click();
+  await dialog.getByRole('radio', {name: 'Custom', exact: true}).click();
+  await dialog.getByRole('radiogroup', {name: 'Proxy protocol', exact: true}).getByRole('radio', {name: 'HTTP', exact: true}).click();
   await dialog.getByLabel('Proxy details').fill(`127.0.0.1:${port}:azwah:${proxyPassword}`);
-  await dialog.getByRole('button', {name: 'Test Proxy'}).click();
+  await dialog.getByRole('button', {name: 'Test Proxy', exact: true}).click();
   await dialog.getByText(/Transport ok/).waitFor({timeout: 20000});
   check(hits.some(url => url.includes('/ip')), 'Test Proxy sent a request through the saved proxy configuration');
-  await dialog.getByRole('button', {name: 'Hide credentials'}).click();
-  await dialog.getByRole('button', {name: 'Create profile'}).click();
+  await dialog.getByRole('button', {name: 'Hide credentials', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Create profile', exact: true}).click();
   await page.getByRole('cell', {name: 'GUI proxy', exact: true}).waitFor();
   const saved = (await api(page, '/profiles')).body.find(item => item.name === 'GUI proxy');
   check(saved?.proxy?.host === '127.0.0.1' && saved.proxy.port === port && saved.proxy.hasPassword === true && saved.proxy.password !== proxyPassword, 'Proxy GUI saved the host and did not return the password');
@@ -119,16 +116,16 @@ try {
   record.osSecretPrefix = stored.startsWith('ss:v1:') ? 'ss:v1' : stored.startsWith('enc:v1:') ? 'enc:v1' : 'other';
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   page = await app.firstWindow();
-  await page.waitForFunction(() => !!window.pm, {timeout: 90000});
-  await page.getByRole('checkbox', {name: 'Select GUI proxy'}).check();
-  await page.getByRole('button', {name: 'Edit selected'}).click();
+  await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
+  await page.getByRole('checkbox', {name: 'Select GUI proxy', exact: true}).check();
+  await page.getByRole('button', {name: 'Edit selected', exact: true}).click();
   const reloaded = page.getByRole('dialog');
-  await reloaded.getByRole('tab', {name: 'Proxy'}).click();
+  await reloaded.getByRole('tab', {name: 'Proxy', exact: true}).click();
   await reloaded.getByLabel('Proxy details').waitFor();
   check((await reloaded.getByLabel('Proxy details').inputValue()).includes(`127.0.0.1:${port}`), 'Reloaded profile editor still shows the saved proxy');
-  await reloaded.getByRole('button', {name: 'Test Proxy'}).click();
+  await reloaded.getByRole('button', {name: 'Test Proxy', exact: true}).click();
   await reloaded.getByText(/Transport ok/).waitFor({timeout: 20000});
-  await reloaded.getByRole('button', {name: 'Save changes'}).click();
+  await reloaded.getByRole('button', {name: 'Save changes', exact: true}).click();
   const beforeRoute = hits.length;
   const routed = await api(page, `/profiles/${saved.id}/launch`, {headless: true, url: 'http://203.0.113.10/azwah-route'});
   check(routed.status === 200, 'Chromium launch accepted the profile');
@@ -164,7 +161,7 @@ try {
   await app.close(); app = undefined;
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   page = await app.firstWindow();
-  await page.waitForFunction(() => !!window.pm, {timeout: 90000});
+  await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   const cookies = await api(page, `/profiles/${cookieProfile.body.id}/cookies`);
   check(cookies.body?.cookies?.some(item => item.name === 'kept' && item.value === cookieValue), 'Imported cookie remains after the application is reopened');
   const extensions = (await api(page, `/profiles/${cookieProfile.body.id}`)).body.extensions || [];
@@ -174,7 +171,7 @@ try {
   await page.locator('[data-nav=license-admin]').click();
   await page.getByLabel('Master password', {exact: true}).fill(password);
   await page.getByRole('button', {name: 'Unlock', exact: true}).click();
-  await page.getByRole('heading', {name: 'Essential organization'}).waitFor();
+  await page.getByRole('heading', {name: 'Essential organization', exact: true}).waitFor();
   const officeOut = path.join(root, 'generated-office');
   fs.mkdirSync(officeOut);
   await app.evaluate(({dialog}, dir) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [dir]}); }, officeOut);
@@ -183,6 +180,7 @@ try {
   const officeInstaller = path.join(officeOut, 'Azwah-Multi-Browser-Office-Setup-x64.exe');
   const officeDir = path.join(root, 'office');
   execFileSync(officeInstaller, ['/S', '/D=' + officeDir], {timeout: 240000});
+  check(hasExpectedOfficeTrust(officeDir, init.body.publicKey), 'Office installs the expected public Ed25519 trust root without private fields');
   const officeNames = asar.listPackage(path.join(officeDir, 'resources', 'app.asar')).map(name => name.replaceAll('\\', '/'));
   check(!officeNames.some(name => /ultimate-admin|license-admin|issuer-public\.pem|organization\.vault/.test(name)), 'Generated Office archive has no issuance module, issuer, or vault');
   const officeText = asar.extractFile(path.join(officeDir, 'resources', 'app.asar'), asarLookupPath('server/app.js')).toString('utf8');
@@ -207,30 +205,23 @@ try {
   check(currentToken !== expiredToken && currentToken.startsWith('AZW1.'), 'A current license is distinct from the backdated license');
   const expired = await api(employee, '/activation', {token: expiredToken, confirm: true});
   check(expired.body?.code === 'LICENSE_EXPIRED', 'Office on the standard account rejects an expired license');
+  assertIssuedDevice(currentToken, employeeDevice);
   const licenseFile = path.join(root, 'standard.azwah');
   fs.writeFileSync(licenseFile, currentToken);
   await employee.bringToFront();
-  await employee.getByLabel('License file').setInputFiles(licenseFile);
-  await employee.getByLabel('I authorize activation on this device.').check();
-  await employee.getByRole('button', {name: 'Activate offline', exact: true}).click();
-  try {
-    await employee.getByText('This device is activated for offline use.', {exact: true}).waitFor();
-  } catch (error) {
-    const status = await employee.locator('[role=status]').allTextContents();
-    throw new Error(`Office did not activate. Status: ${status.join(' | ').slice(0, 300)}`);
-  }
+  await activateInstalledOffice(employee, licenseFile, evidence, () => api(employee, '/activation'));
   const activated = await api(employee, '/activation');
   check(activated.body?.active === true, 'Standard-account Office reports an active license');
   await employeeSession.close();
   const reopened = await employeeSession.launch();
   const persisted = await api(reopened, '/activation');
   check(persisted.body?.active === true, 'Standard-account activation remains after the Office application is reopened');
-  const officeFirefox = await api(employee, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
-  const officeLaunch = await api(employee, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
+  const officeFirefox = await api(reopened, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
+  const officeLaunch = await api(reopened, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
   check(officeLaunch.status === 200, 'Generated Office launches Firefox without a system Firefox');
-  const officeImage = processImage((await api(employee, `/profiles/${officeFirefox.body.id}`)).body.pid);
+  const officeImage = processImage((await api(reopened, `/profiles/${officeFirefox.body.id}`)).body.pid);
   check(officeImage.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
-  check((await api(employee, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
+  check((await api(reopened, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
   await employeeSession.dispose(); employeeSession = undefined;
 
   await app.close(); app = undefined;
@@ -241,7 +232,7 @@ try {
   execFileSync(installer, ['/S', '/D=' + installDir], {timeout: 240000});
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   page = await app.firstWindow();
-  await page.waitForFunction(() => !!window.pm, {timeout: 90000});
+  await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   const restored = (await api(page, '/profiles')).body.find(item => item.name === 'GUI proxy');
   check(restored?.proxy?.host === '127.0.0.1' && restored.proxy.hasPassword === true, 'Reinstall keeps the profile and its sealed proxy');
   check(fs.existsSync(path.join(userData, 'organization.vault')), 'Reinstall keeps the organization vault');
@@ -253,6 +244,7 @@ try {
   if (employeeSession) await employeeSession.dispose().catch(() => {});
   if (app) await app.close().catch(() => {});
   proxy.close();
+  proxy.closeAllConnections();
   fs.writeFileSync(path.join(evidence, 'essential.json'), JSON.stringify({...record, results}, null, 2));
   fs.rmSync(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
 }
