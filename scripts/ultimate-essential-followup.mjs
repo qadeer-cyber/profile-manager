@@ -118,11 +118,13 @@ try {
   await page.getByRole('button', {name: 'Edit selected'}).click();
   const reloaded = page.getByRole('dialog');
   await reloaded.getByRole('tab', {name: 'Proxy'}).click();
-  await reloaded.getByLabel('Proxy details').waitFor();
-  check((await reloaded.getByLabel('Proxy details').inputValue()).includes(`127.0.0.1:${port}`), 'Reloaded profile editor still shows the saved proxy');
+  const savedProxy = reloaded.getByRole('combobox', {name: 'Saved proxy'});
+  await savedProxy.waitFor();
+  const savedProxyText = await savedProxy.locator('option:checked').textContent();
+  check(savedProxyText.includes(`127.0.0.1:${port}`), 'Reloaded editor shows the saved library proxy, not a second custom line');
   await reloaded.getByRole('button', {name: 'Test Proxy'}).click();
   await reloaded.getByText(/Transport ok/).waitFor({timeout: 20000});
-  await reloaded.getByRole('button', {name: 'Save changes'}).click();
+  await reloaded.getByRole('button', {name: 'Cancel'}).click();
   const beforeRoute = proxyEvents.length;
   const routed = await api(page, `/profiles/${saved.id}/launch`, {headless: true, url: 'http://203.0.113.10/azwah-route'});
   check(routed.status === 200, 'Chromium launch accepted the profile');
