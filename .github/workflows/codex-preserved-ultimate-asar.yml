@@ -1,0 +1,66 @@
+name: Independent preserved Ultimate ASAR verification
+on:
+  push:
+    branches: [codex/azwah-asar-evidence]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42392300409
+          name: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29
+          path: retained-installer
+      - name: Verify checksum and source before installing
+        shell: pwsh
+        run: |
+          $name = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $exe = Join-Path $PWD "retained-installer/$name"
+          $checksum = (Get-Content retained-installer/SHA256SUMS.txt -Raw).Trim()
+          if ($checksum -notmatch '^([0-9a-fA-F]{64})\s+\*?Azwah-Multi-Browser-Ultimate-Setup-x64\.exe$') { throw 'Unexpected checksum entry' }
+          $expected = $Matches[1].ToLowerInvariant()
+          $actual = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw 'Installer checksum mismatch' }
+          if (!(Select-String -Quiet -SimpleMatch -LiteralPath retained-installer/BUILD-MANIFEST.txt -Pattern 'Installer source: 8baf1ffe13387bf3fba056d756a448da8b0e1e29')) { throw 'Unexpected installer source' }
+          Write-Host "VERIFIED_EXE_SHA256 $actual; bytes $((Get-Item -LiteralPath $exe).Length)"
+          $install = Join-Path $env:RUNNER_TEMP 'independent-ultimate-asar'
+          $process = Start-Process -FilePath $exe -ArgumentList "/S /D=$install" -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer exit code $($process.ExitCode)" }
+          "AZWAH_ASAR=$install\resources\app.asar" >> $env:GITHUB_ENV
+          "AZWAH_UNIFIED_INSTALLER=$exe" >> $env:GITHUB_ENV
+          "AZWAH_UNIFIED_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
+      - name: Inspect the installed archive using the pinned ASAR library
+        shell: pwsh
+        run: |
+          npm install --prefix "$env:RUNNER_TEMP/asar-deps" --ignore-scripts --no-audit --no-fund @electron/asar@3.4.1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          @'
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const asar = require(path.join(process.env.RUNNER_TEMP, 'asar-deps/node_modules/@electron/asar'));
+          const archive = process.env.AZWAH_ASAR;
+          const raw = asar.listPackage(archive);
+          const required = ['server/ultimate-admin.js', 'scripts/license-admin/admin.mjs'];
+          const entries = required.map(name => {
+            const rawPath = raw.find(item => item.replaceAll('\\', '/').replace(/^\//, '') === name);
+            const bytes = rawPath ? asar.extractFile(archive, name).length : 0;
+            return {name, rawPath, bytes};
+          });
+          const joined = raw.join('\n');
+          const oldAssertion = joined.includes('server/ultimate-admin.js') && joined.includes('scripts/license-admin');
+          console.log('INSTALLED_ASAR ' + JSON.stringify({archive, archiveBytes: fs.statSync(archive).size, entries, oldAssertion}));
+          assert.ok(entries.every(entry => entry.rawPath && entry.bytes > 0), 'Both exact module files must be readable from the archive');
+          '@ | node
+          exit $LASTEXITCODE
