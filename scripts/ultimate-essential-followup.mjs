@@ -190,6 +190,15 @@ try {
   const employeeDevice = await waitForOfficeDeviceCode(employee, () => api(employee, '/activation'));
   check(/^AZD1-[a-f0-9]{64}$/.test(employeeDevice), 'Office under the separate standard account exposes the machine device code');
   await page.bringToFront();
+  const otherDevice = 'AZD1-' + (employeeDevice.endsWith('a') ? 'b' : 'a').repeat(64);
+  const wrongEmployee = await api(page, '/admin/employee', {reference:'different-machine',name:'Different machine',device:otherDevice});
+  check(wrongEmployee.status === 200, 'Installed Admin stores the different-device test employee');
+  const wrongIssue = await api(page, '/admin/issue', {reference:'different-machine',days:30});
+  check(wrongIssue.status === 200, 'Installed Admin issues a signed license for the different device');
+  const wrongToken = wrongIssue.body.token;
+  assertIssuedDevice(wrongToken, otherDevice);
+  const wrong = await api(employee, '/activation', {token:wrongToken,confirm:true});
+  check(wrong.body?.code === 'LICENSE_DEVICE_MISMATCH', 'Office rejects a valid license issued to a different device');
   await page.getByLabel('Employee reference', {exact: true}).fill('standard-desk');
   await page.getByLabel('Name', {exact: true}).fill('Standard desk');
   await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
@@ -205,6 +214,10 @@ try {
   const expired = await api(employee, '/activation', {token: expiredToken, confirm: true});
   check(expired.body?.code === 'LICENSE_EXPIRED', 'Office on the standard account rejects an expired license');
   assertIssuedDevice(currentToken, employeeDevice);
+  const parts = currentToken.split('.');
+  parts[2] = (parts[2][0] === 'A' ? 'B' : 'A') + parts[2].slice(1);
+  const tampered = await api(employee, '/activation', {token:parts.join('.'),confirm:true});
+  check(tampered.body?.code === 'LICENSE_SIGNATURE_INVALID', 'Office rejects a tampered license signature');
   const licenseFile = path.join(root, 'standard.azwah');
   fs.writeFileSync(licenseFile, currentToken);
   await employee.bringToFront();

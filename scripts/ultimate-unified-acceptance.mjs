@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import {_electron} from 'playwright';
 import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, waitForIssuedToken, waitForOfficeDeviceCode} from './installed-acceptance-helpers.mjs';
+import {createRecordingProxy} from './recording-proxy.mjs';
 import {open} from './license-admin/admin.mjs';
 import {asarHasEntry, asarLookupPath, normalizeAsarEntry} from './asar-entries.mjs';
 import {startLocalHttpFixture} from '../test/_local-http-fixture.mjs';
@@ -46,7 +47,7 @@ function processImage(pid) {
 }
 
 const password = 'Unified vault passphrase ' + crypto.randomUUID();
-let ownerApp, adminApp, unified, office, fixture, proxy;
+let ownerApp, adminApp, unified, office, fixture, proxy, legacyProxy;
 const record = {windows10: false, systemFirefoxUsed: false, separateAdminPublished: false};
 try {
   if (!appData || !path.isAbsolute(appData)) throw new Error('Windows roaming AppData is unavailable');
@@ -75,8 +76,15 @@ try {
   const legacyWorkspace = await api(ownerPage, '/workspaces', {name:'Kept workspace'});
   check(legacyWorkspace.status === 201, 'Previous Owner stores a workspace');
   const legacyProxyPassword = 'Px' + crypto.randomBytes(9).toString('base64url');
+  const legacyProxyEvents = [];
+  legacyProxy = createRecordingProxy(legacyProxyEvents, {username:'migration-qa',password:legacyProxyPassword});
+  await new Promise((resolve,reject) => {
+    legacyProxy.once('error', reject);
+    legacyProxy.listen(0,'127.0.0.1',resolve);
+  });
+  const legacyProxyPort = legacyProxy.address().port;
   const legacyCookieValue = 'Ck' + crypto.randomBytes(9).toString('base64url');
-  const created = await api(ownerPage, '/profiles', {name: 'Kept from Owner', notes: 'migration-marker', workspaceId:legacyWorkspace.body.id, proxy:{type:'http',host:'127.0.0.1',port:18080,username:'migration-qa',password:legacyProxyPassword}});
+  const created = await api(ownerPage, '/profiles', {name: 'Kept from Owner', notes: 'migration-marker', workspaceId:legacyWorkspace.body.id, proxy:{type:'http',host:'127.0.0.1',port:legacyProxyPort,username:'migration-qa',password:legacyProxyPassword}});
   check(created.status === 201, 'Previous Owner installer stores a profile without activation');
   const legacyCookie = {name:'legacy-owner-cookie',value:legacyCookieValue,domain:'example.test',path:'/',secure:true,httpOnly:true,sameSite:'Lax'};
   check((await api(ownerPage, '/profiles/' + created.body.id + '/cookies/import', {cookies:[legacyCookie]})).status === 200, 'Previous Owner stores a profile cookie');
@@ -116,7 +124,8 @@ try {
   const issuerSource = asar.extractFile(ultimateArchive, asarLookupPath('scripts/license-admin/issuer.mjs')).toString('utf8');
   check(adminSource.includes('../scripts/license-admin/admin.mjs') && issuerSource.includes('../../server/office/license.js') && !adminSource.includes('BEGIN PRIVATE KEY'), 'In-process license administration module links to its issuance dependency');
   check(!ultimateEntries.some(entry => /issuer-public\.pem|organization\.vault|BEGIN PRIVATE KEY/.test(normalizeAsarEntry(entry))), 'Unified application archive has no issuer certificate or vault');
-  unified = await _electron.launch({executablePath: path.join(ultimateDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
+  const ultimateLaunch = {executablePath: path.join(ultimateDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv({PROXY_TEST_URL:'http://203.0.113.10/ip'}), timeout: 90000};
+  unified = await _electron.launch(ultimateLaunch);
   const page = await unified.firstWindow();
   await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   await page.setViewportSize({width: 1366, height: 768});
@@ -151,6 +160,22 @@ try {
   const listed = await api(page, '/admin/list');
   check(listed.status === 200 && listed.body.publicKey === sourceKey && !JSON.stringify(listed.body).includes('PRIVATE KEY'), 'Unlocked vault reports the same public key and no private key');
   record.migration = {ownerDbSha256: ownerHash, vaultSha256: vaultHash, publicKeySha256: crypto.createHash('sha256').update(sourceKey).digest('hex')};
+  if (migrationOnly) {
+    const checkMigratedProxy = async window => {
+      const result = await api(window, '/profiles/' + migrated.id + '/test-proxy', {});
+      check(result.status === 200 && result.body?.ok === true, 'Migrated credential authenticates through the Windows proxy fixture');
+    };
+    await checkMigratedProxy(page);
+    await unified.close(); unified = undefined;
+    unified = await _electron.launch(ultimateLaunch);
+    const reopened = await unified.firstWindow();
+    await reopened.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout:90000});
+    const persisted = (await api(reopened, '/profiles/' + migrated.id)).body;
+    check(persisted.proxy?.hasPassword === true && persisted.proxy.password === '••••' && !persisted.secretError, 'Migrated credential remains sealed and masked after restart');
+    await checkMigratedProxy(reopened);
+    check(legacyProxyEvents.filter(event => event.kind === 'connect' && event.authenticated).length === 2, 'Authenticated proxy observed both post-migration requests');
+    check(sha(ownerDb) === ownerHash && sha(sourceVault) === vaultHash, 'Legacy data and vault still match after restart');
+  }
   if (!migrationOnly) {
     const device = 'AZD1-' + 'cd'.repeat(32);
     await page.getByLabel('Employee reference', {exact: true}).fill('migrated-desk');
@@ -208,7 +233,7 @@ try {
     await page.getByLabel('Name', {exact: true}).fill('Office desk');
     await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
     await page.getByRole('button', {name: 'Save employee', exact: true}).click();
-    const previousToken = await page.getByLabel('License token', {exact: true}).inputValue();
+    const previousToken = await page.locator('textarea[readonly]').inputValue();
     await page.getByRole('button', {name: 'Issue license', exact: true}).click();
     const officeToken = await waitForIssuedToken(page, previousToken);
     assertIssuedDevice(officeToken, employeeDevice);
@@ -257,6 +282,7 @@ try {
 } finally {
   if (fixture) await fixture.close().catch(() => {});
   if (proxy) { proxy.close(); proxy.closeAllConnections(); }
+  if (legacyProxy) { legacyProxy.close(); legacyProxy.closeAllConnections(); }
   if (ownerApp) await ownerApp.close().catch(() => {});
   if (adminApp) await adminApp.close().catch(() => {});
   if (office) await office.close().catch(() => {});

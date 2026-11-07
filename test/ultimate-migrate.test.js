@@ -120,3 +120,37 @@ test('a live SQLite WAL prevents migration even if the main file hash has not ch
   assert.equal(fs.existsSync(path.join(ultimate, 'data')), false);
   assert.equal(database.prepare('SELECT name FROM profiles').get().name, 'pending checkpoint');
 });
+
+test('staged conversion is published atomically and its receipt can be recovered', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData,{recursive:true,force:true}));
+  const db = path.join(ultimate,'data','profiles.db');
+  const prepareOwnerData = ({candidate}) => fs.appendFileSync(path.join(candidate,'profiles.db'),'-converted');
+  const first = migrateUltimateData({appData,ultimateDir:ultimate,prepareOwnerData});
+  assert.equal(fs.readFileSync(db,'utf8'),'owner-profiles-converted');
+  assert.equal(fs.readFileSync(path.join(ownerData,'profiles.db'),'utf8'),'owner-profiles');
+  fs.unlinkSync(path.join(ultimate,'azwah-ultimate-migration.json'));
+  const retry = migrateUltimateData({appData,ultimateDir:ultimate,prepareOwnerData:()=>{throw Error('must not repeat conversion');}});
+  assert.deepEqual(retry.copied,first.copied.filter(item => item.kind === 'owner-data'));
+  assert.deepEqual(retry.conflicts, []);
+});
+
+test('failed staged conversion leaves the source and live destination untouched', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData,{recursive:true,force:true}));
+  assert.throws(()=>migrateUltimateData({appData,ultimateDir:ultimate,prepareOwnerData:({candidate})=>{
+    fs.writeFileSync(path.join(candidate,'profiles.db'),'partial');
+    throw Error('conversion failed');
+  }}),/conversion failed/);
+  assert.equal(fs.existsSync(path.join(ultimate,'data')),false);
+  assert.equal(fs.readFileSync(path.join(ownerData,'profiles.db'),'utf8'),'owner-profiles');
+});
+
+test('Windows conversion refuses a matching pre-existing destination without a conversion marker', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData,{recursive:true,force:true}));
+  const destination = path.join(ultimate,'data');
+  fs.cpSync(ownerData,destination,{recursive:true});
+  assert.throws(()=>migrateUltimateData({appData,ultimateDir:ultimate,prepareOwnerData:()=>assert.fail('must not overwrite')}),/no credential conversion marker/);
+  assert.equal(fs.readFileSync(path.join(destination,'profiles.db'),'utf8'),'owner-profiles');
+});
