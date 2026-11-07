@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          ref: 830af0b1e00cd27b6b259460c34f4eebac185ad0
+          ref: d9fb969bc5a5e0580103b098deeaaa9e24383642
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
