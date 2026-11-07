@@ -1,0 +1,23 @@
+name: Verify official Firefox ESR checksum metadata
+on:
+  push:
+    branches: [codex/azwah-owner-qualification]
+    paths: ['.github/workflows/codex-firefox-esr-checksums.yml']
+permissions:
+  contents: read
+jobs:
+  checksums:
+    runs-on: windows-2022
+    timeout-minutes: 5
+    steps:
+      - name: Read Mozilla release checksums without downloading Firefox
+        shell: pwsh
+        run: |
+          $url = 'https://archive.mozilla.org/pub/firefox/releases/153.5.1esr/SHA256SUMS'
+          $response = Invoke-WebRequest -Uri $url -TimeoutSec 30
+          $lines = $response.Content -split '\r?\n'
+          $win = @($lines | Where-Object { $_ -match '^[0-9a-f]{64}\s+win64/en-US/Firefox Setup 153\.5\.1esr\.exe$' })
+          $src = @($lines | Where-Object { $_ -match '^[0-9a-f]{64}\s+source/firefox-153\.5\.1esr\.source\.tar\.xz$' })
+          if ($win.Count -ne 1 -or $src.Count -ne 1) { throw 'Expected official installer and source checksums' }
+          Write-Host "MOZILLA_ESR_WINDOWS_CHECKSUM $win"
+          Write-Host "MOZILLA_ESR_SOURCE_CHECKSUM $src"
