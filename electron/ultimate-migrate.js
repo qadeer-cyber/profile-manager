@@ -122,3 +122,42 @@ export function migrateUltimateData({ appData, ultimateDir }) {
   fs.renameSync(temporary, receiptPath);
   return receipt;
 }
+
+function readWindowsLocalState(file) {
+  const stat = fs.lstatSync(file, {throwIfNoEntry: false});
+  if (!stat) return null;
+  if (!stat.isFile() || stat.size > 16 * 1024 * 1024) {
+    throw new Error('Unsafe Electron Local State during Owner migration');
+  }
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
+// Windows safeStorage v10 ciphertext uses a per-user DPAPI-wrapped Chromium key.
+// Seed only a fresh Ultimate store, before Electron initializes its Local State.
+export function seedLegacyWindowsOwnerKey({appData, ultimateDir}) {
+  const ownerDir = path.join(appData, OWNER_DIRECTORY);
+  const ownerDb = path.join(ownerDir, 'data', 'profiles.db');
+  if (!fs.existsSync(ownerDb) || fs.existsSync(path.join(ultimateDir, 'data', 'profiles.db')) ||
+      fs.existsSync(path.join(ultimateDir, 'azwah-ultimate-migration.json'))) return false;
+  requireClosedOwnerDatabase(ownerDb);
+  const sourceKey = readWindowsLocalState(path.join(ownerDir, 'Local State'))?.os_crypt?.encrypted_key;
+  if (!sourceKey) return false;
+  const wrapped = typeof sourceKey === 'string' && sourceKey.length <= 16384 ? Buffer.from(sourceKey, 'base64') : null;
+  if (!wrapped || wrapped.length <= 5 || wrapped.subarray(0, 5).toString('ascii') !== 'DPAPI' ||
+      wrapped.toString('base64') !== sourceKey) throw new Error('Unsupported Windows Owner secret key format');
+  const target = path.join(ultimateDir, 'Local State');
+  const existing = readWindowsLocalState(target);
+  if (existing) {
+    if (existing.os_crypt?.encrypted_key !== sourceKey) throw new Error('Conflicting Windows secret storage. Owner and Ultimate data were preserved.');
+    return false;
+  }
+  fs.mkdirSync(ultimateDir, {recursive:true});
+  const temp = target + '.' + crypto.randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(temp, JSON.stringify({os_crypt:{encrypted_key:sourceKey}}), {flag:'wx',mode:0o600});
+    fs.linkSync(temp, target);
+  } finally {
+    fs.rmSync(temp, {force:true});
+  }
+  return true;
+}

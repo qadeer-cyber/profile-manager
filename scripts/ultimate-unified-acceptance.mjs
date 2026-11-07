@@ -208,7 +208,7 @@ try {
     await page.getByLabel('Name', {exact: true}).fill('Office desk');
     await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
     await page.getByRole('button', {name: 'Save employee', exact: true}).click();
-    const previousToken = await page.getByLabel('License token', {exact: true}).inputValue();
+    const previousToken = await page.locator('textarea[readonly]').inputValue();
     await page.getByRole('button', {name: 'Issue license', exact: true}).click();
     const officeToken = await waitForIssuedToken(page, previousToken);
     assertIssuedDevice(officeToken, employeeDevice);
