@@ -3,24 +3,15 @@ on:
   workflow_dispatch:
   push:
     branches: [integration/azwah-ultimate-ui-release]
-    paths:
-      - server/ultimate-admin.js
-      - server/office/edition.js
-      - electron/ultimate-migrate.js
-      - electron/main.js
-      - electron-builder.ultimate-unified.cjs
-      - electron-builder.office-payload.cjs
-      - scripts/ultimate-before-pack.cjs
-      - scripts/fetch-bundled-firefox.mjs
-      - test/ultimate-packaging-policy.test.js
 permissions:
   contents: read
 jobs:
   unified:
+    if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[ci:ultimate-corrected-build]') }}
     runs-on: windows-2022
     timeout-minutes: 90
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -113,60 +104,6 @@ jobs:
           New-Item -ItemType Directory -Force build-evidence/ultimate-unified | Out-Null
           node scripts/ultimate-unified-acceptance.mjs 2>&1 | Tee-Object build-evidence/ultimate-unified/transcript.log
           exit $LASTEXITCODE
-      - name: Publish the single Ultimate installer after download verification
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $exe = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
-          $dir = 'release-ultimate'
-          $recorded = (Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS.txt') -Raw).Split(' ')[0].Trim()
-          $hash = (Get-FileHash (Join-Path $dir $exe) -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($hash -ne $recorded) { throw 'Installer bytes changed after the pre-acceptance manifest was recorded.' }
-          $size = (Get-Item (Join-Path $dir $exe)).Length
-          $tag = "azwah-multi-browser-ultimate-unified-$($env:GITHUB_SHA.Substring(0,12))"
-          $ErrorActionPreference = 'Continue'
-          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
-          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists and will not be replaced." }
-          $ErrorActionPreference = 'Stop'
-          @"
-          # Azwah Multi Browser Ultimate
-
-          One installer. Browser management works without employee activation. License administration is a section of this application, not a second program. The employee Office installer is generated locally and is not this download.
-
-          Source: $env:GITHUB_SHA
-          Windows Server 2022 evidence: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
-          Not Windows 10. Unsigned. Firefox is unmodified Mozilla Firefox ESR 140.17.0 under MPL 2.0. No stealth or anti-detect claim.
-
-          Bytes: $size
-          SHA256: $hash
-          "@ | Set-Content "$dir/RELEASE-NOTES.md"
-          @(
-            "Installer source: $env:GITHUB_SHA"
-            "Harness: $env:GITHUB_SHA"
-            "Installer: $exe"
-            "Bytes: $size"
-            "SHA256: $hash"
-            "Product: Azwah Multi Browser Ultimate"
-            "Firefox: 140.17.0esr win64 en-US"
-            "Firefox installer SHA256: df6f7046d53ff17403e49092c0fe830e24cabd8dacbfad3225870955908fccf9"
-            "Host: Windows Server 2022"
-            "Windows 10: not qualified"
-            "Authenticode: NotSigned"
-            "Separate Admin installer: not part of this release"
-            "Private keys: not included"
-            "Organization vault: not included"
-          ) | Set-Content "$dir/BUILD-MANIFEST.txt"
-          gh release create $tag "$dir/$exe" "$dir/SHA256SUMS.txt" "$dir/BUILD-MANIFEST.txt" "$dir/RELEASE-NOTES.md" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title "Azwah Multi Browser Ultimate $tag" --notes-file "$dir/RELEASE-NOTES.md"
-          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases were not changed.' }
-          $verify = Join-Path $env:RUNNER_TEMP 'ultimate-unified-download'
-          New-Item -ItemType Directory -Force $verify | Out-Null
-          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $exe --dir $verify
-          if ($LASTEXITCODE -ne 0) { throw 'Draft download failed. Release remains draft.' }
-          if ((Get-FileHash (Join-Path $verify $exe) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Uploaded EXE checksum mismatch. Release remains draft.' }
-          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
       - name: Preserve unified evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 45
     permissions:
       actions: read
-      contents: write
+      contents: read
     env:
       AZWAH_INSTALLER_SOURCE_SHA: 8baf1ffe13387bf3fba056d756a448da8b0e1e29
       AZWAH_UNIFIED_INSTALLER_SHA256: c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142

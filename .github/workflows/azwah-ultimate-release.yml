@@ -8,7 +8,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     permissions:
-      contents: write
+      contents: read
     env:
       AZWAH_OWNER_BUILD: '1'
     steps:
@@ -44,29 +44,6 @@ jobs:
           New-Item -ItemType Directory -Force build-evidence/ultimate-owner | Out-Null
           node scripts/build-ultimate-owner.mjs 2>&1 | Tee-Object build-evidence/ultimate-owner/transcript.log
           exit $LASTEXITCODE
-      - name: Publish a new prerelease after download verification
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Continue'
-          $tag = "azwah-multi-browser-ultimate-$($env:GITHUB_SHA.Substring(0,12))"
-          $exe = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
-          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
-          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists and will not be replaced." }
-          $ErrorActionPreference = 'Stop'
-          gh release create $tag "release-ultimate-owner/$exe" release-ultimate-owner/SHA256SUMS.txt release-ultimate-owner/BUILD-MANIFEST.txt release-ultimate-owner/RELEASE-NOTES.md --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title "Azwah Multi Browser Ultimate $tag" --notes-file release-ultimate-owner/RELEASE-NOTES.md
-          if ($LASTEXITCODE -ne 0) { throw 'New release creation failed. Existing releases were not changed.' }
-          $verify = Join-Path $env:RUNNER_TEMP 'ultimate-owner-download'
-          New-Item -ItemType Directory -Force $verify | Out-Null
-          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $exe --dir $verify
-          if ($LASTEXITCODE -ne 0) { throw 'Draft download verification failed. Release remains draft.' }
-          $local = (Get-FileHash "release-ultimate-owner/$exe" -Algorithm SHA256).Hash
-          $remote = (Get-FileHash (Join-Path $verify $exe) -Algorithm SHA256).Hash
-          if ($local -ne $remote) { throw 'Uploaded EXE checksum mismatch. Release remains draft.' }
-          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
-          gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets | Out-File build-evidence/ultimate-owner/published.json -Encoding utf8
       - name: Preserve installer acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,7 +55,7 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 90
     permissions:
-      contents: write
+      contents: read
     env:
       AZWAH_QA_SEPARATE_IDENTITY: '1'
       AZWAH_QA_STARTUP_ONLY: '0'
@@ -133,57 +110,6 @@ jobs:
           New-Item -ItemType Directory -Force build-evidence/ultimate-admin | Out-Null
           node scripts/qualify-license-gui.mjs 2>&1 | Tee-Object build-evidence/ultimate-admin/acceptance.log
           exit $LASTEXITCODE
-      - name: Publish a new Admin prerelease after download verification
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $name = 'Azwah-License-Admin-Ultimate-Setup-x64.exe'
-          $dir = 'release-ultimate-admin'
-          $installer = Join-Path $dir $name
-          $hash = (Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          $size = (Get-Item $installer).Length
-          $signature = (Get-AuthenticodeSignature -LiteralPath $installer).Status
-          $run = "https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
-          "$hash  $name" | Set-Content -Encoding ascii "$dir/SHA256SUMS.txt"
-          @(
-            "Source: $env:GITHUB_SHA"
-            "Installer: $name"
-            "Bytes: $size"
-            "SHA256: $hash"
-            "Authenticode: $signature"
-            "Host: Windows Server 2022 x64"
-            "Windows 10: not qualified"
-            "Evidence: $run"
-            "Does not replace azwah-license-admin-experimental.1"
-          ) | Set-Content "$dir/BUILD-MANIFEST.txt"
-          @"
-          # Azwah License Admin Ultimate — experimental
-
-          Install this Admin setup, create an organization and master password, and keep the encrypted backup. Generate the Office installer from the Admin GUI. The bundled employee application includes the current profile UI. No production private key is in this download. The organization key is created on the administrator computer.
-
-          Qualified on Windows Server 2022 with separate accounts. Windows 10 was not qualified. Unsigned. This release does not replace azwah-license-admin-experimental.1.
-
-          Source: $env:GITHUB_SHA
-          Windows evidence: $run
-          Authenticode: $signature
-          "@ | Set-Content "$dir/RELEASE-NOTES.md"
-          $ErrorActionPreference = 'Continue'
-          $tag = "azwah-license-admin-ultimate-$($env:GITHUB_SHA.Substring(0,12))"
-          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
-          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists and will not be replaced." }
-          $ErrorActionPreference = 'Stop'
-          gh release create $tag $installer "$dir/SHA256SUMS.txt" "$dir/BUILD-MANIFEST.txt" "$dir/RELEASE-NOTES.md" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title "Azwah License Admin Ultimate $tag" --notes-file "$dir/RELEASE-NOTES.md"
-          if ($LASTEXITCODE -ne 0) { throw 'Could not create a new release. Existing releases were not changed.' }
-          $verify = Join-Path $env:RUNNER_TEMP 'ultimate-admin-download'
-          New-Item -ItemType Directory -Force $verify | Out-Null
-          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $name --dir $verify
-          if ($LASTEXITCODE -ne 0) { throw 'Draft download failed. Release remains draft.' }
-          if ((Get-FileHash (Join-Path $verify $name) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Uploaded EXE checksum mismatch. Release remains draft.' }
-          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
-          gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets | Out-File build-evidence/ultimate-admin/published.json -Encoding utf8
       - name: Preserve Admin acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
