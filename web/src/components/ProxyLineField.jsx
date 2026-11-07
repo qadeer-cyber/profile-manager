@@ -1,26 +1,35 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PROXY_LINE_RULES, formatProxyLine, parseProxyLine } from '../../../server/proxy-line.js';
 
-export function ProxyLineField({ proxy, onChange }) {
+export function ProxyLineField({ proxy, onChange, onValidity }) {
   const [line, setLine] = useState(() => formatProxyLine(proxy));
   const [error, setError] = useState('');
   const [reveal, setReveal] = useState(true);
+  const report = ok => onValidity?.(ok);
+  useEffect(() => {
+    if (!line.trim()) { report(false); return; }
+    try { parseProxyLine(line, proxy.type); report(true); }
+    catch { report(false); }
+  }, []);
 
   const commit = (raw, protocol = proxy.type) => {
     setLine(raw);
-    if (!raw.trim()) { setError('Host and port are required'); return; }
+    if (!raw.trim()) { setError('Host and port are required'); report(false); return; }
     try {
       const parsed = parseProxyLine(raw, protocol);
       const type = parsed.schemeSelected ? parsed.type : protocol;
       setError('');
+      report(true);
       onChange({ type, host: parsed.host, port: parsed.port, username: parsed.username, password: parsed.password });
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError(e.message); report(false); }
   };
   const selectProtocol = type => {
     const next = { ...proxy, type };
     const formatted = formatProxyLine(next);
     setLine(formatted);
-    setError(formatted.trim() ? '' : 'Host and port are required');
+    const ok = !!formatted.trim();
+    setError(ok ? '' : 'Host and port are required');
+    report(ok);
     onChange(next);
   };
   const savedSecret = proxy.password === '••••';

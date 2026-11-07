@@ -1,0 +1,99 @@
+name: Azwah Ultimate installed GUI acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/azwah-ultimate-ui-release]
+    paths:
+      - scripts/ultimate-installed-gui-acceptance.mjs
+      - web/src/components/ProxyLineField.jsx
+      - web/src/components/ProfileDialog.jsx
+      - .github/workflows/azwah-ultimate-gui-acceptance.yml
+permissions:
+  contents: read
+jobs:
+  gui:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build the Owner installer without repeating the full qualification
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-chromium.mjs win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder install-app-deps --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.ultimate-owner.cjs --win nsis --x64 --publish never
+          exit $LASTEXITCODE
+      - name: Drive the installed GUI for one-line proxy, fingerprint sections, and payload limits
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-gui | Out-Null
+          node scripts/ultimate-installed-gui-acceptance.mjs 2>&1 | Tee-Object build-evidence/ultimate-gui/transcript.log
+          exit $LASTEXITCODE
+      - name: Publish a new prerelease only after this gate
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $dir = 'release-ultimate-owner'
+          $hash = (Get-FileHash (Join-Path $dir $exe) -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item (Join-Path $dir $exe)).Length
+          $tag = "azwah-multi-browser-ultimate-gui-$($env:GITHUB_SHA.Substring(0,12))"
+          $ErrorActionPreference = 'Continue'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists and will not be replaced." }
+          $ErrorActionPreference = 'Stop'
+          @"
+          # Azwah Multi Browser Ultimate — installed GUI acceptance
+
+          Source: $env:GITHUB_SHA
+          Windows run: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+          Host: Windows Server 2022. Not Windows 10. Not a legacy-upgrade test. Unsigned.
+
+          This build keeps the previous Ultimate checkpoint and adds rejection of a malformed one-line proxy. Chromium is bundled. Firefox is not in the installer; a clean machine cannot launch Firefox until a system Firefox is installed. No anonymity claim.
+
+          Bytes: $size
+          SHA256: $hash
+          "@ | Set-Content "$dir/RELEASE-NOTES.md"
+          "$hash  $exe" | Set-Content -Encoding ascii "$dir/SHA256SUMS.txt"
+          @(
+            "Source: $env:GITHUB_SHA"
+            "Installer: $exe"
+            "Bytes: $size"
+            "SHA256: $hash"
+            "Host: Windows Server 2022"
+            "Windows 10: not qualified"
+            "Firefox packaged: no"
+            "Authenticode: NotSigned"
+          ) | Set-Content "$dir/BUILD-MANIFEST.txt"
+          gh release create $tag "$dir/$exe" "$dir/SHA256SUMS.txt" "$dir/BUILD-MANIFEST.txt" "$dir/RELEASE-NOTES.md" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title "Azwah Multi Browser Ultimate GUI $tag" --notes-file "$dir/RELEASE-NOTES.md"
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases were not changed.' }
+          $verify = Join-Path $env:RUNNER_TEMP 'ultimate-gui-download'
+          New-Item -ItemType Directory -Force $verify | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $exe --dir $verify
+          if ($LASTEXITCODE -ne 0) { throw 'Draft download failed. Release remains draft.' }
+          if ((Get-FileHash (Join-Path $verify $exe) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Uploaded EXE checksum mismatch. Release remains draft.' }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+      - name: Preserve GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-gui-${{ github.sha }}
+          path: build-evidence/ultimate-gui
+          retention-days: 30

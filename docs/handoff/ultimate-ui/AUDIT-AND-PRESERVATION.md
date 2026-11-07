@@ -52,6 +52,21 @@ The seven reference images are interaction targets only. Branding is the existin
 
 Controls that the reference shows but this repository cannot apply are visible as unavailable text: favorites, nested folders, team, subscriptions, masked timezone, masked geolocation coordinates, navigator replacement, WebGL metadata replacement, canvas noise, audio noise, and port-scan masking.
 
+## Follow-up inventory requested after the checkpoint release
+
+The checkpoint installers did not type into the Custom proxy field, and the proxy screenshot was taken with None selected. A malformed line could also leave the last valid proxy in the form and still save. The editor now refuses to save while that line does not parse.
+
+| Control | What the code actually does |
+| --- | --- |
+| Favorites | No database column and no API. The star and sidebar entry stay disabled and say they are not stored. |
+| Folders | Flat profile labels with counts, search, and creation when a profile is saved. Nested folders are not stored. |
+| Tags | Stored on the profile and applied through the bulk job API. |
+| Delete and restore | Trash keeps the row. Restore returns it. Permanent delete requires the typed name. |
+| Column prefs | Browser `localStorage` key `pm.profileTable`. Not a server setting. |
+| Bulk | Launch, stop, tags, move, proxy, and delete jobs exist and the toolbar calls them. |
+| Chromium payload | `extraResources` copies `build/bundled-browsers` to `resources/browsers`. |
+| Firefox payload | No Firefox executable is packaged. Launch uses the host Firefox path from settings. A machine without Firefox is not an offline Firefox runtime. |
+
 ## Verification limits recorded with the audit
 
 - Linux unit coverage can check the proxy parser and the existing security suite. It cannot qualify an NSIS install.

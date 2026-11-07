@@ -41,6 +41,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [workspaces, setWorkspaces] = useState([]);
   const [templateId, setTemplateId] = useState('');
   const [confirmClose, setConfirmClose] = useState(false);
+  const [proxyLineOk, setProxyLineOk] = useState(true);
   const regional = f.browserSettings || emptyForm.browserSettings;
   const policy = f.webrtcSettings || emptyForm.webrtcSettings;
   const advanced = f.advancedSettings || emptyForm.advancedSettings;
@@ -84,7 +85,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const submit = async () => {
     if (!f.name.trim()) { setTab('general'); setFormError('Name is required'); return toast('Name is required', 'error'); }
     if (f.name.trim().length > 200) { setTab('general'); setFormError('Name is too long'); return toast('Name is too long', 'error'); }
-    if (f.proxyMode === 'custom' && (!f.proxy.host || !f.proxy.port)) { setTab('proxy'); setFormError('Proxy host and port are required'); return toast('Proxy host and port are required', 'error'); }
+    if (f.proxyMode === 'custom' && (!proxyLineOk || !f.proxy.host || !f.proxy.port)) { setTab('proxy'); setFormError('The proxy line is not a valid host and port'); return toast('The proxy line is not a valid host and port', 'error'); }
     if (f.proxyMode === 'library' && !f.proxyId) { setTab('proxy'); setFormError('Pick a proxy from the library'); return toast('Pick a proxy from the library', 'error'); }
     if (f.proxyMode === 'template') { setTab('proxy'); setFormError('Create a live proxy from the template before saving'); return toast('Create a live proxy from the template before saving', 'error'); }
     let next;
@@ -163,7 +164,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             </select></label>
             <button type="button" disabled={!templateId} onClick={useTemplate}>Create live proxy from template</button>
           </div>}
-          {f.proxyMode === 'custom' && <ProxyLineField proxy={f.proxy} onChange={proxy => { setTest(null); setF(current => ({ ...current, proxy })); }} />}
+          {f.proxyMode === 'custom' && <ProxyLineField proxy={f.proxy} onValidity={setProxyLineOk} onChange={proxy => { setTest(null); setF(current => ({ ...current, proxy })); }} />}
           {f.proxyMode !== 'none' && f.proxyMode !== 'template' && <div className="row center">
             <button type="button" onClick={runTest} disabled={test?.busy || !proxyReady}>Test Proxy</button>
             <ProxyTestResult r={test} />
