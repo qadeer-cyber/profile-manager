@@ -1,4 +1,4 @@
-name: Independent Ultimate installed qualification
+name: Requalify Office using the verified corrected EXE
 on:
   push:
     branches: [codex/azwah-pre-release-evidence]
@@ -10,15 +10,15 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 30
     env:
-      AZWAH_INSTALLER_SOURCE_SHA: 8baf1ffe13387bf3fba056d756a448da8b0e1e29
-      AZWAH_UNIFIED_INSTALLER_SHA256: c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142
+      AZWAH_INSTALLER_SOURCE_SHA: 65927406b680a7aa8f51f2ea1c4272c7996cca13
+      AZWAH_UNIFIED_INSTALLER_SHA256: 433ba1a5cf945fda1dbf9a59fba5174b48e5a9d4e17238d854e4bb612eb6aa65
       AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          ref: d9fb969bc5a5e0580103b098deeaaa9e24383642
+          ref: c3071a188e2df996b640da90ecbd3ae57cdcd637
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -32,8 +32,8 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           github-token: ${{ github.token }}
-          run-id: 42392300409
-          name: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29
+          run-id: 42398189745
+          name: ultimate-installer-65927406b680a7aa8f51f2ea1c4272c7996cca13
           path: release-ultimate
       - name: Verify original installer provenance
         shell: pwsh
@@ -51,7 +51,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: independent-ultimate-qualification
+          name: corrected-exe-office-requalification
           path: |
             build-evidence/ultimate-essential/essential.json
             build-evidence/ultimate-essential/office-activation.json
