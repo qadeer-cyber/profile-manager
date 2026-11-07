@@ -128,11 +128,17 @@ try {
 
   const firefoxProfile = await api(page, '/profiles', {name: 'Bundled Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
   check(firefoxProfile.status === 201, 'Ultimate can create a Firefox profile');
-  const firefoxLaunch = await api(page, `/profiles/${firefoxProfile.body.id}/launch`, {headless: true, automation: true});
-  check(firefoxLaunch.status === 200, 'Ultimate launches Firefox without a system Firefox');
-  const firefoxImage = processImage((await api(page, `/profiles/${firefoxProfile.body.id}`)).body.pid);
-  check(firefoxImage.toLowerCase() === path.join(installDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Ultimate Firefox process image is the bundled runtime');
-  check((await api(page, `/profiles/${firefoxProfile.body.id}/stop`, {})).status === 200, 'Ultimate Firefox stop succeeded');
+  try {
+    const firefoxLaunch = await api(page, `/profiles/${firefoxProfile.body.id}/launch`, {headless: true, automation: true});
+    check(firefoxLaunch.status === 200, firefoxLaunch.status === 200 ? 'Ultimate Firefox BiDi launch succeeded' : 'Ultimate Firefox launch HTTP ' + firefoxLaunch.status + ': ' + JSON.stringify(firefoxLaunch.body));
+    const firefoxImage = processImage((await api(page, `/profiles/${firefoxProfile.body.id}`)).body.pid);
+    check(firefoxImage.toLowerCase() === path.join(installDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Ultimate Firefox process image is the bundled runtime');
+    check((await api(page, `/profiles/${firefoxProfile.body.id}/stop`, {})).status === 200, 'Ultimate Firefox stop succeeded');
+  } catch (error) {
+    record.ultimateFirefoxFailure = error.message;
+    results.push({pass: false, message: error.message});
+    console.error('FIREFOX_QUALIFICATION_FAILURE ' + error.message);
+  }
 
   const cookieProfile = await api(page, '/profiles', {name: 'Cookie shelf', browserEngine: 'chromium'});
   const cookie = {name: 'kept', value: cookieValue, domain: 'example.test', path: '/', secure: true, httpOnly: true, sameSite: 'Lax'};
@@ -204,11 +210,17 @@ try {
   const persisted = await api(reopened, '/activation');
   check(persisted.body?.active === true, 'Standard-account activation remains after the Office application is reopened');
   const officeFirefox = await api(reopened, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
-  const officeLaunch = await api(reopened, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
-  check(officeLaunch.status === 200, 'Generated Office launches Firefox without a system Firefox');
-  const officeImage = processImage((await api(reopened, `/profiles/${officeFirefox.body.id}`)).body.pid);
-  check(officeImage.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
-  check((await api(reopened, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
+  try {
+    const officeLaunch = await api(reopened, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
+    check(officeLaunch.status === 200, officeLaunch.status === 200 ? 'Office Firefox BiDi launch succeeded' : 'Office Firefox launch HTTP ' + officeLaunch.status + ': ' + JSON.stringify(officeLaunch.body));
+    const officeImage = processImage((await api(reopened, `/profiles/${officeFirefox.body.id}`)).body.pid);
+    check(officeImage.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
+    check((await api(reopened, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
+  } catch (error) {
+    record.officeFirefoxFailure = error.message;
+    results.push({pass: false, message: error.message});
+    console.error('FIREFOX_QUALIFICATION_FAILURE ' + error.message);
+  }
   await employeeSession.dispose(); employeeSession = undefined;
 
   await app.close(); app = undefined;
@@ -223,6 +235,7 @@ try {
   const restored = (await api(page, '/profiles')).body.find(item => item.name === 'GUI proxy');
   check(restored?.proxy?.host === '127.0.0.1' && restored.proxy.hasPassword === true, 'Reinstall keeps the profile and its sealed proxy');
   check(fs.existsSync(path.join(userData, 'organization.vault')), 'Reinstall keeps the organization vault');
+  if (record.ultimateFirefoxFailure || record.officeFirefoxFailure) process.exitCode = 1;
 } catch (error) {
   if (!results.some(item => !item.pass && item.message === error.message)) results.push({pass: false, message: error.stack || error.message});
   console.error('ESSENTIAL_FOLLOWUP_FAILURE', error.message);
