@@ -1,4 +1,4 @@
-name: Independent preserved Ultimate ASAR verification
+name: Independent preserved Ultimate migration acceptance
 on:
   push:
     branches: [codex/azwah-asar-evidence]
@@ -13,6 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          ref: bd5995a0867a651804879f31ef9d1f04e180b090
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -22,7 +23,7 @@ jobs:
           run-id: 42392300409
           name: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29
           path: retained-installer
-      - name: Verify checksum and source before installing
+      - name: Verify checksum and source
         shell: pwsh
         run: |
           $name = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
@@ -34,33 +35,36 @@ jobs:
           if ($actual -ne $expected) { throw 'Installer checksum mismatch' }
           if (!(Select-String -Quiet -SimpleMatch -LiteralPath retained-installer/BUILD-MANIFEST.txt -Pattern 'Installer source: 8baf1ffe13387bf3fba056d756a448da8b0e1e29')) { throw 'Unexpected installer source' }
           Write-Host "VERIFIED_EXE_SHA256 $actual; bytes $((Get-Item -LiteralPath $exe).Length)"
-          $install = Join-Path $env:RUNNER_TEMP 'independent-ultimate-asar'
-          $process = Start-Process -FilePath $exe -ArgumentList "/S /D=$install" -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw "Installer exit code $($process.ExitCode)" }
-          "AZWAH_ASAR=$install\resources\app.asar" >> $env:GITHUB_ENV
           "AZWAH_UNIFIED_INSTALLER=$exe" >> $env:GITHUB_ENV
           "AZWAH_UNIFIED_INSTALLER_SHA256=$actual" >> $env:GITHUB_ENV
-      - name: Inspect the installed archive using the pinned ASAR library
+      - name: Run the ASAR regression on Windows
         shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
         run: |
-          npm install --prefix "$env:RUNNER_TEMP/asar-deps" --ignore-scripts --no-audit --no-fund @electron/asar@3.4.1
+          npm ci --ignore-scripts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          @'
-          const assert = require('node:assert/strict');
-          const fs = require('node:fs');
-          const path = require('node:path');
-          const asar = require(path.join(process.env.RUNNER_TEMP, 'asar-deps/node_modules/@electron/asar'));
-          const archive = process.env.AZWAH_ASAR;
-          const raw = asar.listPackage(archive);
-          const required = ['server/ultimate-admin.js', 'scripts/license-admin/admin.mjs'];
-          const entries = required.map(name => {
-            const rawPath = raw.find(item => item.replaceAll('\\', '/').replace(/^\//, '') === name);
-            const bytes = rawPath ? asar.extractFile(archive, path.normalize(name)).length : 0;
-            return {name, rawPath, bytes};
-          });
-          const joined = raw.join('\n');
-          const oldAssertion = joined.includes('server/ultimate-admin.js') && joined.includes('scripts/license-admin');
-          console.log('INSTALLED_ASAR ' + JSON.stringify({archive, archiveBytes: fs.statSync(archive).size, entries, oldAssertion}));
-          assert.ok(entries.every(entry => entry.rawPath && entry.bytes > 0), 'Both exact module files must be readable from the archive');
-          '@ | node
+          node --test test/ultimate-asar-listing.test.js
           exit $LASTEXITCODE
+      - name: Download published legacy installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download azwah-multi-browser-owner-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-Multi-Browser-Full-Setup-x64.exe' --dir prior-installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download azwah-license-admin-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-License-Admin-Setup-x64.exe' --dir prior-installers
+          exit $LASTEXITCODE
+      - name: Run installed migration acceptance with the retained EXE
+        shell: pwsh
+        env:
+          AZWAH_MIGRATION_ONLY: '1'
+        run: |
+          node scripts/ultimate-unified-acceptance.mjs
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-ultimate-acceptance
+          path: build-evidence/ultimate-unified/acceptance.json
+          if-no-files-found: ignore
