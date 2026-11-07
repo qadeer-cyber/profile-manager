@@ -1,0 +1,54 @@
+name: Verify corrected installed Admin restore and cancellation
+on:
+  push:
+    branches: [codex/azwah-corrected-admin-verification]
+    paths: ['.github/workflows/verify-corrected-admin.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Wait for the one corrected installer artifact
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for ($i=0; $i -lt 45; $i++) {
+            $artifacts = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/42398189745/artifacts" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            if ($artifacts.artifacts.name -contains 'ultimate-installer-65927406b680a7aa8f51f2ea1c4272c7996cca13') { exit 0 }
+            $state = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/42398189745" | ConvertFrom-Json
+            if ($state.status -eq 'completed') { throw 'Corrected build finished without its installer' }
+            Start-Sleep -Seconds 20
+          }
+          throw 'Corrected installer artifact unavailable'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42398189745
+          name: ultimate-installer-65927406b680a7aa8f51f2ea1c4272c7996cca13
+          path: release-ultimate
+      - name: Verify artifact identity and run installed regression
+        shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          $exe = 'release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $sha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          $expected = ((Get-Content release-ultimate/SHA256SUMS.txt -Raw).Trim() -split '\s+')[0]
+          $manifest = Get-Content release-ultimate/BUILD-MANIFEST.txt
+          if ($sha -ne $expected -or $manifest -notcontains "Bytes: $size" -or $manifest -notcontains "Installer source: 65927406b680a7aa8f51f2ea1c4272c7996cca13") { throw 'Installer provenance mismatch' }
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/verify-corrected-admin.mjs
+          exit $LASTEXITCODE
