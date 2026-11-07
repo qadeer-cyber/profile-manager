@@ -111,8 +111,18 @@ try {
   await shown(e,'Activate Azwah Multi Browser Office');
   const device=await e.getByLabel('Device identity code').inputValue();
   assert.match(device,/^AZD1-[a-f0-9]{64}$/);
+  await e.bringToFront();
+  await e.evaluate(()=>{
+    const write=navigator.clipboard.writeText.bind(navigator.clipboard);
+    navigator.clipboard.writeText=async value=>{
+      try { return await write(value); }
+      catch(error){console.error('CLIPBOARD_DIAGNOSTIC '+JSON.stringify({focused:document.hasFocus(),secureContext:isSecureContext,name:error.name,message:error.message}));throw error;}
+    };
+  });
+  e.on('console',message=>{if(message.text().startsWith('CLIPBOARD_DIAGNOSTIC '))console.log(message.text());});
+  console.log('CLIPBOARD_FOCUS '+await e.evaluate(()=>document.hasFocus()));
   await press(e,'Copy Device Code');
-  await shown(e,'Device code copied.');
+  await e.getByText('Device code copied.',{exact:true}).waitFor({timeout:10000});
   assert.ok((await admin.evaluate(({clipboard})=>clipboard.readText()))===device,'Device code clipboard mismatch');
   if(process.env.AZWAH_QA_STARTUP_ONLY==='1'){
     console.log('PASS separate employee startup and genuine device code');

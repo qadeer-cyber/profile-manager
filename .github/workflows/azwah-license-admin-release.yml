@@ -56,7 +56,7 @@ jobs:
           }
           if ('sha256:'+(Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.hash) { throw 'Official XPI checksum mismatch' }
           "PM_COOKIE_EDITOR_XPI=$xpi" >> $env:GITHUB_ENV
-      - name: Qualify installed Admin and Office under separate Windows accounts with the employee profile environment
+      - name: Qualify installed Admin and Office with explicit employee window focus
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build-evidence/license-gui | Out-Null
