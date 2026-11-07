@@ -14,7 +14,6 @@ on:
       - scripts/fetch-bundled-firefox.mjs
       - test/ultimate-packaging-policy.test.js
       - scripts/ultimate-unified-acceptance.mjs
-      - .github/workflows/azwah-ultimate-unified-release.yml
 permissions:
   contents: read
 jobs:
@@ -60,6 +59,45 @@ jobs:
           Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
           npx electron-builder --config electron-builder.ultimate-unified.cjs --win nsis --x64 --publish never
           exit $LASTEXITCODE
+      - name: Record installer provenance before acceptance
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exeName = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $dir = 'release-ultimate'
+          $exe = Join-Path $dir $exeName
+          if (-not (Test-Path -LiteralPath $exe)) { throw "Built installer is missing: $exe" }
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          "$hash  $exeName" | Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
+          @(
+            "Installer source: $env:GITHUB_SHA"
+            "Harness: $env:GITHUB_SHA"
+            "Installer: $exeName"
+            "Bytes: $size"
+            "SHA256: $hash"
+            "Product: Azwah Multi Browser Ultimate"
+            "Firefox: 140.17.0esr win64 en-US"
+            "Firefox installer SHA256: df6f7046d53ff17403e49092c0fe830e24cabd8dacbfad3225870955908fccf9"
+            "Host: Windows Server 2022"
+            "Windows 10: not qualified"
+            "Authenticode: NotSigned"
+            "Separate Admin installer: not part of this release"
+            "Private keys: not included"
+            "Organization vault: not included"
+          ) | Set-Content -Encoding ascii (Join-Path $dir 'BUILD-MANIFEST.txt')
+      - name: Preserve the built installer before installed acceptance
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-installer-${{ github.sha }}
+          path: |
+            release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+            release-ultimate/SHA256SUMS.txt
+            release-ultimate/BUILD-MANIFEST.txt
+          retention-days: 14
+          if-no-files-found: error
       - name: Download the previous separate Owner and Admin installers
         shell: pwsh
         env:
@@ -84,7 +122,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $exe = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
           $dir = 'release-ultimate'
+          $recorded = (Get-Content -LiteralPath (Join-Path $dir 'SHA256SUMS.txt') -Raw).Split(' ')[0].Trim()
           $hash = (Get-FileHash (Join-Path $dir $exe) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $recorded) { throw 'Installer bytes changed after the pre-acceptance manifest was recorded.' }
           $size = (Get-Item (Join-Path $dir $exe)).Length
           $tag = "azwah-multi-browser-ultimate-unified-$($env:GITHUB_SHA.Substring(0,12))"
           $ErrorActionPreference = 'Continue'
@@ -103,9 +143,9 @@ jobs:
           Bytes: $size
           SHA256: $hash
           "@ | Set-Content "$dir/RELEASE-NOTES.md"
-          "$hash  $exe" | Set-Content -Encoding ascii "$dir/SHA256SUMS.txt"
           @(
-            "Source: $env:GITHUB_SHA"
+            "Installer source: $env:GITHUB_SHA"
+            "Harness: $env:GITHUB_SHA"
             "Installer: $exe"
             "Bytes: $size"
             "SHA256: $hash"
@@ -116,6 +156,8 @@ jobs:
             "Windows 10: not qualified"
             "Authenticode: NotSigned"
             "Separate Admin installer: not part of this release"
+            "Private keys: not included"
+            "Organization vault: not included"
           ) | Set-Content "$dir/BUILD-MANIFEST.txt"
           gh release create $tag "$dir/$exe" "$dir/SHA256SUMS.txt" "$dir/BUILD-MANIFEST.txt" "$dir/RELEASE-NOTES.md" --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title "Azwah Multi Browser Ultimate $tag" --notes-file "$dir/RELEASE-NOTES.md"
           if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases were not changed.' }
