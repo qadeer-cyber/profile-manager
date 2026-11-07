@@ -1,0 +1,132 @@
+name: Azwah Ultimate acceptance rerun
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/azwah-ultimate-ui-release]
+    paths:
+      - scripts/ultimate-unified-acceptance.mjs
+      - scripts/asar-entries.mjs
+      - test/ultimate-asar-listing.test.js
+      - .github/workflows/azwah-ultimate-acceptance-rerun.yml
+permissions:
+  contents: read
+jobs:
+  reuse:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      actions: read
+      contents: write
+    env:
+      AZWAH_INSTALLER_SOURCE_SHA: 8baf1ffe13387bf3fba056d756a448da8b0e1e29
+      AZWAH_UNIFIED_INSTALLER_SHA256: c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142
+      AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install test libraries without browser payloads
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test test/ultimate-asar-listing.test.js
+          exit $LASTEXITCODE
+      - name: Download the retained unified installer and verify its hash
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force release-ultimate | Out-Null
+          gh run download 42392300409 --repo $env:GITHUB_REPOSITORY --name ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29 --dir release-ultimate
+          $exe = $env:AZWAH_UNIFIED_INSTALLER
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          if ($hash -ne $env:AZWAH_UNIFIED_INSTALLER_SHA256) { throw "Retained installer hash is $hash" }
+          if ($size -ne 854726925) { throw "Retained installer size is $size" }
+          @(
+            "Installer source: $env:AZWAH_INSTALLER_SOURCE_SHA"
+            "Harness: $env:GITHUB_SHA"
+            "Installer: Azwah-Multi-Browser-Ultimate-Setup-x64.exe"
+            "Bytes: $size"
+            "SHA256: $hash"
+            "Reused artifact: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29"
+            "Reused run: 42392300409"
+            "Private keys: not included"
+            "Organization vault: not included"
+          ) | Set-Content -Encoding ascii release-ultimate/BUILD-MANIFEST.txt
+          "$hash  Azwah-Multi-Browser-Ultimate-Setup-x64.exe" | Set-Content -Encoding ascii release-ultimate/SHA256SUMS.txt
+      - name: Download the previous separate Owner and Admin installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force prior-installers | Out-Null
+          gh release download azwah-multi-browser-owner-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-Multi-Browser-Full-Setup-x64.exe' --dir prior-installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download azwah-license-admin-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-License-Admin-Setup-x64.exe' --dir prior-installers
+          exit $LASTEXITCODE
+      - name: Install and test the retained unified application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-unified | Out-Null
+          node scripts/ultimate-unified-acceptance.mjs 2>&1 | Tee-Object build-evidence/ultimate-unified/transcript.log
+          exit $LASTEXITCODE
+      - name: Publish the retained installer after download verification
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $dir = 'release-ultimate'
+          $hash = (Get-FileHash (Join-Path $dir $exe) -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne $env:AZWAH_UNIFIED_INSTALLER_SHA256) { throw 'Installer bytes changed before publication.' }
+          $size = (Get-Item (Join-Path $dir $exe)).Length
+          $tag = "azwah-multi-browser-ultimate-unified-$($env:AZWAH_INSTALLER_SOURCE_SHA.Substring(0,12))"
+          @"
+          # Azwah Multi Browser Ultimate
+
+          One installer. Browser management works without employee activation. License administration is a section of this application, not a second program. The employee Office installer is generated locally and is not this download.
+
+          Installer source: $env:AZWAH_INSTALLER_SOURCE_SHA
+          Harness: $env:GITHUB_SHA
+          Windows Server 2022 evidence: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
+          Reused build: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/42392300409
+          Not Windows 10. Unsigned. Firefox is unmodified Mozilla Firefox ESR 140.17.0 under MPL 2.0. No stealth or anti-detect claim.
+
+          Bytes: $size
+          SHA256: $hash
+          "@ | Set-Content "$dir/RELEASE-NOTES.md"
+          $ErrorActionPreference = 'Continue'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) { throw "Release $tag already exists and will not be replaced." }
+          $ErrorActionPreference = 'Stop'
+          gh release create $tag "$dir/$exe" "$dir/SHA256SUMS.txt" "$dir/BUILD-MANIFEST.txt" "$dir/RELEASE-NOTES.md" --repo $env:GITHUB_REPOSITORY --target $env:AZWAH_INSTALLER_SOURCE_SHA --draft --prerelease --title "Azwah Multi Browser Ultimate $tag" --notes-file "$dir/RELEASE-NOTES.md"
+          if ($LASTEXITCODE -ne 0) { throw 'Release creation failed. Existing releases were not changed.' }
+          $verify = Join-Path $env:RUNNER_TEMP 'ultimate-unified-download'
+          New-Item -ItemType Directory -Force $verify | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $exe --dir $verify
+          if ($LASTEXITCODE -ne 0) { throw 'Draft download failed. Release remains draft.' }
+          $downloaded = Get-Item (Join-Path $verify $exe)
+          if ($downloaded.Length -ne $size) { throw 'Uploaded EXE size mismatch. Release remains draft.' }
+          if ((Get-FileHash $downloaded.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) { throw 'Uploaded EXE checksum mismatch. Release remains draft.' }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+      - name: Preserve unified evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-unified-rerun-${{ github.sha }}
+          path: |
+            build-evidence/ultimate-unified/transcript.log
+            build-evidence/ultimate-unified/acceptance.json
+            build-evidence/ultimate-unified/screenshots
+          retention-days: 14
+          if-no-files-found: warn

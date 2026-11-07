@@ -9,6 +9,7 @@ import http from 'node:http';
 import net from 'node:net';
 import {_electron, chromium} from 'playwright';
 import {open} from './license-admin/admin.mjs';
+import {asarHasEntry, normalizeAsarEntry} from './asar-entries.mjs';
 import {startLocalHttpFixture} from '../test/_local-http-fixture.mjs';
 
 if (process.platform !== 'win32' || process.env.CI !== 'true') throw new Error('An isolated Windows CI worker is required');
@@ -97,8 +98,18 @@ try {
   execFileSync(installer, ['/S', '/D=' + ultimateDir], {timeout: 240000});
   check(fs.existsSync(path.join(ultimateDir, 'resources', 'firefox', 'firefox.exe')), 'Unified installer contains Firefox');
   check(fs.existsSync(path.join(ultimateDir, 'resources', 'FIREFOX-REDISTRIBUTION.txt')), 'Unified installer contains the Firefox license notice');
-  const archiveList = asar.listPackage(path.join(ultimateDir, 'resources', 'app.asar')).join('\n');
-  check(archiveList.includes('server/ultimate-admin.js') && archiveList.includes('scripts/license-admin'), 'Unified package contains the in-process license administration module');
+  const ultimateArchive = path.join(ultimateDir, 'resources', 'app.asar');
+  const ultimateEntries = asar.listPackage(ultimateArchive);
+  const requiredModules = ['server/ultimate-admin.js', 'scripts/license-admin/admin.mjs', 'scripts/license-admin/issuer.mjs', 'server/office/license.js'];
+  for (const name of requiredModules) {
+    check(asarHasEntry(ultimateEntries, name), `Unified package contains ${name}`);
+    const bytes = asar.extractFile(ultimateArchive, name);
+    check(Buffer.isBuffer(bytes) && bytes.length > 0, `Unified package can read ${name}`);
+  }
+  const adminSource = asar.extractFile(ultimateArchive, 'server/ultimate-admin.js').toString('utf8');
+  const issuerSource = asar.extractFile(ultimateArchive, 'scripts/license-admin/issuer.mjs').toString('utf8');
+  check(adminSource.includes('../scripts/license-admin/admin.mjs') && issuerSource.includes('../../server/office/license.js') && !adminSource.includes('BEGIN PRIVATE KEY'), 'In-process license administration module links to its issuance dependency');
+  check(!ultimateEntries.some(entry => /issuer-public\.pem|organization\.vault|BEGIN PRIVATE KEY/.test(normalizeAsarEntry(entry))), 'Unified application archive has no issuer certificate or vault');
   unified = await _electron.launch({executablePath: path.join(ultimateDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   const page = await unified.firstWindow();
   await page.waitForFunction(() => !!window.pm, {timeout: 90000});

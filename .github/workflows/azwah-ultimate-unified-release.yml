@@ -13,7 +13,6 @@ on:
       - scripts/ultimate-before-pack.cjs
       - scripts/fetch-bundled-firefox.mjs
       - test/ultimate-packaging-policy.test.js
-      - scripts/ultimate-unified-acceptance.mjs
 permissions:
   contents: read
 jobs:
