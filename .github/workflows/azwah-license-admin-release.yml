@@ -43,7 +43,7 @@ jobs:
         run: |
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Qualify installed Admin and Office under separate Windows accounts from Program Files
+      - name: Qualify installed Admin and Office under separate Windows accounts with the employee profile environment
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build-evidence/license-gui | Out-Null

@@ -78,6 +78,23 @@ export function windowsEmployeeIdentity(installation,executable) {
             }
             Save-Report
           }
+          $sid=(Get-LocalUser -Name $env:AZWAH_QA_USER).SID.Value
+          $probeFile=Join-Path $env:AZWAH_QA_DATA 'environment.json'
+          $probeCode='[ordered]@{identity=[Security.Principal.WindowsIdentity]::GetCurrent().Name; userprofile=$env:USERPROFILE; appdata=$env:APPDATA; localappdata=$env:LOCALAPPDATA; temp=$env:TEMP; userData=$env:PM_USER_DATA} | ConvertTo-Json -Compress | Set-Content -LiteralPath '+("'"+$probeFile+"'")
+          $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($probeCode))
+          $probe=Start-Process -FilePath (Get-Process -Id $PID).Path -Credential $credential -LoadUserProfile -Environment $childEnv -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand',$encoded -WorkingDirectory $env:AZWAH_QA_INSTALL -PassThru
+          $probe.WaitForExit()
+          $result.environmentProbeExit=$probe.ExitCode
+          if(Test-Path $probeFile){$result.inheritedEnvironment=Get-Content $probeFile -Raw | ConvertFrom-Json}
+          $profile=(Get-CimInstance Win32_UserProfile -Filter "SID='$sid'").LocalPath
+          if(-not $profile){throw 'Separate Windows profile was not loaded'}
+          $childEnv.USERPROFILE=$profile
+          $childEnv.APPDATA=Join-Path (Join-Path $profile 'AppData') 'Roaming'
+          $childEnv.LOCALAPPDATA=Join-Path (Join-Path $profile 'AppData') 'Local'
+          $childEnv.HOMEDRIVE=[IO.Path]::GetPathRoot($profile).TrimEnd([char]92)
+          $childEnv.HOMEPATH=$profile.Substring($childEnv.HOMEDRIVE.Length)
+          $result.correctedEnvironment=$childEnv
+          Save-Report
           $process=Start-Process -FilePath $env:AZWAH_QA_EXE -Environment $childEnv -ArgumentList '--remote-debugging-port=${port}','--remote-debugging-address=127.0.0.1' -Credential $credential -LoadUserProfile -WorkingDirectory $env:AZWAH_QA_INSTALL -PassThru
           $result.childPid=$process.Id
           $sid=(Get-LocalUser -Name $env:AZWAH_QA_USER).SID.Value
@@ -108,7 +125,7 @@ export function windowsEmployeeIdentity(installation,executable) {
         await new Promise(resolve=>setTimeout(resolve,250));
       }
       const owner=ps(`(Get-Process -Id ${pid} -IncludeUserName).UserName`);
-      if(owner.split('\\').at(-1)?.toLowerCase()!==username.toLowerCase())throw Error('Office did not launch as the separate employee account');
+      if(owner.split(path.win32.sep).at(-1)?.toLowerCase()!==username.toLowerCase())throw Error('Office did not launch as the separate employee account');
       browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:60000});
       const context=browser.contexts()[0];
       page=context.pages()[0]||await context.waitForEvent('page',{timeout:60000});
