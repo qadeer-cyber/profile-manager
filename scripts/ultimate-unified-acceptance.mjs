@@ -6,8 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import http from 'node:http';
-import net from 'node:net';
-import {_electron, chromium} from 'playwright';
+import {_electron} from 'playwright';
+import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, waitForIssuedToken} from './installed-acceptance-helpers.mjs';
 import {open} from './license-admin/admin.mjs';
 import {asarHasEntry, asarLookupPath, normalizeAsarEntry} from './asar-entries.mjs';
 import {startLocalHttpFixture} from '../test/_local-http-fixture.mjs';
@@ -26,7 +26,7 @@ const results = [];
 const check = (ok, message) => { results.push({pass: !!ok, message}); console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); if (!ok) throw new Error(message); };
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 function closedEnv(extra = {}) {
-  const env = {...process.env, PM_FIREFOX_NO_SYSTEM: '1', PATH: 'C:\\Windows\\System32', ProgramFiles: path.join(root, 'empty-pf'), 'ProgramFiles(x86)': path.join(root, 'empty-pf-x86'), ...extra};
+  const env = {...process.env, PM_FIREFOX_NO_SYSTEM: '1', PATH: ['System32', 'System32\\WindowsPowerShell\\v1.0'].map(dir => path.join(process.env.SystemRoot, dir)).join(path.delimiter), ProgramFiles: path.join(root, 'empty-pf'), 'ProgramFiles(x86)': path.join(root, 'empty-pf-x86'), ...extra};
   delete env.PM_USER_DATA; delete env.PM_FIREFOX_EXECUTABLE; delete env.PM_FIREFOX_RESOURCES;
   fs.mkdirSync(env.ProgramFiles, {recursive: true}); fs.mkdirSync(env['ProgramFiles(x86)'], {recursive: true});
   return env;
@@ -46,7 +46,7 @@ function processImage(pid) {
 }
 
 const password = 'Unified vault passphrase ' + crypto.randomUUID();
-let ownerApp, adminApp, unified, office;
+let ownerApp, adminApp, unified, office, fixture, proxy;
 const record = {windows10: false, systemFirefoxUsed: false, separateAdminPublished: false};
 try {
   if (!appData || !path.isAbsolute(appData)) throw new Error('Windows roaming AppData is unavailable');
@@ -68,7 +68,7 @@ try {
   execFileSync(oldAdmin, ['/S', '/D=' + adminDir], {timeout: 240000});
   ownerApp = await _electron.launch({executablePath: path.join(ownerDir, 'Azwah Multi Browser Owner.exe'), env: closedEnv(), timeout: 60000});
   const ownerPage = await ownerApp.firstWindow();
-  await ownerPage.waitForFunction(() => !!window.pm, {timeout: 60000});
+  await ownerPage.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 60000});
   const ownerPaths = await ownerApp.evaluate(({app}) => ({appData: app.getPath('appData'), userData: app.getPath('userData')}));
   check(path.relative(appData, ownerPaths.appData) === '', 'Owner uses the clean Windows AppData root');
   const ownerDb = path.join(ownerPaths.userData, 'data', 'profiles.db');
@@ -112,7 +112,7 @@ try {
   check(!ultimateEntries.some(entry => /issuer-public\.pem|organization\.vault|BEGIN PRIVATE KEY/.test(normalizeAsarEntry(entry))), 'Unified application archive has no issuer certificate or vault');
   unified = await _electron.launch({executablePath: path.join(ultimateDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   const page = await unified.firstWindow();
-  await page.waitForFunction(() => !!window.pm, {timeout: 90000});
+  await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   await page.setViewportSize({width: 1366, height: 768});
   const info = await page.evaluate(() => window.pm.appInfo());
   check(info.product === 'Azwah Multi Browser Ultimate' && info.edition === 'Ultimate', 'Installed product is the single Ultimate application');
@@ -137,7 +137,7 @@ try {
   check(true, 'Wrong vault password is rejected');
   await page.getByLabel('Master password', {exact: true}).fill(password);
   await page.getByRole('button', {name: 'Unlock', exact: true}).click();
-  await page.getByRole('heading', {name: 'Preserved organization'}).waitFor();
+  await page.getByRole('heading', {name: 'Preserved organization', exact: true}).waitFor();
   const listed = await api(page, '/admin/list');
   check(listed.status === 200 && listed.body.publicKey === sourceKey && !JSON.stringify(listed.body).includes('PRIVATE KEY'), 'Unlocked vault reports the same public key and no private key');
   record.migration = {ownerDbSha256: ownerHash, vaultSha256: vaultHash, publicKeySha256: crypto.createHash('sha256').update(sourceKey).digest('hex')};
@@ -147,14 +147,13 @@ try {
     await page.getByLabel('Name', {exact: true}).fill('Desk');
     await page.getByLabel('Device code', {exact: true}).fill(device);
     await page.getByRole('button', {name: 'Save employee', exact: true}).click();
+    await page.getByText('Employee saved', {exact: true}).waitFor();
     await page.getByLabel('Validity in days', {exact: true}).fill('30');
     await page.getByRole('button', {name: 'Issue license', exact: true}).click();
-    await page.getByText(/^AZW1\./).waitFor();
-    const issuedToken = await page.locator('textarea').inputValue();
+    const issuedToken = await waitForIssuedToken(page);
     check(issuedToken.startsWith('AZW1.') && !issuedToken.includes('PRIVATE'), 'Issued license token is not a signing key');
     await page.getByRole('button', {name: 'Reissue', exact: true}).click();
-    await page.getByText(/^AZW1\./).waitFor();
-    const reissued = await page.locator('textarea').inputValue();
+    const reissued = await waitForIssuedToken(page, issuedToken);
     check(reissued !== issuedToken, 'Reissue produces a replacement license');
     const exportFile = path.join(root, 'exported.azwah');
     fs.writeFileSync(exportFile, reissued, {mode: 0o600});
@@ -165,12 +164,12 @@ try {
     await page.getByText('Backup saved').waitFor();
     check(open(backupOut, password).publicKey === sourceKey && !fs.readFileSync(backupOut, 'utf8').includes('PRIVATE KEY'), 'Organization backup restores the same public key and stays encrypted');
     await page.getByRole('button', {name: 'Lock', exact: true}).click();
-    await page.getByRole('heading', {name: 'Unlock vault'}).waitFor();
+    await page.getByRole('heading', {name: 'Unlock vault', exact: true}).waitFor();
     const officeOut = path.join(root, 'generated-office');
     fs.mkdirSync(officeOut, {recursive: true});
     await page.getByLabel('Master password', {exact: true}).fill(password);
     await page.getByRole('button', {name: 'Unlock', exact: true}).click();
-    await page.getByRole('heading', {name: 'Preserved organization'}).waitFor();
+    await page.getByRole('heading', {name: 'Preserved organization', exact: true}).waitFor();
     await unified.evaluate(({dialog}, dir) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [dir]}); }, officeOut);
     await page.getByRole('button', {name: 'Generate Office installer', exact: true}).click();
     await page.getByText('Office installer created').waitFor({timeout: 240000});
@@ -178,17 +177,18 @@ try {
     check(fs.existsSync(officeInstaller), 'Integrated Admin generated an Office installer');
     const officeDir = path.join(root, 'office');
     execFileSync(officeInstaller, ['/S', '/D=' + officeDir], {timeout: 240000});
+    check(hasExpectedOfficeTrust(officeDir, sourceKey), 'Office installs the expected public Ed25519 trust root without private fields');
     const officeList = asar.listPackage(path.join(officeDir, 'resources', 'app.asar')).join('\n');
     check(!officeList.includes('ultimate-admin.js') && !officeList.includes('license-admin') && !officeList.includes('BEGIN PRIVATE KEY'), 'Employee package has no issuance module and no private key');
     check(fs.existsSync(path.join(officeDir, 'resources', 'firefox', 'firefox.exe')) && fs.existsSync(path.join(officeDir, 'resources', 'browsers')), 'Employee package contains bundled Firefox and Chromium');
     office = await _electron.launch({executablePath: path.join(officeDir, 'Azwah Multi Browser Office.exe'), env: closedEnv(), timeout: 90000});
     const employee = await office.firstWindow();
-    await employee.waitForFunction(() => !!window.pm, {timeout: 90000});
+    await employee.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
     await employee.setViewportSize({width: 1366, height: 768});
     check(await employee.locator('[data-nav=license-admin]').count() === 0, 'Employee window has no license-administration section');
     const employeeDevice = await employee.getByLabel('Device identity code').inputValue();
     const wrong = await api(employee, '/activation', {token: reissued, confirm: true});
-    check(wrong.status === 400, 'Office rejects a license for a different device');
+    check(wrong.status === 400 && wrong.body?.code === 'LICENSE_DEVICE_MISMATCH', 'Office rejects a license for a different device');
     const parts = reissued.split('.');
     parts[2] = (parts[2][0] === 'A' ? 'B' : 'A') + parts[2].slice(1);
     const tamper = await api(employee, '/activation', {token: parts.join('.'), confirm: true});
@@ -198,57 +198,45 @@ try {
     await page.getByLabel('Name', {exact: true}).fill('Office desk');
     await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
     await page.getByRole('button', {name: 'Save employee', exact: true}).click();
-    const previousToken = await page.locator('textarea').inputValue();
+    const previousToken = await page.getByLabel('License token', {exact: true}).inputValue();
     await page.getByRole('button', {name: 'Issue license', exact: true}).click();
-    await page.waitForFunction(previous => {
-      const value = document.querySelector('textarea')?.value || '';
-      return value.startsWith('AZW1.') && value !== previous;
-    }, previousToken);
-    const officeToken = await page.locator('textarea').inputValue();
-    check(officeToken !== previousToken, 'The office-device license replaced the earlier token');
+    const officeToken = await waitForIssuedToken(page, previousToken);
+    assertIssuedDevice(officeToken, employeeDevice);
     const licenseFile = path.join(root, 'office-employee.azwah');
     fs.writeFileSync(licenseFile, officeToken);
     await employee.bringToFront();
-    await employee.getByLabel('License file').setInputFiles(licenseFile);
-    await employee.getByLabel('I authorize activation on this device.').check();
-    await employee.getByRole('button', {name: 'Activate offline', exact: true}).click();
-    try {
-      await employee.getByText('This device is activated for offline use.', {exact: true}).waitFor();
-    } catch (error) {
-      const status = await employee.locator('[role=status]').allTextContents();
-      throw new Error(`Office did not activate. Status: ${status.join(' | ').slice(0, 300)}`);
-    }
+    await activateInstalledOffice(employee, licenseFile, evidence, () => api(employee, '/activation'));
     const activated = await api(employee, '/activation');
     check(activated.body?.active === true && activated.body?.code !== 'LICENSE_DEVICE_MISMATCH', 'Office activation status is active for this device');
     await employee.screenshot({path: path.join(evidence, 'screenshots', 'office-activated-1366x768.png')});
-    const fixture = await startLocalHttpFixture();
+    fixture = await startLocalHttpFixture();
     const fx = await api(employee, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
     const launched = await api(employee, `/profiles/${fx.body.id}/launch`, {headless: true, automation: true, url: fixture.origin});
     check(launched.status === 200, 'Office launches Firefox without a system Firefox');
     const image = processImage((await api(employee, `/profiles/${fx.body.id}`)).body.pid);
     check(image.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
     await api(employee, `/profiles/${fx.body.id}/stop`, {});
-    await fixture.close();
+    await fixture.close(); fixture = undefined;
     await office.close(); office = undefined;
 
     await page.bringToFront();
     await page.locator('[data-nav=profiles]').click();
-    await page.getByRole('button', {name: 'New profile'}).click();
+    await page.getByRole('button', {name: 'New profile', exact: true}).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Name', {exact: true}).fill('GUI proxy');
-    await dialog.getByRole('tab', {name: 'Proxy'}).click();
-    await dialog.getByRole('radio', {name: 'Custom'}).click();
-    await dialog.getByRole('radio', {name: 'HTTP'}).click();
-    const proxy = http.createServer((req, res) => { res.writeHead(200, {'content-type': 'application/json'}); res.end('{"ip":"203.0.113.50"}'); });
+    await dialog.getByRole('tab', {name: 'Proxy', exact: true}).click();
+    await dialog.getByRole('radio', {name: 'Custom', exact: true}).click();
+    await dialog.getByRole('radiogroup', {name: 'Proxy protocol', exact: true}).getByRole('radio', {name: 'HTTP', exact: true}).click();
+    proxy = http.createServer((req, res) => { res.writeHead(200, {'content-type': 'application/json'}); res.end('{"ip":"203.0.113.50"}'); });
     await new Promise(resolve => proxy.listen(0, '127.0.0.1', resolve));
     await dialog.getByLabel('Proxy details').fill(`127.0.0.1:${proxy.address().port}`);
-    await dialog.getByRole('button', {name: 'Hide credentials'}).click();
+    await dialog.getByRole('button', {name: 'Hide credentials', exact: true}).click();
     await page.screenshot({path: path.join(evidence, 'screenshots', 'unified-proxy-custom-1366x768.png')});
-    await dialog.getByRole('button', {name: 'Create profile'}).click();
+    await dialog.getByRole('button', {name: 'Create profile', exact: true}).click();
     await page.getByRole('cell', {name: 'GUI proxy', exact: true}).waitFor();
     const saved = (await api(page, '/profiles')).body.find(item => item.name === 'GUI proxy');
     check(saved.proxy?.host === '127.0.0.1' && saved.proxy.password === '', 'One-line proxy persisted without inventing a password');
-    proxy.close();
+    proxy.close(); proxy = undefined;
 
     record.officeInstaller = {bytes: fs.statSync(officeInstaller).size, sha256: sha(officeInstaller), published: false};
   }
@@ -257,6 +245,8 @@ try {
   console.error('UNIFIED_ACCEPTANCE_FAILURE', error.message);
   process.exitCode = 1;
 } finally {
+  if (fixture) await fixture.close().catch(() => {});
+  if (proxy) { proxy.close(); proxy.closeAllConnections(); }
   if (ownerApp) await ownerApp.close().catch(() => {});
   if (adminApp) await adminApp.close().catch(() => {});
   if (office) await office.close().catch(() => {});
