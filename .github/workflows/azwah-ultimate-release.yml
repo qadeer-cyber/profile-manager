@@ -1,8 +1,6 @@
 name: Azwah Ultimate Windows release
 on:
   workflow_dispatch:
-  push:
-    branches: [integration/azwah-ultimate-ui-release]
 permissions:
   contents: read
 jobs:
