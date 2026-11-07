@@ -40,14 +40,16 @@ export function windowsEmployeeIdentity(installation,executable) {
       const content=fs.readFileSync(log,'utf8');
       evidence.mainLogPresent=true;
       evidence.backendStarted=content.includes('backend on http://127.0.0.1:');
-      evidence.backendFailed=content.includes('backend start failed');
+      evidence.backendFailed=content.includes('backend failed to start');
     }
-    evidence.applicationEvents=ps(`
+    console.log('WINDOWS_STARTUP_PROCESS '+JSON.stringify(evidence));
+    try { evidence.applicationEvents=ps(`
       Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1001; StartTime=(Get-Date).AddMinutes(-5)} -ErrorAction SilentlyContinue |
         Where-Object {$_.Message -match 'Azwah Multi Browser Office|notepad.exe'} |
         Select-Object -First 8 Id,ProviderName,TimeCreated |
         ConvertTo-Json -Compress
     `);
+    } catch { evidence.applicationEvents='Unavailable or no matching Application Error events'; }
     console.log('WINDOWS_STARTUP_DIAGNOSTIC '+JSON.stringify(evidence));
   };
   return {
@@ -66,11 +68,11 @@ export function windowsEmployeeIdentity(installation,executable) {
           if($env:AZWAH_QA_STARTUP_ONLY -eq '1'){
             $control=Start-Process -FilePath "$env:SystemRoot\\System32\\notepad.exe" -Credential $credential -LoadUserProfile -WorkingDirectory $env:AZWAH_QA_INSTALL -PassThru
             $result.controlPid=$control.Id
-            $result.controlSession=$control.SessionId
             $result.controlExited=$control.WaitForExit(3000)
             if($result.controlExited){$result.controlExit=('0x{0:X8}' -f $control.ExitCode)}
             else {
               $control.Refresh()
+              $result.controlSession=$control.SessionId
               $result.controlWindow=($control.MainWindowHandle -ne 0)
               $control.Kill()
             }

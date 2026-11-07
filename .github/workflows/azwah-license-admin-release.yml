@@ -47,7 +47,11 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force build-evidence/license-gui | Out-Null
-          node scripts/qualify-license-gui.mjs 2>&1 | Tee-Object build-evidence/license-gui/acceptance.log
+          if ($env:AZWAH_QA_STARTUP_ONLY -eq '1') {
+            node scripts/diagnose-office-startup.mjs 2>&1 | Tee-Object build-evidence/license-gui/acceptance.log
+          } else {
+            node scripts/qualify-license-gui.mjs 2>&1 | Tee-Object build-evidence/license-gui/acceptance.log
+          }
           exit $LASTEXITCODE
       - name: Publish only the qualified reusable Admin setup
         if: env.AZWAH_QA_STARTUP_ONLY != '1'
