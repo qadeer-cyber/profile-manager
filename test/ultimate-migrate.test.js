@@ -42,3 +42,27 @@ test('migration refuses to overwrite a different existing vault or database', ()
   assert.equal(fs.readFileSync(path.join(ultimate, 'data', 'profiles.db'), 'utf8'), 'newer-profiles');
   assert.equal(fs.readFileSync(path.join(appData, OWNER_DIRECTORY, 'data', 'profiles.db'), 'utf8'), 'owner-profiles');
 });
+
+test('migration still accepts a vault in the historical display-name directory', () => {
+  const {appData, ultimate, adminDir} = layout();
+  const oldAdminDir = path.join(appData, 'Azwah License Admin');
+  fs.renameSync(adminDir, oldAdminDir);
+  const receipt = migrateUltimateData({appData, ultimateDir: ultimate});
+  const original = path.join(oldAdminDir, 'organization.vault');
+  assert.equal(receipt.copied.find(item => item.kind === 'admin-vault').source, original);
+  assert.equal(sha(path.join(ultimate, 'organization.vault')), sha(original));
+});
+
+test('different standalone vaults are preserved and migration stops before copying', () => {
+  const {appData, ultimate, ownerData, adminDir} = layout();
+  const oldAdminDir = path.join(appData, 'Azwah License Admin');
+  fs.mkdirSync(oldAdminDir);
+  const oldVault = path.join(oldAdminDir, 'organization.vault');
+  fs.writeFileSync(oldVault, 'different sealed vault');
+  assert.throws(() => migrateUltimateData({appData, ultimateDir: ultimate}), /Two different standalone Admin vaults/);
+  assert.equal(fs.existsSync(path.join(ultimate, 'data')), false);
+  assert.equal(fs.existsSync(path.join(ultimate, 'azwah-ultimate-migration.json')), false);
+  assert.equal(fs.readFileSync(path.join(ownerData, 'profiles.db'), 'utf8'), 'owner-profiles');
+  assert.equal(fs.readFileSync(path.join(adminDir, 'organization.vault'), 'utf8'), 'sealed-vault');
+  assert.equal(fs.readFileSync(oldVault, 'utf8'), 'different sealed vault');
+});

@@ -5,7 +5,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 export const OWNER_DIRECTORY = 'azwah-multi-browser-owner';
-export const ADMIN_DIRECTORY = 'Azwah License Admin';
+export const ADMIN_DIRECTORY = 'azwah-license-admin';
+const LEGACY_ADMIN_DIRECTORY = 'Azwah License Admin';
 
 function hashFile(file) {
   if (!fs.existsSync(file)) return null;
@@ -37,14 +38,21 @@ export function migrateUltimateData({ appData, ultimateDir }) {
   fs.mkdirSync(ultimateDir, {recursive: true});
   const ownerData = path.join(appData, OWNER_DIRECTORY, 'data');
   const ownerDb = path.join(ownerData, 'profiles.db');
-  const adminVault = path.join(appData, ADMIN_DIRECTORY, 'organization.vault');
+  const packagedVault = path.join(appData, ADMIN_DIRECTORY, 'organization.vault');
+  const legacyVault = path.join(appData, LEGACY_ADMIN_DIRECTORY, 'organization.vault');
+  const packagedHash = hashFile(packagedVault);
+  const legacyHash = hashFile(legacyVault);
+  if (packagedHash && legacyHash && packagedHash !== legacyHash) {
+    throw new Error('Two different standalone Admin vaults were found. Both sources were preserved.');
+  }
+  const adminVault = packagedHash ? packagedVault : legacyVault;
   const ultimateData = path.join(ultimateDir, 'data');
   const ultimateDb = path.join(ultimateData, 'profiles.db');
   const ultimateVault = path.join(ultimateDir, 'organization.vault');
   const conflicts = [];
   const copied = [];
   const ownerHash = fs.existsSync(ownerDb) ? hashFile(ownerDb) : null;
-  const vaultHash = fs.existsSync(adminVault) ? hashFile(adminVault) : null;
+  const vaultHash = packagedHash || legacyHash;
   if (ownerHash && fs.existsSync(ultimateDb)) {
     if (hashFile(ultimateDb) !== ownerHash) conflicts.push({kind: 'owner-data', source: ownerData, destination: ultimateData});
   } else if (ownerHash) {
