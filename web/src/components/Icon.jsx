@@ -19,6 +19,8 @@ const P = {
   sun: 'M12 17a5 5 0 100-10 5 5 0 000 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4',
   moon: 'M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z', x: 'M6 6l12 12M18 6L6 18', check: 'M5 12l5 5L20 7',
   up: 'M6 15l6-6 6 6', down: 'M6 9l6 6 6-6', bolt: 'M13 2L4 14h7l-1 8 9-12h-7z', upload: 'M12 16V4M6 10l6-6 6 6M4 20h16', download: 'M12 4v12M6 10l6 6 6-6M4 20h16', lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4',
+  star: 'M12 3.2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 15.8 7.2 18.1l.9-5.4L4.2 8.9l5.4-.8z',
+  'license-admin': 'M7 11V8a5 5 0 019.6-2M6 11h12v9H6z',
 };
 export function Icon({ name, size = 16, className = '' }) {
   return <svg className={'i ' + className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={P[name]} /></svg>;

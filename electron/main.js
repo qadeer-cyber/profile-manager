@@ -1,6 +1,6 @@
 // Electron main process: runs the backend in-process on a random loopback port (protected by a
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
-import { isOwnerEdition, isProvisionedOffice, productName } from '../server/office/edition.js';
+import { isOwnerEdition, isUltimateEdition, isProvisionedOffice, productName } from '../server/office/edition.js';
 import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
 import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog, clipboard } from 'electron';
 import crypto from 'crypto';
@@ -20,11 +20,12 @@ if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
-app.setPath('userData', isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : isProvisionedOffice ? path.join(app.getPath('appData'),'azwah-multi-browser-office') : officeUserDataPath(app.getPath('appData')));
+app.setPath('userData', isUltimateEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-ultimate') : isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : isProvisionedOffice ? path.join(app.getPath('appData'),'azwah-multi-browser-office') : officeUserDataPath(app.getPath('appData')));
 if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
-if (!isOwnerEdition && !isProvisionedOffice) adoptLegacyData(app.getPath('userData'));
+if (!isOwnerEdition && !isUltimateEdition && !isProvisionedOffice) adoptLegacyData(app.getPath('userData'));
 app.setName(productName);
-process.env.AZWAH_OFFICE_ENFORCE = '1';
+if (isProvisionedOffice) process.env.AZWAH_OFFICE_ENFORCE = '1';
+else delete process.env.AZWAH_OFFICE_ENFORCE;
 process.env.AZWAH_OFFICE_PACKAGED = app.isPackaged ? '1' : '0';
 const userData = app.getPath('userData');
 process.env.PM_DATA_DIR = path.join(userData, 'data');
@@ -69,6 +70,26 @@ function configureSecrets(secrets) {
 }
 
 async function startBackend() {
+  if (isUltimateEdition && !process.env.PM_USER_DATA) {
+    const { migrateUltimateData } = await import('./ultimate-migrate.js');
+    let prepareOwnerData;
+    if (process.platform === 'win32') {
+      const { rewrapWindowsOwnerSecrets } = await import('./windows-owner-secrets.js');
+      prepareOwnerData = paths => rewrapWindowsOwnerSecrets({...paths, encrypt: value => safeStorage.encryptString(value)});
+    }
+    const receipt = migrateUltimateData({appData: app.getPath('appData'), ultimateDir: userData, prepareOwnerData});
+    log(`ultimate migration copied ${receipt.copied?.length || 0}; conflicts ${receipt.conflicts?.length || 0}`);
+  }
+  if (isUltimateEdition) {
+    const { setDesktopBridge } = await import('../server/ultimate-admin.js');
+    setDesktopBridge({
+      resourcesPath: process.resourcesPath,
+      chooseDirectory: async () => { const result = await dialog.showOpenDialog(win, {properties: ['openDirectory']}); return result.canceled ? null : result.filePaths[0]; },
+      chooseSaveFile: async defaultPath => { const result = await dialog.showSaveDialog(win, {defaultPath}); return result.canceled ? null : result.filePath; },
+      chooseRestoreFile: async () => { const result = await dialog.showOpenDialog(win, {properties: ['openFile'], filters: [{name: 'Encrypted vault', extensions: ['vault']}]}); return result.canceled ? null : result.filePaths[0]; },
+    });
+    process.env.AZWAH_ADMIN_VAULT = path.join(userData, 'organization.vault');
+  }
   const secrets = await import('../server/secrets.js');
   configureSecrets(secrets);
   const { startServer } = await import('../server/app.js');
@@ -122,7 +143,7 @@ ipcMain.handle('pm:copy-device-code', async event => {
   const { deviceIdentity } = await import('../server/office/device.js');
   clipboard.writeText(deviceIdentity());
 });
-ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isOwnerEdition ? 'Owner / Personal' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
+ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isUltimateEdition ? 'Ultimate' : isOwnerEdition ? 'Owner / Personal' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });

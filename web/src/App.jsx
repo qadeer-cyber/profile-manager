@@ -13,16 +13,23 @@ import { WorkspacesPage } from './pages/WorkspacesPage.jsx';
 import { CookieRobotPage } from './pages/CookieRobotPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
 import { MonitoringPage } from './pages/MonitoringPage.jsx';
+import { LicenseAdminPage } from '@azwah-admin';
 import { Icon } from './components/Icon.jsx';
-import { FeaturePill } from './components/FeaturePill.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['activation', 'Office activation'], ['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['workspaces', 'Workspaces'], ['templates', 'Templates'], ['cookie-robot', 'CookieRobot'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
+const SHOW_ADMIN = import.meta.env.VITE_AZWAH_ADMIN === '1';
+const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['workspaces', 'Workspaces'], ['cookie-robot', 'Automation'], ...(SHOW_ADMIN ? [['license-admin', 'License admin']] : []), ['diagnostics', 'Help and diagnostics'], ['settings', 'Settings']];
+const MORE = [['dashboard', 'Dashboard'], ['templates', 'Templates'], ['monitoring', 'Monitoring'], ['activation', 'Edition']];
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
-  useEffect(()=>{api('/api/activation').then(state=>{if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
+  const [edition, setEdition] = useState(null);
+  const [scope, setScope] = useState('all');
+  const [folderQuery, setFolderQuery] = useState('');
+  const [folderDraft, setFolderDraft] = useState('');
+  const [pendingCreate, setPendingCreate] = useState(null);
+  useEffect(()=>{api('/api/activation').then(state=>{setEdition(state);if(state.edition==='ultimate')document.title='Azwah Multi Browser Ultimate';if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
   const [folder, setFolder] = useState('__all');
   const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [theme, setTheme] = useTheme();
@@ -75,45 +82,63 @@ export function App() {
     const missing = () => setBrowserMissing(true); addEventListener('pm:chromium-missing', missing);
     return () => { clearInterval(t); off(); removeEventListener('pm:chromium-missing', missing); };
   }, [reloadMeta, toast]);
-  const named = meta.folders.filter(Boolean);
-  return <div className={'app' + (compact ? ' compact' : '')}>
-    <nav className="side" aria-label="Main">
-      <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="24" height="24" /></span>Azwah Multi Browser</div>
-      {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} onClick={() => { setPage(k); if (k === 'profiles') setFolder('__all'); }}>
-        <Icon name={k} />{label}{k === 'profiles' && meta.running.length > 0 && <span className="badge" title="Running">{meta.running.length}</span>}
-        {k === 'cookie-robot' && meta.features?.cookieRobotChromiumOnly && <FeaturePill title="Chromium profiles with automation (CDP) only">Chromium</FeaturePill>}
-        {k === 'extensions' && <FeaturePill title="Chromium unpacked library + separate Firefox Gecko imports">Dual</FeaturePill>}
-        {k === 'proxies' && meta.features?.proxyLibrary && <FeaturePill variant="observed" title="Local proxy library; no cloud pools">Local</FeaturePill>}
-        {k === 'monitoring' && <FeaturePill title="Host/process metrics when profiles run; not cloud telemetry">Local</FeaturePill>}
-        {k === 'diagnostics' && <FeaturePill title="Stock M2/M3 report + profile locale diagnostics">Stock</FeaturePill>}
-      </button>)}
-      <div className="side-section">Folders</div>
-      <div className="folders">
-        {named.map(f => <button key={f} className={'nav sub' + (page === 'profiles' && folder === f ? ' sel' : '')} onClick={() => openFolder(f)}><Icon name="folder" />{f}</button>)}
-        {meta.folders.includes('') && <button className={'nav sub' + (page === 'profiles' && folder === '' ? ' sel' : '')} onClick={() => openFolder('')}><Icon name="folder" /><span className="muted-inline">No folder</span></button>}
-        {!meta.folders.length && <div className="side-empty">Folders appear when you assign one to a profile.</div>}
+  const named = meta.folders.filter(Boolean).filter(name => name.toLowerCase().includes(folderQuery.trim().toLowerCase()));
+  const count = folder => meta.folderCounts?.[folder] ?? '';
+  const showProfiles = folderName => { setScope('all'); openFolder(folderName); };
+  return <div className={'app shell' + (compact ? ' compact' : '')}>
+    <header className="topbar">
+      <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="22" height="22" /></span><span>Azwah</span></div>
+      <nav className="topnav" aria-label="Main">
+        {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} title={label} onClick={() => { setPage(k); if (k === 'profiles') { setScope('all'); setFolder('__all'); } }}>
+          <Icon name={k === 'cookie-robot' ? 'bolt' : k} />{label}
+        </button>)}
+      </nav>
+      <div className="top-meta">
+        <span className="edition-pill">{edition?.edition === 'owner-personal' ? 'Owner' : edition?.active ? 'Office' : edition?.enforced ? 'Office · not activated' : 'Local'}</span>
+        <div className="seg sm" role="radiogroup" aria-label="Theme">{[['light', 'Light theme', 'sun'], ['system', 'System theme', 'diagnostics'], ['dark', 'Dark theme', 'moon']].map(([k, label, ic]) =>
+          <button key={k} role="radio" aria-checked={theme === k} aria-label={label} title={label} className={theme === k ? 'sel' : ''} onClick={() => setTheme(k)}>{k === 'system' ? 'Auto' : <Icon name={ic} />}</button>)}</div>
       </div>
-      <div className="side-foot">
-        <div className="seg sm" role="radiogroup" aria-label="Theme">{[['light', 'sun'], ['system', 'diagnostics'], ['dark', 'moon']].map(([k, ic]) =>
-          <button key={k} role="radio" aria-checked={theme === k} title={k[0].toUpperCase() + k.slice(1) + ' theme'} className={theme === k ? 'sel' : ''} onClick={() => setTheme(k)}>{k === 'system' ? 'Auto' : <Icon name={ic} />}</button>)}</div>
-        <button className="ghost" onClick={() => setCompact(value => !value)}>{compact ? 'Comfortable' : 'Compact'}</button>
-        <span>{window.pm?.desktop ? 'Desktop app' : 'Web mode'} · g then d/p/x/m/s/i</span>
-      </div>
-    </nav>
-    <main className="content">
-      {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
-      {page === 'dashboard' && <DashboardPage onOpenProfiles={() => openFolder('__all')} />}
-      {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={openFolder} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} />}
-      {page === 'trash' && <TrashPage />}
-      {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}
-      {page === 'workspaces' && <WorkspacesPage onOpenProfiles={openWorkspaceProfiles} />}
-      {page === 'cookie-robot' && <CookieRobotPage />}
-      {page === 'proxies' && <ProxiesPage />}
-      {page === 'extensions' && <ExtensionsPage />}
-      {page === 'monitoring' && <MonitoringPage />}
-      {page === 'activation' && <OfficeActivation />}
-      {page === 'settings' && <SettingsPage />}
-      {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
-    </main>
+    </header>
+    <div className="shell-body">
+      <nav className="side" aria-label="Profiles">
+        <button className={'nav' + (page === 'profiles' && scope === 'all' && folder === '__all' ? ' sel' : '')} onClick={() => { setScope('all'); showProfiles('__all'); }}><Icon name="profiles" />All profiles <span className="count">{meta.profileCount ?? ''}</span></button>
+        <button className={'nav' + (page === 'profiles' && scope === 'running' ? ' sel' : '')} onClick={() => { setScope('running'); setFolder('__all'); setPage('profiles'); }}><Icon name="play" />Running profiles <span className="count">{meta.running.length}</span></button>
+        <button className="nav" disabled title="Favorites are not stored in this build"><Icon name="star" />Favorites <span className="count">Unavailable</span></button>
+        <div className="folder-tools">
+          <input aria-label="Search folders" placeholder="Search folders" value={folderQuery} onChange={e => setFolderQuery(e.target.value)} />
+          <button type="button" className="icon-btn" aria-label="Create folder" title="Folders are saved when a profile uses the name. Nested folders are not stored." onClick={() => { const name = folderDraft.trim(); if (!name) return; setFolderDraft(''); setPendingCreate(name); showProfiles(name); }}>+</button>
+        </div>
+        <input aria-label="New folder name" placeholder="New folder name" value={folderDraft} onChange={e => setFolderDraft(e.target.value)} />
+        <div className="side-section">Folders</div>
+        <div className="folders">
+          {named.map(f => <button key={f} className={'nav sub' + (page === 'profiles' && folder === f ? ' sel' : '')} onClick={() => { setScope('all'); showProfiles(f); }}><Icon name="folder" /><span className="folder-name">{f}</span><span className="count">{count(f)}</span></button>)}
+          {meta.folders.includes('') && !folderQuery && <button className={'nav sub' + (page === 'profiles' && folder === '' ? ' sel' : '')} onClick={() => { setScope('all'); showProfiles(''); }}><Icon name="folder" /><span className="folder-name">No folder</span><span className="count">{count('')}</span></button>}
+          {!named.length && <div className="side-empty">{folderQuery.trim() ? 'No matching folders.' : 'Folders appear after a profile is saved with a name.'}</div>}
+        </div>
+        <button data-nav="trash" className={'nav' + (page === 'trash' ? ' sel' : '')} onClick={() => setPage('trash')}><Icon name="trash" />Trash <span className="count">{meta.trashCount ?? 0}</span></button>
+        <button data-nav="backup" className={'nav' + (page === 'settings' ? ' sel' : '')} onClick={() => setPage('settings')}><Icon name="download" />Backup</button>
+        {MORE.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} onClick={() => setPage(k)}><Icon name={k} />{label}</button>)}
+        <div className="side-foot">
+          <p className="side-note">Team accounts, subscriptions, and cloud profile storage are not part of this local build.</p>
+          <button className="ghost" onClick={() => setCompact(value => !value)}>{compact ? 'Comfortable rows' : 'Compact rows'}</button>
+        </div>
+      </nav>
+      <main className="content" data-shot={page}>
+        {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
+        {page === 'dashboard' && <DashboardPage onOpenProfiles={() => showProfiles('__all')} />}
+        {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={name => { setScope('all'); openFolder(name); }} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} scope={scope} pendingCreate={pendingCreate} onPendingCreateHandled={() => setPendingCreate(null)} />}
+        {page === 'trash' && <TrashPage />}
+        {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}
+        {page === 'workspaces' && <WorkspacesPage onOpenProfiles={openWorkspaceProfiles} />}
+        {page === 'cookie-robot' && <CookieRobotPage />}
+        {page === 'proxies' && <ProxiesPage />}
+        {page === 'extensions' && <ExtensionsPage />}
+        {page === 'monitoring' && <MonitoringPage />}
+        {page === 'activation' && <OfficeActivation />}
+        {SHOW_ADMIN && page === 'license-admin' && <LicenseAdminPage />}
+        {page === 'settings' && <SettingsPage />}
+        {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
+      </main>
+    </div>
   </div>;
 }

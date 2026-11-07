@@ -145,15 +145,16 @@ test('classifyProxyError maps errors to auth_failed/connect_refused/timeout/dns/
 });
 test('parseProxyLine handles all accepted formats', async () => {
   const { parseProxyLine: p } = await import('../server/app.js');
-  assert.deepEqual(p('1.2.3.4:80'), { type: 'http', host: '1.2.3.4', port: '80', username: '', password: '' });
-  assert.deepEqual(p('h:1:u:pa:ss'), { type: 'http', host: 'h', port: '1', username: 'u', password: 'pa:ss' });
-  assert.deepEqual(p('socks5://u:p%40@h:9'), { type: 'socks5', host: 'h', port: '9', username: 'u', password: 'p@' });
-  assert.deepEqual(p('socks5h://h:9'), { type: 'socks5', host: 'h', port: '9', username: '', password: '' });
-  assert.deepEqual(p('https://[::1]:443'), { type: 'https', host: '[::1]', port: '443', username: '', password: '' });
+  assert.deepEqual(p('1.2.3.4:80'), { type: 'http', host: '1.2.3.4', port: '80', username: '', password: '', schemeSelected: false });
+  assert.deepEqual(p('h:1:u:pa:ss'), { type: 'http', host: 'h', port: '1', username: 'u', password: 'pa:ss', schemeSelected: false });
+  assert.deepEqual(p('socks5://u:p%40@h:9'), { type: 'socks5', host: 'h', port: '9', username: 'u', password: 'p@', schemeSelected: true });
+  assert.deepEqual(p('socks5h://h:9'), { type: 'socks5', host: 'h', port: '9', username: '', password: '', schemeSelected: true });
+  assert.deepEqual(p('https://[::1]:443'), { type: 'https', host: '[::1]', port: '443', username: '', password: '', schemeSelected: true });
   assert.equal(p('5.6.7.8:1', 'socks5').type, 'socks5');
+  assert.deepEqual(p('h:1:u', 'https'), { type: 'https', host: 'h', port: '1', username: 'u', password: '', schemeSelected: false });
+  assert.equal(p('h:1:u:').password, '');
   assert.throws(() => p('ftp://h:1'), /Unsupported scheme/);
   assert.throws(() => p('just-a-host'), /Unrecognized/);
-  assert.throws(() => p('h:1:u'), /Unrecognized/);
 });
 
 // ---------- engine integration: cdp/pid shape, CHROMIUM_MISSING -> 503, verified installer ----------

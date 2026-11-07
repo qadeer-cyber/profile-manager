@@ -1,0 +1,93 @@
+{
+  "installerSource": "8baf1ffe13387bf3fba056d756a448da8b0e1e29",
+  "harness": "129a2bd9f64a7898643b5a80c179f82f1ab86f4e",
+  "concurrentMigration": "unqualified — this job does not copy while Owner or Admin is running",
+  "windows10": false,
+  "separateStandardAccount": false,
+  "osSecretPrefix": "ss:v1",
+  "observedPublicEgress": false,
+  "installer": {
+    "bytes": 854726925,
+    "sha256": "c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142"
+  },
+  "proxyTest": {
+    "fixtureAddress": "203.0.113.50",
+    "observedPublicEgress": false,
+    "authenticatedConnectCount": 1,
+    "authenticatedRequestCount": 1,
+    "connectDestinations": [
+      "203.0.113.10:80"
+    ],
+    "requestPaths": [
+      "/ip"
+    ]
+  },
+  "browserRoute": {
+    "fixtureAddress": "203.0.113.50",
+    "observedPublicEgress": false,
+    "authenticatedConnectCount": 3,
+    "authenticatedRequestCount": 1,
+    "connectDestinations": [
+      "update.googleapis.com:443",
+      "www.google.com:443",
+      "accounts.google.com:443"
+    ],
+    "requestPaths": [
+      "http://203.0.113.10/azwah-route"
+    ]
+  },
+  "results": [
+    {
+      "pass": true,
+      "message": "Installed Ultimate created an organization identity"
+    },
+    {
+      "pass": true,
+      "message": "Test Proxy opened one authenticated CONNECT to 203.0.113.10:80 and the fixture returned 203.0.113.50. That address is not an observed public IP."
+    },
+    {
+      "pass": true,
+      "message": "Proxy GUI saved the host and did not return the password"
+    },
+    {
+      "pass": true,
+      "message": "Proxy password is stored as a sealed secret"
+    },
+    {
+      "pass": true,
+      "message": "Reloaded editor shows the saved library proxy, not a second custom line"
+    },
+    {
+      "pass": true,
+      "message": "Chromium launch accepted the profile"
+    },
+    {
+      "pass": true,
+      "message": "Chromium sent /azwah-route through the authenticated proxy. The fixture address is not an observed public IP."
+    },
+    {
+      "pass": true,
+      "message": "Chromium process image is inside the installer tree"
+    },
+    {
+      "pass": true,
+      "message": "Chromium stop succeeded"
+    },
+    {
+      "pass": true,
+      "message": "Chromium launch succeeded again after stop"
+    },
+    {
+      "pass": true,
+      "message": "Chromium stop succeeded after restart"
+    },
+    {
+      "pass": true,
+      "message": "Ultimate can create a Firefox profile"
+    },
+    {
+      "pass": false,
+      "message": "Ultimate launches Firefox without a system Firefox"
+    }
+  ]
+}

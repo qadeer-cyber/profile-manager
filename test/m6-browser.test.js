@@ -98,11 +98,9 @@ test('Chromium applies coherent identity, geolocation, window settings, and obse
       await editor.goto(proc.url);
       await editor.getByRole('button', { name: 'New profile' }).click();
       await editor.getByLabel('Name', { exact: true }).fill('UI advanced');
-      await editor.getByRole('tab', { name: 'Identity' }).click();
+      await editor.getByRole('tab', { name: 'Fingerprint' }).click();
       await editor.getByText(version).waitFor();
-      await editor.getByRole('tab', { name: 'Window' }).click();
       await editor.getByLabel('Screen preset').selectOption('1280x800');
-      await editor.getByRole('tab', { name: 'Location' }).click();
       await editor.getByLabel('Geolocation').selectOption('allow');
       await editor.getByLabel('Latitude').fill('37.7');
       await editor.getByLabel('Longitude').fill('-122.4');
@@ -110,7 +108,7 @@ test('Chromium applies coherent identity, geolocation, window settings, and obse
       await editor.getByRole('cell', { name: 'UI advanced', exact: true }).waitFor();
       await editor.reload();
       await editor.getByRole('button', { name: 'Edit UI advanced', exact: true }).click();
-      await editor.getByRole('tab', { name: 'Window' }).click();
+      await editor.getByRole('tab', { name: 'Fingerprint' }).click();
       assert.equal(await editor.getByLabel('Screen preset').inputValue(), '1280x800');
       const saved = (await api('GET', '/profiles')).find(item => item.name === 'UI advanced');
       assert.equal(saved.advancedSettings.screen.preset, '1280x800');

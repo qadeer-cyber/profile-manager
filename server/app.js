@@ -1,3 +1,4 @@
+import { parseProxyLine } from './proxy-line.js';
 import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
 import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
 import { createStreamedPortableBackup, createStreamedWorkspaceBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
@@ -5,6 +6,7 @@ import { pipeline as streamPipeline } from 'node:stream/promises';
 import { COOKIE_EDITOR, cookieEditorStatus } from './office/cookie-editor.js';
 import { encryptCookies, decryptCookies } from './office/cookie-transfer.js';
 import { activationStatus, activateOffice, officeGate } from './office/activation.js';
+import { isUltimateEdition } from './office/edition.js';
 import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
 import express from 'express';
@@ -99,6 +101,7 @@ import {
   setExtensionEnabled, unassignExtension,
 } from './extensions.js';
 import { proxyTestInsecureTls } from './testflags.js';
+import { bundledFirefoxExecutable, resolveFirefoxExecutable } from './browser-runtime/firefox-launch.js';
 import { assertNotPausedTemplate, proxyHealthAnalytics, proxyTagGroups } from './proxy-library.js';
 import { compareTrafficSavings, copyTrafficPolicy, getTrafficPolicy, getTrafficSession, measureTrafficScript, saveTrafficPolicy } from './proxy-traffic.js';
 
@@ -107,7 +110,9 @@ const browserInstall = { state: 'idle', log: '', error: null, code: null };
 export function browserStatus() {
   let p = null; try { p = getSetting('executablePath', '') || chromium.executablePath(); } catch {}
   let verified = null; try { verified = chromiumStatus(); } catch (e) { verified = { error: e.message }; }
-  return { path: p, installed: !!p && fs.existsSync(p), custom: !!getSetting('executablePath', ''), browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default', install: browserInstall, chromium: verified };
+  const firefoxPath = resolveFirefoxExecutable();
+  return { path: p, installed: !!p && fs.existsSync(p), custom: !!getSetting('executablePath', ''), browsersPath: process.env.PLAYWRIGHT_BROWSERS_PATH || 'default', install: browserInstall, chromium: verified,
+    firefox: { path: firefoxPath, bundled: !!firefoxPath && firefoxPath === bundledFirefoxExecutable(), systemSearch: process.env.PM_PACKAGED !== '1' && process.env.PM_FIREFOX_NO_SYSTEM !== '1' } };
 }
 export function installBrowser({ install } = {}) {
   if (browserInstall.state === 'running') return null;
@@ -1013,22 +1018,8 @@ function assignProxy(profileId, proxyId) {
   return out;
 }
 
-// Import: host:port | host:port:user:pass | scheme://[user:pass@]host:port
-export function parseProxyLine(line, defaultType = 'http') {
-  const t = line.trim();
-  const m = t.match(/^([a-z0-9]+):\/\/(?:([^:@\/]*)(?::([^@\/]*))?@)?(\[[0-9a-fA-F:.]+\]|[^:\/@\s]+):(\d+)\/?$/i);
-  if (m) {
-    let type = m[1].toLowerCase(); if (type === 'socks5h') type = 'socks5';
-    if (!PROXY_TYPES.includes(type)) throw new Error(`Unsupported scheme "${m[1]}"`);
-    const dec = v => { try { return decodeURIComponent(v ?? ''); } catch { throw new Error('Invalid URL encoding'); } };
-    return { type, host: m[4], port: m[5], username: dec(m[2]), password: dec(m[3]) };
-  }
-  if (t.includes('://')) throw new Error('Unrecognized format');
-  const parts = t.split(':');
-  if (parts.length === 2) return { type: defaultType, host: parts[0], port: parts[1], username: '', password: '' };
-  if (parts.length >= 4) return { type: defaultType, host: parts[0], port: parts[1], username: parts[2], password: parts.slice(3).join(':') };
-  throw new Error('Unrecognized format');
-}
+// Import: host:port | host:port:user | host:port:user: | host:port:user:pass | scheme://[user:pass@]host:port | [ipv6]:port
+export { parseProxyLine };
 function maskLine(line, parsed) {
   if (!parsed?.password) return line.trim();
   const t = line.trim();
@@ -1465,9 +1456,15 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
     const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
+    const folderCounts = {};
+    for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
+    const trashCount = db.prepare('SELECT COUNT(*) n FROM profiles WHERE deleted_at IS NOT NULL').get().n;
     res.json({
       tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(),
       folders: [...new Set(all.map(r => r.folder))].sort(),
+      folderCounts,
+      profileCount: all.length,
+      trashCount,
       running: engine.runningIds(),
       features: {
         proxyLibrary: true,
@@ -1476,6 +1473,11 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
         nativeManualLaunch: true,
         geckoExtensionLibrary: true,
         fingerprintStockOnly: true,
+        favorites: false,
+        nestedFolders: false,
+        team: false,
+        subscriptions: false,
+        cloudStorage: false,
       },
     });
   });
@@ -1649,6 +1651,24 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     res.status(201).json(ids.map(id => publicP(get(id))));
   }));
 
+  if (isUltimateEdition) {
+    const send = (res, value) => { res.set('Cache-Control', 'no-store'); res.json(value); };
+    ui.get('/admin/status', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminStatus()); }));
+    ui.post('/admin/init', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminInit(req.body || {})); }));
+    ui.post('/admin/unlock', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminUnlock(req.body?.password)); }));
+    ui.post('/admin/lock', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminLock()); }));
+    ui.get('/admin/list', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminList()); }));
+    ui.post('/admin/employee', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminSaveEmployee(req.body || {})); }));
+    ui.post('/admin/issue', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminIssue(req.body || {})); }));
+    ui.post('/admin/backup', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, await admin.adminBackup()); }));
+    ui.post('/admin/restore', wrap(async (req, res) => {
+      const admin = await import('./ultimate-admin.js');
+      const file = await admin.chooseRestoreFile();
+      if (!file) return send(res, {canceled: true});
+      send(res, admin.adminRestore(req.body?.password, file));
+    }));
+    ui.post('/admin/office-installer', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, await admin.adminGenerateOffice(req.body || {})); }));
+  }
   mountProfileDiagnostics(app, {
     uiToken, apiToken: API_TOKEN, tokenOk,
     // Existence only. Do not decrypt proxy secrets for a diagnostic read.

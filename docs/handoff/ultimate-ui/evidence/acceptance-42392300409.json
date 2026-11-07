@@ -1,0 +1,39 @@
+{
+  "windows10": false,
+  "systemFirefoxUsed": false,
+  "separateAdminPublished": false,
+  "installer": {
+    "bytes": 854726925,
+    "sha256": "c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142"
+  },
+  "results": [
+    {
+      "pass": true,
+      "message": "Owner uses the clean Windows AppData root"
+    },
+    {
+      "pass": true,
+      "message": "Previous Owner installer stores a profile without activation"
+    },
+    {
+      "pass": true,
+      "message": "Admin uses the clean Windows AppData root"
+    },
+    {
+      "pass": true,
+      "message": "Previous Admin vault public key can be read by the test harness"
+    },
+    {
+      "pass": true,
+      "message": "Unified installer contains Firefox"
+    },
+    {
+      "pass": true,
+      "message": "Unified installer contains the Firefox license notice"
+    },
+    {
+      "pass": false,
+      "message": "Unified package contains the in-process license administration module"
+    }
+  ]
+}

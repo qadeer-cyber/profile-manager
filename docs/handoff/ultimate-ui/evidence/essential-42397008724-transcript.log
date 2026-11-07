@@ -1,0 +1,20 @@
+(node:7812) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Installed Ultimate created an organization identity
+PASS Test Proxy opened one authenticated CONNECT to 203.0.113.10:80 and the fixture returned 203.0.113.50. That address is not an observed public IP.
+PASS Proxy GUI saved the host and did not return the password
+PASS Proxy password is stored as a sealed secret
+PASS Reloaded editor shows the saved library proxy, not a second custom line
+PASS Chromium launch accepted the profile
+PASS Chromium sent /azwah-route through the authenticated proxy. The fixture address is not an observed public IP.
+PASS Chromium process image is inside the installer tree
+PASS Chromium stop succeeded
+PASS Chromium launch succeeded again after stop
+PASS Chromium stop succeeded after restart
+PASS Ultimate can create a Firefox profile
+FAIL Ultimate Firefox launch failed: 409 FIREFOX_SESSION_UNAVAILABLE Firefox process ownership could not be verified
+FIREFOX_LIMITATION bundled launch did not succeed. System fallback stays disabled. This is not a pass.
+PASS A cookie can be imported into a stopped profile
+PASS An unpacked extension can be imported
+FAIL The extension can be assigned
+ESSENTIAL_FOLLOWUP_FAILURE The extension can be assigned

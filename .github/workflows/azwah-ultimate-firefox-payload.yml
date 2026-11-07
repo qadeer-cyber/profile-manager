@@ -1,0 +1,67 @@
+name: Azwah Ultimate bundled Firefox payload
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  firefox:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install 7-Zip and NSIS without installing Firefox
+        shell: pwsh
+        run: |
+          if (Get-Command firefox -ErrorAction SilentlyContinue) { throw 'This runner already has Firefox; the payload test would not be clean.' }
+          choco install 7zip nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build Owner and Admin with the pinned Firefox runtime
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-chromium.mjs win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-firefox.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder install-app-deps --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.ultimate-firefox-owner.cjs --win nsis --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.office-payload.cjs --win --dir --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npx electron-builder --config electron-builder.license-admin.cjs --win nsis --x64 --publish never
+          exit $LASTEXITCODE
+      - name: Prove Owner launches bundled Firefox with system search disabled
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-firefox | Out-Null
+          node scripts/ultimate-firefox-payload-acceptance.mjs owner 2>&1 | Tee-Object build-evidence/ultimate-firefox/owner.log
+          exit $LASTEXITCODE
+      - name: Prove Admin-generated Office launches the same bundled Firefox
+        shell: pwsh
+        run: |
+          node scripts/ultimate-firefox-payload-acceptance.mjs office 2>&1 | Tee-Object build-evidence/ultimate-firefox/office.log
+          exit $LASTEXITCODE
+      - name: Do not publish the separate Owner and Admin installers
+        shell: pwsh
+        run: Write-Output 'Checkpoint evidence only. The final download is the single Ultimate installer from the unified workflow.'
+      - name: Preserve Firefox payload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-firefox-${{ github.sha }}
+          path: build-evidence/ultimate-firefox
+          retention-days: 30

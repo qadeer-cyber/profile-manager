@@ -45,7 +45,7 @@ async function auditNoSecrets(directory,needles) {
 const shown=(page,value)=>page.getByText(value,{exact:false}).first().waitFor({timeout:240000});
 async function qualify(){
 try {
-  install(path.resolve('release-license-admin/Azwah-License-Admin-Setup-x64.exe'),adminDir);
+  install(path.resolve(process.env.AZWAH_ADMIN_SETUP || 'release-license-admin/Azwah-License-Admin-Setup-x64.exe'),adminDir);
   admin=await launch(path.join(adminDir,'Azwah License Admin.exe'),['--user-data-dir='+adminData]);
   const a=await admin.firstWindow();
   await shown(a,'Welcome to Azwah License Admin');
