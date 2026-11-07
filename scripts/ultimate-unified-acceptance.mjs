@@ -193,7 +193,7 @@ try {
     parts[2] = (parts[2][0] === 'A' ? 'B' : 'A') + parts[2].slice(1);
     const tamper = await api(employee, '/activation', {token: parts.join('.'), confirm: true});
     check(tamper.body?.code === 'LICENSE_SIGNATURE_INVALID', 'Office rejects a tampered signature');
-    await unified.bringToFront();
+    await page.bringToFront();
     await page.getByLabel('Employee reference', {exact: true}).fill('office-desk');
     await page.getByLabel('Name', {exact: true}).fill('Office desk');
     await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
