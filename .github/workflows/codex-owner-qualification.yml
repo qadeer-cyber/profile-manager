@@ -1,0 +1,35 @@
+name: Independent Ultimate Owner qualification
+on:
+  push:
+    branches: [codex/azwah-owner-qualification]
+    paths: ['.github/workflows/codex-owner-qualification.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  owner:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42392300409
+          name: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29
+          path: release-ultimate
+      - shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+        run: |
+          $hash = (Get-FileHash -LiteralPath release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($hash -ne 'c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142') { throw 'Installer hash mismatch' }
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/codex-owner-qualification.mjs
+          exit $LASTEXITCODE
