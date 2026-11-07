@@ -3,13 +3,13 @@
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {_electron} from 'playwright';
 import {asarLookupPath} from './asar-entries.mjs';
 import {windowsEmployeeIdentity} from './windows-employee-identity.mjs';
+import {createRecordingProxy} from './recording-proxy.mjs';
 
 if (process.platform !== 'win32' || process.env.CI !== 'true') throw new Error('An isolated Windows CI worker is required');
 const asar = createRequire(import.meta.url)('@electron/asar');
@@ -70,16 +70,7 @@ function listen(server) {
 let app;
 let employeeSession;
 const hits = [];
-const proxy = http.createServer((req, res) => {
-  hits.push(String(req.url || ''));
-  if (String(req.url || '').includes('/ip')) {
-    res.writeHead(200, {'content-type': 'application/json'});
-    res.end('{"ip":"203.0.113.50"}');
-    return;
-  }
-  res.writeHead(200, {'content-type': 'text/plain'});
-  res.end('routed');
-});
+const proxy = createRecordingProxy(hits);
 try {
   if (!/^[a-f0-9]{64}$/.test(expectedHash) || sha(installer) !== expectedHash) throw new Error('Follow-on requires the retained installer and its verified SHA-256');
   record.installer = {bytes: fs.statSync(installer).size, sha256: expectedHash};
