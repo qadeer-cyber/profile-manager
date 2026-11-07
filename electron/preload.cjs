@@ -7,5 +7,6 @@ contextBridge.exposeInMainWorld('pm', {
   platform: process.platform,
   openDataDir: () => ipcRenderer.invoke('pm:open-data-dir'),
   appInfo: () => ipcRenderer.invoke('pm:app-info'),
+  copyDeviceCode: () => ipcRenderer.invoke('pm:copy-device-code'),
   onEvent: cb => { const h = (_e, ev) => cb(ev); ipcRenderer.on('pm:event', h); return () => ipcRenderer.off('pm:event', h); },
 });

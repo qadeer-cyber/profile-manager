@@ -2,7 +2,7 @@
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
 import { isOwnerEdition, isProvisionedOffice, productName } from '../server/office/edition.js';
 import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
-import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog } from 'electron';
+import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog, clipboard } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -114,6 +114,14 @@ function createWindow() {
 
 ipcMain.on('pm:get-ui-token', e => { e.returnValue = uiToken; });
 ipcMain.handle('pm:open-data-dir', () => shell.openPath(process.env.PM_DATA_DIR));
+// Copy only this device's identity. Renderer callers cannot supply clipboard contents.
+ipcMain.handle('pm:copy-device-code', async event => {
+  if (isOwnerEdition || !win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || !backend || new URL(event.senderFrame.url).origin !== new URL(backend.url).origin) {
+    throw Error('Device identity clipboard access denied');
+  }
+  const { deviceIdentity } = await import('../server/office/device.js');
+  clipboard.writeText(deviceIdentity());
+});
 ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isOwnerEdition ? 'Owner / Personal' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)

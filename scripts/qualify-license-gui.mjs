@@ -112,15 +112,6 @@ try {
   const device=await e.getByLabel('Device identity code').inputValue();
   assert.match(device,/^AZD1-[a-f0-9]{64}$/);
   await e.bringToFront();
-  await e.evaluate(()=>{
-    const write=navigator.clipboard.writeText.bind(navigator.clipboard);
-    navigator.clipboard.writeText=async value=>{
-      try { return await write(value); }
-      catch(error){console.error('CLIPBOARD_DIAGNOSTIC '+JSON.stringify({focused:document.hasFocus(),secureContext:isSecureContext,name:error.name,message:error.message}));throw error;}
-    };
-  });
-  e.on('console',message=>{if(message.text().startsWith('CLIPBOARD_DIAGNOSTIC '))console.log(message.text());});
-  console.log('CLIPBOARD_FOCUS '+await e.evaluate(()=>document.hasFocus()));
   await press(e,'Copy Device Code');
   await e.getByText('Device code copied.',{exact:true}).waitFor({timeout:10000});
   assert.ok((await admin.evaluate(({clipboard})=>clipboard.readText()))===device,'Device code clipboard mismatch');
@@ -161,7 +152,9 @@ try {
   assert.equal(rejected.status,400);
   assert.equal(rejected.body.code,'LICENSE_SIGNATURE_INVALID');
   console.log('PASS installed Office rejects tampered signature');
-  await e.getByLabel('License file').setInputFiles(tokenFile);
+  const employeeLicense=identity?path.join(employeeData,'employee.azwah'):tokenFile;
+  if(identity)fs.copyFileSync(tokenFile,employeeLicense);
+  await e.getByLabel('License file').setInputFiles(employeeLicense);
   await e.getByLabel('I authorize activation on this device.').check();
   await press(e,'Activate offline');
   await shown(e,'This device is activated');
