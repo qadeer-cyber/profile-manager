@@ -24,6 +24,7 @@ const launch=(executablePath,args=[],env=process.env)=>_electron.launch({executa
 const press=(page,name)=>page.getByRole('button',{name,exact:true}).click();
 const fill=(page,label,value)=>page.getByLabel(label,{exact:true}).fill(value);
 const shown=(page,value)=>page.getByText(value,{exact:false}).first().waitFor({timeout:240000});
+async function qualify(){
 try {
   install(path.resolve('release-license-admin/Azwah-License-Admin-Setup-x64.exe'),adminDir);
   admin=await launch(path.join(adminDir,'Azwah License Admin.exe'),['--user-data-dir='+adminData]);
@@ -65,7 +66,7 @@ try {
   const env={...process.env,PM_USER_DATA:path.join(root,'employee-data')};
   const officeExe=path.join(officeDir,'Azwah Multi Browser Office.exe');
   const xpi=path.join(officeDir,'qualification-cookie-editor.xpi');
-  if(separate)fs.copyFileSync(process.env.PM_COOKIE_EDITOR_XPI,xpi);
+  if(separate&&process.env.PM_COOKIE_EDITOR_XPI)fs.copyFileSync(process.env.PM_COOKIE_EDITOR_XPI,xpi);
   if(separate)identity=windowsEmployeeIdentity(officeDir,officeExe);
   const startOffice=async()=>{
     if(identity)return identity.launch();
@@ -85,6 +86,12 @@ try {
   await shown(e,'Activate Azwah Multi Browser Office');
   const device=await e.getByLabel('Device identity code').inputValue();
   assert.match(device,/^AZD1-[a-f0-9]{64}$/);
+  if(process.env.AZWAH_QA_STARTUP_ONLY==='1'){
+    console.log('PASS separate employee startup and genuine device code');
+    await stopOffice();
+    execFileSync(path.join(officeDir,'Uninstall Azwah Multi Browser Office.exe'),['/S'],{timeout:180000});
+    return;
+  }
   const api=(route,body)=>e.evaluate(async ({route,body})=>{
     const r=await fetch('/api'+route,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','X-UI-Token':window.pm.uiToken},body:body===undefined?undefined:JSON.stringify(body)});
     return {status:r.status,body:await r.json()};
@@ -275,3 +282,5 @@ try {
   if(fixture)await fixture.close();
   fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});
 }
+}
+await qualify();
