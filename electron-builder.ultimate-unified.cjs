@@ -19,6 +19,6 @@ module.exports = {
     {from: 'admin-desktop/office.nsi', to: 'office.nsi'},
   ],
   nsis: {...base.nsis, shortcutName: 'Azwah Multi Browser Ultimate', artifactName: 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'},
-  win: {...(base.win || {}), signAndEditExecutable: false, signDlls: false},
+  win: {...(base.win || {}), signAndEditExecutable: false},
   beforePack: 'scripts/ultimate-before-pack.cjs',
 };

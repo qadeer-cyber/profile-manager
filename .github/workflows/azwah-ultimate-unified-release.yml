@@ -11,6 +11,8 @@ on:
       - electron-builder.ultimate-unified.cjs
       - electron-builder.office-payload.cjs
       - scripts/ultimate-before-pack.cjs
+      - scripts/fetch-bundled-firefox.mjs
+      - test/ultimate-packaging-policy.test.js
       - scripts/ultimate-unified-acceptance.mjs
       - .github/workflows/azwah-ultimate-unified-release.yml
 permissions:

@@ -31,12 +31,19 @@ const seven = process.platform === 'win32'
   ? (fs.existsSync('C:\\Program Files\\7-Zip\\7z.exe') ? 'C:\\Program Files\\7-Zip\\7z.exe' : '7z')
   : '7z';
 const extracted = path.join(root, 'extracted');
-const unpack = spawnSync(seven, ['x', '-y', `-o${extracted}`, setup], {stdio: 'inherit'});
-if (unpack.status !== 0) throw new Error('7-Zip could not extract the official Firefox installer');
+const unpack = spawnSync(seven, ['x', '-y', `-o${extracted}`, setup], {encoding: 'utf8'});
+const unpackLog = `${unpack.stdout || ''}\n${unpack.stderr || ''}`;
+process.stdout.write(unpackLog);
+if (unpack.status !== 0 || !unpackLog.includes('Everything is Ok')) throw new Error('7-Zip could not extract the official Firefox installer');
+// 7-Zip reports "Checksum error" for the PE stub's optional-header checksum. The download is accepted only when the full-file SHA-256 matches Mozilla's published sum, and the inner archive still reports Everything is Ok.
+const unexpected = unpackLog.split(/\r?\n/).filter(line => /error/i.test(line) && !/Checksum error/.test(line) && !/WARNING = Checksum error/.test(line));
+if (unexpected.length) throw new Error(`7-Zip reported an extraction error after the SHA-256 check: ${unexpected[0]}`);
 const core = path.join(extracted, 'core');
-if (!fs.existsSync(path.join(core, 'firefox.exe'))) throw new Error('Official installer did not contain core/firefox.exe');
+const required = ['firefox.exe', 'xul.dll', 'omni.ja', 'mozglue.dll', 'nss3.dll', 'application.ini', 'dependentlibs.list'];
+for (const name of required) if (!fs.existsSync(path.join(core, name))) throw new Error(`Extracted Firefox runtime is missing ${name}`);
+if (fs.statSync(path.join(core, 'xul.dll')).size < 50_000_000 || fs.statSync(path.join(core, 'omni.ja')).size < 10_000_000) throw new Error('Extracted Firefox runtime is incomplete');
 const ini = fs.readFileSync(path.join(core, 'application.ini'), 'utf8');
-if (!ini.includes('Version=140.17.0')) throw new Error('Extracted Firefox version does not match the pin');
+if (!ini.includes('Name=Firefox') || !ini.includes('Version=140.17.0')) throw new Error('Extracted Firefox version does not match the pin');
 fs.cpSync(core, runtime, {recursive: true});
 fs.rmSync(extracted, {recursive: true, force: true});
 fs.rmSync(setup, {force: true});
