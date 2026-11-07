@@ -3,12 +3,11 @@
 import {execFileSync, spawnSync} from 'node:child_process';
 import {createRequire} from 'node:module';
 import fs from 'node:fs';
-import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {_electron} from 'playwright';
-import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, waitForIssuedToken} from './installed-acceptance-helpers.mjs';
+import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, startAuthenticatedProxyFixture, waitForIssuedToken} from './installed-acceptance-helpers.mjs';
 import {asarLookupPath} from './asar-entries.mjs';
 import {windowsEmployeeIdentity} from './windows-employee-identity.mjs';
 
@@ -57,32 +56,16 @@ async function replaceIssuedToken(page, previous) {
   await page.getByRole('button', {name: 'Issue license', exact: true}).click();
   return waitForIssuedToken(page, previous);
 }
-function listen(server) {
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
-  });
-}
-
 let app;
 let employeeSession;
-const hits = [];
-const proxy = http.createServer((req, res) => {
-  hits.push(String(req.url || ''));
-  if (String(req.url || '').includes('/ip')) {
-    res.writeHead(200, {'content-type': 'application/json'});
-    res.end('{"ip":"203.0.113.50"}');
-    return;
-  }
-  res.writeHead(200, {'content-type': 'text/plain'});
-  res.end('routed');
-});
+let proxy;
 try {
   if (!/^[a-f0-9]{64}$/.test(expectedHash) || sha(installer) !== expectedHash) throw new Error('Follow-on requires the retained installer and its verified SHA-256');
   record.installer = {bytes: fs.statSync(installer).size, sha256: expectedHash};
   const installDir = path.join(root, 'ultimate');
   execFileSync(installer, ['/S', '/D=' + installDir], {timeout: 240000});
-  const port = await listen(proxy);
+  proxy = await startAuthenticatedProxyFixture('azwah', proxyPassword);
+  const {port, hits} = proxy;
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   let page = await app.firstWindow();
   await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
@@ -243,8 +226,7 @@ try {
 } finally {
   if (employeeSession) await employeeSession.dispose().catch(() => {});
   if (app) await app.close().catch(() => {});
-  proxy.close();
-  proxy.closeAllConnections();
+  if (proxy) await proxy.close();
   fs.writeFileSync(path.join(evidence, 'essential.json'), JSON.stringify({...record, results}, null, 2));
   fs.rmSync(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
 }
