@@ -1,0 +1,59 @@
+name: Independent Ultimate installed qualification
+on:
+  push:
+    branches: [codex/azwah-pre-release-evidence]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  installed:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      AZWAH_INSTALLER_SOURCE_SHA: 8baf1ffe13387bf3fba056d756a448da8b0e1e29
+      AZWAH_UNIFIED_INSTALLER_SHA256: c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142
+      AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: 9907a9fb12e9aa3648f9e7cbe10f9b0bdabb7847
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Run focused regressions
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --test test/installed-acceptance-helpers.test.js test/ultimate-asar-listing.test.js test/ultimate-migrate.test.js test/office-license.test.js test/proxy-line.test.js
+          exit $LASTEXITCODE
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42392300409
+          name: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29
+          path: release-ultimate
+      - name: Verify original installer provenance
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -LiteralPath $env:AZWAH_UNIFIED_INSTALLER -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expected = ((Get-Content release-ultimate/SHA256SUMS.txt -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if ($hash -ne $expected -or $hash -ne $env:AZWAH_UNIFIED_INSTALLER_SHA256) { throw 'Retained installer hash mismatch' }
+          if (!(Select-String -Quiet -SimpleMatch -LiteralPath release-ultimate/BUILD-MANIFEST.txt -Pattern "Installer source: $env:AZWAH_INSTALLER_SOURCE_SHA")) { throw 'Retained installer source mismatch' }
+          Write-Host "Verified retained EXE SHA-256 $hash"
+      - name: Run retained EXE installed checks
+        shell: pwsh
+        run: |
+          node scripts/ultimate-essential-followup.mjs
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-ultimate-qualification
+          path: |
+            build-evidence/ultimate-essential/essential.json
+            build-evidence/ultimate-essential/office-activation.json
+            build-evidence/ultimate-essential/office-activation.png
+          if-no-files-found: ignore
