@@ -14,7 +14,7 @@ const ownerData=path.join(appData,'azwah-multi-browser-owner');
 const ultimateData=path.join(appData,'azwah-multi-browser-ultimate');
 assert.ok(!fs.existsSync(ownerData) && !fs.existsSync(ultimateData),'Clean Windows user required');
 const legacy=path.join(root,'legacy'), ultimate=path.join(root,'ultimate');
-let app,page;
+let app,page,baselineDir;
 const pass='Synthetic-'+crypto.randomUUID();
 const marker='Legacy secret fixture';
 const readState = dir => {
@@ -54,7 +54,8 @@ try {
   const ultimateKey=readState(ultimateData);
   console.log('LEGACY_SECRET_BASELINE '+JSON.stringify({legacyResult,baseline,format:secret.split(':').slice(0,2).join(':'),sourceKeyPresent:!!sourceKey,ultimateKeyPresent:!!ultimateKey,sameKey:!!sourceKey&&sourceKey===ultimateKey}));
   if(!baseline.hasPassword && sourceKey) {
-    fs.renameSync(ultimateData,path.join(root,'baseline'));
+    baselineDir=fs.mkdtempSync(path.join(appData,'azwah-qa-baseline-'));
+    fs.renameSync(ultimateData,path.join(baselineDir,'ultimate'));
     fs.mkdirSync(ultimateData);
     fs.writeFileSync(path.join(ultimateData,'Local State'),JSON.stringify({os_crypt:{encrypted_key:sourceKey}}),{flag:'wx'});
     await launch(path.join(ultimate,'Azwah Multi Browser Ultimate.exe'));
@@ -66,5 +67,6 @@ try {
   }
 } finally {
   if(app)await app.close().catch(()=>{});
+  if(baselineDir)fs.rmSync(baselineDir,{recursive:true,force:true,maxRetries:5,retryDelay:200});
   fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});
 }
