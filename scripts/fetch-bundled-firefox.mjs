@@ -16,7 +16,7 @@ if (fs.existsSync(path.join(runtime, 'firefox.exe')) && fs.existsSync(marker)) {
   }
 }
 const licensePath = path.resolve(FIREFOX_RUNTIME.licenseFile);
-const licenseHash = crypto.createHash('sha256').update(fs.readFileSync(licensePath)).digest('hex');
+const licenseHash = crypto.createHash('sha256').update(fs.readFileSync(licensePath).toString('utf8').replace(/\r\n/g, '\n')).digest('hex');
 if (licenseHash !== FIREFOX_RUNTIME.licenseSha256) throw new Error('Vendored MPL-2.0 text does not match the pinned hash');
 fs.rmSync(root, {recursive: true, force: true});
 fs.mkdirSync(root, {recursive: true});

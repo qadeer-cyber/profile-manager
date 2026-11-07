@@ -6,6 +6,7 @@ import { pipeline as streamPipeline } from 'node:stream/promises';
 import { COOKIE_EDITOR, cookieEditorStatus } from './office/cookie-editor.js';
 import { encryptCookies, decryptCookies } from './office/cookie-transfer.js';
 import { activationStatus, activateOffice, officeGate } from './office/activation.js';
+import { isUltimateEdition } from './office/edition.js';
 import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
 import express from 'express';
@@ -1650,6 +1651,24 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     res.status(201).json(ids.map(id => publicP(get(id))));
   }));
 
+  if (isUltimateEdition) {
+    const send = (res, value) => { res.set('Cache-Control', 'no-store'); res.json(value); };
+    ui.get('/admin/status', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminStatus()); }));
+    ui.post('/admin/init', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminInit(req.body || {})); }));
+    ui.post('/admin/unlock', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminUnlock(req.body?.password)); }));
+    ui.post('/admin/lock', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminLock()); }));
+    ui.get('/admin/list', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminList()); }));
+    ui.post('/admin/employee', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminSaveEmployee(req.body || {})); }));
+    ui.post('/admin/issue', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, admin.adminIssue(req.body || {})); }));
+    ui.post('/admin/backup', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, await admin.adminBackup()); }));
+    ui.post('/admin/restore', wrap(async (req, res) => {
+      const admin = await import('./ultimate-admin.js');
+      const file = await admin.chooseRestoreFile();
+      if (!file) return send(res, {canceled: true});
+      send(res, admin.adminRestore(req.body?.password, file));
+    }));
+    ui.post('/admin/office-installer', wrap(async (req, res) => { const admin = await import('./ultimate-admin.js'); send(res, await admin.adminGenerateOffice(req.body || {})); }));
+  }
   mountProfileDiagnostics(app, {
     uiToken, apiToken: API_TOKEN, tokenOk,
     // Existence only. Do not decrypt proxy secrets for a diagnostic read.

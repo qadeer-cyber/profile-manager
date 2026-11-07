@@ -1,4 +1,4 @@
-import { isOwnerEdition, isProvisionedOffice } from './edition.js';
+import { isOwnerEdition, isUltimateEdition, isProvisionedOffice } from './edition.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -45,7 +45,7 @@ function write(value) {
   } finally { fs.rmSync(temp,{force:true}); }
 }
 export function activationStatus() {
-  if(isOwnerEdition)return {enforced:false,active:true,edition:'owner-personal',code:'OWNER_PERSONAL_EDITION',licensePolicy:'Personal evaluation: all implemented local browser-management features enabled without employee activation. No administrator license issuance.'};
+  if(isOwnerEdition||isUltimateEdition)return {enforced:false,active:true,edition:isUltimateEdition?'ultimate':'owner-personal',code:isUltimateEdition?'ULTIMATE_EDITION':'OWNER_PERSONAL_EDITION',licensePolicy:isUltimateEdition?'Browser management is available without employee activation. License issuance stays in the locked administrator vault.':'Personal evaluation: all implemented local browser-management features enabled without employee activation. No administrator license issuance.'};
   const enforced=process.env.AZWAH_OFFICE_ENFORCE === '1';
   try {
     const deviceCode=identity(), organization=isProvisionedOffice?organizationTrust().organization:undefined, record=read();
@@ -57,7 +57,7 @@ export function activationStatus() {
   } catch (error) { return {enforced,active:false,deviceCode:device||null,code:error.code||'ACTIVATION_STORAGE_UNAVAILABLE',error:error.message}; }
 }
 export function activateOffice(token) {
-  if(isOwnerEdition)throw Object.assign(Error('Owner/Personal Edition does not use employee licenses. Office activation remains available only in an administrator-provisioned Office build.'),{code:'OWNER_NO_ACTIVATION',status:403});
+  if(isOwnerEdition||isUltimateEdition)throw Object.assign(Error('This edition does not use employee licenses. Office activation remains available only in an administrator-provisioned Office build.'),{code:'OWNER_NO_ACTIVATION',status:403});
   if (process.env.AZWAH_OFFICE_PACKAGED === '1' && encryptionStatus().backend === 'aes-256-gcm-keyfile') throw Object.assign(Error('OS-backed activation storage is unavailable. Restore Windows secure storage before activation.'), { code: 'ACTIVATION_OS_STORAGE_REQUIRED', status: 503 });
   const prior=read(), now=Date.now();
   verifyLicense(token,{publicKey:publicKey(),device:identity(),now,lastSeen:prior?.lastSeen||0});
@@ -65,7 +65,7 @@ export function activateOffice(token) {
   return activationStatus();
 }
 export function officeGate(req,res,next) {
-  if(isOwnerEdition)return next();
+  if(isOwnerEdition||isUltimateEdition)return next();
   if (process.env.AZWAH_OFFICE_ENFORCE !== '1') return next();
   const safe = ['GET','HEAD'].includes(req.method) || req.path.startsWith('/activation') || /\/(?:stop|backup\/export(?:-stream)?|cookies\/export-encrypted)$/.test(req.path) || req.path.startsWith('/diagnostics/recovery');
   if (safe) return next();

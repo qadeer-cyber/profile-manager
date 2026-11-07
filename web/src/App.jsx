@@ -13,11 +13,13 @@ import { WorkspacesPage } from './pages/WorkspacesPage.jsx';
 import { CookieRobotPage } from './pages/CookieRobotPage.jsx';
 import { DashboardPage } from './pages/DashboardPage.jsx';
 import { MonitoringPage } from './pages/MonitoringPage.jsx';
+import { LicenseAdminPage } from '@azwah-admin';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['workspaces', 'Workspaces'], ['cookie-robot', 'Automation'], ['diagnostics', 'Help and diagnostics'], ['settings', 'Settings']];
+const SHOW_ADMIN = import.meta.env.VITE_AZWAH_ADMIN === '1';
+const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['workspaces', 'Workspaces'], ['cookie-robot', 'Automation'], ...(SHOW_ADMIN ? [['license-admin', 'License admin']] : []), ['diagnostics', 'Help and diagnostics'], ['settings', 'Settings']];
 const MORE = [['dashboard', 'Dashboard'], ['templates', 'Templates'], ['monitoring', 'Monitoring'], ['activation', 'Edition']];
 export function App() {
   const toast = useToast();
@@ -27,7 +29,7 @@ export function App() {
   const [folderQuery, setFolderQuery] = useState('');
   const [folderDraft, setFolderDraft] = useState('');
   const [pendingCreate, setPendingCreate] = useState(null);
-  useEffect(()=>{api('/api/activation').then(state=>{setEdition(state);if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
+  useEffect(()=>{api('/api/activation').then(state=>{setEdition(state);if(state.edition==='ultimate')document.title='Azwah Multi Browser Ultimate';if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
   const [folder, setFolder] = useState('__all');
   const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [theme, setTheme] = useTheme();
@@ -114,6 +116,7 @@ export function App() {
           {!named.length && <div className="side-empty">{folderQuery.trim() ? 'No matching folders.' : 'Folders appear after a profile is saved with a name.'}</div>}
         </div>
         <button data-nav="trash" className={'nav' + (page === 'trash' ? ' sel' : '')} onClick={() => setPage('trash')}><Icon name="trash" />Trash <span className="count">{meta.trashCount ?? 0}</span></button>
+        <button data-nav="backup" className={'nav' + (page === 'settings' ? ' sel' : '')} onClick={() => setPage('settings')}><Icon name="download" />Backup</button>
         {MORE.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} onClick={() => setPage(k)}><Icon name={k} />{label}</button>)}
         <div className="side-foot">
           <p className="side-note">Team accounts, subscriptions, and cloud profile storage are not part of this local build.</p>
@@ -132,6 +135,7 @@ export function App() {
         {page === 'extensions' && <ExtensionsPage />}
         {page === 'monitoring' && <MonitoringPage />}
         {page === 'activation' && <OfficeActivation />}
+        {SHOW_ADMIN && page === 'license-admin' && <LicenseAdminPage />}
         {page === 'settings' && <SettingsPage />}
         {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
       </main>

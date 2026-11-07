@@ -1,17 +1,6 @@
 name: Azwah Ultimate bundled Firefox payload
 on:
   workflow_dispatch:
-  push:
-    branches: [integration/azwah-ultimate-ui-release]
-    paths:
-      - scripts/fetch-bundled-firefox.mjs
-      - scripts/firefox-runtime-pin.mjs
-      - scripts/firefox-extra-resources.cjs
-      - scripts/ultimate-firefox-payload-acceptance.mjs
-      - server/browser-runtime/firefox-launch.js
-      - electron-builder.ultimate-firefox-owner.cjs
-      - electron-builder.office-payload.cjs
-      - .github/workflows/azwah-ultimate-firefox-payload.yml
 permissions:
   contents: read
 jobs:
@@ -66,7 +55,11 @@ jobs:
         run: |
           node scripts/ultimate-firefox-payload-acceptance.mjs office 2>&1 | Tee-Object build-evidence/ultimate-firefox/office.log
           exit $LASTEXITCODE
+      - name: Do not publish the separate Owner and Admin installers
+        shell: pwsh
+        run: Write-Output 'Checkpoint evidence only. The final download is the single Ultimate installer from the unified workflow.'
       - name: Publish new Owner and Admin prereleases after both gates
+        if: ${{ false }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

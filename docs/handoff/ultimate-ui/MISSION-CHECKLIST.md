@@ -1,5 +1,7 @@
 # Ultimate UI mission checklist
 
+The final download is one installer, `Azwah-Multi-Browser-Ultimate-Setup-x64.exe`, product name Azwah Multi Browser Ultimate. License administration is a section of that application. The employee Office installer is generated from it and does not contain issuance code or a signing key. Separate Owner and Admin releases already published stay untouched and are not this deliverable.
+
 Branch: `integration/azwah-ultimate-ui-release`
 Baseline: `075d2a4791bfd482ef63c5b221bb3c8c39950714`
 Main is not a merge target. Existing release tags `azwah-multi-browser-owner-experimental.1` and `azwah-license-admin-experimental.1` are not updated.
