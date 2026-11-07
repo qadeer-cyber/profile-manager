@@ -72,7 +72,12 @@ function configureSecrets(secrets) {
 async function startBackend() {
   if (isUltimateEdition && !process.env.PM_USER_DATA) {
     const { migrateUltimateData } = await import('./ultimate-migrate.js');
-    const receipt = migrateUltimateData({appData: app.getPath('appData'), ultimateDir: userData});
+    let prepareOwnerData;
+    if (process.platform === 'win32') {
+      const { rewrapWindowsOwnerSecrets } = await import('./windows-owner-secrets.js');
+      prepareOwnerData = paths => rewrapWindowsOwnerSecrets({...paths, encrypt: value => safeStorage.encryptString(value)});
+    }
+    const receipt = migrateUltimateData({appData: app.getPath('appData'), ultimateDir: userData, prepareOwnerData});
     log(`ultimate migration copied ${receipt.copied?.length || 0}; conflicts ${receipt.conflicts?.length || 0}`);
   }
   if (isUltimateEdition) {
