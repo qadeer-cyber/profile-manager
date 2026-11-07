@@ -100,3 +100,23 @@ test('an unsupported nested entry leaves the active destination untouched', t =>
   assert.deepEqual(fs.readdirSync(ultimate), []);
   assert.equal(fs.readFileSync(path.join(ownerData, 'profiles.db'), 'utf8'), 'owner-profiles');
 });
+
+test('a live SQLite WAL prevents migration even if the main file hash has not changed', async t => {
+  const {DatabaseSync} = await import('node:sqlite');
+  const {appData, ultimate, ownerData} = layout();
+  const file = path.join(ownerData, 'profiles.db');
+  fs.rmSync(file);
+  const database = new DatabaseSync(file);
+  t.after(() => {
+    database.close();
+    fs.rmSync(appData, {recursive: true, force: true});
+  });
+  database.exec('PRAGMA journal_mode=WAL; CREATE TABLE profiles(name TEXT); PRAGMA wal_checkpoint(TRUNCATE);');
+  const before = sha(file);
+  database.exec("INSERT INTO profiles VALUES ('pending checkpoint')");
+  assert.equal(sha(file), before);
+  assert.ok(fs.statSync(file + '-wal').size > 0);
+  assert.throws(() => migrateUltimateData({appData, ultimateDir: ultimate}), /SQLite journal files/);
+  assert.equal(fs.existsSync(path.join(ultimate, 'data')), false);
+  assert.equal(database.prepare('SELECT name FROM profiles').get().name, 'pending checkpoint');
+});

@@ -35,6 +35,12 @@ function verifyExistingOwnerTree(source, destination) {
   }
 }
 
+function requireClosedOwnerDatabase(db) {
+  if (['-wal', '-shm', '-journal'].some(suffix => fs.existsSync(db + suffix))) {
+    throw new Error('Close legacy Owner cleanly before migrating. SQLite journal files are still present.');
+  }
+}
+
 function copyTree(source, destination, expectedDbHash) {
   const staging = fs.mkdtempSync(path.join(path.dirname(destination), '.owner-migration-'));
   const candidate = path.join(staging, 'data');
@@ -49,6 +55,7 @@ function copyTree(source, destination, expectedDbHash) {
       },
     });
     const sourceDb = path.join(source, 'profiles.db');
+    requireClosedOwnerDatabase(sourceDb);
     if (hashFile(path.join(candidate, 'profiles.db')) !== expectedDbHash || hashFile(sourceDb) !== expectedDbHash) {
       throw new Error('Owner profile database changed while it was copied');
     }
@@ -85,6 +92,7 @@ export function migrateUltimateData({ appData, ultimateDir }) {
   const copied = [];
   const ownerHash = fs.existsSync(ownerDb) ? hashFile(ownerDb) : null;
   const vaultHash = packagedHash || legacyHash;
+  if (ownerHash) requireClosedOwnerDatabase(ownerDb);
   if (ownerHash && fs.existsSync(ultimateDb)) {
     if (hashFile(ultimateDb) !== ownerHash) conflicts.push({kind: 'owner-data', source: ownerData, destination: ultimateData});
     else verifyExistingOwnerTree(ownerData, ultimateData);
