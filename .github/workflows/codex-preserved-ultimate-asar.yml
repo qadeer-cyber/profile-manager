@@ -55,7 +55,7 @@ jobs:
           const required = ['server/ultimate-admin.js', 'scripts/license-admin/admin.mjs'];
           const entries = required.map(name => {
             const rawPath = raw.find(item => item.replaceAll('\\', '/').replace(/^\//, '') === name);
-            const bytes = rawPath ? asar.extractFile(archive, name).length : 0;
+            const bytes = rawPath ? asar.extractFile(archive, path.normalize(name)).length : 0;
             return {name, rawPath, bytes};
           });
           const joined = raw.join('\n');
