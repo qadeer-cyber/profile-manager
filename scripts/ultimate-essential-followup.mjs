@@ -52,6 +52,14 @@ function processImage(pid) {
   if (result.status !== 0) throw new Error(result.stderr || 'process path unavailable');
   return result.stdout.trim();
 }
+async function replaceIssuedToken(page, previous) {
+  await page.getByRole('button', {name: 'Issue license', exact: true}).click();
+  await page.waitForFunction(old => {
+    const value = document.querySelector('textarea')?.value || '';
+    return value.startsWith('AZW1.') && value !== old;
+  }, previous);
+  return page.locator('textarea').inputValue();
+}
 function listen(server) {
   return new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -92,7 +100,7 @@ try {
   await dialog.getByLabel('Name', {exact: true}).fill('GUI proxy');
   await dialog.getByRole('tab', {name: 'Proxy'}).click();
   await dialog.getByRole('radio', {name: 'Custom'}).click();
-  await dialog.getByRole('radio', {name: 'HTTP'}).click();
+  await dialog.getByRole('radiogroup', {name: 'Proxy protocol'}).getByRole('radio', {name: 'HTTP', exact: true}).click();
   await dialog.getByLabel('Proxy details').fill(`127.0.0.1:${port}:azwah:${proxyPassword}`);
   await dialog.getByRole('button', {name: 'Test Proxy'}).click();
   await dialog.getByText(/Transport ok/).waitFor({timeout: 20000});
@@ -189,16 +197,13 @@ try {
   await page.getByLabel('Name', {exact: true}).fill('Standard desk');
   await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
   await page.getByRole('button', {name: 'Save employee', exact: true}).click();
+  await page.getByText('Employee saved').waitFor();
   await app.evaluate(() => { globalThis.__azwahRealNow = Date.now; Date.now = () => globalThis.__azwahRealNow() - 5 * 86400000; });
   await page.getByLabel('Validity in days', {exact: true}).fill('1');
-  await page.getByRole('button', {name: 'Issue license', exact: true}).click();
-  await page.getByText(/^AZW1\./).waitFor();
-  const expiredToken = await page.locator('textarea').inputValue();
+  const expiredToken = await replaceIssuedToken(page, '');
   await app.evaluate(() => { Date.now = globalThis.__azwahRealNow; delete globalThis.__azwahRealNow; });
   await page.getByLabel('Validity in days', {exact: true}).fill('30');
-  await page.getByRole('button', {name: 'Issue license', exact: true}).click();
-  await page.getByText(/^AZW1\./).waitFor();
-  const currentToken = await page.locator('textarea').inputValue();
+  const currentToken = await replaceIssuedToken(page, expiredToken);
   check(currentToken !== expiredToken && currentToken.startsWith('AZW1.'), 'A current license is distinct from the backdated license');
   const expired = await api(employee, '/activation', {token: expiredToken, confirm: true});
   check(expired.body?.code === 'LICENSE_EXPIRED', 'Office on the standard account rejects an expired license');
@@ -208,7 +213,18 @@ try {
   await employee.getByLabel('License file').setInputFiles(licenseFile);
   await employee.getByLabel('I authorize activation on this device.').check();
   await employee.getByRole('button', {name: 'Activate offline', exact: true}).click();
-  await employee.getByText('This device is activated').waitFor();
+  try {
+    await employee.getByText('This device is activated for offline use.', {exact: true}).waitFor();
+  } catch (error) {
+    const status = await employee.locator('[role=status]').allTextContents();
+    throw new Error(`Office did not activate. Status: ${status.join(' | ').slice(0, 300)}`);
+  }
+  const activated = await api(employee, '/activation');
+  check(activated.body?.active === true, 'Standard-account Office reports an active license');
+  await employeeSession.close();
+  const reopened = await employeeSession.launch();
+  const persisted = await api(reopened, '/activation');
+  check(persisted.body?.active === true, 'Standard-account activation remains after the Office application is reopened');
   const officeFirefox = await api(employee, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
   const officeLaunch = await api(employee, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
   check(officeLaunch.status === 200, 'Generated Office launches Firefox without a system Firefox');

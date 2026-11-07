@@ -198,15 +198,28 @@ try {
     await page.getByLabel('Name', {exact: true}).fill('Office desk');
     await page.getByLabel('Device code', {exact: true}).fill(employeeDevice);
     await page.getByRole('button', {name: 'Save employee', exact: true}).click();
+    const previousToken = await page.locator('textarea').inputValue();
     await page.getByRole('button', {name: 'Issue license', exact: true}).click();
+    await page.waitForFunction(previous => {
+      const value = document.querySelector('textarea')?.value || '';
+      return value.startsWith('AZW1.') && value !== previous;
+    }, previousToken);
     const officeToken = await page.locator('textarea').inputValue();
+    check(officeToken !== previousToken, 'The office-device license replaced the earlier token');
     const licenseFile = path.join(root, 'office-employee.azwah');
     fs.writeFileSync(licenseFile, officeToken);
     await employee.bringToFront();
     await employee.getByLabel('License file').setInputFiles(licenseFile);
     await employee.getByLabel('I authorize activation on this device.').check();
     await employee.getByRole('button', {name: 'Activate offline', exact: true}).click();
-    await employee.getByText('This device is activated').waitFor();
+    try {
+      await employee.getByText('This device is activated for offline use.', {exact: true}).waitFor();
+    } catch (error) {
+      const status = await employee.locator('[role=status]').allTextContents();
+      throw new Error(`Office did not activate. Status: ${status.join(' | ').slice(0, 300)}`);
+    }
+    const activated = await api(employee, '/activation');
+    check(activated.body?.active === true && activated.body?.code !== 'LICENSE_DEVICE_MISMATCH', 'Office activation status is active for this device');
     await employee.screenshot({path: path.join(evidence, 'screenshots', 'office-activated-1366x768.png')});
     const fixture = await startLocalHttpFixture();
     const fx = await api(employee, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
