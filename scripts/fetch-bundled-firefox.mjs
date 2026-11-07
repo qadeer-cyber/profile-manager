@@ -43,7 +43,8 @@ const required = ['firefox.exe', 'xul.dll', 'omni.ja', 'mozglue.dll', 'nss3.dll'
 for (const name of required) if (!fs.existsSync(path.join(core, name))) throw new Error(`Extracted Firefox runtime is missing ${name}`);
 if (fs.statSync(path.join(core, 'xul.dll')).size < 50_000_000 || fs.statSync(path.join(core, 'omni.ja')).size < 10_000_000) throw new Error('Extracted Firefox runtime is incomplete');
 const ini = fs.readFileSync(path.join(core, 'application.ini'), 'utf8');
-if (!ini.includes('Name=Firefox') || !ini.includes('Version=140.17.0')) throw new Error('Extracted Firefox version does not match the pin');
+const iniLines = ini.split(/\r?\n/);
+if (!iniLines.includes('Name=Firefox') || !iniLines.includes('Version=' + FIREFOX_RUNTIME.version.replace(/esr$/, ''))) throw new Error('Extracted Firefox version does not match the pin');
 fs.cpSync(core, runtime, {recursive: true});
 fs.rmSync(extracted, {recursive: true, force: true});
 fs.rmSync(setup, {force: true});

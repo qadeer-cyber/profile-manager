@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 90
     permissions:
       contents: read
+    outputs:
+      installer_sha256: ${{ steps.provenance.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +52,7 @@ jobs:
           npx electron-builder --config electron-builder.ultimate-unified.cjs --win nsis --x64 --publish never
           exit $LASTEXITCODE
       - name: Record installer provenance before acceptance
+        id: provenance
         if: success()
         shell: pwsh
         run: |
@@ -60,6 +63,7 @@ jobs:
           if (-not (Test-Path -LiteralPath $exe)) { throw "Built installer is missing: $exe" }
           $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
           $size = (Get-Item -LiteralPath $exe).Length
+          "sha256=$hash" >> $env:GITHUB_OUTPUT
           "$hash  $exeName" | Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
           @(
             "Installer source: $env:GITHUB_SHA"
@@ -68,8 +72,8 @@ jobs:
             "Bytes: $size"
             "SHA256: $hash"
             "Product: Azwah Multi Browser Ultimate"
-            "Firefox: 140.17.0esr win64 en-US"
-            "Firefox installer SHA256: df6f7046d53ff17403e49092c0fe830e24cabd8dacbfad3225870955908fccf9"
+            "Firefox: 153.5.1esr win64 en-US"
+            "Firefox installer SHA256: 833147d8124d77331afbc35ef9f85f158dffb633f6d7586ede64f4601131e86c"
             "Host: Windows Server 2022"
             "Windows 10: not qualified"
             "Authenticode: NotSigned"
@@ -86,7 +90,8 @@ jobs:
             release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
             release-ultimate/SHA256SUMS.txt
             release-ultimate/BUILD-MANIFEST.txt
-          retention-days: 14
+          retention-days: 90
+          compression-level: 0
           if-no-files-found: error
       - name: Download the previous separate Owner and Admin installers
         shell: pwsh
@@ -111,3 +116,72 @@ jobs:
           name: ultimate-unified-${{ github.sha }}
           path: build-evidence/ultimate-unified
           retention-days: 30
+  essential:
+    needs: unified
+    if: ${{ always() && needs.unified.outputs.installer_sha256 != '' }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      AZWAH_INSTALLER_SOURCE_SHA: ${{ github.sha }}
+      AZWAH_UNIFIED_INSTALLER_SHA256: ${{ needs.unified.outputs.installer_sha256 }}
+      AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ultimate-installer-${{ github.sha }}
+          path: release-ultimate
+      - name: Run essential qualification on a fresh Windows account
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force build-evidence/ultimate-essential | Out-Null
+          node scripts/ultimate-essential-followup.mjs 2>&1 | Tee-Object build-evidence/ultimate-essential/transcript.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ultimate-essential-${{ github.sha }}
+          path: build-evidence/ultimate-essential
+          retention-days: 90
+
+  independently-verify:
+    needs: [unified, essential]
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ultimate-installer-${{ github.sha }}
+          path: verified
+      - name: Verify the independently downloaded qualified candidate
+        shell: pwsh
+        env:
+          BUILD_SHA256: ${{ needs.unified.outputs.installer_sha256 }}
+        run: |
+          $exe = 'verified/Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $sha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          $manifest = Get-Content -LiteralPath verified/BUILD-MANIFEST.txt
+          $expected = ((Get-Content -LiteralPath verified/SHA256SUMS.txt -Raw).Trim() -split '\s+')[0]
+          if ($sha -ne $expected -or $sha -ne $env:BUILD_SHA256) { throw 'Independent SHA-256 mismatch' }
+          if ($manifest -notcontains "Installer source: $env:GITHUB_SHA" -or $manifest -notcontains "Bytes: $size" -or $manifest -notcontains "SHA256: $sha") { throw 'Independent provenance mismatch' }
+          @{source=$env:GITHUB_SHA; sha256=$sha; bytes=$size; run=$env:GITHUB_RUN_ID; qualification='passed'} | ConvertTo-Json | Set-Content -Encoding ascii verified/INDEPENDENT-VERIFICATION.json
+          Write-Host "Qualified candidate $size bytes SHA-256 $sha source $env:GITHUB_SHA"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-independent-verification-${{ github.sha }}
+          path: verified/INDEPENDENT-VERIFICATION.json
+          retention-days: 90
+          if-no-files-found: error

@@ -21,10 +21,49 @@ function copyFile(source, destination) {
   try { fs.renameSync(temporary, destination); }
   finally { fs.rmSync(temporary, {force: true}); }
 }
-function copyTree(source, destination) {
-  if (fs.existsSync(destination)) throw new Error(`Destination already exists: ${destination}`);
-  fs.cpSync(source, destination, {recursive: true, dereference: false, errorOnExist: true});
-  if (fs.readdirSync(destination, {withFileTypes: true}).some(entry => entry.isSymbolicLink())) throw new Error('Migration copy contains a symlink');
+function verifyExistingOwnerTree(source, destination) {
+  for (const name of fs.readdirSync(source)) {
+    const from = path.join(source, name);
+    const to = path.join(destination, name);
+    const original = fs.lstatSync(from);
+    const copied = fs.lstatSync(to, {throwIfNoEntry: false});
+    if (original.isDirectory() && copied?.isDirectory()) {
+      verifyExistingOwnerTree(from, to);
+    } else if (!original.isFile() || !copied?.isFile() || hashFile(from) !== hashFile(to)) {
+      throw new Error('Incomplete Owner migration detected. Source and destination were preserved.');
+    }
+  }
+}
+
+function requireClosedOwnerDatabase(db) {
+  if (['-wal', '-shm', '-journal'].some(suffix => fs.existsSync(db + suffix))) {
+    throw new Error('Close legacy Owner cleanly before migrating. SQLite journal files are still present.');
+  }
+}
+
+function copyTree(source, destination, expectedDbHash) {
+  const staging = fs.mkdtempSync(path.join(path.dirname(destination), '.owner-migration-'));
+  const candidate = path.join(staging, 'data');
+  try {
+    fs.cpSync(source, candidate, {
+      recursive: true,
+      dereference: false,
+      filter(file) {
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() && !stat.isDirectory()) throw new Error('Migration source contains an unsupported entry');
+        return true;
+      },
+    });
+    const sourceDb = path.join(source, 'profiles.db');
+    requireClosedOwnerDatabase(sourceDb);
+    if (hashFile(path.join(candidate, 'profiles.db')) !== expectedDbHash || hashFile(sourceDb) !== expectedDbHash) {
+      throw new Error('Owner profile database changed while it was copied');
+    }
+    if (fs.existsSync(destination)) throw new Error(`Destination already exists: ${destination}`);
+    fs.renameSync(candidate, destination);
+  } finally {
+    fs.rmSync(staging, {recursive: true, force: true});
+  }
 }
 
 export function migrateUltimateData({ appData, ultimateDir }) {
@@ -53,11 +92,12 @@ export function migrateUltimateData({ appData, ultimateDir }) {
   const copied = [];
   const ownerHash = fs.existsSync(ownerDb) ? hashFile(ownerDb) : null;
   const vaultHash = packagedHash || legacyHash;
+  if (ownerHash) requireClosedOwnerDatabase(ownerDb);
   if (ownerHash && fs.existsSync(ultimateDb)) {
     if (hashFile(ultimateDb) !== ownerHash) conflicts.push({kind: 'owner-data', source: ownerData, destination: ultimateData});
+    else verifyExistingOwnerTree(ownerData, ultimateData);
   } else if (ownerHash) {
-    copyTree(ownerData, ultimateData);
-    if (hashFile(ultimateDb) !== ownerHash) throw new Error('Owner profile database changed while it was copied');
+    copyTree(ownerData, ultimateData, ownerHash);
     copied.push({kind: 'owner-data', source: ownerData, sha256: ownerHash});
   }
   if (vaultHash && fs.existsSync(ultimateVault)) {

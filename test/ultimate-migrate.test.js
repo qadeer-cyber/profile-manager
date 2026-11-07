@@ -66,3 +66,57 @@ test('different standalone vaults are preserved and migration stops before copyi
   assert.equal(fs.readFileSync(path.join(adminDir, 'organization.vault'), 'utf8'), 'sealed-vault');
   assert.equal(fs.readFileSync(oldVault, 'utf8'), 'different sealed vault');
 });
+
+test('a matching database alone cannot finalize an interrupted Owner copy', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData, {recursive: true, force: true}));
+  const cookie = path.join(ownerData, 'profiles', 'alpha', 'Cookies');
+  fs.mkdirSync(path.dirname(cookie), {recursive: true});
+  fs.writeFileSync(cookie, 'synthetic browser state');
+  const destination = path.join(ultimate, 'data');
+  fs.mkdirSync(destination, {recursive: true});
+  fs.copyFileSync(path.join(ownerData, 'profiles.db'), path.join(destination, 'profiles.db'));
+  assert.throws(() => migrateUltimateData({appData, ultimateDir: ultimate}), /Incomplete Owner migration/);
+  assert.equal(fs.existsSync(path.join(ultimate, 'azwah-ultimate-migration.json')), false);
+  assert.equal(fs.readFileSync(cookie, 'utf8'), 'synthetic browser state');
+  const copiedCookie = path.join(destination, 'profiles', 'alpha', 'Cookies');
+  fs.mkdirSync(path.dirname(copiedCookie), {recursive: true});
+  fs.copyFileSync(cookie, copiedCookie);
+  const retried = migrateUltimateData({appData, ultimateDir: ultimate});
+  assert.deepEqual(retried.conflicts, []);
+});
+
+test('an unsupported nested entry leaves the active destination untouched', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData, {recursive: true, force: true}));
+  const nested = path.join(ownerData, 'profiles', 'alpha');
+  fs.mkdirSync(nested, {recursive: true});
+  const target = path.join(appData, 'outside');
+  fs.mkdirSync(target);
+  fs.symlinkSync(target, path.join(nested, 'outside'), process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => migrateUltimateData({appData, ultimateDir: ultimate}), /unsupported entry/);
+  assert.equal(fs.existsSync(path.join(ultimate, 'data')), false);
+  assert.equal(fs.existsSync(path.join(ultimate, 'azwah-ultimate-migration.json')), false);
+  assert.deepEqual(fs.readdirSync(ultimate), []);
+  assert.equal(fs.readFileSync(path.join(ownerData, 'profiles.db'), 'utf8'), 'owner-profiles');
+});
+
+test('a live SQLite WAL prevents migration even if the main file hash has not changed', async t => {
+  const {DatabaseSync} = await import('node:sqlite');
+  const {appData, ultimate, ownerData} = layout();
+  const file = path.join(ownerData, 'profiles.db');
+  fs.rmSync(file);
+  const database = new DatabaseSync(file);
+  t.after(() => {
+    database.close();
+    fs.rmSync(appData, {recursive: true, force: true});
+  });
+  database.exec('PRAGMA journal_mode=WAL; CREATE TABLE profiles(name TEXT); PRAGMA wal_checkpoint(TRUNCATE);');
+  const before = sha(file);
+  database.exec("INSERT INTO profiles VALUES ('pending checkpoint')");
+  assert.equal(sha(file), before);
+  assert.ok(fs.statSync(file + '-wal').size > 0);
+  assert.throws(() => migrateUltimateData({appData, ultimateDir: ultimate}), /SQLite journal files/);
+  assert.equal(fs.existsSync(path.join(ultimate, 'data')), false);
+  assert.equal(database.prepare('SELECT name FROM profiles').get().name, 'pending checkpoint');
+});
