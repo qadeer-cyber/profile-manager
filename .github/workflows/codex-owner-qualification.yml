@@ -1,4 +1,4 @@
-name: Independent Ultimate Owner qualification
+name: Independent Ultimate Firefox PATH diagnostic
 on:
   push:
     branches: [codex/azwah-owner-qualification]
@@ -31,5 +31,5 @@ jobs:
           if ($hash -ne 'c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142') { throw 'Installer hash mismatch' }
           npm ci --ignore-scripts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node scripts/codex-owner-qualification.mjs
+          node scripts/codex-firefox-path.mjs
           exit $LASTEXITCODE
