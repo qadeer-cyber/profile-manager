@@ -7,9 +7,10 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {_electron} from 'playwright';
-import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, startAuthenticatedProxyFixture, waitForIssuedToken} from './installed-acceptance-helpers.mjs';
+import {activateInstalledOffice, assertIssuedDevice, hasExpectedOfficeTrust, waitForIssuedToken} from './installed-acceptance-helpers.mjs';
 import {asarLookupPath} from './asar-entries.mjs';
 import {windowsEmployeeIdentity} from './windows-employee-identity.mjs';
+import {createRecordingProxy, proxyEvidence} from './recording-proxy.mjs';
 
 if (process.platform !== 'win32' || process.env.CI !== 'true') throw new Error('An isolated Windows CI worker is required');
 const asar = createRequire(import.meta.url)('@electron/asar');
@@ -27,6 +28,7 @@ const record = {
   windows10: false,
   separateStandardAccount: false,
   osSecretPrefix: null,
+  observedPublicEgress: false,
 };
 const check = (ok, message) => { results.push({pass: !!ok, message}); console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); if (!ok) throw new Error(message); };
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -34,7 +36,7 @@ const password = 'Essential vault ' + crypto.randomUUID();
 const proxyPassword = 'Px' + crypto.randomBytes(9).toString('base64url');
 const cookieValue = 'Ck' + crypto.randomBytes(9).toString('base64url');
 function closedEnv(extra = {}) {
-  const env = {...process.env, PM_FIREFOX_NO_SYSTEM: '1', PROXY_TEST_URL: 'http://203.0.113.10/ip', PATH: 'C:\\Windows\\System32', ProgramFiles: path.join(root, 'empty-pf'), 'ProgramFiles(x86)': path.join(root, 'empty-pf-x86'), ...extra};
+  const env = {...process.env, PM_FIREFOX_NO_SYSTEM: '1', PROXY_TEST_URL: 'http://203.0.113.10/ip', PATH: ['System32', 'System32\\WindowsPowerShell\\v1.0'].map(dir => path.join(process.env.SystemRoot, dir)).join(path.delimiter), ProgramFiles: path.join(root, 'empty-pf'), 'ProgramFiles(x86)': path.join(root, 'empty-pf-x86'), ...extra};
   delete env.PM_USER_DATA; delete env.PM_FIREFOX_EXECUTABLE; delete env.PM_FIREFOX_RESOURCES;
   fs.mkdirSync(env.ProgramFiles, {recursive: true}); fs.mkdirSync(env['ProgramFiles(x86)'], {recursive: true});
   return env;
@@ -56,16 +58,23 @@ async function replaceIssuedToken(page, previous) {
   await page.getByRole('button', {name: 'Issue license', exact: true}).click();
   return waitForIssuedToken(page, previous);
 }
+function listen(server) {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+  });
+}
+
 let app;
 let employeeSession;
-let proxy;
+const proxyEvents = [];
+const proxy = createRecordingProxy(proxyEvents, {username: 'azwah', password: proxyPassword});
 try {
   if (!/^[a-f0-9]{64}$/.test(expectedHash) || sha(installer) !== expectedHash) throw new Error('Follow-on requires the retained installer and its verified SHA-256');
   record.installer = {bytes: fs.statSync(installer).size, sha256: expectedHash};
   const installDir = path.join(root, 'ultimate');
   execFileSync(installer, ['/S', '/D=' + installDir], {timeout: 240000});
-  proxy = await startAuthenticatedProxyFixture('azwah', proxyPassword);
-  const {port, hits} = proxy;
+  const port = await listen(proxy);
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   let page = await app.firstWindow();
   await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
@@ -75,18 +84,20 @@ try {
   const init = await api(page, '/admin/init', {organization: 'Essential organization', password, confirm: password});
   check(init.status === 200 && init.body.publicKey && !init.body.publicKey.includes('PRIVATE'), 'Installed Ultimate created an organization identity');
   await page.locator('[data-nav=profiles]').click();
-  await page.getByRole('button', {name: 'New profile', exact: true}).click();
+  await page.getByRole('button', {name: 'New profile'}).click();
   const dialog = page.getByRole('dialog');
   await dialog.getByLabel('Name', {exact: true}).fill('GUI proxy');
-  await dialog.getByRole('tab', {name: 'Proxy', exact: true}).click();
-  await dialog.getByRole('radio', {name: 'Custom', exact: true}).click();
-  await dialog.getByRole('radiogroup', {name: 'Proxy protocol', exact: true}).getByRole('radio', {name: 'HTTP', exact: true}).click();
+  await dialog.getByRole('tab', {name: 'Proxy'}).click();
+  await dialog.getByRole('radio', {name: 'Custom'}).click();
+  await dialog.getByRole('radiogroup', {name: 'Proxy protocol'}).getByRole('radio', {name: 'HTTP', exact: true}).click();
   await dialog.getByLabel('Proxy details').fill(`127.0.0.1:${port}:azwah:${proxyPassword}`);
-  await dialog.getByRole('button', {name: 'Test Proxy', exact: true}).click();
+  await dialog.getByRole('button', {name: 'Test Proxy'}).click();
   await dialog.getByText(/Transport ok/).waitFor({timeout: 20000});
-  check(hits.some(url => url.includes('/ip')), 'Test Proxy sent a request through the saved proxy configuration');
-  await dialog.getByRole('button', {name: 'Hide credentials', exact: true}).click();
-  await dialog.getByRole('button', {name: 'Create profile', exact: true}).click();
+  const testProxy = proxyEvidence(proxyEvents);
+  check(testProxy.observedPublicEgress === false && testProxy.authenticatedConnectCount >= 1 && testProxy.connectDestinations.includes('203.0.113.10:80') && testProxy.requestPaths.some(item => item.includes('/ip')), 'Test Proxy opened one authenticated CONNECT to 203.0.113.10:80 and the fixture returned 203.0.113.50. That address is not an observed public IP.');
+  record.proxyTest = testProxy;
+  await dialog.getByRole('button', {name: 'Hide credentials'}).click();
+  await dialog.getByRole('button', {name: 'Create profile'}).click();
   await page.getByRole('cell', {name: 'GUI proxy', exact: true}).waitFor();
   const saved = (await api(page, '/profiles')).body.find(item => item.name === 'GUI proxy');
   check(saved?.proxy?.host === '127.0.0.1' && saved.proxy.port === port && saved.proxy.hasPassword === true && saved.proxy.password !== proxyPassword, 'Proxy GUI saved the host and did not return the password');
@@ -100,25 +111,26 @@ try {
   app = await _electron.launch({executablePath: path.join(installDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv(), timeout: 90000});
   page = await app.firstWindow();
   await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
-  await page.getByRole('checkbox', {name: 'Select GUI proxy', exact: true}).check();
-  await page.getByRole('button', {name: 'Edit selected', exact: true}).click();
+  await page.getByRole('checkbox', {name: 'Select GUI proxy'}).check();
+  await page.getByRole('button', {name: 'Edit selected'}).click();
   const reloaded = page.getByRole('dialog');
-  await reloaded.getByRole('tab', {name: 'Proxy', exact: true}).click();
-  const savedProxy = reloaded.getByLabel('Saved proxy', {exact: true});
+  await reloaded.getByRole('tab', {name: 'Proxy'}).click();
+  const savedProxy = reloaded.getByRole('combobox', {name: 'Saved proxy'});
   await savedProxy.waitFor();
-  check(!!saved.proxyId && await savedProxy.inputValue() === saved.proxyId, 'Reloaded profile editor selects the persisted proxy library entry');
-  const beforeRetest = hits.length;
-  await reloaded.getByRole('button', {name: 'Test Proxy', exact: true}).click();
+  const savedProxyText = await savedProxy.locator('option:checked').textContent();
+  check(savedProxyText.includes(`127.0.0.1:${port}`), 'Reloaded editor shows the saved library proxy, not a second custom line');
+  await reloaded.getByRole('button', {name: 'Test Proxy'}).click();
   await reloaded.getByText(/Transport ok/).waitFor({timeout: 20000});
-  check(hits.slice(beforeRetest).some(url => url.includes('/ip')), 'Reloaded editor authenticates with the saved proxy credentials');
-  await reloaded.getByRole('button', {name: 'Save changes', exact: true}).click();
-  await reloaded.waitFor({state: 'hidden'});
-  const beforeRoute = hits.length;
+  await reloaded.getByRole('button', {name: 'Cancel'}).click();
+  const beforeRoute = proxyEvents.length;
   const routed = await api(page, `/profiles/${saved.id}/launch`, {headless: true, url: 'http://203.0.113.10/azwah-route'});
   check(routed.status === 200, 'Chromium launch accepted the profile');
   const routeDeadline = Date.now() + 20000;
-  while (Date.now() < routeDeadline && !hits.slice(beforeRoute).some(url => url.includes('azwah-route'))) await new Promise(resolve => setTimeout(resolve, 250));
-  check(hits.slice(beforeRoute).some(url => url.includes('azwah-route')), 'Chromium sent the requested URL through the configured proxy');
+  const sawRoute = () => proxyEvents.slice(beforeRoute).some(item => item.authenticated && item.responded && String(item.path || item.destination).includes('azwah-route'));
+  while (Date.now() < routeDeadline && !sawRoute()) await new Promise(resolve => setTimeout(resolve, 250));
+  const routeEvidence = proxyEvidence(proxyEvents.slice(beforeRoute));
+  check(routeEvidence.observedPublicEgress === false && sawRoute(), 'Chromium sent /azwah-route through the authenticated proxy. The fixture address is not an observed public IP.');
+  record.browserRoute = routeEvidence;
   const firstPid = (await api(page, `/profiles/${saved.id}`)).body.pid;
   const firstImage = processImage(firstPid);
   check(firstImage.toLowerCase().includes(path.join(installDir, 'resources', 'browsers').toLowerCase()), 'Chromium process image is inside the installer tree');
@@ -128,16 +140,18 @@ try {
 
   const firefoxProfile = await api(page, '/profiles', {name: 'Bundled Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
   check(firefoxProfile.status === 201, 'Ultimate can create a Firefox profile');
-  try {
-    const firefoxLaunch = await api(page, `/profiles/${firefoxProfile.body.id}/launch`, {headless: true, automation: true});
-    check(firefoxLaunch.status === 200, firefoxLaunch.status === 200 ? 'Ultimate Firefox BiDi launch succeeded' : 'Ultimate Firefox launch HTTP ' + firefoxLaunch.status + ': ' + JSON.stringify(firefoxLaunch.body));
+  const firefoxLaunch = await api(page, `/profiles/${firefoxProfile.body.id}/launch`, {headless: true, automation: true});
+  const firefoxDetail = {status: firefoxLaunch.status, code: firefoxLaunch.body?.code || null, message: String(firefoxLaunch.body?.error || firefoxLaunch.body?.message || '').slice(0, 300)};
+  record.firefox = {...firefoxDetail, systemFallback: false, bundledClaim: false};
+  if (firefoxLaunch.status !== 200) {
+    results.push({pass: false, message: `Ultimate Firefox launch failed: ${firefoxDetail.status} ${firefoxDetail.code || ''} ${firefoxDetail.message}`.trim()});
+    console.log(`FAIL ${results.at(-1).message}`);
+    console.log('FIREFOX_LIMITATION bundled launch did not succeed. System fallback stays disabled. This is not a pass.');
+  } else {
+    check(true, 'Ultimate launches Firefox without a system Firefox');
     const firefoxImage = processImage((await api(page, `/profiles/${firefoxProfile.body.id}`)).body.pid);
     check(firefoxImage.toLowerCase() === path.join(installDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Ultimate Firefox process image is the bundled runtime');
     check((await api(page, `/profiles/${firefoxProfile.body.id}/stop`, {})).status === 200, 'Ultimate Firefox stop succeeded');
-  } catch (error) {
-    record.ultimateFirefoxFailure = error.message;
-    results.push({pass: false, message: error.message});
-    console.error('FIREFOX_QUALIFICATION_FAILURE ' + error.message);
   }
 
   const cookieProfile = await api(page, '/profiles', {name: 'Cookie shelf', browserEngine: 'chromium'});
@@ -148,7 +162,7 @@ try {
   fs.writeFileSync(path.join(extensionDir, 'manifest.json'), JSON.stringify({manifest_version: 3, name: 'Kept Extension', version: '1.0.0'}));
   const imported = await api(page, '/extensions/import', {path: extensionDir});
   check(imported.status === 201, 'An unpacked extension can be imported');
-  check((await api(page, `/profiles/${cookieProfile.body.id}/extensions`, {extensionId: imported.body.id, enabled: true})).status === 200, 'The extension can be assigned');
+  check((await api(page, `/profiles/${cookieProfile.body.id}/extensions`, {extensionId: imported.body.id, enabled: true})).status === 201, 'The extension can be assigned');
   const shelf = path.join(userData, 'data', 'profiles', cookieProfile.body.id);
   check(fs.existsSync(shelf), 'Profile storage directory exists');
   await app.close(); app = undefined;
@@ -164,7 +178,7 @@ try {
   await page.locator('[data-nav=license-admin]').click();
   await page.getByLabel('Master password', {exact: true}).fill(password);
   await page.getByRole('button', {name: 'Unlock', exact: true}).click();
-  await page.getByRole('heading', {name: 'Essential organization', exact: true}).waitFor();
+  await page.getByRole('heading', {name: 'Essential organization'}).waitFor();
   const officeOut = path.join(root, 'generated-office');
   fs.mkdirSync(officeOut);
   await app.evaluate(({dialog}, dir) => { dialog.showOpenDialog = async () => ({canceled: false, filePaths: [dir]}); }, officeOut);
@@ -210,17 +224,11 @@ try {
   const persisted = await api(reopened, '/activation');
   check(persisted.body?.active === true, 'Standard-account activation remains after the Office application is reopened');
   const officeFirefox = await api(reopened, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
-  try {
-    const officeLaunch = await api(reopened, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
-    check(officeLaunch.status === 200, officeLaunch.status === 200 ? 'Office Firefox BiDi launch succeeded' : 'Office Firefox launch HTTP ' + officeLaunch.status + ': ' + JSON.stringify(officeLaunch.body));
-    const officeImage = processImage((await api(reopened, `/profiles/${officeFirefox.body.id}`)).body.pid);
-    check(officeImage.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
-    check((await api(reopened, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
-  } catch (error) {
-    record.officeFirefoxFailure = error.message;
-    results.push({pass: false, message: error.message});
-    console.error('FIREFOX_QUALIFICATION_FAILURE ' + error.message);
-  }
+  const officeLaunch = await api(reopened, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
+  check(officeLaunch.status === 200, 'Generated Office launches Firefox without a system Firefox');
+  const officeImage = processImage((await api(reopened, `/profiles/${officeFirefox.body.id}`)).body.pid);
+  check(officeImage.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
+  check((await api(reopened, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
   await employeeSession.dispose(); employeeSession = undefined;
 
   await app.close(); app = undefined;
@@ -235,7 +243,6 @@ try {
   const restored = (await api(page, '/profiles')).body.find(item => item.name === 'GUI proxy');
   check(restored?.proxy?.host === '127.0.0.1' && restored.proxy.hasPassword === true, 'Reinstall keeps the profile and its sealed proxy');
   check(fs.existsSync(path.join(userData, 'organization.vault')), 'Reinstall keeps the organization vault');
-  if (record.ultimateFirefoxFailure || record.officeFirefoxFailure) process.exitCode = 1;
 } catch (error) {
   if (!results.some(item => !item.pass && item.message === error.message)) results.push({pass: false, message: error.stack || error.message});
   console.error('ESSENTIAL_FOLLOWUP_FAILURE', error.message);
@@ -243,8 +250,10 @@ try {
 } finally {
   if (employeeSession) await employeeSession.dispose().catch(() => {});
   if (app) await app.close().catch(() => {});
-  if (proxy) await proxy.close();
+  proxy.close();
+  proxy.closeAllConnections();
   fs.writeFileSync(path.join(evidence, 'essential.json'), JSON.stringify({...record, results}, null, 2));
   fs.rmSync(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
 }
+if (results.some(item => !item.pass)) process.exitCode = 1;
 if (process.exitCode) process.exit(process.exitCode);

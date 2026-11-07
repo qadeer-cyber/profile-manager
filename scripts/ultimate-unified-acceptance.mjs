@@ -26,7 +26,7 @@ const results = [];
 const check = (ok, message) => { results.push({pass: !!ok, message}); console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); if (!ok) throw new Error(message); };
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 function closedEnv(extra = {}) {
-  const env = {...process.env, PM_FIREFOX_NO_SYSTEM: '1', PATH: 'C:\\Windows\\System32', ProgramFiles: path.join(root, 'empty-pf'), 'ProgramFiles(x86)': path.join(root, 'empty-pf-x86'), ...extra};
+  const env = {...process.env, PM_FIREFOX_NO_SYSTEM: '1', PATH: ['System32', 'System32\\WindowsPowerShell\\v1.0'].map(dir => path.join(process.env.SystemRoot, dir)).join(path.delimiter), ProgramFiles: path.join(root, 'empty-pf'), 'ProgramFiles(x86)': path.join(root, 'empty-pf-x86'), ...extra};
   delete env.PM_USER_DATA; delete env.PM_FIREFOX_EXECUTABLE; delete env.PM_FIREFOX_RESOURCES;
   fs.mkdirSync(env.ProgramFiles, {recursive: true}); fs.mkdirSync(env['ProgramFiles(x86)'], {recursive: true});
   return env;

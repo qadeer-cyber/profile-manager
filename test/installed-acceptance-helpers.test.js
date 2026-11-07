@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import http from 'node:http';
-import {HttpsProxyAgent} from 'https-proxy-agent';
-import {assertIssuedDevice, startAuthenticatedProxyFixture, waitForIssuedToken} from '../scripts/installed-acceptance-helpers.mjs';
+import {assertIssuedDevice, waitForIssuedToken} from '../scripts/installed-acceptance-helpers.mjs';
 
 const license = device => 'AZW1.' + Buffer.from(JSON.stringify({device})).toString('base64url') + '.signature';
 
@@ -36,20 +34,4 @@ test('token readiness excludes the previously issued license', async () => {
     if (savedDocument === undefined) delete globalThis.document;
     else globalThis.document = savedDocument;
   }
-});
-
-test('installed proxy fixture authenticates a CONNECT tunnel used by the app', async t => {
-  const proxy = await startAuthenticatedProxyFixture('qa', 'password');
-  t.after(() => proxy.close());
-  const request = credentials => new Promise((resolve, reject) => {
-    const agent = new HttpsProxyAgent(`http://${credentials}@127.0.0.1:${proxy.port}`);
-    http.get('http://203.0.113.10/ip', {agent}, response => {
-      response.resume();
-      response.on('end', () => resolve(response.statusCode));
-    }).on('error', reject);
-  });
-  assert.equal(await request('qa:wrong'), 407);
-  assert.deepEqual(proxy.hits, []);
-  assert.equal(await request('qa:password'), 200);
-  assert.deepEqual(proxy.hits, ['/ip']);
 });

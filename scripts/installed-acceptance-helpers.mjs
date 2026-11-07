@@ -1,8 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import http from 'node:http';
-import net from 'node:net';
 
 export function assertIssuedDevice(token, device) {
   const parts = token.split('.');
@@ -55,60 +53,4 @@ export function hasExpectedOfficeTrust(installation, expectedPublicKey) {
     typeof trust.organization === 'string' && trust.organization.length > 0 &&
     trust.publicKey === expectedPublicKey &&
     crypto.createPublicKey(trust.publicKey).asymmetricKeyType === 'ed25519';
-}
-
-export async function startAuthenticatedProxyFixture(username, password) {
-  const expected = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
-  const hits = [];
-  const sockets = new Set();
-  const track = socket => {
-    sockets.add(socket);
-    socket.on('close', () => sockets.delete(socket));
-    socket.on('error', () => {});
-  };
-  const respond = (req, res) => {
-    hits.push(String(req.url || ''));
-    res.writeHead(200, {'content-type': 'application/json'});
-    res.end('{"ip":"203.0.113.50"}');
-  };
-  const origin = http.createServer(respond);
-  const proxy = http.createServer((req, res) => {
-    if (req.headers['proxy-authorization'] === expected && req.url.startsWith('http://203.0.113.10/')) {
-      respond(req, res);
-    } else {
-      res.writeHead(407, {'Proxy-Authenticate': 'Basic realm="azwah-qa"'});
-      res.end();
-    }
-  });
-  const listen = server => new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => resolve(server.address().port));
-  });
-  const close = async () => {
-    for (const socket of sockets) socket.destroy();
-    await Promise.all([proxy, origin].map(server => new Promise(resolve => server.close(() => resolve()))));
-  };
-  for (const server of [proxy, origin]) server.on('connection', track);
-  try {
-    const originPort = await listen(origin);
-    proxy.on('connect', (req, client, head) => {
-      if (req.headers['proxy-authorization'] !== expected || req.url !== '203.0.113.10:80') {
-        client.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="azwah-qa"\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
-        return;
-      }
-      const upstream = net.connect(originPort, '127.0.0.1');
-      track(upstream);
-      upstream.on('error', () => client.destroy());
-      client.on('close', () => upstream.destroy());
-      upstream.once('connect', () => {
-        client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        if (head.length) upstream.write(head);
-        client.pipe(upstream).pipe(client);
-      });
-    });
-    return {port: await listen(proxy), hits, close};
-  } catch (error) {
-    await close();
-    throw error;
-  }
 }
