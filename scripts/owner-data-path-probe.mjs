@@ -35,15 +35,18 @@ function readRows(file) {
   try { ({DatabaseSync} = require('node:sqlite')); }
   catch (error) { return {error: error.message}; }
   let db;
+  const snapshot = fs.mkdtempSync(path.join(root, 'sqlite-inspection-'));
   try {
-    db = new DatabaseSync(file, {readOnly: true});
+    const copy = path.join(snapshot, 'profiles.db');
+    fs.copyFileSync(file, copy);
+    db = new DatabaseSync(copy, {readOnly: true});
     const profiles = db.prepare('SELECT name, notes FROM profiles ORDER BY name').all();
     let workspaces = null;
     try { workspaces = db.prepare('SELECT name, notes FROM workspaces ORDER BY name').all(); } catch { workspaces = null; }
     return {profiles, workspaces};
   } catch (error) {
     return {error: error.message};
-  } finally { if (db) db.close(); }
+  } finally { db?.close(); fs.rmSync(snapshot, {recursive: true, force: true}); }
 }
 async function rendererPost(page, route, body) {
   return page.evaluate(async ({route, body}) => {
