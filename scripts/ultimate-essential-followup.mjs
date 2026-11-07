@@ -9,7 +9,7 @@ import crypto from 'node:crypto';
 import {_electron} from 'playwright';
 import {asarLookupPath} from './asar-entries.mjs';
 import {windowsEmployeeIdentity} from './windows-employee-identity.mjs';
-import {createRecordingProxy} from './recording-proxy.mjs';
+import {createRecordingProxy, proxyEvidence} from './recording-proxy.mjs';
 
 if (process.platform !== 'win32' || process.env.CI !== 'true') throw new Error('An isolated Windows CI worker is required');
 const asar = createRequire(import.meta.url)('@electron/asar');
@@ -27,6 +27,7 @@ const record = {
   windows10: false,
   separateStandardAccount: false,
   osSecretPrefix: null,
+  observedPublicEgress: false,
 };
 const check = (ok, message) => { results.push({pass: !!ok, message}); console.log(`${ok ? 'PASS' : 'FAIL'} ${message}`); if (!ok) throw new Error(message); };
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -69,8 +70,8 @@ function listen(server) {
 
 let app;
 let employeeSession;
-const hits = [];
-const proxy = createRecordingProxy(hits);
+const proxyEvents = [];
+const proxy = createRecordingProxy(proxyEvents, {username: 'azwah', password: proxyPassword});
 try {
   if (!/^[a-f0-9]{64}$/.test(expectedHash) || sha(installer) !== expectedHash) throw new Error('Follow-on requires the retained installer and its verified SHA-256');
   record.installer = {bytes: fs.statSync(installer).size, sha256: expectedHash};
@@ -95,7 +96,9 @@ try {
   await dialog.getByLabel('Proxy details').fill(`127.0.0.1:${port}:azwah:${proxyPassword}`);
   await dialog.getByRole('button', {name: 'Test Proxy'}).click();
   await dialog.getByText(/Transport ok/).waitFor({timeout: 20000});
-  check(hits.some(url => url.includes('/ip')), 'Test Proxy sent a request through the saved proxy configuration');
+  const testProxy = proxyEvidence(proxyEvents);
+  check(testProxy.observedPublicEgress === false && testProxy.authenticatedConnectCount >= 1 && testProxy.connectDestinations.includes('203.0.113.10:80') && testProxy.requestPaths.some(item => item.includes('/ip')), 'Test Proxy opened one authenticated CONNECT to 203.0.113.10:80 and the fixture returned 203.0.113.50. That address is not an observed public IP.');
+  record.proxyTest = testProxy;
   await dialog.getByRole('button', {name: 'Hide credentials'}).click();
   await dialog.getByRole('button', {name: 'Create profile'}).click();
   await page.getByRole('cell', {name: 'GUI proxy', exact: true}).waitFor();
@@ -120,12 +123,15 @@ try {
   await reloaded.getByRole('button', {name: 'Test Proxy'}).click();
   await reloaded.getByText(/Transport ok/).waitFor({timeout: 20000});
   await reloaded.getByRole('button', {name: 'Save changes'}).click();
-  const beforeRoute = hits.length;
+  const beforeRoute = proxyEvents.length;
   const routed = await api(page, `/profiles/${saved.id}/launch`, {headless: true, url: 'http://203.0.113.10/azwah-route'});
   check(routed.status === 200, 'Chromium launch accepted the profile');
   const routeDeadline = Date.now() + 20000;
-  while (Date.now() < routeDeadline && !hits.slice(beforeRoute).some(url => url.includes('azwah-route'))) await new Promise(resolve => setTimeout(resolve, 250));
-  check(hits.slice(beforeRoute).some(url => url.includes('azwah-route')), 'Chromium sent the requested URL through the configured proxy');
+  const sawRoute = () => proxyEvents.slice(beforeRoute).some(item => item.authenticated && item.responded && String(item.path || item.destination).includes('azwah-route'));
+  while (Date.now() < routeDeadline && !sawRoute()) await new Promise(resolve => setTimeout(resolve, 250));
+  const routeEvidence = proxyEvidence(proxyEvents.slice(beforeRoute));
+  check(routeEvidence.observedPublicEgress === false && sawRoute(), 'Chromium sent /azwah-route through the authenticated proxy. The fixture address is not an observed public IP.');
+  record.browserRoute = routeEvidence;
   const firstPid = (await api(page, `/profiles/${saved.id}`)).body.pid;
   const firstImage = processImage(firstPid);
   check(firstImage.toLowerCase().includes(path.join(installDir, 'resources', 'browsers').toLowerCase()), 'Chromium process image is inside the installer tree');
@@ -216,12 +222,12 @@ try {
   const reopened = await employeeSession.launch();
   const persisted = await api(reopened, '/activation');
   check(persisted.body?.active === true, 'Standard-account activation remains after the Office application is reopened');
-  const officeFirefox = await api(employee, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
-  const officeLaunch = await api(employee, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
+  const officeFirefox = await api(reopened, '/profiles', {name: 'Office Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
+  const officeLaunch = await api(reopened, `/profiles/${officeFirefox.body.id}/launch`, {headless: true, automation: true});
   check(officeLaunch.status === 200, 'Generated Office launches Firefox without a system Firefox');
-  const officeImage = processImage((await api(employee, `/profiles/${officeFirefox.body.id}`)).body.pid);
+  const officeImage = processImage((await api(reopened, `/profiles/${officeFirefox.body.id}`)).body.pid);
   check(officeImage.toLowerCase() === path.join(officeDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Office Firefox process image is inside the employee install tree');
-  check((await api(employee, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
+  check((await api(reopened, `/profiles/${officeFirefox.body.id}/stop`, {})).status === 200, 'Office Firefox stop succeeded');
   await employeeSession.dispose(); employeeSession = undefined;
 
   await app.close(); app = undefined;
