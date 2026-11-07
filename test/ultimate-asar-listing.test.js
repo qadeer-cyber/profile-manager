@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import {asarHasEntry} from '../scripts/asar-entries.mjs';
+import {asarHasEntry, asarLookupPath} from '../scripts/asar-entries.mjs';
 
 test('a Windows asar listing still identifies the packaged admin module', () => {
   const listed = [
@@ -18,4 +18,9 @@ test('a Windows asar listing still identifies the packaged admin module', () => 
   assert.equal(asarHasEntry(listed, 'scripts/license-admin/issuer.mjs'), true);
   assert.equal(asarHasEntry(listed, 'server/office/license.js'), true);
   assert.equal(asarHasEntry(listed, 'scripts/license-admin/missing.mjs'), false);
+  const nested = 'scripts/license-admin/admin.mjs';
+  assert.equal(path.win32.dirname(nested).split(path.win32.sep).includes('license-admin'), false);
+  const lookup = nested.replaceAll('/', '\\');
+  assert.deepEqual(path.win32.dirname(lookup).split(path.win32.sep), ['scripts', 'license-admin']);
+  assert.equal(asarLookupPath(nested).includes('/'), process.platform !== 'win32');
 });
