@@ -13,10 +13,10 @@ export function assertIssuedDevice(token, device) {
 
 export async function waitForIssuedToken(page, previous = '') {
   await page.waitForFunction(old => {
-    const value = document.querySelector('textarea')?.value || '';
+    const value = document.querySelector('textarea[readonly]')?.value || '';
     return value.startsWith('AZW1.') && value !== old;
   }, previous);
-  return page.getByLabel('License token', {exact: true}).inputValue();
+  return page.locator('textarea[readonly]').inputValue();
 }
 
 export async function activateInstalledOffice(page, licenseFile, evidence, getStatus) {

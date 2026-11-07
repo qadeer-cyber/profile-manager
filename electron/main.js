@@ -2,6 +2,7 @@
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
 import { isOwnerEdition, isUltimateEdition, isProvisionedOffice, productName } from '../server/office/edition.js';
 import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
+import { seedLegacyWindowsOwnerKey } from './ultimate-migrate.js';
 import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog, clipboard } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -20,7 +21,11 @@ if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
-app.setPath('userData', isUltimateEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-ultimate') : isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : isProvisionedOffice ? path.join(app.getPath('appData'),'azwah-multi-browser-office') : officeUserDataPath(app.getPath('appData')));
+const ultimateUserData = path.join(app.getPath('appData'), 'azwah-multi-browser-ultimate');
+if (isUltimateEdition && process.platform === 'win32' && !process.env.PM_USER_DATA) {
+  seedLegacyWindowsOwnerKey({appData:app.getPath('appData'), ultimateDir:ultimateUserData});
+}
+app.setPath('userData', isUltimateEdition ? ultimateUserData : isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : isProvisionedOffice ? path.join(app.getPath('appData'),'azwah-multi-browser-office') : officeUserDataPath(app.getPath('appData')));
 if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
 if (!isOwnerEdition && !isUltimateEdition && !isProvisionedOffice) adoptLegacyData(app.getPath('userData'));
 app.setName(productName);

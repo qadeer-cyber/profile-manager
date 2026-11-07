@@ -23,9 +23,8 @@ test('token readiness excludes the previously issued license', async () => {
         value = next;
         assert.equal(predicate(previous), true);
       },
-      getByLabel(name, options) {
-        assert.equal(name, 'License token');
-        assert.equal(options.exact, true);
+      locator(selector) {
+        assert.equal(selector, 'textarea[readonly]');
         return {inputValue: async () => value};
       },
     };

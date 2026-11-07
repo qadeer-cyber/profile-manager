@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { migrateUltimateData, OWNER_DIRECTORY, ADMIN_DIRECTORY } from '../electron/ultimate-migrate.js';
+import { migrateUltimateData, seedLegacyWindowsOwnerKey, OWNER_DIRECTORY, ADMIN_DIRECTORY } from '../electron/ultimate-migrate.js';
 
 function sha(file) { return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex'); }
 function layout() {
@@ -119,4 +119,31 @@ test('a live SQLite WAL prevents migration even if the main file hash has not ch
   assert.throws(() => migrateUltimateData({appData, ultimateDir: ultimate}), /SQLite journal files/);
   assert.equal(fs.existsSync(path.join(ultimate, 'data')), false);
   assert.equal(database.prepare('SELECT name FROM profiles').get().name, 'pending checkpoint');
+});
+
+test('Windows migration seeds only the opaque DPAPI key and leaves the Owner state untouched', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData,{recursive:true,force:true}));
+  const source = path.join(path.dirname(ownerData),'Local State');
+  const target = path.join(ultimate,'Local State');
+  const key = Buffer.from('DPAPIsynthetic test data').toString('base64');
+  const raw = JSON.stringify({unrelated:{setting:true},os_crypt:{encrypted_key:key}});
+  fs.writeFileSync(source,raw);
+  assert.equal(seedLegacyWindowsOwnerKey({appData,ultimateDir:ultimate}),true);
+  assert.deepEqual(JSON.parse(fs.readFileSync(target,'utf8')),{os_crypt:{encrypted_key:key}});
+  assert.equal(fs.readFileSync(source,'utf8'),raw);
+  assert.equal(seedLegacyWindowsOwnerKey({appData,ultimateDir:ultimate}),false);
+});
+
+test('Windows migration preserves an existing incompatible Local State', t => {
+  const {appData, ultimate, ownerData} = layout();
+  t.after(() => fs.rmSync(appData,{recursive:true,force:true}));
+  const key = Buffer.from('DPAPIsynthetic test data').toString('base64');
+  fs.writeFileSync(path.join(path.dirname(ownerData),'Local State'),JSON.stringify({os_crypt:{encrypted_key:key}}));
+  const target = path.join(ultimate,'Local State');
+  fs.mkdirSync(ultimate);
+  fs.writeFileSync(target,'{"other":true}');
+  assert.throws(() => seedLegacyWindowsOwnerKey({appData,ultimateDir:ultimate}),/Conflicting Windows secret storage/);
+  assert.equal(fs.readFileSync(target,'utf8'),'{"other":true}');
+  assert.equal(fs.existsSync(path.join(ultimate,'data')),false);
 });
