@@ -14,11 +14,11 @@
     "test:engine": "node scripts/run-with-automation.mjs test/engine.e2e.js && node scripts/run-with-automation.mjs test/lifecycle.e2e.js",
     "test:electron": "npm run build && node test/electron-entry-launch.js && node test/electron-smoke.js",
     "test": "npm run build && npm run test:unit && npm run test:desktop && npm run test:api && npm run test:engine && npm run test:proxies && npm run test:security && npm run test:ui",
-    "dist:win": "npm run build && electron-builder --win nsis portable --x64",
-    "dist:linux": "npm run build && electron-builder --linux dir",
+    "dist:win": "node scripts/office-build-preflight.mjs && npm run build && electron-builder --win nsis portable --x64",
+    "dist:linux": "node scripts/office-build-preflight.mjs && npm run build && electron-builder --linux dir",
     "test:proxies": "node scripts/run-with-automation.mjs test/proxy-library.e2e.js",
     "test:desktop": "node --test test/desktop-unit.test.js && node test/desktop-engine.e2e.js",
-    "dist:win:offline": "npm run build && node scripts/fetch-bundled-chromium.mjs win64 && electron-builder --config electron-builder.offline.cjs --win nsis --x64 --publish never",
+    "dist:win:offline": "node scripts/office-build-preflight.mjs && npm run build && node scripts/fetch-bundled-chromium.mjs win64 && electron-builder --config electron-builder.offline.cjs --win nsis --x64 --publish never",
     "chromium:manifest": "node scripts/update-chromium-manifest.mjs",
     "test:security": "node test/security.e2e.js && node test/security-migration.e2e.js",
     "test:ui": "node test/ui-smoke.run.js",
@@ -56,7 +56,10 @@
     "test:ultimate3-track-b": "node --test --test-timeout=180000 test/proxy-traffic.test.js test/proxy-provider-contracts.test.js test/human-input-timing.test.js test/human-input-parse.test.js test/human-input-geckodriver.test.js test/human-input.test.js test/pm-cli-script.test.js test/pm-cli-exec-cdp.test.js test/automation-attach.test.js test/automation-attach-reconnect.test.js test/webdriver-api.test.js test/webdriver-bridge.test.js test/proxy-library-m17.test.js test/proxy-duplicate.test.js test/proxy-providers.test.js test/migration-v13-v16.test.js test/playwright-cdp-reconnect.test.js test/puppeteer-cdp-attach.test.js test/pm-cli-workflow.test.js",
     "test:trackc": "node --test --experimental-test-module-mocks --test-timeout=30000 test/trackc-gecko.test.js test/trackc-window.test.js test/trackc-workspace.test.js test/trackc-workspace-sync.test.js test/browser-stop-recovery.test.js",
     "test:trackc:acceptance": "npm run build && node --test --test-concurrency=1 --test-timeout=180000 test/m8-browser-acceptance.test.js test/trackc-browser-acceptance.test.js",
-    "test:unified": "node --test --experimental-test-module-mocks --test-timeout=30000 test/unified-integration.test.js test/advanced-privacy-acceptance.test.js"
+    "test:unified": "node --test --experimental-test-module-mocks --test-timeout=30000 test/unified-integration.test.js test/advanced-privacy-acceptance.test.js",
+    "license-admin": "node scripts/license-admin/admin.mjs",
+    "test:office": "node --test --test-concurrency=1 test/office-license.test.js test/office-upgrade.test.js test/office-api.test.js test/office-cookie-transfer.test.js",
+    "test:office:browser": "npm run build && node --test --test-concurrency=1 test/office-browser.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
@@ -80,11 +83,11 @@
     "electron-winstaller": true
   },
   "main": "electron/main.js",
-  "description": "Local browser profile manager",
+  "description": "Azwah Multi Browser \u2014 Office Edition, local browser profiles and secure office activation",
   "author": "Mohammad Abbas",
   "build": {
     "appId": "local.profilemanager.app",
-    "productName": "Profile Manager",
+    "productName": "Azwah Multi Browser",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -120,7 +123,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "assets/azwah.ico"
     },
     "nsis": {
       "oneClick": false,
@@ -128,7 +132,8 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "deleteAppDataOnUninstall": false,
-      "artifactName": "${productName}-Setup-${version}-x64.${ext}"
+      "artifactName": "${productName}-Setup-${version}-x64.${ext}",
+      "shortcutName": "Azwah Multi Browser"
     },
     "portable": {
       "artifactName": "${productName}-${version}-x64-portable.${ext}"
@@ -137,6 +142,7 @@
       "target": [
         "dir"
       ]
-    }
+    },
+    "beforePack": "scripts/office-before-pack.cjs"
   }
 }

@@ -31,7 +31,7 @@ function startFailedServer(env) {
       reject(new Error('server start timeout\n' + proc.out + '\n' + proc.err));
     }, 20000);
     proc.stdout.on('data', () => {
-      if (!/Profile manager on http:\/\//.test(proc.out)) return;
+      if (!/(?:Profile manager|Azwah Multi Browser) on http:\/\//.test(proc.out)) return;
       clearTimeout(timer);
       proc.removeAllListeners('exit');
       resolve({ proc, data, messages });

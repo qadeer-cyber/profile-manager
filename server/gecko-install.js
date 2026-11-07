@@ -54,6 +54,7 @@ async function sessionFor(id, action) {
   if (firefoxSessionStatus(id)) return borrowFirefoxSession(id, 'addons', async bidi => action({ command: async (method, params) => {
     if (method === 'Addon:Install') return (await bidi.command('webExtension.install', { extensionData: { type: 'archivePath', path: params.path }, 'moz:permanent': true })).extension;
     if (method === 'Addon:Uninstall') return bidi.command('webExtension.uninstall', { extension: params.id });
+    if (method === 'Marionette:Quit') return bidi.command('browser.close');
     throw fail('Unsupported Firefox management operation');
   } }, target));
   const release = acquireFirefoxSession(id, 'addons'); let client, created = false;
@@ -105,14 +106,30 @@ export async function installGeckoExtension(profileId, extensionId, { confirm = 
     return { profileId, addon, sha256: xpi.sha256, permanent: true, verifiedBy: 'firefox-addon-manager', restartVerified: false };
   });
 }
-export async function removeGeckoExtension(profileId, extensionId, { confirm = false } = {}) {
+export async function removeGeckoExtension(profileId, extensionId, { confirm = false, stopForVerification = false } = {}) {
   if (confirm !== true) throw fail('Confirm removal from this profile.', 'CONFIRM_REQUIRED', 400);
+  if (typeof stopForVerification !== 'boolean') throw fail('stopForVerification must be a boolean.', 'INVALID_CONFIRMATION', 400);
   const row = db.prepare("SELECT * FROM extensions WHERE id=? AND browser_engine='firefox'").get(extensionId);
   if (!row) throw fail('Firefox library item not found.', 'NOT_FOUND', 404);
-  return sessionFor(profileId, async (client, target) => {
+  let directory;
+  await sessionFor(profileId, async (client, target) => {
+    directory = target.dir;
     await client.command('Addon:Uninstall', { id: row.gecko_extension_id });
-    await observed(target.dir, row.gecko_extension_id, false);
-    db.prepare('DELETE FROM profile_extensions WHERE profile_id=? AND extension_id=?').run(profileId, extensionId);
-    return { profileId, id: row.gecko_extension_id, removed: true };
+    if (stopForVerification) {
+      // Firefox can remove the package before its extension metadata is flushed.
+      // Use the already-owned session to request an explicitly authorized close.
+      // Process termination and filesystem readback are still verified below.
+      try { await client.command('Marionette:Quit', { flags: ['eAttemptQuit'] }); }
+      catch (error) { if (!/connection closed/i.test(error.message)) throw error; }
+    } else await observed(directory, row.gecko_extension_id, false);
   });
+  if (stopForVerification) {
+    const { stop, isRunning } = await import('./browsers.js');
+    await stop(profileId);
+    if (isRunning(profileId)) throw fail('The profile restarted during removal verification. Stop it and inspect add-ons before retrying.', 'GECKO_INSTALL_UNVERIFIED');
+    await observed(directory, row.gecko_extension_id, false);
+  }
+  assertProfileOperationAvailable(profileId);
+  db.prepare('DELETE FROM profile_extensions WHERE profile_id=? AND extension_id=?').run(profileId, extensionId);
+  return { profileId, id: row.gecko_extension_id, removed: true, profileStopped: stopForVerification };
 }

@@ -1,0 +1,260 @@
+{
+  "sourceCommit": "9874009392e4a6871b233a0c99df4499aeda21d7",
+  "platform": "win32",
+  "node": "v22.23.4",
+  "results": [
+    {
+      "suite": "test:office",
+      "start": "2026-11-05T17:24:37.174Z",
+      "finished": "2026-11-05T17:24:47.697Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 13,
+        "pass": 13,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-office.log",
+      "logSHA256": "2b92990036a1d6b55c17c3711f798f93b2bddfa79d461f05cf60edfd65d118d3"
+    },
+    {
+      "suite": "test:unit",
+      "start": "2026-11-05T17:24:47.700Z",
+      "finished": "2026-11-05T17:25:19.820Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 145,
+        "pass": 145,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unit.log",
+      "logSHA256": "9f65220e5a048a9efd35488d9a99cb3ded76be65db652f4254d735e0d51368db"
+    },
+    {
+      "suite": "test:stabilization",
+      "start": "2026-11-05T17:25:19.821Z",
+      "finished": "2026-11-05T17:25:27.259Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 90,
+        "pass": 89,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-stabilization.log",
+      "logSHA256": "ef86c210ec1030d3f896b542f9693f244f7f4f944f3f31d4525960c977a072e8"
+    },
+    {
+      "suite": "test:data-recovery",
+      "start": "2026-11-05T17:25:27.260Z",
+      "finished": "2026-11-05T17:27:02.592Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 63,
+        "pass": 62,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-data-recovery.log",
+      "logSHA256": "f72be2e2ee72de2724a532ceef94f7da030219f9a8d3b957f636a7635d63c3ce"
+    },
+    {
+      "suite": "test:browser-runtime",
+      "start": "2026-11-05T17:27:02.592Z",
+      "finished": "2026-11-05T17:28:37.031Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 206,
+        "pass": 204,
+        "fail": 0,
+        "skipped": 2,
+        "cancelled": 0
+      },
+      "log": "test-browser-runtime.log",
+      "logSHA256": "bda08ad7c8d4498a723701ddd3d68a0be1b66db86c94ba2525ee6f3cbbeba1d7"
+    },
+    {
+      "suite": "test:m4",
+      "start": "2026-11-05T17:28:37.032Z",
+      "finished": "2026-11-05T17:28:41.409Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-m4.log",
+      "logSHA256": "7d9a53b909c02043b018d7ee2ed8810da82459a9b0c3f5be60edf9ea582750bb"
+    },
+    {
+      "suite": "test:trackc",
+      "start": "2026-11-05T17:28:41.410Z",
+      "finished": "2026-11-05T17:28:51.454Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc.log",
+      "logSHA256": "39373d0fa84d3edd48f49dbf618921e38476ec45f35ee306109a5b22b93ca42d"
+    },
+    {
+      "suite": "test:unified",
+      "start": "2026-11-05T17:28:51.454Z",
+      "finished": "2026-11-05T17:28:52.514Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unified.log",
+      "logSHA256": "720be89497750aad57cf2d4c02cba1e512967fcfe3f1f2259cd65b09ea99131a"
+    },
+    {
+      "suite": "test:api",
+      "start": "2026-11-05T17:28:52.515Z",
+      "finished": "2026-11-05T17:29:21.899Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 45,
+        "fail": 0,
+        "tests": 45
+      },
+      "log": "test-api.log",
+      "logSHA256": "3366207f9aacdda56b01dce024a173b9f80e4636864ba6c71ec527b4ea411640"
+    },
+    {
+      "suite": "test:security",
+      "start": "2026-11-05T17:29:21.900Z",
+      "finished": "2026-11-05T17:29:45.734Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 41,
+        "fail": 0,
+        "tests": 41
+      },
+      "log": "test-security.log",
+      "logSHA256": "5dfac5cf107eae7216437e52557d2c2732c0f9960f6bc035949aa96b2e6290f6"
+    },
+    {
+      "suite": "test:ui",
+      "start": "2026-11-05T17:29:45.735Z",
+      "finished": "2026-11-05T17:30:32.097Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 25,
+        "fail": 0,
+        "tests": 25
+      },
+      "log": "test-ui.log",
+      "logSHA256": "5c552582e8d16ad5de677fe4f6ee3f2e5de7e492b509fc2cb9a54a02c7fc5913"
+    },
+    {
+      "suite": "test:trackc:acceptance",
+      "start": "2026-11-05T17:30:32.098Z",
+      "finished": "2026-11-05T17:33:13.354Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc-acceptance.log",
+      "logSHA256": "2ac6fe19df028de976fde96e91778c6d2f50dcbe6f6bacaeb305437e3be7420b"
+    },
+    {
+      "suite": "test:office:browser",
+      "start": "2026-11-05T17:33:13.355Z",
+      "finished": "2026-11-05T17:34:01.565Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 2,
+        "pass": 2,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-office-browser.log",
+      "logSHA256": "c459583aa55aac44773c593b5c0f8d0668b8904f926fbe08eba6a8d4175ceab3"
+    }
+  ],
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/42072744963",
+  "conclusion": "success",
+  "artifactId": 13438201496,
+  "artifactSHA256": "ede5548c2a33a69eeb1c7e90b9d346bd163e0dc5e8fccb7653a61d5c276aa26c",
+  "targeted": [
+    {
+      "log": "branding-targeted.log",
+      "totals": {
+        "pass": 2,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "edb7138b9bc3a6273270f64eff4eb1b71a5fe21f5d3d061ecacfe5f003b43014"
+    },
+    {
+      "log": "cdp-readiness.log",
+      "totals": {
+        "pass": 4,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "5f86e78d4cb60b8aab09e156369ead6a2c02562c860af4da2af46d92167ab568"
+    },
+    {
+      "log": "firefox-owner.log",
+      "totals": {
+        "pass": 4,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "258ddafe6ffcb2eb04ed0d9d96bcc64fc39a914d36c414223007863154d6fabe"
+    },
+    {
+      "log": "fingerprint-targeted.log",
+      "totals": {
+        "pass": 1,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "3aa14ba12f8fd8a35ae9ef20cc256a6fcb529737b7da1bf8e800bc0d12b701ae"
+    },
+    {
+      "log": "firefox-addon-targeted.log",
+      "totals": {
+        "pass": 1,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "704874b1f167e79fe6fd0fea67a61feb358698cddaa755593a22afc81aaf3d34"
+    }
+  ]
+}

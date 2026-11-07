@@ -101,7 +101,7 @@ export function spawnServerEntry(entryScript, env, { envName = 'PM_TEST_PORT', p
     const t = setTimeout(() => { hardKill(proc.pid); reject(new Error('server start timeout')); }, timeoutMs);
     proc.stdout.on('data', d => {
       proc.out += d; if (echo) process.stdout.write('  [srv] ' + d);
-      const m = proc.out.match(/Profile manager on (http:\/\/[^\s]+)/);
+      const m = proc.out.match(/(?:Profile manager|Azwah Multi Browser) on (http:\/\/[^\s]+)/);
       if (m && !proc.url) { clearTimeout(t); proc.url = m[1]; proc.port = Number(new URL(m[1]).port); resolve(proc); }
     });
     proc.on('exit', c => { clearTimeout(t); if (!proc.url) reject(new Error('server exited before start: ' + c + '\n' + proc.out)); });
@@ -111,7 +111,7 @@ export function spawnServerEntry(entryScript, env, { envName = 'PM_TEST_PORT', p
 export function spawnInstalledServer(installDir, env, opts = {}) {
   const script = resolveInstalledServerScript(installDir);
   if (!script) throw new Error(`installed server script not found under ${installDir}`);
-  const exe = path.join(installDir, 'Profile Manager.exe');
+  const exe = ['Azwah Multi Browser.exe', 'Profile Manager.exe'].map(name=>path.join(installDir,name)).find(file=>fs.existsSync(file)) || path.join(installDir,'Profile Manager.exe');
   const execPath = fs.existsSync(exe) ? exe : process.execPath;
   return spawnServerEntry(script, env, { ...opts, execPath, electronRunAsNode: fs.existsSync(exe) });
 }

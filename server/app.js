@@ -2,6 +2,9 @@ import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-c
 import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
 import { createStreamedPortableBackup, createStreamedWorkspaceBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
 import { pipeline as streamPipeline } from 'node:stream/promises';
+import { COOKIE_EDITOR, cookieEditorStatus } from './office/cookie-editor.js';
+import { encryptCookies, decryptCookies } from './office/cookie-transfer.js';
+import { activationStatus, activateOffice, officeGate } from './office/activation.js';
 import { recoverDataOperationsAtStartup, recoveryDiagnostics, recoverOperation, assertProfileOperationAvailable } from './recovery-journal.js';
 // Express app factory. Used by the CLI (server/index.js) and in-process by Electron (electron/main.js).
 import express from 'express';
@@ -656,6 +659,32 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     assertProfileOperationAvailable(profile.id);
     assertWorkspaceAccess(profile.workspaceId);
     res.json(await firefoxAutomationCommand(profile.id, req.body?.method, req.body?.params || {}));
+  }));
+  router.get('/office/cookie-editor', (req,res) => res.json(COOKIE_EDITOR));
+  router.get('/profiles/:id/cookie-editor', wrap((req,res) => {
+    const profile=must(req.params.id);
+    if(engine.isRunning(profile.id)) throw err(409,'Stop this profile before inspecting persisted extension state');
+    res.json(cookieEditorStatus(userDataDir(profile.id),profile.browserEngine));
+  }));
+  router.post('/profiles/:id/cookie-editor/setup', wrap(async (req,res) => {
+    const profile=must(req.params.id);
+    if(req.body?.confirm!==true) throw err(400,'Confirm opening the official extension store in this profile');
+    if(engine.isRunning(profile.id)) throw err(409,'Stop this profile first so the official store opens in the correct isolated profile');
+    const store=COOKIE_EDITOR[profile.browserEngine||'chromium'];
+    await doLaunch(profile.id,{headless:false,url:store.url},{allowOverride:false});
+    res.json({opened:true,installed:false,manualActionRequired:true,url:store.url,message:'Complete installation in the browser. Stop it and inspect persisted state afterward.'});
+  }));
+  router.post('/profiles/:id/cookies/export-encrypted', wrap(async(req,res)=>{
+    must(req.params.id);rejectPassphraseQuery(req);
+    const data=await cookieList(req.params.id);
+    const body=encryptCookies({profileId:req.params.id,engine:data.engine,cookies:data.cookies,passphrase:req.body.passphrase,confirmSensitive:req.body.confirmSensitive});
+    res.set({'Content-Type':'application/octet-stream','Cache-Control':'no-store','Content-Disposition':'attachment; filename="cookies.azwc"'});res.send(body);
+  }));
+  router.post('/profiles/:id/cookies/import-encrypted',wrap((req,res)=>{
+    const profile=cookieMutation(req.params.id);rejectPassphraseQuery(req);
+    if(typeof req.body.archive!=='string'||req.body.archive.length>410000||!/^[A-Za-z0-9+/]*={0,2}$/.test(req.body.archive))throw err(400,'Invalid bounded cookie archive');
+    const cookies=decryptCookies({bytes:Buffer.from(req.body.archive,'base64'),passphrase:req.body.passphrase,profileId:profile.id,engine:profile.browserEngine||'chromium',confirm:req.body.confirm,confirmTransfer:req.body.confirmTransfer});
+    res.json(importProfileCookies(userDataDir(profile.id),cookies));
   }));
   router.get('/geckodriver', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -1429,6 +1458,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   const ui = express.Router();
   // Token is accepted ONLY via the X-UI-Token header (never the query string, which leaks into logs/history).
   if (uiToken) ui.use((req, res, next) => tokenOk(req.get('x-ui-token'), uiToken) ? next() : res.status(401).json({ error: 'unauthorized' }));
+  ui.use(officeGate);
+  ui.get('/activation', (req,res) => res.json(activationStatus()));
+  ui.post('/activation', wrap((req,res) => { if(req.body?.confirm !== true) throw err(400,'Confirm this device activation'); res.json(activateOffice(req.body.token)); }));
   ui.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
@@ -1577,6 +1609,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const t = h.startsWith('Bearer ') ? h.slice(7) : req.get('x-api-key');
     tokenOk(t, API_TOKEN) ? next() : res.status(401).json({ error: 'invalid or missing API token' });
   });
+  v1.use(officeGate);
+  v1.get('/activation', (req,res) => res.json(activationStatus()));
+  v1.post('/activation', wrap((req,res) => { if(req.body?.confirm !== true) throw err(400,'Confirm this device activation'); res.json(activateOffice(req.body.token)); }));
   v1.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   v1.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   v1.post('/profiles', wrap((req, res) => res.status(201).json(publicP(get(insert(validate(req.body)))))));

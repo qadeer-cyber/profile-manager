@@ -1,0 +1,116 @@
+name: Azwah Office Windows source acceptance
+on:
+  push:
+    branches: [feature/azwah-office-edition]
+permissions:
+  contents: read
+jobs:
+  office-windows:
+    # Owner release has its own installed functional acceptance; Office gates are unchanged.
+    if: "!contains(github.event.head_commit.message, '[owner-release]')"
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Native dependencies and real browsers
+        id: setup
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          New-Item -ItemType Directory -Force build-evidence/office | Out-Null
+          # Upstream signed release; Firefox must still validate Mozilla's chain.
+          $xpi = Join-Path $env:RUNNER_TEMP 'ublock-1.75.0.signed.xpi'
+          $expected = '5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287'
+          $downloadLog = Join-Path 'build-evidence/office' 'signed-xpi-download.log'
+          $verified = $false
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            "$(Get-Date -Format o) attempt=$attempt starting pinned signed-XPI download" | Add-Content $downloadLog
+            if (Test-Path $xpi) { Remove-Item $xpi -Force -ErrorAction Stop }
+            try {
+              Invoke-WebRequest 'https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.firefox.signed.xpi' -OutFile $xpi -TimeoutSec 60 -ErrorAction Stop
+            } catch {
+              $detail = $_.Exception.Message -replace '(https?://[^\s?]+)\?\S+', '$1?[redacted]'
+              "$(Get-Date -Format o) attempt=$attempt transport_failure=$detail" | Add-Content $downloadLog
+              if (Test-Path $xpi) { Remove-Item $xpi -Force -ErrorAction Stop }
+              if ($attempt -eq 3) {
+                'INFRASTRUCTURE_DOWNLOAD_FAILURE: pinned signed-XPI transport exhausted 3 attempts' | Add-Content $downloadLog
+                throw 'INFRASTRUCTURE_DOWNLOAD_FAILURE: pinned signed-XPI download failed after 3 bounded attempts. See signed-xpi-download.log.'
+              }
+              $backoff = [int][Math]::Pow(2, $attempt)
+              "$(Get-Date -Format o) retry_backoff_seconds=$backoff" | Add-Content $downloadLog
+              Start-Sleep -Seconds $backoff
+              continue
+            }
+            $actual = (Get-FileHash $xpi -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+            if ($actual -ne $expected) {
+              "ARTIFACT_INTEGRITY_FAILURE: expected=$expected actual=$actual" | Add-Content $downloadLog
+              Remove-Item $xpi -Force -ErrorAction Stop
+              throw 'ARTIFACT_INTEGRITY_FAILURE: signed-XPI fixture checksum mismatch'
+            }
+            "$(Get-Date -Format o) verified_sha256=$actual" | Add-Content $downloadLog
+            $verified = $true
+            break
+          }
+          if (-not $verified) { throw 'INFRASTRUCTURE_DOWNLOAD_FAILURE: no verified signed-XPI fixture available' }
+          "PM_SIGNED_XPI=$xpi" >> $env:GITHUB_ENV
+          "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Verify corrected display names and unchanged upgrade identity
+        shell: pwsh
+        run: |
+          node --test --test-name-pattern="crash summaries|keeps the v0.4.0 install identity" test/ui-status.test.js test/unit.test.js 2>&1 | Tee-Object build-evidence/office/branding-targeted.log
+          exit $LASTEXITCODE
+      - name: Verify real Chromium CDP input readiness before broad regression
+        id: cdp
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 --test-timeout=30000 test/human-input.test.js 2>&1 | Tee-Object -FilePath build-evidence/office/cdp-readiness.log
+          exit $LASTEXITCODE
+      - name: Qualify managed Firefox timezone and permanent extensions first
+        id: owner
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 test/firefox-session-acceptance.test.js 2>&1 | Tee-Object build-evidence/office/firefox-owner.log
+          exit $LASTEXITCODE
+      - name: Verify fingerprint and signed Firefox extension regressions independently
+        shell: pwsh
+        run: |
+          node --test test/ultimate3-fingerprint-browser.test.js 2>&1 | Tee-Object build-evidence/office/fingerprint-targeted.log
+          $fingerprint = $LASTEXITCODE
+          node --test --test-name-pattern="M14 real signed" test/trackc-browser-acceptance.test.js 2>&1 | Tee-Object build-evidence/office/firefox-addon-targeted.log
+          if ($LASTEXITCODE -ne 0 -or $fingerprint -ne 0) { exit 1 }
+      - name: Fetch official signed Cookie-Editor acceptance fixture
+        shell: pwsh
+        run: |
+          $metadata = Invoke-RestMethod 'https://addons.mozilla.org/api/v5/addons/addon/cookie-editor/' -TimeoutSec 60
+          if ($metadata.guid -ne '{c3c10168-4186-445c-9c5b-63f12b8e2c87}') { throw 'Official Cookie-Editor identity mismatch' }
+          $cookieXpi = Join-Path $env:RUNNER_TEMP 'cookie-editor.signed.xpi'
+          $file = $metadata.current_version.file
+          if ($file.url -notmatch '^https://addons.mozilla.org/' -or $file.hash -notmatch '^sha256:[a-f0-9]{64}$') { throw 'Unexpected official Cookie-Editor artifact metadata' }
+          Invoke-WebRequest $file.url -OutFile $cookieXpi -TimeoutSec 60
+          if ('sha256:' + (Get-FileHash $cookieXpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.hash) { throw 'Official Cookie-Editor hash mismatch' }
+          "PM_COOKIE_EDITOR_XPI=$cookieXpi" >> $env:GITHUB_ENV
+          "PM_COOKIE_EDITOR_VERSION=$($metadata.current_version.version)" >> $env:GITHUB_ENV
+      - name: Source, recovery, UI and real browser gates
+        if: ${{ !cancelled() && steps.setup.outcome == 'success' && steps.cdp.outcome == 'success' && steps.owner.outcome == 'success' }}
+        shell: pwsh
+        run: node scripts/qualify-office.mjs
+      - name: Preserve exact test evidence even after failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: office-windows-${{ github.sha }}
+          path: build-evidence/office
+          if-no-files-found: warn
+          retention-days: 14

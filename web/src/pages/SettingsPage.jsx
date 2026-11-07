@@ -151,7 +151,7 @@ function AutomationDriversPanel({ toast, settings, onSettingsChange }) {
   };
   return <section className="panel"><h2>WebDriver helpers (optional cache)</h2>
     <p className="muted">ChromeDriver and geckodriver are <strong>not</strong> bundled in the offline installer. You can cache verified builds under your data folder after opt-in. CfT ChromeDriver matches pinned Chromium {report?.chromedriver?.pinnedBrowserVersion || '…'}; geckodriver is Mozilla MPL-2.0. You can still use <code>PM_CHROMEDRIVER_PATH</code> / <code>PM_GECKODRIVER_PATH</code> or PATH.</p>
-    <label className="check"><input type="checkbox" checked={!!settings.automationDriversOptIn} onChange={e => onSettingsChange({ ...settings, automationDriversOptIn: e.target.checked })} /> I want to download automation drivers into my Profile Manager data folder (explicit opt-in)</label>
+    <label className="check"><input type="checkbox" checked={!!settings.automationDriversOptIn} onChange={e => onSettingsChange({ ...settings, automationDriversOptIn: e.target.checked })} /> I want to download automation drivers into my Azwah Multi Browser data folder (explicit opt-in)</label>
     {report && <ul className="muted">
       <li>ChromeDriver: {report.chromedriver.installed ? <>installed <code>{report.chromedriver.path}</code></> : 'not cached'}</li>
       <li>Geckodriver: {report.geckodriver.installed ? <>installed <code>{report.geckodriver.path}</code></> : 'not cached'}</li>

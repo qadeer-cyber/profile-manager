@@ -5,6 +5,7 @@ import { Confirm } from './Dialog.jsx';
 
 export function CookieManager({ profileId, browserEngine = 'chromium' }) {
   const toast = useToast();
+  const [transferPassphrase,setTransferPassphrase]=useState(''),[transferConfirmed,setTransferConfirmed]=useState(false),[crossProfile,setCrossProfile]=useState(false);
   const [cookies, setCookies] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(() => new Set());
@@ -55,7 +56,30 @@ export function CookieManager({ profileId, browserEngine = 'chromium' }) {
       await load();
     } catch (e) { toast(e.message, 'error'); }
   };
+  const exportEncrypted = async () => {
+    try {
+      const response=await fetch(`/api/profiles/${profileId}/cookies/export-encrypted`,{method:'POST',headers:{'Content-Type':'application/json',...(window.pm?.uiToken?{'X-UI-Token':window.pm.uiToken}:{})},body:JSON.stringify({passphrase:transferPassphrase,confirmSensitive:transferConfirmed})});
+      if(!response.ok)throw Error((await response.json()).error||'Cookie export failed');
+      const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download='cookies.azwc';link.click();URL.revokeObjectURL(url);setTransferPassphrase('');setTransferConfirmed(false);
+    } catch(error){toast(error.message,'error');}
+  };
+  const importEncrypted = async event => {
+    const file=event.target.files?.[0];event.target.value='';if(!file)return;
+    try {
+      if(file.size>300*1024)throw Error('Cookie archive exceeds 300 KiB');
+      const bytes=new Uint8Array(await file.arrayBuffer());let value='';for(const byte of bytes)value+=String.fromCharCode(byte);
+      await api(`/api/profiles/${profileId}/cookies/import-encrypted`,{method:'POST',body:{archive:btoa(value),passphrase:transferPassphrase,confirm:transferConfirmed,confirmTransfer:crossProfile}});
+      setTransferPassphrase('');setTransferConfirmed(false);setCrossProfile(false);await load();toast('Encrypted cookies imported','success');
+    } catch(error){toast(error.message,'error');}
+  };
   return <div className="form">
+    <section className="panel"><h3>Encrypted cookie transfer</h3><label>Cookie transfer passphrase<input type="password" autoComplete="new-password" value={transferPassphrase} onChange={e=>setTransferPassphrase(e.target.value)} /></label>
+      <label className="check"><input type="checkbox" checked={transferConfirmed} onChange={e=>setTransferConfirmed(e.target.checked)} />I authorize transfer of sensitive cookies for this profile.</label>
+      <label className="check"><input type="checkbox" checked={crossProfile} onChange={e=>setCrossProfile(e.target.checked)} />I explicitly authorize importing from another isolated profile.</label>
+      <button disabled={!transferConfirmed||transferPassphrase.length<8} onClick={exportEncrypted}>Export encrypted cookies</button>
+      {!readOnly&&<label>Import encrypted cookies<input type="file" accept=".azwc" disabled={!transferConfirmed||transferPassphrase.length<8} onChange={importEncrypted} /></label>}
+      <p className="muted">Firefox cookie-only import remains unavailable. OS-bound cookie values require supported browser access. Full encrypted profile backups preserve more browser state.</p>
+    </section>
     <div className="notice warn">Cookie values are shown only in this list and in an exported file. They are not written to the application log. Stop the profile before importing or clearing; a live browser keeps its own copy of the cookie database.{readOnly && ' Firefox gecko cookies are read-only here (export supported; import/clear are not implemented).'}</div>
     {error && <p className="err-text">{error}</p>}
     <div className="row">

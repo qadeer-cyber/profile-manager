@@ -1,3 +1,4 @@
+import { OfficeActivation } from './components/OfficeActivation.jsx';
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
 import { api, subscribe } from './api.js';
 import { useToast } from './components/Toasts.jsx';
@@ -17,10 +18,11 @@ import { FeaturePill } from './components/FeaturePill.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 
-const NAV = [['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['workspaces', 'Workspaces'], ['templates', 'Templates'], ['cookie-robot', 'CookieRobot'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
+const NAV = [['activation', 'Office activation'], ['dashboard', 'Dashboard'], ['profiles', 'Profiles'], ['workspaces', 'Workspaces'], ['templates', 'Templates'], ['cookie-robot', 'CookieRobot'], ['trash', 'Trash'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['monitoring', 'Monitoring'], ['settings', 'Settings'], ['diagnostics', 'Diagnostics']];
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
+  useEffect(()=>{api('/api/activation').then(state=>{if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
   const [folder, setFolder] = useState('__all');
   const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [theme, setTheme] = useTheme();
@@ -76,7 +78,7 @@ export function App() {
   const named = meta.folders.filter(Boolean);
   return <div className={'app' + (compact ? ' compact' : '')}>
     <nav className="side" aria-label="Main">
-      <div className="brand"><span className="logo"><Icon name="profiles" size={18} /></span>Profile Manager</div>
+      <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="24" height="24" /></span>Azwah Multi Browser</div>
       {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} onClick={() => { setPage(k); if (k === 'profiles') setFolder('__all'); }}>
         <Icon name={k} />{label}{k === 'profiles' && meta.running.length > 0 && <span className="badge" title="Running">{meta.running.length}</span>}
         {k === 'cookie-robot' && meta.features?.cookieRobotChromiumOnly && <FeaturePill title="Chromium profiles with automation (CDP) only">Chromium</FeaturePill>}
@@ -109,6 +111,7 @@ export function App() {
       {page === 'proxies' && <ProxiesPage />}
       {page === 'extensions' && <ExtensionsPage />}
       {page === 'monitoring' && <MonitoringPage />}
+      {page === 'activation' && <OfficeActivation />}
       {page === 'settings' && <SettingsPage />}
       {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
     </main>

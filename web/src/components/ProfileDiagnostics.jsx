@@ -36,7 +36,7 @@ const CONSISTENCY_TEXT = { match: 'Versions match', mismatch: 'Version mismatch'
 const PROXY_TYPE = { http: 'HTTP', https: 'HTTPS', socks5: 'SOCKS5' };
 const ERROR_TEXT = {
   INVALID_REQUEST: 'The request was rejected as invalid. Refresh the observation and try again.',
-  UNAUTHORIZED: 'This session isn’t authorized. Restart Profile Manager to start a new session.',
+  UNAUTHORIZED: 'This session isn’t authorized. Restart Azwah Multi Browser to start a new session.',
   PROFILE_NOT_FOUND: 'This profile no longer exists. Choose another profile.',
   LAUNCH_CHANGED: 'The browser was relaunched; refresh the observation first.',
   DIAGNOSTICS_BUSY: 'A diagnostic observation is already running for this profile. Wait a moment, then try again.',
@@ -46,7 +46,7 @@ const LIFECYCLE_TEXT = { 'profile:started': 'launched', 'profile:stopped': 'stop
 export const DISCLOSURE = 'Opens a visible diagnostic tab in the selected browser profile to read its timezone and language settings. Your existing pages will not be inspected. The tab will remain open until you close it.';
 // DiagnosticsV1 addendum A1 (owner-approved §7.9 exception); DISCLOSURE above is unchanged contract text.
 export const LOCALE_FAILURE_CLOSE_NOTE = 'If the profile\'s language settings cannot be applied to the diagnostic tab, the app closes only that tab. Your other tabs are not affected.';
-export const DESKTOP_ONLY = 'Profile diagnostics are available in the Profile Manager desktop app.';
+export const DESKTOP_ONLY = 'Profile diagnostics are available in the Azwah Multi Browser desktop app.';
 const FRESH_CEILING_MS = 30000;
 
 const fmtTime = iso => { const d = new Date(iso); return Number.isNaN(+d) ? '—' : d.toLocaleTimeString(); };
@@ -55,7 +55,7 @@ function errorText(err) {
   if (!err) return '';
   if (err.kind === 'malformed') return 'The diagnostics response didn’t match the DiagnosticsV1 format, so nothing from it is shown.';
   if (err.kind === 'wrong_profile') return 'The diagnostics response was for a different profile, so it was discarded.';
-  if (err.kind === 'network') return 'Couldn’t reach Profile Manager’s local server. Check that the app is still running.';
+  if (err.kind === 'network') return 'Couldn’t reach Azwah Multi Browser’s local server. Check that the app is still running.';
   return ERROR_TEXT[err.code] || `The request failed (HTTP ${err.status}).`;
 }
 function ErrorNote({ err, label }) {
