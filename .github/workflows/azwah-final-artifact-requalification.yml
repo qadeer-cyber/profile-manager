@@ -17,7 +17,7 @@ jobs:
       contents: read
       actions: read
     env:
-      AZWAH_INSTALLER_SOURCE_SHA: ${{ env.AZWAH_SOURCE_SHA }}
+      AZWAH_INSTALLER_SOURCE_SHA: 28bb707bf72f70dcd21acdda09b4df3fac1954cd
       AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
