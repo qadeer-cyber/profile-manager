@@ -1,0 +1,44 @@
+name: Preserve historical unqualified Ultimate EXE
+on:
+  push:
+    branches: [codex/azwah-historical-preservation]
+    paths: ['.github/workflows/preserve-historical-ultimate.yml']
+permissions:
+  actions: read
+  contents: read
+jobs:
+  preserve:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42392300409
+          name: ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29
+          path: historical
+      - name: Verify original EXE and label historical evidence
+        shell: pwsh
+        run: |
+          $exe = 'historical/Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          if ($hash -ne 'c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142' -or $size -ne 854726925) { throw 'Historical installer identity mismatch' }
+          if ((Get-Content historical/SHA256SUMS.txt -Raw) -notmatch $hash) { throw 'Historical checksum manifest mismatch' }
+          @(
+            'HISTORICAL EVIDENCE ONLY. UNQUALIFIED BUILD. DO NOT PUBLISH AS THE FIXED RELEASE.'
+            'Original run: 42392300409'
+            'Original artifact: 13582203390'
+            'Source: 8baf1ffe13387bf3fba056d756a448da8b0e1e29'
+            "Bytes: $size"
+            "SHA-256: $hash"
+            'Bundled Firefox ESR 140 rejects BiDi timezone overrides.'
+          ) | Set-Content -Encoding ascii historical/HISTORICAL-ONLY.txt
+          Write-Host "Verified historical EXE $size bytes SHA-256 $hash"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HISTORICAL-UNQUALIFIED-ultimate-8baf1ffe1338
+          path: historical
+          retention-days: 90
+          compression-level: 0
+          if-no-files-found: error
