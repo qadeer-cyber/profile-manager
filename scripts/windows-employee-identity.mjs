@@ -11,9 +11,7 @@ export function windowsEmployeeIdentity(installation,executable) {
   const password=crypto.randomBytes(24).toString('base64url')+'Az9!';
   const port=49321;
   const data=fs.mkdtempSync(path.join(process.env.PUBLIC,'azwah-employee-'));
-  const stderr=path.join(data,'startup-stderr.log');
-  const stdout=path.join(data,'startup-stdout.log');
-  const env={...process.env,AZWAH_QA_USER:username,AZWAH_QA_PASSWORD:password,AZWAH_QA_INSTALL:installation,AZWAH_QA_EXE:executable,AZWAH_QA_DATA:data,AZWAH_QA_STDERR:stderr,AZWAH_QA_STDOUT:stdout};
+  const env={...process.env,AZWAH_QA_USER:username,AZWAH_QA_PASSWORD:password,AZWAH_QA_INSTALL:installation,AZWAH_QA_EXE:executable,AZWAH_QA_DATA:data};
   delete env.PM_USER_DATA;
   const ps=script=>execFileSync('pwsh.exe',['-NoLogo','-NoProfile','-NonInteractive','-Command',"$ErrorActionPreference='Stop'; "+script],{env,encoding:'utf8',timeout:60000}).trim();
   ps(`
@@ -23,6 +21,7 @@ export function windowsEmployeeIdentity(installation,executable) {
     if(-not (Get-LocalGroupMember -SID 'S-1-5-32-545' | Where-Object SID -eq $sid)){
       Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $env:AZWAH_QA_USER
     }
+    if(Get-LocalGroupMember -SID 'S-1-5-32-544' | Where-Object SID -eq $sid){throw 'Employee test identity must remain a standard user'}
     icacls.exe $env:AZWAH_QA_DATA /inheritance:r /grant '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-18:(OI)(CI)F' ($env:AZWAH_QA_USER + ':(OI)(CI)M') /Q | Out-Null
     if($LASTEXITCODE -ne 0){throw 'Could not configure isolated employee data permissions'}
   `);
@@ -102,6 +101,7 @@ export function windowsEmployeeIdentity(installation,executable) {
           $result.profilePath=(Get-CimInstance Win32_UserProfile -Filter "SID='$sid'").LocalPath
           if(-not $process.HasExited){
             $result.childSession=$process.SessionId
+            $result.parentPid=(Get-CimInstance Win32_Process -Filter "ProcessId=$($process.Id)" -ErrorAction SilentlyContinue).ParentProcessId
             $result.owner=(Get-Process -Id $process.Id -IncludeUserName -ErrorAction SilentlyContinue).UserName
           }
           Save-Report

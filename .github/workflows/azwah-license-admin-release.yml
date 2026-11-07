@@ -15,7 +15,7 @@ jobs:
       contents: write
     env:
       AZWAH_QA_SEPARATE_IDENTITY: '1'
-      AZWAH_QA_STARTUP_ONLY: '1'
+      AZWAH_QA_STARTUP_ONLY: '0'
       AZWAH_ADMIN_BUILD_SHA: '49dd75be24ebac1e7197fa08fcfcdf5d45405536'
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +43,19 @@ jobs:
         run: |
           npm ci
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $metadata = Invoke-RestMethod 'https://addons.mozilla.org/api/v5/addons/addon/cookie-editor/' -TimeoutSec 60
+          if ($metadata.guid -ne '{c3c10168-4186-445c-9c5b-63f12b8e2c87}') { throw 'Cookie-Editor identity mismatch' }
+          $file = $metadata.current_version.file
+          if ($file.url -notmatch '^https://addons.mozilla.org/' -or $file.hash -notmatch '^sha256:[a-f0-9]{64}$') { throw 'Invalid official artifact metadata' }
+          $xpi = Join-Path $env:RUNNER_TEMP 'qualification-cookie-editor.xpi'
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            try { Invoke-WebRequest $file.url -OutFile $xpi -TimeoutSec 60 -ErrorAction Stop; break }
+            catch { if (Test-Path $xpi) { Remove-Item $xpi -Force }; if ($attempt -eq 3) { throw }; Start-Sleep -Seconds (2*$attempt) }
+          }
+          if ('sha256:'+(Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.hash) { throw 'Official XPI checksum mismatch' }
+          "PM_COOKIE_EDITOR_XPI=$xpi" >> $env:GITHUB_ENV
       - name: Qualify installed Admin and Office under separate Windows accounts with the employee profile environment
         shell: pwsh
         run: |

@@ -1,6 +1,7 @@
 import { _electron,chromium } from 'playwright';
 import http from 'node:http';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -23,6 +24,24 @@ const install=(file,dir)=>execFileSync(file,['/S','/D='+dir],{timeout:240000});
 const launch=(executablePath,args=[],env=process.env)=>_electron.launch({executablePath,args,env,timeout:60000});
 const press=(page,name)=>page.getByRole('button',{name,exact:true}).click();
 const fill=(page,label,value)=>page.getByLabel(label,{exact:true}).fill(value);
+async function auditNoSecrets(directory,needles) {
+  const pending=[directory];
+  const retained=Math.max(...needles.map(value=>value.length))-1;
+  while(pending.length){
+    const current=pending.pop();
+    for(const entry of fs.readdirSync(current,{withFileTypes:true})){
+      const file=path.join(current,entry.name);
+      if(entry.isSymbolicLink())throw Error('Unexpected symbolic link in packaged application');
+      if(entry.isDirectory()){pending.push(file);continue;}
+      let carry=Buffer.alloc(0);
+      for await(const chunk of fs.createReadStream(file)){
+        const block=Buffer.concat([carry,chunk]);
+        if(needles.some(secret=>block.includes(secret)))throw Error('Sensitive fixture material found in installed application');
+        carry=block.subarray(Math.max(0,block.length-retained));
+      }
+    }
+  }
+}
 const shown=(page,value)=>page.getByText(value,{exact:false}).first().waitFor({timeout:240000});
 async function qualify(){
 try {
@@ -57,6 +76,12 @@ try {
   if(separate)execFileSync(officeInstaller,['/S'],{timeout:240000});
   else install(officeInstaller,officeDir);
   const resources=path.join(officeDir,'resources');
+  const vaultRecord=open(backup,password);
+  const privateDer=crypto.createPrivateKey(vaultRecord.privateKey).export({format:'der',type:'pkcs8'});
+  const sensitive=[Buffer.from(vaultRecord.privateKey),privateDer,Buffer.from(password),Buffer.from(password,'utf16le'),fs.readFileSync(backup)];
+  await auditNoSecrets(officeDir,sensitive);
+  await auditNoSecrets(adminDir,sensitive);
+  console.log('PASS installed Admin and Office exclude the generated private key, vault and password');
   const trust=JSON.parse(fs.readFileSync(path.join(resources,'office-trust.json'),'utf8'));
   assert.deepEqual(trust,{organization:'Disposable GUI qualification',publicKey:open(backup,password).publicKey});
   const archive=path.join(resources,'app.asar');
@@ -86,6 +111,9 @@ try {
   await shown(e,'Activate Azwah Multi Browser Office');
   const device=await e.getByLabel('Device identity code').inputValue();
   assert.match(device,/^AZD1-[a-f0-9]{64}$/);
+  await press(e,'Copy Device Code');
+  await shown(e,'Device code copied.');
+  assert.ok((await admin.evaluate(({clipboard})=>clipboard.readText()))===device,'Device code clipboard mismatch');
   if(process.env.AZWAH_QA_STARTUP_ONLY==='1'){
     console.log('PASS separate employee startup and genuine device code');
     await stopOffice();
@@ -112,6 +140,8 @@ try {
   await press(a,'Save License File');
   await a.waitForFunction(()=>!document.querySelector('article button:nth-of-type(2)')?.disabled);
   const token=fs.readFileSync(tokenFile,'utf8');
+  await auditNoSecrets(officeDir,[Buffer.from(token)]);
+  console.log('PASS employee activation token is absent from installed Office package');
   await press(a,'Copy Activation Key');
   await a.waitForFunction(()=>!document.querySelector('article button')?.disabled);
   assert.ok((await admin.evaluate(({clipboard})=>clipboard.readText()))===token,'Clipboard did not receive the issued license');
