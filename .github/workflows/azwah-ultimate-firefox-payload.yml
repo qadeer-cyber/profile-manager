@@ -78,7 +78,7 @@ jobs:
 
           Source: $env:GITHUB_SHA
           Windows Server 2022 evidence: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID
-          Not Windows 10. Unsigned. Firefox is unmodified Mozilla Firefox ESR 140.17.0, MPL 2.0, bundled under resources/firefox. System Firefox is not required and was not installed on the runner.
+          Not Windows 10. Unsigned. Firefox is unmodified Mozilla Firefox ESR 153.5.1, MPL 2.0, bundled under resources/firefox. System Firefox is not required and was not installed on the runner.
 
           Bytes: $size
           SHA256: $hash
@@ -89,8 +89,8 @@ jobs:
               "Installer: $exe"
               "Bytes: $size"
               "SHA256: $hash"
-              "Firefox: 140.17.0esr win64 en-US"
-              "Firefox installer SHA256: df6f7046d53ff17403e49092c0fe830e24cabd8dacbfad3225870955908fccf9"
+              "Firefox: 153.5.1esr win64 en-US"
+              "Firefox installer SHA256: 833147d8124d77331afbc35ef9f85f158dffb633f6d7586ede64f4601131e86c"
               "Host: Windows Server 2022"
               "Windows 10: not qualified"
               "Authenticode: NotSigned"
