@@ -1,16 +1,31 @@
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
+import { useTheme } from '../hooks/useTheme.js';
 
 export function SettingsPage() {
   const toast = useToast();
+  const [theme, setTheme] = useTheme();
+  const [edition, setEdition] = useState(null);
   const [s, setS] = useState(null), [token, setToken] = useState(''), [show, setShow] = useState(false), [diag, setDiag] = useState(null);
-  useEffect(() => { api('/api/settings').then(setS); api('/api/diagnostics').then(setDiag); api('/api/api-token').then(r => setToken(r.token)).catch(() => {}); }, []);
-  if (!s) return null;
+  useEffect(() => { api('/api/settings').then(setS); api('/api/diagnostics').then(setDiag); api('/api/api-token').then(r => setToken(r.token)).catch(() => {}); api('/api/activation').then(setEdition).catch(() => {}); }, []);
+  if (!s) return <p className="muted" aria-busy="true">Loading settings…</p>;
   const save = async () => { try { setS(await api('/api/settings', { method: 'PUT', body: s })); toast('Settings saved', 'success'); } catch (e) { toast(e.message, 'error'); } };
-  return <>
+  return <div className="settings-layout">
+    <nav className="settings-nav" aria-label="Settings sections">
+      {[['edition', 'Edition'], ['appearance', 'Appearance'], ['launch', 'Launch and runtime'], ['data', 'Data and security'], ['backup', 'Backup'], ['diagnostics', 'Diagnostics']].map(([id, label]) => <a key={id} href={'#' + id}>{label}</a>)}
+    </nav>
+    <div>
     <header className="page-head"><h1>Settings</h1><button className="primary" onClick={save}>Save changes</button></header>
-    <section className="panel"><h2>Browser</h2>
+    <section className="panel" id="edition"><h2>Edition</h2>
+      <p>{edition?.edition === 'owner-personal' ? 'Owner / Personal. Implemented local features are enabled. Employee activation is not used.' : edition?.active ? `Office is activated${edition.label ? ' — ' + edition.label : ''}.` : edition?.enforced ? 'Office requires a device-bound license from your administrator. Open Edition in the sidebar to enter it.' : edition ? 'This process is not packaged as Owner and Office activation is not enforced.' : 'Edition status is unavailable.'}</p>
+      <p className="muted">There is no subscription, payment, or profile limit in this build. {edition?.deviceCode ? <>Device code is on the Edition page and is not repeated here.</> : null}</p>
+    </section>
+    <section className="panel" id="appearance"><h2>Appearance</h2>
+      <div className="seg" role="radiogroup" aria-label="Interface theme">{[['light', 'Light'], ['dark', 'Dark'], ['system', 'System']].map(([value, label]) => <button key={value} type="button" role="radio" aria-checked={theme === value} className={theme === value ? 'sel' : ''} onClick={() => setTheme(value)}>{label}</button>)}</div>
+      <p className="muted">The choice is saved in this browser profile as light, dark, or match the system. Interface language is English only; no other localization pack is shipped. There is no saved default workspace — each profile chooses one in the editor.</p>
+    </section>
+    <section className="panel" id="launch"><h2>Browser</h2>
       <label className="check"><input type="checkbox" checked={s.defaultHeadless} onChange={e => setS({ ...s, defaultHeadless: e.target.checked })} /> Launch profiles without a visible window (headless)</label>
       <label>Custom Chromium executable (leave empty to use the bundled/downloaded Chromium)<input value={s.executablePath} onChange={e => setS({ ...s, executablePath: e.target.value })} placeholder="C:\\Path\\to\\chrome.exe" /></label>
       <label>Custom Firefox executable (stock Mozilla Firefox — separate gecko profile tree)<input value={s.firefoxExecutablePath || ''} onChange={e => setS({ ...s, firefoxExecutablePath: e.target.value })} placeholder="C:\\Program Files\\Mozilla Firefox\\firefox.exe" /></label>
@@ -28,13 +43,16 @@ export function SettingsPage() {
         <div className="row"><input readOnly className="mono-input" value={show ? token : '•'.repeat(24)} /><button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button><button onClick={() => { navigator.clipboard.writeText(token); toast('Token copied', 'success'); }}>Copy</button></div></>
         : <p className="muted">In web mode the token is in <code>data/api-token</code> or <code>PM_API_TOKEN</code>.</p>}
     </section>
-    <section className="panel"><h2>Data</h2>
-      <p>Data folder: <code>{diag?.dataDir}</code></p>
+    <section className="panel" id="data"><h2>Data and security</h2>
+      <p>Data folder: <code>{diag?.dataDir || 'Unavailable'}</code></p>
       {window.pm?.openDataDir && <button onClick={() => window.pm.openDataDir()}>Open data folder</button>}
-      <p className="muted">Proxy passwords: {diag?.encryption.backend}{diag?.encryption.warning && <span className="err-text"> — {diag.encryption.warning}</span>}</p>
+      <p className="muted">Proxy passwords: {diag?.encryption?.backend || 'checking'}{diag?.encryption?.warning && <span className="err-text"> — {diag.encryption.warning}</span>}. Passwords are not shown in the profile overview, import lines, or this page.</p>
     </section>
-    <BackupPanel toast={toast} />
-  </>;
+    <section className="panel" id="diagnostics"><h2>Diagnostics and updates</h2>
+      <p className="muted">Version {diag?.version || 'see Diagnostics'}. Chromium follows the pinned manifest. There is no separate automatic application updater. Open Help and diagnostics to install or roll back the browser payload.</p>
+    </section>
+    <div id="backup"><BackupPanel toast={toast} /></div>
+    </div></div>;
 }
 
 function AutomationCliPanel() {

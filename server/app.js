@@ -1,3 +1,4 @@
+import { parseProxyLine } from './proxy-line.js';
 import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
 import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
 import { createStreamedPortableBackup, createStreamedWorkspaceBackup, spoolBackupUpload, processStreamedBackup, interruptedBackupTransfers, cleanupInterruptedBackupTransfer } from './backup-stream.js';
@@ -1013,22 +1014,8 @@ function assignProxy(profileId, proxyId) {
   return out;
 }
 
-// Import: host:port | host:port:user:pass | scheme://[user:pass@]host:port
-export function parseProxyLine(line, defaultType = 'http') {
-  const t = line.trim();
-  const m = t.match(/^([a-z0-9]+):\/\/(?:([^:@\/]*)(?::([^@\/]*))?@)?(\[[0-9a-fA-F:.]+\]|[^:\/@\s]+):(\d+)\/?$/i);
-  if (m) {
-    let type = m[1].toLowerCase(); if (type === 'socks5h') type = 'socks5';
-    if (!PROXY_TYPES.includes(type)) throw new Error(`Unsupported scheme "${m[1]}"`);
-    const dec = v => { try { return decodeURIComponent(v ?? ''); } catch { throw new Error('Invalid URL encoding'); } };
-    return { type, host: m[4], port: m[5], username: dec(m[2]), password: dec(m[3]) };
-  }
-  if (t.includes('://')) throw new Error('Unrecognized format');
-  const parts = t.split(':');
-  if (parts.length === 2) return { type: defaultType, host: parts[0], port: parts[1], username: '', password: '' };
-  if (parts.length >= 4) return { type: defaultType, host: parts[0], port: parts[1], username: parts[2], password: parts.slice(3).join(':') };
-  throw new Error('Unrecognized format');
-}
+// Import: host:port | host:port:user | host:port:user: | host:port:user:pass | scheme://[user:pass@]host:port | [ipv6]:port
+export { parseProxyLine };
 function maskLine(line, parsed) {
   if (!parsed?.password) return line.trim();
   const t = line.trim();
@@ -1465,9 +1452,15 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
     const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
+    const folderCounts = {};
+    for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
+    const trashCount = db.prepare('SELECT COUNT(*) n FROM profiles WHERE deleted_at IS NOT NULL').get().n;
     res.json({
       tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(),
       folders: [...new Set(all.map(r => r.folder))].sort(),
+      folderCounts,
+      profileCount: all.length,
+      trashCount,
       running: engine.runningIds(),
       features: {
         proxyLibrary: true,
@@ -1476,6 +1469,11 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
         nativeManualLaunch: true,
         geckoExtensionLibrary: true,
         fingerprintStockOnly: true,
+        favorites: false,
+        nestedFolders: false,
+        team: false,
+        subscriptions: false,
+        cloudStorage: false,
       },
     });
   });

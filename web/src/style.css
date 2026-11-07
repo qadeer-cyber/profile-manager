@@ -149,3 +149,69 @@ label.file-btn input{position:absolute;width:1px;height:1px;overflow:hidden;clip
 .cookies td{vertical-align:top}
 .label{font-size:12.5px;font-weight:500;color:var(--text-2)}
 .ext-row{padding:8px 0;border-bottom:1px solid var(--border)}.ext-row .perms{margin:0 0 8px 23px}
+
+/* ---------- Azwah shell ---------- */
+.app.shell{--r:6px;--r-lg:8px;--accent:#1d4f91;--accent-hover:#163e73;--accent-soft:#e8f0fa;--accent-text:#1d4f91;display:flex;flex-direction:column;height:100vh;background:#f3f5f8}
+[data-theme=dark] .app.shell{--accent:#8eb4e8;--accent-hover:#d5e4f7;--accent-soft:#1c3048;--accent-text:#d5e4f7;background:var(--bg)}
+.app.shell .topbar{height:52px;flex:none;display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--surface);border-bottom:1px solid var(--border)}
+.app.shell .brand{color:var(--text);padding:0;gap:8px;font-size:15px;letter-spacing:.06em;text-transform:uppercase}
+.app.shell .logo{width:22px;height:22px;border-radius:4px;background:transparent}
+.app.shell .topnav{display:flex;gap:2px;min-width:0;overflow:auto}
+.app.shell .topnav .nav,.app.shell .side .nav{color:var(--text-2);background:transparent;border-radius:6px;padding:6px 8px;font-size:13px;font-weight:600}
+.app.shell .topnav .nav.sel,.app.shell .side .nav.sel{background:var(--accent-soft);color:var(--accent-text)}
+.app.shell .top-meta{margin-left:auto;display:flex;align-items:center;gap:8px}
+.edition-pill{font-size:12px;font-weight:650;color:var(--accent-text);background:var(--accent-soft);border-radius:6px;padding:4px 8px}
+.app.shell .shell-body{display:flex;min-height:0;flex:1}
+.app.shell .side{width:236px;background:var(--surface);color:var(--text);border-right:1px solid var(--border);padding:10px}
+.app.shell .side .nav{width:100%}
+.app.shell .count{margin-left:auto;color:var(--text-3);font-variant-numeric:tabular-nums;font-size:12px;font-weight:600}
+.app.shell .folder-tools{display:flex;gap:4px;margin:8px 0}
+.app.shell .folder-tools input,.app.shell .side>input{flex:1;width:100%;padding:6px 8px}
+.app.shell .folder-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app.shell .side-note{margin:0;color:var(--text-3);font-size:12px;line-height:1.4}
+.app.shell .content{padding:12px 16px 20px}
+.app.shell .profile-toolbar button,.app.shell .filters button,.app.shell .filters select{padding:5px 8px}
+.app.shell .grid th,.app.shell .grid td{padding:7px 8px}
+.app.shell .grid th{text-transform:none;letter-spacing:0;font-size:12px}
+.app.shell .name-line{display:flex;align-items:center;gap:6px;min-width:0}
+.app.shell table.grid.profiles{min-width:1180px}
+.app.shell .col-name .name{white-space:nowrap}
+.app.shell .fav{width:68px;white-space:nowrap}
+.column-picker{display:flex;flex-wrap:wrap;gap:8px 14px;margin:0 0 10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.column-picker label.check{margin:0}
+.drawer-scrim:has(.editor-sheet){background:var(--bg);opacity:1;animation:none;padding:0;align-items:stretch;justify-content:stretch}
+.drawer.editor-sheet{width:100%;max-width:none;height:100%;border:none;animation:none}
+.editor-top{position:sticky;top:0;z-index:1;background:var(--surface);padding-bottom:8px}
+.editor-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:16px;align-items:start}
+.profile-overview{position:sticky;top:52px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;max-height:calc(100vh - 210px);overflow:auto}
+.profile-overview h3{margin:0 0 8px;font-size:14px}
+.overview-row{display:grid;grid-template-columns:112px minmax(0,1fr);gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px}
+.overview-row span{color:var(--text-2)}
+.overview-row strong{font-weight:650;overflow-wrap:break-word;min-width:0}
+.overview-proxy{display:flex;flex-direction:column;align-items:flex-start;gap:2px;font-weight:650}
+.tab.sel{font-weight:700}
+.proxy-line .mono-input{width:100%}
+.unavailable-choice{background:var(--surface-2);border:1px solid var(--border);border-radius:6px;padding:8px 10px;margin:0 0 8px}
+.settings-layout{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;align-items:start}
+.settings-nav{position:sticky;top:0;display:flex;flex-direction:column;gap:4px}
+.settings-nav a{color:var(--text-2);text-decoration:none;padding:6px 8px;border-radius:6px}
+.settings-nav a:hover,.settings-nav a:focus-visible{background:var(--hover);color:var(--text)}
+.app.shell .seg.sm{background:var(--surface-2)}
+.app.shell .seg.sm button{color:var(--text-2)}
+.app.shell .seg.sm button.sel{background:var(--surface);color:var(--accent-text)}
+@media (max-width:1366px){
+  .app.shell .content{padding:8px 10px 16px}
+  .app.shell .side{width:214px}
+  .app.shell .topnav .nav{padding:6px}
+  .editor-layout{grid-template-columns:minmax(0,1fr) 250px}
+}
+@media (max-width:1100px){
+  .editor-layout,.settings-layout{grid-template-columns:1fr}
+  .profile-overview{position:static;max-height:none}
+}
+@media (max-width:900px){
+  .app.shell .side{width:214px;padding:10px}
+  .app.shell .nav{justify-content:flex-start;font-size:13px;padding:6px 8px}
+  .app.shell .folders,.app.shell .side-section,.app.shell .side-foot,.app.shell .side-foot span,.app.shell .brand span{display:flex}
+  .app.shell .col-folder,.app.shell .col-proxy,.app.shell .col-tags,.app.shell .grid th.col-folder,.app.shell .grid th.col-proxy,.app.shell .grid th.col-tags{display:table-cell}
+}

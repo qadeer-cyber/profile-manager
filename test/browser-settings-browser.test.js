@@ -95,7 +95,7 @@ test('real Chromium observes regional settings, isolated profiles, restart/reset
     const page = await uiBrowser.newPage(); await page.goto(srv.url);
     await page.getByRole('button', { name: 'New profile' }).click();
     await page.getByLabel('Name', { exact: true }).fill('UI regional');
-    await page.getByRole('tab', { name: 'Region & language' }).click();
+    await page.getByRole('tab', { name: 'Fingerprint' }).click();
     await page.getByLabel('Locale', { exact: true }).fill('en-US');
     await page.getByLabel('Timezone', { exact: true }).fill('Asia/Karachi');
     await page.getByLabel('Preferred languages, in order').fill('en-US, ur-PK');
@@ -105,7 +105,7 @@ test('real Chromium observes regional settings, isolated profiles, restart/reset
     await page.getByRole('cell', { name: 'UI regional', exact: true }).waitFor();
     assert.deepEqual((await api('GET', '/profiles')).find(p => p.name === 'UI regional').browserSettings, { ...b, timezoneId: 'Asia/Karachi' });
     await page.getByRole('button', { name: 'Edit UI regional', exact: true }).click();
-    await page.getByRole('tab', { name: 'Region & language' }).click();
+    await page.getByRole('tab', { name: 'Fingerprint' }).click();
     assert.equal(await page.getByLabel('Locale', { exact: true }).inputValue(), 'en-US');
     assert.equal(await page.getByLabel('Preferred languages, in order').inputValue(), 'en-US, ur-PK');
     await page.getByLabel('Timezone', { exact: true }).fill('UTC');
