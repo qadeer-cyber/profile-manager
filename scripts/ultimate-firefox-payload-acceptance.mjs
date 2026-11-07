@@ -56,7 +56,7 @@ async function proveFirefox(page, installDir) {
   const exe = path.join(installDir, 'resources', 'firefox', 'firefox.exe');
   const notice = path.join(installDir, 'resources', 'FIREFOX-REDISTRIBUTION.txt');
   const ini = fs.readFileSync(path.join(installDir, 'resources', 'firefox', 'application.ini'), 'utf8');
-  check(fs.existsSync(exe) && fs.existsSync(notice) && ini.includes('Version=140.17.0'), 'Installed payload contains pinned Firefox 140.17.0 and the redistribution notice');
+  check(fs.existsSync(exe) && fs.existsSync(notice) && ini.includes('Version=153.5.1'), 'Installed payload contains pinned Firefox 153.5.1 and the redistribution notice');
   const browser = await api(page, '/browser');
   check(browser.status === 200 && browser.body.firefox?.systemSearch === false, 'Installed application reports that system Firefox search is off');
   check(path.normalize(browser.body.firefox.path).toLowerCase() === path.normalize(exe).toLowerCase(), 'Resolved Firefox path is the executable inside this install tree');
