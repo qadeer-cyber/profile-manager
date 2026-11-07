@@ -144,10 +144,18 @@ try {
   const firefoxProfile = await api(page, '/profiles', {name: 'Bundled Firefox', browserEngine: 'firefox', browserSettings: {firefoxSessionMode: 'bidi', timezoneId: 'UTC'}});
   check(firefoxProfile.status === 201, 'Ultimate can create a Firefox profile');
   const firefoxLaunch = await api(page, `/profiles/${firefoxProfile.body.id}/launch`, {headless: true, automation: true});
-  check(firefoxLaunch.status === 200, 'Ultimate launches Firefox without a system Firefox');
-  const firefoxImage = processImage((await api(page, `/profiles/${firefoxProfile.body.id}`)).body.pid);
-  check(firefoxImage.toLowerCase() === path.join(installDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Ultimate Firefox process image is the bundled runtime');
-  check((await api(page, `/profiles/${firefoxProfile.body.id}/stop`, {})).status === 200, 'Ultimate Firefox stop succeeded');
+  const firefoxDetail = {status: firefoxLaunch.status, code: firefoxLaunch.body?.code || null, message: String(firefoxLaunch.body?.error || firefoxLaunch.body?.message || '').slice(0, 300)};
+  record.firefox = {...firefoxDetail, systemFallback: false, bundledClaim: false};
+  if (firefoxLaunch.status !== 200) {
+    results.push({pass: false, message: `Ultimate Firefox launch failed: ${firefoxDetail.status} ${firefoxDetail.code || ''} ${firefoxDetail.message}`.trim()});
+    console.log(`FAIL ${results.at(-1).message}`);
+    console.log('FIREFOX_LIMITATION bundled launch did not succeed. System fallback stays disabled. This is not a pass.');
+  } else {
+    check(true, 'Ultimate launches Firefox without a system Firefox');
+    const firefoxImage = processImage((await api(page, `/profiles/${firefoxProfile.body.id}`)).body.pid);
+    check(firefoxImage.toLowerCase() === path.join(installDir, 'resources', 'firefox', 'firefox.exe').toLowerCase(), 'Ultimate Firefox process image is the bundled runtime');
+    check((await api(page, `/profiles/${firefoxProfile.body.id}/stop`, {})).status === 200, 'Ultimate Firefox stop succeeded');
+  }
 
   const cookieProfile = await api(page, '/profiles', {name: 'Cookie shelf', browserEngine: 'chromium'});
   const cookie = {name: 'kept', value: cookieValue, domain: 'example.test', path: '/', secure: true, httpOnly: true, sameSite: 'Lax'};
@@ -255,4 +263,5 @@ try {
   fs.writeFileSync(path.join(evidence, 'essential.json'), JSON.stringify({...record, results}, null, 2));
   fs.rmSync(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
 }
+if (results.some(item => !item.pass)) process.exitCode = 1;
 if (process.exitCode) process.exit(process.exitCode);
