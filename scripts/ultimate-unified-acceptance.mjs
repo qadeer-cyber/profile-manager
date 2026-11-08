@@ -48,7 +48,7 @@ function processImage(pid) {
 }
 
 const password = 'Unified vault passphrase ' + crypto.randomUUID();
-let ownerApp, adminApp, unified, office, fixture, proxy, legacyProxy, freshFixture, walWriter;
+let ownerApp, adminApp, unified, office, fixture, proxy, legacyProxy, walWriter;
 const record = {windows10: false, systemFirefoxUsed: false, separateAdminPublished: false};
 try {
   if (!appData || !path.isAbsolute(appData)) throw new Error('Windows roaming AppData is unavailable');
@@ -128,50 +128,35 @@ try {
   check(!ultimateEntries.some(entry => /issuer-public\.pem|organization\.vault|BEGIN PRIVATE KEY/.test(normalizeAsarEntry(entry))), 'Unified application archive has no issuer certificate or vault');
   const ultimateLaunch = {executablePath: path.join(ultimateDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv({PROXY_TEST_URL:'http://203.0.113.10/ip'}), timeout: 90000};
   if (migrationOnly) {
-    const systemPowerShell=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
-    const migrationButton=(application,label,invoke=true)=>execFileSync(systemPowerShell, ['-NoProfile','-NonInteractive','-Command',`
-      $ErrorActionPreference='Stop'
-      Add-Type -AssemblyName UIAutomationClient
-      Add-Type -AssemblyName UIAutomationTypes
-      $ui=[Windows.Automation.AutomationElement]
-      $root=$ui::RootElement
-      $pidMatch=[Windows.Automation.PropertyCondition]::new($ui::ProcessIdProperty,${application.process().pid})
-      $title=[Windows.Automation.PropertyCondition]::new($ui::NameProperty,'Legacy Owner migration paused')
-      $window=[Windows.Automation.AndCondition]::new($pidMatch,$title)
-      $button=[Windows.Automation.PropertyCondition]::new($ui::NameProperty,'${label}')
-      $deadline=(Get-Date).AddSeconds(25)
-      do {
-        $dialog=$root.FindFirst([Windows.Automation.TreeScope]::Children,$window)
-        if ($dialog) {
-          $control=$dialog.FindFirst([Windows.Automation.TreeScope]::Descendants,$button)
-          if ($control) {
-            ${invoke ? '$control.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()' : ''}
-            exit 0
-          }
-        }
-        Start-Sleep -Milliseconds 200
-      } while ((Get-Date) -lt $deadline)
-      throw 'Migration dialog control was not found'
-    `],{timeout:35000,encoding:'utf8',windowsHide:true});
     ownerApp=await _electron.launch({executablePath:path.join(ownerDir,'Azwah Multi Browser Owner.exe'),env:closedEnv(),timeout:60000});
     await ownerApp.firstWindow();
-    unified=await _electron.launch(ultimateLaunch);
-    migrationButton(unified,'Start Fresh');
-    const freshPage=await unified.firstWindow();
-    await freshPage.waitForFunction(()=>!!window.pm?.uiToken,undefined,{timeout:90000});
-    const freshInfo=await freshPage.evaluate(()=>window.pm.appInfo());
-    check(path.basename(freshInfo.userData)==='fresh-start' && (await api(freshPage,'/profiles')).body.length===0 && (await api(freshPage,'/admin/status')).body.exists===false,'Live Owner is refused and Start Fresh isolates profiles and vault');
+    const appLaunch = directory => ({...ultimateLaunch,env:{...ultimateLaunch.env,PM_USER_DATA:directory}});
+    unified=await _electron.launch(appLaunch(path.join(root,'recovery-controller-probe')));
+    const probe=await unified.firstWindow();
+    await probe.waitForFunction(()=>!!window.pm?.uiToken,undefined,{timeout:90000});
+    const choiceDir=path.join(root,'choice-probe');
+    const selected=await unified.evaluate(async (_electron,{appData,choiceDir})=>{
+      const require=process.getBuiltinModule('node:module').createRequire(process.resourcesPath + '/app.asar/package.json');
+      const {prepareUltimateStartup}=require('./electron/ultimate-migration-startup.js');
+      const choices=['retry','logs','fresh'], messages=[];
+      let opened=false;
+      const result=await prepareUltimateStartup({appData,ultimateDir:choiceDir,platform:process.platform,
+        encrypt:()=>{throw Error('Live source must not be imported');},prompt:detail=>{messages.push(detail);return choices.shift();},
+        showLogs:()=>{opened=true;},log:()=>{}});
+      return {result,messages,opened};
+    },{appData,choiceDir});
+    check(path.basename(selected.result)==='fresh-start' && selected.opened && selected.messages.length===3 && selected.messages.every(message=>/active|lock/.test(message)), 'Installed recovery controller refuses live Owner and offers Retry, diagnostics and Start Fresh');
     await unified.close(); unified=undefined;
-    unified=await _electron.launch(ultimateLaunch);
+    unified=await _electron.launch(appLaunch(selected.result));
     const persistedFresh=await unified.firstWindow();
     await persistedFresh.waitForFunction(()=>!!window.pm?.uiToken,undefined,{timeout:90000});
-    check(path.basename((await persistedFresh.evaluate(()=>window.pm.appInfo())).userData)==='fresh-start','Start Fresh persists across startup while legacy Owner remains open');
+    const persistedChoice=await unified.evaluate(async (_electron,{appData,choiceDir})=>{
+      const require=process.getBuiltinModule('node:module').createRequire(process.resourcesPath + '/app.asar/package.json');
+      const {prepareUltimateStartup}=require('./electron/ultimate-migration-startup.js');
+      return prepareUltimateStartup({appData,ultimateDir:choiceDir,platform:process.platform,prompt:()=>{throw Error('Persisted choice prompted again');}});
+    },{appData,choiceDir});
+    check(persistedChoice===selected.result && (await api(persistedFresh,'/profiles')).body.length===0 && (await api(persistedFresh,'/admin/status')).body.exists===false,'Start Fresh persists and the isolated installed backend contains no imported profiles or vault');
     await unified.close(); unified=undefined;
-    const ultimateAppData=path.join(appData,'azwah-multi-browser-ultimate');
-    freshFixture=fs.mkdtempSync(path.join(appData,'azwah-qa-fresh-'));
-    fs.renameSync(ultimateAppData,path.join(freshFixture,'ultimate'));
-    unified=await _electron.launch(ultimateLaunch);
-    migrationButton(unified,'Retry migration',false);
     await ownerApp.close(); ownerApp=undefined;
     const writerScript="const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.env.AZWAH_QA_OWNER_DB);db.exec(process.env.AZWAH_QA_OWNER_SQL);console.log('READY');setInterval(()=>{},1000);";
     const sql="PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; UPDATE profiles SET notes='committed WAL migration marker' WHERE name='Kept from Owner';";
@@ -183,8 +168,8 @@ try {
     walWriter=undefined;
     sourceSidecars=['-wal','-shm'].map(suffix=>[ownerDb+suffix,sha(ownerDb+suffix)]);
     ownerHash=sha(ownerDb);
-    migrationButton(unified,'Retry migration');
-  } else unified = await _electron.launch(ultimateLaunch);
+  }
+  unified = await _electron.launch(ultimateLaunch);
   const page = await unified.firstWindow();
   await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   await page.setViewportSize({width: 1366, height: 768});
@@ -349,6 +334,5 @@ try {
   if (unified) await unified.close().catch(() => {});
   fs.writeFileSync(path.join(evidence, 'acceptance.json'), JSON.stringify({...record, results}, null, 2));
   fs.rmSync(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
-  if (freshFixture) fs.rmSync(freshFixture,{recursive:true,force:true,maxRetries:5,retryDelay:200});
 }
 if (process.exitCode) process.exit(process.exitCode);

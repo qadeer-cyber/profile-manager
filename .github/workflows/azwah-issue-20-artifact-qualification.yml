@@ -1,0 +1,121 @@
+name: Issue 20 installed migration rerun without rebuilding
+on:
+  push:
+    branches: [codex/azwah-issue-20-artifact-qualification]
+    paths: ['.github/workflows/azwah-issue-20-artifact-qualification.yml']
+permissions:
+  contents: read
+jobs:
+  migration:
+    outputs:
+      installer_sha256: ${{ steps.identity.outputs.sha256 }}
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read
+    env:
+      AZWAH_MIGRATION_ONLY: '1'
+      AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ultimate-installer-4aa3748c1ff7d920b84b490f43f1e2d3bf14575c
+          path: release-ultimate
+          github-token: ${{ github.token }}
+          run-id: 42453976018
+      - name: Verify exact retained installer before execution
+        id: identity
+        shell: pwsh
+        run: |
+          $file = $env:AZWAH_UNIFIED_INSTALLER
+          $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $file).Length
+          $manifest = Get-Content release-ultimate/BUILD-MANIFEST.txt
+          $expected = ((Get-Content release-ultimate/SHA256SUMS.txt -Raw).Trim() -split '\s+')[0]
+          if ($sha -ne $expected -or $manifest -notcontains "Installer source: 4aa3748c1ff7d920b84b490f43f1e2d3bf14575c" -or $manifest -notcontains "Bytes: $size") { throw 'Candidate identity mismatch' }
+          "AZWAH_UNIFIED_INSTALLER_SHA256=$sha" >> $env:GITHUB_ENV
+          "sha256=$sha" >> $env:GITHUB_OUTPUT
+          Write-Host "Verified candidate $size bytes SHA-256 $sha"
+      - name: Install qualification dependencies
+        shell: pwsh
+        run: npm ci --ignore-scripts
+      - name: Download the previous separate Owner and Admin installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force prior-installers | Out-Null
+          gh release download azwah-multi-browser-owner-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-Multi-Browser-Full-Setup-x64.exe' --dir prior-installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download azwah-license-admin-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-License-Admin-Setup-x64.exe' --dir prior-installers
+          exit $LASTEXITCODE
+      - name: Install and test the unified application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-unified | Out-Null
+          node scripts/ultimate-unified-acceptance.mjs 2>&1 | Tee-Object build-evidence/ultimate-unified/transcript.log
+          exit $LASTEXITCODE
+      - name: Preserve unified evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-unified-4aa3748c1ff7d920b84b490f43f1e2d3bf14575c
+          path: build-evidence/ultimate-unified
+          retention-days: 30
+  independently-verify:
+    needs: migration
+    runs-on: windows-2022
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require clean-install PASS from the original run
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for ($i=0;$i -lt 24;$i++) {
+            $jobs=gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/42453976018/jobs" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $clean=$jobs.jobs | Where-Object name -eq 'essential'
+            if ($clean.conclusion -eq 'success') { exit 0 }
+            if ($clean.status -eq 'completed') { throw 'Original clean-install gate did not pass' }
+            Start-Sleep -Seconds 15
+          }
+          throw 'Clean-install gate still pending'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ultimate-installer-4aa3748c1ff7d920b84b490f43f1e2d3bf14575c
+          path: verified
+          github-token: ${{ github.token }}
+          run-id: 42453976018
+      - name: Verify the independently downloaded qualified candidate
+        shell: pwsh
+        env:
+          BUILD_SHA256: ${{ needs.migration.outputs.installer_sha256 }}
+        run: |
+          $exe = 'verified/Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $sha = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          $manifest = Get-Content -LiteralPath verified/BUILD-MANIFEST.txt
+          $expected = ((Get-Content -LiteralPath verified/SHA256SUMS.txt -Raw).Trim() -split '\s+')[0]
+          if ($sha -ne $expected -or $sha -ne $env:BUILD_SHA256) { throw 'Independent SHA-256 mismatch' }
+          if ($manifest -notcontains 'Installer source: 4aa3748c1ff7d920b84b490f43f1e2d3bf14575c' -or $manifest -notcontains "Bytes: $size" -or $manifest -notcontains "SHA256: $sha") { throw 'Independent provenance mismatch' }
+          @{source='4aa3748c1ff7d920b84b490f43f1e2d3bf14575c'; sha256=$sha; bytes=$size; run=$env:GITHUB_RUN_ID; qualification='passed'} | ConvertTo-Json | Set-Content -Encoding ascii verified/INDEPENDENT-VERIFICATION.json
+          Write-Host "Qualified candidate $size bytes SHA-256 $sha source '4aa3748c1ff7d920b84b490f43f1e2d3bf14575c'"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-independent-verification-4aa3748c1ff7d920b84b490f43f1e2d3bf14575c
+          path: verified/INDEPENDENT-VERIFICATION.json
+          retention-days: 90
+          if-no-files-found: error
+
