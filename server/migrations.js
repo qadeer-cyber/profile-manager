@@ -194,6 +194,19 @@ export const migrations = [
       )`);
       db.exec('CREATE INDEX IF NOT EXISTS idx_proxy_traffic_sessions_script ON proxy_traffic_sessions(script_id, created_at)');
     } },
+  { version: 20, name: 'profile favorites and persistent folders', up: db => {
+      db.exec('ALTER TABLE profiles ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1))');
+      db.exec('CREATE TABLE profile_folders (path TEXT PRIMARY KEY NOT NULL)');
+    } },
+  { version: 21, name: 'managed automation session history', up: db => {
+      db.exec(`CREATE TABLE automation_sessions (
+        id TEXT PRIMARY KEY, profile_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+        launch_id TEXT NOT NULL, status TEXT NOT NULL, started_at TEXT NOT NULL, ended_at TEXT, error TEXT
+      );
+      CREATE INDEX idx_automation_sessions_profile ON automation_sessions(profile_id);
+      CREATE UNIQUE INDEX idx_automation_sessions_active ON automation_sessions(profile_id)
+        WHERE status IN ('ready','stopping');`);
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

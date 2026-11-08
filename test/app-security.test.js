@@ -13,12 +13,19 @@ process.env.PM_DATA_DIR = tmp; process.env.PM_API_TOKEN = 'api-tok'; delete proc
 const launches = [];
 const stubRun = { info: { ws_endpoint: 'ws://x', cdp_port: 1, pid: 1 }, fail: null };
 const running = new Set();
+const automationRuns = new Map();
+const browserEvents = new (await import('events')).EventEmitter();
+let stopFailure = false;
 mock.module(new URL('../server/browsers.js', import.meta.url).href, { namedExports: {
-  events: new (await import('events')).EventEmitter(), DATA_COPY_SKIP: new Set(),
+  events: browserEvents, automationLaunch: id => automationRuns.get(id), DATA_COPY_SKIP: new Set(),
   isRunning: id => running.has(id), runningIds: () => [...running], runInfo: () => stubRun.info,
   resourceSnapshot: () => ({ running: running.size, sessions: [] }),
-  launch: async (p, opts) => { if (stubRun.fail) throw stubRun.fail; launches.push({ id: p.id, opts }); running.add(p.id); return {}; },
-  stop: async id => { running.delete(id); }, shutdown: async () => {}, recoverAfterRestart: async () => ({}), startHealthMonitor: () => {},
+  launch: async (p, opts) => { if (stubRun.fail) throw stubRun.fail; launches.push({ id: p.id, opts }); running.add(p.id); if (opts.automation) automationRuns.set(p.id, { id: String(launches.length), endpoint: 'http://127.0.0.1:9222' }); return {}; },
+  stop: async id => {
+    if (stopFailure) throw new Error('fixture credential never log this');
+    running.delete(id); automationRuns.delete(id);
+    browserEvents.emit('event', { type: 'profile:stopped', id });
+  }, shutdown: async () => {}, recoverAfterRestart: async () => ({}), startHealthMonitor: () => {},
 } });
 
 // Seed a pre-v6 database (schema up to v5) with an inline plaintext proxy BEFORE the app opens it,
@@ -218,4 +225,207 @@ test('installBrowser uses the verified installer (injected): success and failure
 test('app.js no longer shells out to the Playwright CLI installer', () => {
   const src = fs.readFileSync(new URL('../server/app.js', import.meta.url), 'utf8');
   assert.ok(!/cli\.js|'install', 'chromium'/.test(src));
+});
+
+test('M4 favorites are authenticated, persisted and composed with saved filters', async () => {
+  const { d: profile } = await ui('POST', '/api/profiles', { name: 'M4 Favorite', folder: 'M4 Flags' });
+  assert.equal(profile.favorite, false);
+  const endpoint = '/api/profiles/' + profile.id + '/favorite';
+  assert.equal((await req('PATCH', endpoint, { favorite: true })).s, 401);
+  assert.equal((await ui('PATCH', endpoint, { favorite: 'true' })).s, 400);
+  assert.equal((await ui('PATCH', endpoint, { favorite: true })).d.favorite, true);
+  assert.equal(db.prepare('SELECT favorite FROM profiles WHERE id=?').get(profile.id).favorite, 1);
+  const { d: view, s } = await ui('POST', '/api/views', { name: 'M4 Starred', query: { favorite: true, folder: 'M4 Flags', q: 'M4', proxy: 'none' } });
+  assert.equal(s, 201);
+  assert.deepEqual((await ui('GET', '/api/views')).d.find(item => item.id === view.id).query, view.query);
+  const query = new URLSearchParams(view.query);
+  assert.deepEqual((await ui('GET', '/api/profile-table?' + query)).d.items.map(item => item.id), [profile.id]);
+  assert.equal((await ui('GET', '/api/meta')).d.favoriteCount, 1);
+  await ui('PATCH', endpoint, { favorite: false });
+  assert.equal((await ui('GET', '/api/profile-table?' + query)).d.total, 0);
+  assert.equal((await ui('GET', '/api/profile-table?favorite=broken')).s, 400);
+});
+
+test('M4 nested folder moves preserve workspace, ciphertext, browser data, and saved queries', async () => {
+  const root = '/api/profile-folders';
+  assert.equal((await req('POST', root, { path: 'M4 tree' })).s, 401);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/Child' })).s, 404);
+  assert.equal((await ui('POST', root, { path: 'M4 tree' })).s, 201);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/Child' })).s, 201);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/Empty' })).s, 201);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/../invalid' })).s, 400);
+  assert.equal((await ui('POST', root, { path: 'M4 destination' })).s, 201);
+  assert.ok((await ui('GET', '/api/meta')).d.folders.includes('M4 tree/Empty'));
+  const { d: workspace } = await ui('POST', '/api/workspaces', { name: 'M4 workspace' });
+  const { d: profile } = await ui('POST', '/api/profiles', {
+    name: 'M4 Nested', folder: 'M4 tree/Child', workspaceId: workspace.id,
+    proxy: { type: 'http', host: 'localhost', port: 8080, username: 'fixture', password: 'm4-synthetic-secret' },
+  });
+  const dataFile = path.join(tmp, 'profiles', profile.id, 'fixture-cookie-data');
+  fs.writeFileSync(dataFile, 'fixture');
+  const ciphertext = () => db.prepare('SELECT password FROM proxies WHERE id = ?').get(profile.proxyId).password;
+  const encrypted = ciphertext();
+  assert.match(encrypted, /^enc:/);
+  const { d: view } = await ui('POST', '/api/views', { name: 'M4 Folder View', query: { folder: 'M4 tree/Child', workspaceId: workspace.id } });
+  assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 tree/Child/Loop' })).s, 409);
+  assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination' })).s, 409);
+  db.prepare('UPDATE workspaces SET vault_locked = 1 WHERE id = ?').run(workspace.id);
+  try {
+    assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 404);
+  } finally { db.prepare('UPDATE workspaces SET vault_locked = 0 WHERE id = ?').run(workspace.id); }
+  assert.equal((await ui('GET', '/api/profiles/' + profile.id)).d.folder, 'M4 tree/Child');
+  assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 200);
+  const moved = (await ui('GET', '/api/profiles/' + profile.id)).d;
+  assert.equal(moved.folder, 'M4 destination/Renamed/Child');
+  assert.equal(moved.workspaceId, workspace.id);
+  assert.equal(moved.proxy.password, '••••');
+  assert.equal(ciphertext(), encrypted);
+  assert.equal(fs.readFileSync(dataFile, 'utf8'), 'fixture');
+  const currentView = (await ui('GET', '/api/views')).d.find(item => item.id === view.id);
+  assert.equal(currentView.query.folder, moved.folder);
+  assert.equal((await ui('DELETE', root, { path: 'M4 destination/Renamed' })).s, 409);
+  assert.equal((await ui('DELETE', root, { path: moved.folder })).s, 409);
+  assert.equal((await ui('DELETE', '/api/profiles/' + profile.id)).s, 204);
+  assert.equal((await ui('DELETE', root, { path: moved.folder })).s, 409);
+  assert.equal((await ui('DELETE', root, { path: 'M4 destination/Renamed/Empty' })).s, 204);
+  assert.ok(!(await ui('GET', '/api/meta')).d.folders.includes('M4 destination/Renamed/Empty'));
+});
+
+test('M4 bulk settings clone reports per-profile failures and does not duplicate session data', async () => {
+  const { d: source } = await ui('POST', '/api/profiles', { name: 'M4 Clone', folder: 'M4 Clones', notes: 'Keep notes', tags: ['test'] });
+  fs.writeFileSync(path.join(tmp, 'profiles', source.id, 'Cookies'), 'private session');
+  const endpoint = '/api/bulk/jobs';
+  assert.equal((await ui('POST', endpoint, { action: 'clone', ids: [source.id, source.id] })).s, 400);
+  const { d: job, s } = await ui('POST', endpoint, { action: 'clone', ids: [source.id, 'missing'] });
+  assert.equal(s, 202);
+  let state = job;
+  for (let i = 0; i < 20 && state.status === 'running'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    state = (await ui('GET', endpoint + '/' + job.id)).d;
+  }
+  assert.equal(state.status, 'done');
+  assert.deepEqual(state.items.map(item => item.ok), [true, false]);
+  const copy = state.items[0].profile;
+  assert.notEqual(copy.id, source.id);
+  assert.equal(copy.folder, source.folder);
+  assert.equal(copy.notes, source.notes);
+  assert.deepEqual(copy.tags, source.tags);
+  assert.ok(!fs.existsSync(path.join(tmp, 'profiles', copy.id, 'Cookies')));
+  assert.equal(fs.readFileSync(path.join(tmp, 'profiles', source.id, 'Cookies'), 'utf8'), 'private session');
+});
+
+test('M4 sorts before pagination and filters by browser engine and proxy assignment', async () => {
+  const { d: firefox } = await ui('POST', '/api/profiles', {
+    name: 'M4 Sort Firefox', folder: 'M4 Sorting', notes: 'alpha', browserEngine: 'firefox',
+    proxy: { type: 'http', host: 'localhost', port: 8080 },
+  });
+  const { d: chromium } = await ui('POST', '/api/profiles', {
+    name: 'M4 Sort Chromium', folder: 'M4 Sorting', notes: 'zulu',
+  });
+  const url = '/api/profile-table?' + new URLSearchParams({ folder: 'M4 Sorting', sort: 'notes', dir: 'asc', pageSize: 1 });
+  const first = await ui('GET', url);
+  assert.equal(first.d.total, 2);
+  assert.equal(first.d.items[0].id, firefox.id);
+  assert.equal((await ui('GET', url + '&page=2')).d.items[0].id, chromium.id);
+  assert.deepEqual((await ui('GET', url + '&engine=firefox&proxy=assigned')).d.items.map(p => p.id), [firefox.id]);
+  assert.deepEqual((await ui('GET', url + '&engine=chromium&proxy=none')).d.items.map(p => p.id), [chromium.id]);
+  assert.equal((await ui('GET', url + '&engine=unknown')).s, 400);
+});
+
+test('M4 schema upgrade preserves existing workspace and proxy references and survives reopen', async () => {
+  const { default: Database } = await import('better-sqlite3');
+  const { migrate, migrations } = await import('../server/migrations.js');
+  const file = path.join(tmp, 'm4-schema-fixture.db');
+  const db = new Database(file);
+  try {
+    migrate(db, migrations.filter(m => m.version < 20));
+    db.prepare('INSERT INTO workspaces (id,name,created_at,updated_at) VALUES (?,?,?,?)').run('w', 'Existing', 't', 't');
+    db.prepare('INSERT INTO proxies (id,name,type,host,port,password,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run('x', 'Proxy', 'http', 'localhost', 8080, 'ss:v1:synthetic', 't', 't');
+    db.prepare('INSERT INTO profiles (id,name,folder,workspace_id,proxy_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run('p', 'Original', 'Original folder', 'w', 'x', 't', 't');
+    assert.deepEqual(migrate(db).applied, [20, 21]);
+    assert.deepEqual(db.prepare('SELECT name,folder,workspace_id,proxy_id,favorite FROM profiles WHERE id=?').get('p'),
+      { name: 'Original', folder: 'Original folder', workspace_id: 'w', proxy_id: 'x', favorite: 0 });
+    assert.equal(db.prepare('SELECT password FROM proxies WHERE id=?').get('x').password, 'ss:v1:synthetic');
+    db.prepare('UPDATE profiles SET favorite=1 WHERE id=?').run('p');
+    db.prepare('INSERT INTO profile_folders (path) VALUES (?)').run('Empty folder');
+  } finally { db.close(); }
+
+  const reopened = new Database(file);
+  try {
+    assert.deepEqual(migrate(reopened).applied, []);
+    assert.equal(reopened.prepare('SELECT favorite FROM profiles WHERE id=?').get('p').favorite, 1);
+    assert.equal(reopened.prepare('SELECT path FROM profile_folders').get().path, 'Empty folder');
+  } finally { reopened.close(); }
+});
+
+test('M4.2 hidden folder paths are not usable as parents and locked Trash prevents subtree changes', async () => {
+  const folder = '/api/profile-folders';
+  const { d: ws } = await ui('POST', '/api/workspaces', { name: 'M4.2 private' });
+  await ui('POST', folder, { path: 'M4.2 Shared' });
+  const { d: hidden } = await ui('POST', '/api/profiles', { name: 'Hidden', workspaceId: ws.id, folder: 'M4.2 Shared/Secret' });
+  const { d: publicProfile } = await ui('POST', '/api/profiles', { name: 'Public', folder: 'M4.2 Shared' });
+  await ui('DELETE', '/api/profiles/' + hidden.id);
+  db.prepare('UPDATE workspaces SET vault_locked=1 WHERE id=?').run(ws.id);
+  const absent = await ui('DELETE', folder, { path: 'M4.2 Unknown' });
+  assert.deepEqual(await ui('DELETE', folder, { path: 'M4.2 Shared/Secret' }), absent);
+  assert.deepEqual(await ui('POST', folder, { path: 'M4.2 Shared/Secret/Probe' }), absent);
+  assert.deepEqual(await ui('PATCH', folder, { from: 'M4.2 Shared', to: 'M4.2 Moved' }), absent);
+  assert.equal((await ui('GET', '/api/profiles/' + publicProfile.id)).d.folder, 'M4.2 Shared');
+  assert.ok(!(await ui('GET', '/api/meta')).d.folders.includes('M4.2 Shared/Secret'));
+  db.prepare('UPDATE workspaces SET vault_locked=0 WHERE id=?').run(ws.id);
+
+  db.exec(`CREATE TEMP TRIGGER m42_fail_move BEFORE UPDATE OF folder ON profiles
+    WHEN NEW.folder = 'M4.2 Moved/Secret' BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END`);
+  try {
+    assert.equal((await ui('PATCH', folder, { from: 'M4.2 Shared', to: 'M4.2 Moved' })).s, 500);
+    assert.equal((await ui('GET', '/api/profiles/' + publicProfile.id)).d.folder, 'M4.2 Shared');
+    assert.ok(!(await ui('GET', '/api/meta')).d.folders.includes('M4.2 Moved'));
+  } finally { db.exec('DROP TRIGGER m42_fail_move'); }
+  assert.equal((await ui('PATCH', folder, { from: 'M4.2 Shared', to: 'M4.2 Moved' })).s, 200);
+  assert.equal(db.prepare('SELECT folder FROM profiles WHERE id=?').get(hidden.id).folder, 'M4.2 Moved/Secret');
+});
+
+test('M4.2 managed session authorization, exclusivity, redaction, crash and cancellation', async () => {
+  const { d: a } = await ui('POST', '/api/profiles', { name: 'M4.2 Chromium', automationEnabled: true });
+  const { d: b } = await ui('POST', '/api/profiles', { name: 'M4.2 Other', automationEnabled: true });
+  const route = id => '/profiles/' + id + '/automation-sessions';
+  const p = '/api' + route(a.id);
+  assert.equal((await req('POST', p)).s, 401);
+  assert.equal((await req('GET', '/api/v1' + route(a.id))).s, 401);
+  assert.equal((await ui('POST', p)).s, 409);
+  for (const { id } of [a, b]) assert.equal((await ui('POST', '/api/profiles/' + id + '/launch')).s, 200);
+  const [left, right] = await Promise.all([ui('POST', p), v1('POST', route(a.id))]);
+  assert.deepEqual([left.s, right.s].sort(), [201, 409]);
+  const session = (await ui('GET', p)).d.sessions[0];
+  assert.equal(session.status, 'ready');
+  assert.equal((await ui('POST', '/api/profiles/' + a.id + '/webdriver/start')).s, 409);
+  process.env.AZWAH_OFFICE_ENFORCE = '1';
+  try { assert.equal((await v1('POST', route(b.id))).s, 402); }
+  finally { delete process.env.AZWAH_OFFICE_ENFORCE; }
+  assert.ok(Date.parse(session.startedAt));
+  const cancel = p + '/' + session.id + '/cancel';
+  assert.equal((await ui('POST', '/api' + route(b.id) + '/' + session.id + '/cancel')).s, 404);
+  stopFailure = true;
+  try {
+    const failed = (await ui('POST', cancel)).d;
+    assert.match(failed.sessions[0].error, /Retry cancellation/);
+    assert.doesNotMatch(JSON.stringify(failed), /fixture credential/);
+  } finally { stopFailure = false; }
+  assert.equal((await ui('POST', cancel)).d.sessions[0].status, 'cancelled');
+  assert.equal(running.has(b.id), true);
+  const second = (await v1('POST', route(b.id))).d.sessions[0];
+  running.delete(b.id); automationRuns.delete(b.id);
+  browserEvents.emit('event', { type: 'profile:crashed', id: b.id, error: 'fixture credential' });
+  const afterCrash = (await v1('GET', route(b.id))).d;
+  assert.equal(afterCrash.endpoint, null);
+  assert.equal(afterCrash.sessions[0].id, second.id);
+  assert.equal(afterCrash.sessions[0].status, 'interrupted');
+  assert.doesNotMatch(JSON.stringify(afterCrash), /fixture credential/);
+  await ui('POST', '/api/profiles/' + b.id + '/launch');
+  assert.equal((await v1('POST', route(b.id))).s, 201);
+  const { recoverAutomationSessions } = await import('../server/automation-sessions.js');
+  recoverAutomationSessions();
+  assert.equal((await v1('GET', route(b.id))).d.sessions[0].status, 'interrupted');
 });

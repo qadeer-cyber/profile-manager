@@ -81,6 +81,14 @@ export const launchEvidence = id => {
   return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null };
 };
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
+export function automationLaunch(id) {
+  const entry = live.get(id);
+  if (!entry || entry.stopping || !entry.ctx?.browser()?.isConnected()) return null;
+  const row = runInfo(id);
+  const port = row?.cdp_port;
+  if (!row?.ws_endpoint || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  return { id: entry.launchId, endpoint: `http://127.0.0.1:${port}` };
+}
 const httpErr = (status, msg, code) => Object.assign(new Error(msg), { status, code });
 const emit = (type, id, extra = {}) => events.emit('event', { type, id, at: new Date().toISOString(), ...extra });
 const setStatus = (id, fields) => {

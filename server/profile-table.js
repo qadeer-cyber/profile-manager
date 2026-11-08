@@ -4,8 +4,8 @@ import crypto from 'crypto';
 import { db } from './db.js';
 
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
-const SORTS = new Set(['name', 'folder', 'updated_at', 'created_at', 'status', 'last_launched_at', 'tags', 'proxy']);
-const QUERY_KEYS = ['q', 'tag', 'folder', 'status', 'proxy', 'workspaceId', 'sort', 'dir', 'page', 'pageSize'];
+const SORTS = new Set(['name', 'folder', 'updated_at', 'created_at', 'status', 'last_launched_at', 'tags', 'proxy', 'engine', 'notes', 'storage']);
+const QUERY_KEYS = ['q', 'tag', 'folder', 'status', 'proxy', 'workspaceId', 'favorite', 'engine', 'sort', 'dir', 'page', 'pageSize'];
 
 function statusRank(profile) {
   if (profile.running) return 0;
@@ -20,13 +20,19 @@ export function queryProfiles(rows, query = {}) {
   const status = String(query.status || '');
   const proxy = query.proxy == null ? '' : String(query.proxy);
   const workspaceId = String(query.workspaceId || '');
+  const favorite = query.favorite === true || query.favorite === 'true';
+  const browserEngine = String(query.engine || '');
   const sort = String(query.sort || 'updated_at');
   const dir = String(query.dir || 'desc') === 'asc' ? 1 : -1;
   const pageSize = Math.min(100, Math.max(1, Number(query.pageSize || 50) || 50));
   const page = Math.max(1, Number(query.page || 1) || 1);
   if (!SORTS.has(sort)) throw fail(400, 'sort is not supported', 'INVALID_QUERY');
   if (status && !['running', 'stopped', 'error'].includes(status)) throw fail(400, 'status filter is invalid', 'INVALID_QUERY');
+  if (query.favorite !== undefined && ![true, false, 'true', 'false'].includes(query.favorite)) throw fail(400, 'favorite filter is invalid', 'INVALID_QUERY');
+  if (browserEngine && !['chromium', 'firefox'].includes(browserEngine)) throw fail(400, 'browser engine filter is invalid', 'INVALID_QUERY');
   let items = rows;
+  if (browserEngine) items = items.filter(profile => (profile.browserEngine || 'chromium') === browserEngine);
+  if (favorite) items = items.filter(profile => profile.favorite);
   if (q) items = items.filter(profile => `${profile.name} ${profile.notes} ${profile.tags.join(' ')} ${profile.folder}`.toLowerCase().includes(q));
   if (tag) items = items.filter(profile => profile.tags.includes(tag));
   if (folder !== undefined && folder !== '__all' && folder !== '') items = items.filter(profile => profile.folder === folder);
@@ -35,13 +41,16 @@ export function queryProfiles(rows, query = {}) {
   if (status === 'stopped') items = items.filter(profile => !profile.running && !profile.last_error);
   if (status === 'error') items = items.filter(profile => !profile.running && profile.last_error);
   if (proxy === 'none') items = items.filter(profile => !profile.proxyId && !profile.proxy_id);
+  else if (proxy === 'assigned') items = items.filter(profile => profile.proxyId || profile.proxy_id);
   else if (proxy && proxy !== 'any') items = items.filter(profile => (profile.proxyId || profile.proxy_id) === proxy);
   if (workspaceId) items = items.filter(profile => profile.workspaceId === workspaceId);
   const value = profile => {
     if (sort === 'status') return statusRank(profile);
     if (sort === 'tags') return profile.tags.join(',').toLowerCase();
     if (sort === 'proxy') return (profile.proxy?.host || '').toLowerCase();
-    if (sort === 'name' || sort === 'folder') return String(profile[sort] || '').toLowerCase();
+    if (sort === 'engine') return profile.browserEngine || 'chromium';
+    if (sort === 'storage') return 'local';
+    if (sort === 'name' || sort === 'folder' || sort === 'notes') return String(profile[sort] || '').toLowerCase();
     return profile[sort] || '';
   };
   items = [...items].sort((a, b) => {

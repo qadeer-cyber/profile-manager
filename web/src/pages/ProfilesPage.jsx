@@ -1,5 +1,5 @@
 import { PortableExportDialog } from '../components/PortableExportDialog.jsx';
-import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { Confirm, Dialog } from '../components/Dialog.jsx';
@@ -18,10 +18,10 @@ function loadTablePrefs() {
   try { return JSON.parse(localStorage.getItem('pm.profileTable') || '{}'); } catch { return {}; }
 }
 
-export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFilter = '', onWorkspaceFilterChange, scope = 'all', pendingCreate = null, onPendingCreateHandled }) {
+export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFilter = '', onWorkspaceFilterChange, scope = 'all' }) {
   const toast = useToast();
   const [list, setList] = useState([]), [loaded, setLoaded] = useState(false), [loadError, setLoadError] = useState('');
-  const [q, setQ] = useState(''), [tag, setTag] = useState(''), [status, setStatus] = useState(''), [proxy, setProxy] = useState(''), [workspaceId, setWorkspaceId] = useState('');
+  const [q, setQ] = useState(''), [tag, setTag] = useState(''), [status, setStatus] = useState(''), [proxy, setProxy] = useState(''), [browserEngine, setBrowserEngine] = useState(''), [workspaceId, setWorkspaceId] = useState('');
   const [sort, setSort] = useState({ k: 'updated_at', dir: -1 });
   const initialPrefs = loadTablePrefs();
   const [columns, setColumns] = useState({ ...DEFAULT_COLUMNS, ...(initialPrefs.columns || {}) });
@@ -31,35 +31,28 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const [dialog, setDialog] = useState(null), [busy, setBusy] = useState({}), [bulkBusy, setBulkBusy] = useState(false), [bulkJob, setBulkJob] = useState(null);
   const loadGen = useRef(0);
   useEffect(() => { if (workspaceFilter !== workspaceId) setWorkspaceId(workspaceFilter || ''); }, [workspaceFilter]);
-  useEffect(() => { if (scope === 'running') { setStatus('running'); setPage(1); } }, [scope]);
+  useEffect(() => { setPage(1); }, [scope, folder, workspaceId]);
   useEffect(() => { localStorage.setItem('pm.profileTable', JSON.stringify({ columns, pageSize })); }, [columns, pageSize]);
-  useEffect(() => {
-    if (!pendingCreate) return;
-    setDialog({ kind: 'edit', data: { ...emptyForm, folder: pendingCreate } });
-    onPendingCreateHandled?.();
-  }, [pendingCreate]);
+  const effectiveStatus = scope === 'running' ? 'running' : status;
+  const serverSort = sort.k === 'lastused' ? 'last_launched_at' : sort.k;
   const load = useCallback(async () => {
     const mine = ++loadGen.current;
     try {
-      const serverSort = sort.k === 'lastused' ? 'last_launched_at' : ['name', 'folder', 'updated_at', 'status', 'tags', 'proxy'].includes(sort.k) ? sort.k : 'updated_at';
-      const params = { q, tag, folder, status, proxy, sort: serverSort, dir: sort.dir > 0 ? 'asc' : 'desc', page: String(page), pageSize: String(pageSize) };
+      const params = { q, tag, folder, status: effectiveStatus, proxy, engine: browserEngine, favorite: scope === 'favorites', sort: serverSort, dir: sort.dir > 0 ? 'asc' : 'desc', page: String(page), pageSize: String(pageSize) };
       if (workspaceId) params.workspaceId = workspaceId;
       const data = await api('/api/profile-table?' + new URLSearchParams(params));
-      if (mine === loadGen.current) { setList(data.items); setTotal(data.total); setLoadError(''); }
+      if (mine === loadGen.current) {
+        const lastPage = Math.max(1, Math.ceil(data.total / pageSize));
+        if (page > lastPage) setPage(lastPage);
+        setList(data.items); setTotal(data.total); setLoadError('');
+      }
     } catch (e) { if (mine === loadGen.current) { setLoadError(e.message); toast(e.message, 'error'); } }
     if (mine === loadGen.current) setLoaded(true);
-  }, [q, tag, folder, status, proxy, workspaceId, sort, page, pageSize, toast]);
+  }, [q, tag, folder, effectiveStatus, proxy, browserEngine, scope, workspaceId, serverSort, sort.dir, page, pageSize, toast]);
   useEffect(() => { const t = setTimeout(load, q ? 180 : 0); return () => clearTimeout(t); }, [load, meta]);
   useEffect(() => { api('/api/views').then(setViews).catch(() => {}); }, [meta]);
 
-  const rows = useMemo(() => [...list].sort((a, b) => {
-    const value = profile => sort.k === 'status' ? (profile.running ? 0 : profile.last_error ? 1 : 2) : sort.k === 'tags' ? profile.tags.join(',') : sort.k === 'proxy' ? (profile.proxy ? profile.proxy.host : '') : sort.k === 'engine' ? (profile.browserEngine || '') : sort.k === 'notes' ? (profile.notes || '') : sort.k === 'lastused' ? (profile.last_launched_at || '') : sort.k === 'storage' ? 'local' : String(profile[sort.k] ?? '').toLowerCase();
-    const left = value(a), right = value(b);
-    if (left === right) return 0;
-    if (left === '') return 1;
-    if (right === '') return -1;
-    return (left < right ? -1 : 1) * sort.dir;
-  }), [list, sort]);
+  const rows = list;
   const S = useSelection(rows.map(p => p.id));
   const selected = rows.filter(p => S.sel.has(p.id));
 
@@ -149,7 +142,25 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     extensionAssignments: (p.extensions || []).map(e => ({ extensionId: e.id, enabled: !!e.enabled })),
     proxyMode: p.proxyId ? 'library' : p.proxy ? 'custom' : 'none', proxy: p.proxy ? { username: '', password: '', ...p.proxy } : emptyForm.proxy });
   const initialProxyId = f => f._orig;
-  const sortBy = k => setSort(s => ({ k, dir: s.k === k ? -s.dir : 1 }));
+  const sortBy = k => {
+    setSort(s => ({ k, dir: s.k === k ? -s.dir : 1 }));
+    setPage(1);
+  };
+  const applyView = id => {
+    const view = views.find(item => item.id === id);
+    if (!view) return;
+    const query = view.query || {};
+    setQ(query.q || '');
+    setTag(query.tag || '');
+    setStatus(query.status || '');
+    setProxy(query.proxy || '');
+    setBrowserEngine(query.engine || '');
+    setSort({ k: query.sort === 'last_launched_at' ? 'lastused' : query.sort || 'updated_at', dir: query.dir === 'asc' ? 1 : -1 });
+    setFolder(query.folder ?? '__all', query.favorite === true || query.favorite === 'true' ? 'favorites' : 'all');
+    onWorkspaceFilterChange?.(query.workspaceId || '');
+    if ([10, 25, 50, 100].includes(Number(query.pageSize))) setPageSize(Number(query.pageSize));
+    setPage(1);
+  };
 
   const shown = COLUMN_DEFS.filter(([key]) => columns[key] !== false);
   const one = selected.length === 1 ? selected[0] : null;
@@ -165,7 +176,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <button aria-label="Restart selected" title="Restart stops the browser and launches it again" disabled={!one?.running || bulkBusy} onClick={() => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); })}><Icon name="bolt" /></button>
       <button aria-label="Edit selected" disabled={!one} onClick={() => setDialog({ kind: 'edit', data: toForm(one) })}><Icon name="edit" /></button>
       <button aria-label="Duplicate selected" disabled={!one || busy[one?.id]} onClick={() => act(one.id, `Cloned ${one.name}`, () => api(`/api/profiles/${one.id}/clone`, { method: 'POST' }))}><Icon name="copy" /></button>
-      <button disabled title="Favorites are not stored in this build"><Icon name="star" /></button>
+      <button aria-label="Clone selected settings" disabled={!selected.length || bulkBusy} onClick={() => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) })}>Clone settings</button>
       <button aria-label="Move selected" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-move' })}><Icon name="folder" /></button>
       <button aria-label="Tag selected" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-tag' })}><Icon name="tag" /></button>
       <button onClick={() => setDialog({ kind: 'import' })}>Import</button>
@@ -176,16 +187,17 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     </div>
     {columnsOpen && <div className="column-picker" role="group" aria-label="Visible columns">{COLUMN_DEFS.map(([key, label]) => <label key={key} className="check"><input type="checkbox" checked={columns[key] !== false} onChange={e => setColumns(current => ({ ...current, [key]: e.target.checked }))} />{label}</label>)}</div>}
     <div className="toolbar filters">
-      <select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} aria-label="Status filter"><option value="">Any status</option><option value="running">Running</option><option value="stopped">Stopped</option><option value="error">Error</option></select>
+      <select value={effectiveStatus} disabled={scope === 'running'} onChange={e => { setStatus(e.target.value); setPage(1); }} aria-label="Status filter"><option value="">Any status</option><option value="running">Running</option><option value="stopped">Stopped</option><option value="error">Error</option></select>
       <select value={tag} onChange={e => { setTag(e.target.value); setPage(1); }} aria-label="Tag filter"><option value="">All tags</option>{meta.tags.map(t => <option key={t}>{t}</option>)}</select>
-      <select value={proxy} onChange={e => { setProxy(e.target.value); setPage(1); }} aria-label="Proxy filter"><option value="">Any proxy</option><option value="none">Direct</option></select>
+      <select value={proxy} onChange={e => { setProxy(e.target.value); setPage(1); }} aria-label="Proxy filter"><option value="">Any proxy</option><option value="none">Direct</option><option value="assigned">Assigned proxy</option></select>
+      <select value={browserEngine} onChange={e => { setBrowserEngine(e.target.value); setPage(1); }} aria-label="Browser engine filter"><option value="">Any engine</option><option value="chromium">Chromium</option><option value="firefox">Firefox</option></select>
       {workspaceId && <span className="tag">Workspace filter active <button type="button" className="link" onClick={() => { setWorkspaceId(''); onWorkspaceFilterChange?.(''); setPage(1); }}>Clear</button></span>}
-      <select aria-label="Saved view" value="" onChange={e => { const view = views.find(item => item.id === e.target.value); if (!view) return; const query = view.query || {}; setQ(query.q || ''); setTag(query.tag || ''); setStatus(query.status || ''); setProxy(query.proxy || ''); setPage(1); if (query.sort) setSort({ k: query.sort, dir: query.dir === 'asc' ? 1 : -1 }); if (query.folder != null) setFolder(query.folder || '__all'); }}>
+      <select aria-label="Saved view" value="" onChange={event => applyView(event.target.value)}>
         <option value="">Saved views</option>{views.map(view => <option key={view.id} value={view.id}>{view.name}</option>)}</select>
-      {(q || tag || status || proxy) && <button className="ghost" onClick={() => { setQ(''); setTag(''); setStatus(''); setProxy(''); setPage(1); }}>Clear filters</button>}
+      {(q || tag || status || proxy || browserEngine) && <button className="ghost" onClick={() => { setQ(''); setTag(''); setStatus(''); setProxy(''); setBrowserEngine(''); setPage(1); }}>Clear filters</button>}
       <input aria-label="View name" value={viewName} onChange={e => setViewName(e.target.value)} placeholder="Save view as…" />
-      <button disabled={!viewName.trim()} onClick={async () => { try { const view = await api('/api/views', { method: 'POST', body: { name: viewName.trim(), query: { q, tag, folder, status, proxy, sort: sort.k, dir: sort.dir > 0 ? 'asc' : 'desc', pageSize } } }); setViews(items => [...items, view]); setViewName(''); toast('View saved', 'success'); } catch (e) { toast(e.message, 'error'); } }}>Save view</button>
-      <span className="muted">{scope === 'running' ? 'Running' : folder === '__all' ? 'All profiles' : folder || 'No folder'} · {plural(total, 'profile')} · {meta.running.length} running</span>
+      <button disabled={!viewName.trim()} onClick={async () => { try { const view = await api('/api/views', { method: 'POST', body: { name: viewName.trim(), query: { q, tag, folder, status: effectiveStatus, proxy, engine: browserEngine, workspaceId, favorite: scope === 'favorites', sort: serverSort, dir: sort.dir > 0 ? 'asc' : 'desc', pageSize } } }); setViews(items => [...items, view]); setViewName(''); toast('View saved', 'success'); } catch (e) { toast(e.message, 'error'); } }}>Save view</button>
+      <span className="muted">{scope === 'running' ? 'Running' : scope === 'favorites' ? 'Favorites' : folder === '__all' ? 'All profiles' : folder || 'No folder'} · {plural(total, 'profile')} · {meta.running.length} running</span>
     </div>
     {loadError && <div className="notice warn" role="alert">{loadError}</div>}
     {S.sel.size > 0 && <div className="bulkbar" role="toolbar" aria-label="Bulk actions">
@@ -208,7 +220,10 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <th className="col-actions"></th></tr></thead><tbody>
       {rows.map(p => { const st = rowStatus(p, busy[p.id]); return <tr key={p.id} className={S.sel.has(p.id) ? 'selected' : ''}>
         <td className="cb"><input type="checkbox" aria-label={'Select ' + p.name} checked={S.sel.has(p.id)} onChange={() => S.toggle(p.id)} /></td>
-        <td className="fav"><button type="button" className="icon-btn" disabled title="Favorites are not stored in this build" aria-label="Favorites are not stored"><Icon name="star" size={14} /></button><button type="button" className="icon-btn launch" aria-label={(p.running ? 'Stop ' : 'Launch ') + p.name} disabled={busy[p.id]} onClick={() => p.running ? act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' })) : act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name={p.running ? 'stop' : 'play'} size={14} /></button></td>
+        <td className="fav"><button type="button" className="icon-btn" disabled={busy[p.id]} aria-label={`Favorite ${p.name}`} aria-pressed={p.favorite} title={p.favorite ? 'Remove favorite' : 'Add favorite'}
+          onClick={() => act(p.id, null, () => api(`/api/profiles/${p.id}/favorite`, { method: 'PATCH', body: { favorite: !p.favorite } }))}>
+          {p.favorite ? <span aria-hidden="true">★</span> : <Icon name="star" size={14} />}
+        </button><button type="button" className="icon-btn launch" aria-label={(p.running ? 'Stop ' : 'Launch ') + p.name} disabled={busy[p.id]} onClick={() => p.running ? act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' })) : act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name={p.running ? 'stop' : 'play'} size={14} /></button></td>
         {columns.status !== false && <td className="col-status"><span className={'status ' + st.key}><i />{st.label}</span></td>}
         {columns.name !== false && <td className="col-name"><div className="name-line"><span className="name">{p.name}</span>{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>
           {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
