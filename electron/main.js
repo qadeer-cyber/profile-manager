@@ -27,7 +27,7 @@ app.setName(productName);
 if (isProvisionedOffice) process.env.AZWAH_OFFICE_ENFORCE = '1';
 else delete process.env.AZWAH_OFFICE_ENFORCE;
 process.env.AZWAH_OFFICE_PACKAGED = app.isPackaged ? '1' : '0';
-const userData = app.getPath('userData');
+let userData = app.getPath('userData');
 process.env.PM_DATA_DIR = path.join(userData, 'data');
 // Browser location, in priority order:
 //  1. PM_BROWSERS_PATH (tests/overrides)
@@ -70,16 +70,6 @@ function configureSecrets(secrets) {
 }
 
 async function startBackend() {
-  if (isUltimateEdition && !process.env.PM_USER_DATA) {
-    const { migrateUltimateData } = await import('./ultimate-migrate.js');
-    let prepareOwnerData;
-    if (process.platform === 'win32') {
-      const { rewrapWindowsOwnerSecrets } = await import('./windows-owner-secrets.js');
-      prepareOwnerData = paths => rewrapWindowsOwnerSecrets({...paths, encrypt: value => safeStorage.encryptString(value)});
-    }
-    const receipt = migrateUltimateData({appData: app.getPath('appData'), ultimateDir: userData, prepareOwnerData});
-    log(`ultimate migration copied ${receipt.copied?.length || 0}; conflicts ${receipt.conflicts?.length || 0}`);
-  }
   if (isUltimateEdition) {
     const { setDesktopBridge } = await import('../server/ultimate-admin.js');
     setDesktopBridge({
@@ -187,7 +177,30 @@ app.whenReady().then(async () => {
   }
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
   if (!SMOKE) Menu.setApplicationMenu(null);
-  try { await startBackend(); }
+  try {
+    if (isUltimateEdition && !process.env.PM_USER_DATA) {
+      const {prepareUltimateStartup} = await import('./ultimate-migration-startup.js');
+      const selected = await prepareUltimateStartup({
+        appData: app.getPath('appData'), ultimateDir:userData, platform:process.platform,
+        encrypt:value=>safeStorage.encryptString(value),
+        log:error=>logErr('legacy migration paused',error),
+        showLogs:()=>shell.openPath(logDir),
+        prompt:async detail=>{
+          const {response}=await dialog.showMessageBox({
+            type:'warning', title:'Legacy Owner migration paused',
+            message:'Azwah Ultimate could not safely import legacy data.',
+            detail:detail + '\\n\\nRetry after closing legacy Owner and its browsers, or start with a separate empty store. Legacy data, vaults, and any existing Ultimate store will be preserved.',
+            buttons:['Retry migration','Start Fresh','Open diagnostics','Exit'],defaultId:0,cancelId:3,noLink:true,
+          });
+          return ['retry','fresh','logs','exit'][response];
+        },
+      });
+      if (!selected) { app.quit(); return; }
+      userData=selected;
+      process.env.PM_DATA_DIR=path.join(userData,'data');
+    }
+    await startBackend();
+  }
   catch (e) { logErr('backend failed to start', e); dialog.showErrorBox('Azwah Multi Browser could not start', `${e.message}\n\nLog: ${logFile}`); app.exit(1); return; }
   createWindow();
   if (SMOKE) runSmoke().catch(err => { console.error(err); fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ error: String(err.stack || err) })); app.quit(); });

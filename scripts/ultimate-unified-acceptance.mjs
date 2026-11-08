@@ -1,5 +1,6 @@
 // Installed unified Ultimate app: owner features, in-window license admin, generated Office, bundled Firefox.
-import {execFileSync, spawnSync} from 'node:child_process';
+import {execFileSync, spawnSync, spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {createRequire} from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -47,7 +48,7 @@ function processImage(pid) {
 }
 
 const password = 'Unified vault passphrase ' + crypto.randomUUID();
-let ownerApp, adminApp, unified, office, fixture, proxy, legacyProxy;
+let ownerApp, adminApp, unified, office, fixture, proxy, legacyProxy, freshFixture, walWriter;
 const record = {windows10: false, systemFirefoxUsed: false, separateAdminPublished: false};
 try {
   if (!appData || !path.isAbsolute(appData)) throw new Error('Windows roaming AppData is unavailable');
@@ -89,7 +90,8 @@ try {
   const legacyCookie = {name:'legacy-owner-cookie',value:legacyCookieValue,domain:'example.test',path:'/',secure:true,httpOnly:true,sameSite:'Lax'};
   check((await api(ownerPage, '/profiles/' + created.body.id + '/cookies/import', {cookies:[legacyCookie]})).status === 200, 'Previous Owner stores a profile cookie');
   await ownerApp.close(); ownerApp = undefined;
-  const ownerHash = sha(ownerDb);
+  let ownerHash = sha(ownerDb);
+  let sourceSidecars = [];
   adminApp = await _electron.launch({executablePath: path.join(adminDir, 'Azwah License Admin.exe'), env: closedEnv(), timeout: 60000});
   const adminPaths = await adminApp.evaluate(({app}) => ({appData: app.getPath('appData'), userData: app.getPath('userData')}));
   check(path.relative(appData, adminPaths.appData) === '', 'Admin uses the clean Windows AppData root');
@@ -125,7 +127,64 @@ try {
   check(adminSource.includes('../scripts/license-admin/admin.mjs') && issuerSource.includes('../../server/office/license.js') && !adminSource.includes('BEGIN PRIVATE KEY'), 'In-process license administration module links to its issuance dependency');
   check(!ultimateEntries.some(entry => /issuer-public\.pem|organization\.vault|BEGIN PRIVATE KEY/.test(normalizeAsarEntry(entry))), 'Unified application archive has no issuer certificate or vault');
   const ultimateLaunch = {executablePath: path.join(ultimateDir, 'Azwah Multi Browser Ultimate.exe'), env: closedEnv({PROXY_TEST_URL:'http://203.0.113.10/ip'}), timeout: 90000};
-  unified = await _electron.launch(ultimateLaunch);
+  if (migrationOnly) {
+    const systemPowerShell=path.join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe');
+    const migrationButton=(application,label,invoke=true)=>execFileSync(systemPowerShell, ['-NoProfile','-NonInteractive','-Command',`
+      $ErrorActionPreference='Stop'
+      Add-Type -AssemblyName UIAutomationClient
+      Add-Type -AssemblyName UIAutomationTypes
+      $ui=[Windows.Automation.AutomationElement]
+      $root=$ui::RootElement
+      $pidMatch=[Windows.Automation.PropertyCondition]::new($ui::ProcessIdProperty,${application.process().pid})
+      $title=[Windows.Automation.PropertyCondition]::new($ui::NameProperty,'Legacy Owner migration paused')
+      $window=[Windows.Automation.AndCondition]::new($pidMatch,$title)
+      $button=[Windows.Automation.PropertyCondition]::new($ui::NameProperty,'${label}')
+      $deadline=(Get-Date).AddSeconds(25)
+      do {
+        $dialog=$root.FindFirst([Windows.Automation.TreeScope]::Children,$window)
+        if ($dialog) {
+          $control=$dialog.FindFirst([Windows.Automation.TreeScope]::Descendants,$button)
+          if ($control) {
+            ${invoke ? '$control.GetCurrentPattern([Windows.Automation.InvokePattern]::Pattern).Invoke()' : ''}
+            exit 0
+          }
+        }
+        Start-Sleep -Milliseconds 200
+      } while ((Get-Date) -lt $deadline)
+      throw 'Migration dialog control was not found'
+    `],{timeout:35000,encoding:'utf8',windowsHide:true});
+    ownerApp=await _electron.launch({executablePath:path.join(ownerDir,'Azwah Multi Browser Owner.exe'),env:closedEnv(),timeout:60000});
+    await ownerApp.firstWindow();
+    unified=await _electron.launch(ultimateLaunch);
+    migrationButton(unified,'Start Fresh');
+    const freshPage=await unified.firstWindow();
+    await freshPage.waitForFunction(()=>!!window.pm?.uiToken,undefined,{timeout:90000});
+    const freshInfo=await freshPage.evaluate(()=>window.pm.appInfo());
+    check(path.basename(freshInfo.userData)==='fresh-start' && (await api(freshPage,'/profiles')).body.length===0 && (await api(freshPage,'/admin/status')).body.exists===false,'Live Owner is refused and Start Fresh isolates profiles and vault');
+    await unified.close(); unified=undefined;
+    unified=await _electron.launch(ultimateLaunch);
+    const persistedFresh=await unified.firstWindow();
+    await persistedFresh.waitForFunction(()=>!!window.pm?.uiToken,undefined,{timeout:90000});
+    check(path.basename((await persistedFresh.evaluate(()=>window.pm.appInfo())).userData)==='fresh-start','Start Fresh persists across startup while legacy Owner remains open');
+    await unified.close(); unified=undefined;
+    const ultimateAppData=path.join(appData,'azwah-multi-browser-ultimate');
+    freshFixture=fs.mkdtempSync(path.join(appData,'azwah-qa-fresh-'));
+    fs.renameSync(ultimateAppData,path.join(freshFixture,'ultimate'));
+    unified=await _electron.launch(ultimateLaunch);
+    migrationButton(unified,'Retry migration',false);
+    await ownerApp.close(); ownerApp=undefined;
+    const writerScript="const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync(process.env.AZWAH_QA_OWNER_DB);db.exec(process.env.AZWAH_QA_OWNER_SQL);console.log('READY');setInterval(()=>{},1000);";
+    const sql="PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; UPDATE profiles SET notes='committed WAL migration marker' WHERE name='Kept from Owner';";
+    walWriter=spawn(process.execPath,['-e',writerScript],{env:{...process.env,AZWAH_QA_OWNER_DB:ownerDb,AZWAH_QA_OWNER_SQL:sql},stdio:['ignore','pipe','inherit'],windowsHide:true});
+    await Promise.race([once(walWriter.stdout,'data').then(([data])=>check(String(data).includes('READY'),'Synthetic legacy writer committed a WAL record')),once(walWriter,'exit').then(()=>{throw Error('Legacy crash fixture exited early');})]);
+    const stopped=once(walWriter,'exit');
+    walWriter.kill();
+    await stopped;
+    walWriter=undefined;
+    sourceSidecars=['-wal','-shm'].map(suffix=>[ownerDb+suffix,sha(ownerDb+suffix)]);
+    ownerHash=sha(ownerDb);
+    migrationButton(unified,'Retry migration');
+  } else unified = await _electron.launch(ultimateLaunch);
   const page = await unified.firstWindow();
   await page.waitForFunction(() => !!window.pm?.uiToken, undefined, {timeout: 90000});
   await page.setViewportSize({width: 1366, height: 768});
@@ -134,7 +193,7 @@ try {
   const activation = await api(page, '/activation');
   check(activation.body.edition === 'ultimate' && activation.body.enforced === false && activation.body.active === true, 'Owner browser features do not require employee activation');
   const migrated = (await api(page, '/profiles')).body.find(item => item.name === 'Kept from Owner');
-  check(migrated?.notes === 'migration-marker', 'Profiles from the previous Owner installation are readable');
+  check(migrated?.notes === (migrationOnly ? 'committed WAL migration marker' : 'migration-marker'), 'Profiles from the previous Owner installation are readable');
   check(migrated.workspaceId === legacyWorkspace.body.id && (await api(page, '/workspaces')).body.some(item => item.id === legacyWorkspace.body.id), 'Legacy workspace and profile assignment survive migration');
   const importedCookies = await api(page, '/profiles/' + migrated.id + '/cookies');
   check(importedCookies.status === 200 && importedCookies.body.cookies.some(cookie => cookie.name === legacyCookie.name && cookie.value === legacyCookieValue), 'Legacy profile cookie survives migration');
@@ -174,7 +233,7 @@ try {
     check(persisted.proxy?.hasPassword === true && persisted.proxy.password === '••••' && !persisted.secretError, 'Migrated credential remains sealed and masked after restart');
     await checkMigratedProxy(reopened);
     check(legacyProxyEvents.filter(event => event.kind === 'connect' && event.authenticated).length === 2, 'Authenticated proxy observed both post-migration requests');
-    check(sha(ownerDb) === ownerHash && sha(sourceVault) === vaultHash, 'Legacy data and vault still match after restart');
+    check(sha(ownerDb) === ownerHash && sha(sourceVault) === vaultHash && sourceSidecars.every(([file,digest])=>sha(file)===digest), 'Legacy database, WAL, SHM and vault are unchanged after recovery and restart');
   }
   if (!migrationOnly) {
     const device = 'AZD1-' + 'cd'.repeat(32);
@@ -283,11 +342,13 @@ try {
   if (fixture) await fixture.close().catch(() => {});
   if (proxy) { proxy.close(); proxy.closeAllConnections(); }
   if (legacyProxy) { legacyProxy.close(); legacyProxy.closeAllConnections(); }
+  if (walWriter) walWriter.kill();
   if (ownerApp) await ownerApp.close().catch(() => {});
   if (adminApp) await adminApp.close().catch(() => {});
   if (office) await office.close().catch(() => {});
   if (unified) await unified.close().catch(() => {});
   fs.writeFileSync(path.join(evidence, 'acceptance.json'), JSON.stringify({...record, results}, null, 2));
   fs.rmSync(root, {recursive: true, force: true, maxRetries: 5, retryDelay: 200});
+  if (freshFixture) fs.rmSync(freshFixture,{recursive:true,force:true,maxRetries:5,retryDelay:200});
 }
 if (process.exitCode) process.exit(process.exitCode);

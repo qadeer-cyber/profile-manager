@@ -258,7 +258,8 @@ jobs:
             "Qualification: https://github.com/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
             ''
             'Windows Server 2022 qualified. Windows 10 and extended environments remain unqualified. Authenticode signing is not applied.'
-            'Legacy Windows Owner migration requires the original Windows user and a clean shutdown of the legacy app. Concurrent and cross-user migration are unsupported.'
+            'Issue #20: stopped legacy Owner databases are recovered and checked in an isolated copy. Retry or Start Fresh is offered if the source cannot be safely read.'
+            'Windows Owner migration requires the original Windows user. Live and cross-user migration are unsupported. Start Fresh preserves the legacy files and uses a separate store.'
             'Office activation works offline; offline licenses cannot receive immediate remote revocation.'
           ) | Set-Content -Encoding utf8 candidate/RELEASE-NOTES.md
           gh release create $tag $file candidate/SHA256SUMS.txt candidate/BUILD-MANIFEST.txt candidate/RELEASE-NOTES.md --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title "Azwah Multi Browser Ultimate Experimental — $($env:GITHUB_SHA.Substring(0,12))" --notes-file candidate/RELEASE-NOTES.md
