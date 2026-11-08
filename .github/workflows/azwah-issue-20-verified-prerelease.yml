@@ -1,0 +1,76 @@
+name: Publish independently qualified Issue 20 candidate
+on:
+  push:
+    branches: [codex/azwah-issue-20-verified-prerelease]
+    paths: ['.github/workflows/azwah-issue-20-verified-prerelease.yml']
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    env:
+      CANDIDATE_SHA: 4aa3748c1ff7d920b84b490f43f1e2d3bf14575c
+      CANDIDATE_SHA256: bb5fe2a5f0e2ec473f1c4038c5cd1c4a0bdcc57a9fd9cf091326fd908301e635
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Require the recorded Windows gates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gates = @{ '42453976018' = @('unified','essential'); '42455078152' = @('migration','independently-verify') }
+          foreach ($run in $gates.Keys) {
+            $data = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$run/jobs" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            foreach ($gate in $gates[$run]) {
+              if (@($data.jobs | Where-Object { $_.name -eq $gate -and $_.conclusion -eq 'success' }).Count -ne 1) { throw "Required gate failed: $gate in $run" }
+            }
+          }
+      - uses: actions/download-artifact@v4
+        with:
+          name: ultimate-installer-4aa3748c1ff7d920b84b490f43f1e2d3bf14575c
+          path: candidate
+          github-token: ${{ github.token }}
+          run-id: 42453976018
+      - name: Verify, upload a draft, and recheck before publication
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $name = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $file = "candidate/$name"
+          $bytes = (Get-Item -LiteralPath $file).Length
+          $sha = (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest = Get-Content candidate/BUILD-MANIFEST.txt
+          if ($bytes -ne 893591279 -or $sha -ne $env:CANDIDATE_SHA256 -or $manifest -notcontains "Installer source: $env:CANDIDATE_SHA" -or $manifest -notcontains "SHA256: $sha") { throw 'Candidate identity mismatch' }
+          if ((Get-Content candidate/SHA256SUMS.txt -Raw).Trim() -ne "$sha  $name") { throw 'Checksum manifest mismatch' }
+          $tag = 'azwah-multi-browser-ultimate-issue20-4aa3748c1ff7'
+          gh release view $tag --repo $env:GITHUB_REPOSITORY 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'Release already exists' }
+          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$tag" 1>$null 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'Release tag already exists' }
+          @(
+            '# Azwah Multi Browser Ultimate — Experimental'
+            ''
+            'Fixes issue #20. Stopped legacy Owner databases are recovered and validated in a disposable snapshot. Source databases, journals, and vaults are preserved. A live writer blocks migration.'
+            'If migration pauses, Retry, Start Fresh, diagnostics, and Exit are available. Start Fresh uses an isolated store and preserves legacy and existing Ultimate data.'
+            'Qualified on Windows Server 2022. Windows 10 is unqualified. Authenticode signing is not applied. Legacy credentials require the original Windows user.'
+            ''
+            "Source: $env:CANDIDATE_SHA"
+            "Bytes: $bytes"
+            "SHA-256: $sha"
+            'Clean installed Windows: https://github.com/qadeer-cyber/profile-manager/actions/runs/42453976018'
+            'Legacy recovery and independent verification: https://github.com/qadeer-cyber/profile-manager/actions/runs/42455078152'
+            'Recovery controller and normal migration startup were tested in installed Windows. Automated native-dialog clicking was inconclusive.'
+          ) | Set-Content -Encoding utf8 candidate/RELEASE-NOTES.md
+          gh release create $tag $file candidate/SHA256SUMS.txt candidate/BUILD-MANIFEST.txt candidate/RELEASE-NOTES.md --repo $env:GITHUB_REPOSITORY --target $env:CANDIDATE_SHA --draft --prerelease --title 'Azwah Multi Browser Ultimate Experimental — Issue #20 recovery fix' --notes-file candidate/RELEASE-NOTES.md
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $name --dir verification
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $copy = "verification/$name"
+          if ((Get-Item -LiteralPath $copy).Length -ne $bytes -or (Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash.ToLowerInvariant() -ne $sha) { throw 'Uploaded asset verification failed' }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Write-Host "Published verified EXE $bytes bytes SHA-256 $sha source $env:CANDIDATE_SHA"
