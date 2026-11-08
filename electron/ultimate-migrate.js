@@ -41,9 +41,21 @@ function requireClosedOwnerDatabase(db) {
   }
 }
 
+export function legacyOwnerDatabase(appData) {
+  return path.join(appData, OWNER_DIRECTORY, 'data', 'profiles.db');
+}
+
+function ownerSnapshotHash(db) {
+  return crypto.createHash('sha256').update(JSON.stringify(['', '-wal', '-shm', '-journal'].map(suffix => hashFile(db + suffix)))).digest('hex');
+}
+
+export function hasMigrationReceipt(ultimateDir) {
+  return fs.existsSync(path.join(ultimateDir,'azwah-ultimate-migration.json'));
+}
+
 const stagedOwnerMarker = '.azwah-owner-migration.json';
 
-function copyTree(source, destination, expectedDbHash, prepareOwnerData) {
+function copyTree(source, destination, expectedDbHash, prepareOwnerData, snapshot) {
   const staging = fs.mkdtempSync(path.join(path.dirname(destination), '.owner-migration-'));
   const candidate = path.join(staging, 'data');
   try {
@@ -51,24 +63,33 @@ function copyTree(source, destination, expectedDbHash, prepareOwnerData) {
       recursive: true,
       dereference: false,
       filter(file) {
+        if (snapshot && file === path.join(source, 'profiles.db-shm')) return false;
         const stat = fs.lstatSync(file);
         if (!stat.isFile() && !stat.isDirectory()) throw new Error('Migration source contains an unsupported entry');
         return true;
       },
     });
     const sourceDb = path.join(source, 'profiles.db');
-    requireClosedOwnerDatabase(sourceDb);
+    if (snapshot) snapshot.assertSource();
+    else requireClosedOwnerDatabase(sourceDb);
     if (hashFile(path.join(candidate, 'profiles.db')) !== expectedDbHash || hashFile(sourceDb) !== expectedDbHash) {
       throw new Error('Owner profile database changed while it was copied');
     }
     const marker = path.join(candidate, stagedOwnerMarker);
     if (fs.existsSync(marker)) throw new Error('Unexpected migration marker in Owner source');
-    if (prepareOwnerData) {
-      prepareOwnerData({source, candidate});
-      requireClosedOwnerDatabase(path.join(candidate, 'profiles.db'));
-      fs.writeFileSync(marker, JSON.stringify({sourceHash:expectedDbHash, destinationHash:hashFile(path.join(candidate, 'profiles.db'))}), {flag:'wx'});
+    if (snapshot) {
+      for (const suffix of ['-wal','-journal']) {
+        if (hashFile(sourceDb + suffix) !== hashFile(path.join(candidate,'profiles.db') + suffix)) throw new Error('Owner journal changed while copying.');
+      }
+      snapshot.recover(candidate);
     }
-    requireClosedOwnerDatabase(sourceDb);
+    if (prepareOwnerData || snapshot) {
+      prepareOwnerData?.({source, candidate});
+      requireClosedOwnerDatabase(path.join(candidate, 'profiles.db'));
+      fs.writeFileSync(marker, JSON.stringify({sourceHash:expectedDbHash, sourceStateHash:snapshot?.hash, destinationHash:hashFile(path.join(candidate, 'profiles.db'))}), {flag:'wx'});
+    }
+    if (snapshot) snapshot.assertSource();
+    else requireClosedOwnerDatabase(sourceDb);
     if (hashFile(sourceDb) !== expectedDbHash) throw new Error('Owner database changed during migration');
     if (fs.existsSync(destination)) throw new Error(`Destination already exists: ${destination}`);
     fs.renameSync(candidate, destination);
@@ -77,7 +98,7 @@ function copyTree(source, destination, expectedDbHash, prepareOwnerData) {
   }
 }
 
-export function migrateUltimateData({ appData, ultimateDir, prepareOwnerData }) {
+export function migrateUltimateData({ appData, ultimateDir, prepareOwnerData, recoverOwnerSnapshot, assertOwnerLocked }) {
   if (!appData || !ultimateDir) throw new Error('Migration requires the application data root and the Ultimate directory');
   const receiptPath = path.join(ultimateDir, 'azwah-ultimate-migration.json');
   if (fs.existsSync(receiptPath)) {
@@ -103,14 +124,23 @@ export function migrateUltimateData({ appData, ultimateDir, prepareOwnerData }) 
   const copied = [];
   const ownerHash = fs.existsSync(ownerDb) ? hashFile(ownerDb) : null;
   const vaultHash = packagedHash || legacyHash;
-  if (ownerHash) requireClosedOwnerDatabase(ownerDb);
+  const snapshot = ownerHash && recoverOwnerSnapshot && assertOwnerLocked ? {
+    hash:ownerSnapshotHash(ownerDb),
+    recover:recoverOwnerSnapshot,
+    assertSource() {
+      assertOwnerLocked();
+      if (ownerSnapshotHash(ownerDb) !== this.hash) throw new Error('Owner database or journal changed during migration.');
+    },
+  } : null;
+  if (snapshot) snapshot.assertSource();
+  else if (ownerHash) requireClosedOwnerDatabase(ownerDb);
   if (ownerHash && fs.existsSync(ultimateDb)) {
     const marker = path.join(ultimateData, stagedOwnerMarker);
     if (fs.existsSync(marker)) {
       const stat = fs.lstatSync(marker);
       if (!stat.isFile() || stat.size > 1024) throw new Error('Unsafe Owner migration marker');
       const recovered = JSON.parse(fs.readFileSync(marker, 'utf8'));
-      if (recovered.sourceHash !== ownerHash || recovered.destinationHash !== hashFile(ultimateDb)) {
+      if (recovered.sourceHash !== ownerHash || (recovered.sourceStateHash && recovered.sourceStateHash !== snapshot?.hash) || recovered.destinationHash !== hashFile(ultimateDb)) {
         throw new Error('Interrupted Owner migration no longer matches the databases. Both were preserved.');
       }
       copied.push({kind:'owner-data',source:ownerData,sha256:ownerHash});
@@ -118,7 +148,7 @@ export function migrateUltimateData({ appData, ultimateDir, prepareOwnerData }) 
     else if (prepareOwnerData) throw new Error('Existing Ultimate database has no credential conversion marker. Both sources were preserved.');
     else verifyExistingOwnerTree(ownerData, ultimateData);
   } else if (ownerHash) {
-    copyTree(ownerData, ultimateData, ownerHash, prepareOwnerData);
+    copyTree(ownerData, ultimateData, ownerHash, prepareOwnerData, snapshot);
     copied.push({kind: 'owner-data', source: ownerData, sha256: ownerHash});
   }
   if (vaultHash && fs.existsSync(ultimateVault)) {
