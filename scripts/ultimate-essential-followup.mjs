@@ -117,7 +117,9 @@ try {
   await reloaded.getByRole('tab', {name: 'Proxy'}).click();
   const savedProxy = reloaded.getByRole('combobox', {name: 'Saved proxy'});
   await savedProxy.waitFor();
-  const savedProxyText = await savedProxy.locator('option:checked').textContent();
+  const selectedProxy = savedProxy.locator('option:checked').filter({hasText:`127.0.0.1:${port}`});
+  await selectedProxy.waitFor({state:'attached'});
+  const savedProxyText = await selectedProxy.textContent();
   check(savedProxyText.includes(`127.0.0.1:${port}`), 'Reloaded editor shows the saved library proxy, not a second custom line');
   await reloaded.getByRole('button', {name: 'Test Proxy'}).click();
   await reloaded.getByText(/Transport ok/).waitFor({timeout: 20000});
