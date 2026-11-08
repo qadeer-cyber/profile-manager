@@ -69,11 +69,12 @@ async function snapshot(pid, command, signal) {
   if (!Number.isSafeInteger(pid) || pid <= 0 || signal?.aborted) return null;
   try {
     if (process.platform === 'linux') {
-      const stat = await readFile(`/proc/${pid}/stat`, { encoding: 'utf8', signal });
+      const proc = pid === process.pid ? '/proc/self' : `/proc/${pid}`;
+      const stat = await readFile(`${proc}/stat`, { encoding: 'utf8', signal });
       const start = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19];
       if (!/^\d+$/.test(start)) return null;
-      const argv = command ? (await readFile(`/proc/${pid}/cmdline`, { encoding: 'utf8', signal })).replace(/\0$/, '').split('\0') : null;
-      const after = await readFile(`/proc/${pid}/stat`, { encoding: 'utf8', signal });
+      const argv = command ? (await readFile(`${proc}/cmdline`, { encoding: 'utf8', signal })).replace(/\0$/, '').split('\0') : null;
+      const after = await readFile(`${proc}/stat`, { encoding: 'utf8', signal });
       if (after.slice(after.lastIndexOf(')') + 2).split(' ')[19] !== start || signal?.aborted) return null;
       return { start, argv };
     }

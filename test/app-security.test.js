@@ -13,12 +13,19 @@ process.env.PM_DATA_DIR = tmp; process.env.PM_API_TOKEN = 'api-tok'; delete proc
 const launches = [];
 const stubRun = { info: { ws_endpoint: 'ws://x', cdp_port: 1, pid: 1 }, fail: null };
 const running = new Set();
+const automationRuns = new Map();
+const browserEvents = new (await import('events')).EventEmitter();
+let stopFailure = false;
 mock.module(new URL('../server/browsers.js', import.meta.url).href, { namedExports: {
-  events: new (await import('events')).EventEmitter(), DATA_COPY_SKIP: new Set(),
+  events: browserEvents, automationLaunch: id => automationRuns.get(id), DATA_COPY_SKIP: new Set(),
   isRunning: id => running.has(id), runningIds: () => [...running], runInfo: () => stubRun.info,
   resourceSnapshot: () => ({ running: running.size, sessions: [] }),
-  launch: async (p, opts) => { if (stubRun.fail) throw stubRun.fail; launches.push({ id: p.id, opts }); running.add(p.id); return {}; },
-  stop: async id => { running.delete(id); }, shutdown: async () => {}, recoverAfterRestart: async () => ({}), startHealthMonitor: () => {},
+  launch: async (p, opts) => { if (stubRun.fail) throw stubRun.fail; launches.push({ id: p.id, opts }); running.add(p.id); if (opts.automation) automationRuns.set(p.id, { id: String(launches.length), endpoint: 'http://127.0.0.1:9222' }); return {}; },
+  stop: async id => {
+    if (stopFailure) throw new Error('fixture credential never log this');
+    running.delete(id); automationRuns.delete(id);
+    browserEvents.emit('event', { type: 'profile:stopped', id });
+  }, shutdown: async () => {}, recoverAfterRestart: async () => ({}), startHealthMonitor: () => {},
 } });
 
 // Seed a pre-v6 database (schema up to v5) with an inline plaintext proxy BEFORE the app opens it,
@@ -264,7 +271,7 @@ test('M4 nested folder moves preserve workspace, ciphertext, browser data, and s
   assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination' })).s, 409);
   db.prepare('UPDATE workspaces SET vault_locked = 1 WHERE id = ?').run(workspace.id);
   try {
-    assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 403);
+    assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 404);
   } finally { db.prepare('UPDATE workspaces SET vault_locked = 0 WHERE id = ?').run(workspace.id); }
   assert.equal((await ui('GET', '/api/profiles/' + profile.id)).d.folder, 'M4 tree/Child');
   assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 200);
@@ -337,7 +344,7 @@ test('M4 schema upgrade preserves existing workspace and proxy references and su
       .run('x', 'Proxy', 'http', 'localhost', 8080, 'ss:v1:synthetic', 't', 't');
     db.prepare('INSERT INTO profiles (id,name,folder,workspace_id,proxy_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
       .run('p', 'Original', 'Original folder', 'w', 'x', 't', 't');
-    assert.deepEqual(migrate(db).applied, [20]);
+    assert.deepEqual(migrate(db).applied, [20, 21]);
     assert.deepEqual(db.prepare('SELECT name,folder,workspace_id,proxy_id,favorite FROM profiles WHERE id=?').get('p'),
       { name: 'Original', folder: 'Original folder', workspace_id: 'w', proxy_id: 'x', favorite: 0 });
     assert.equal(db.prepare('SELECT password FROM proxies WHERE id=?').get('x').password, 'ss:v1:synthetic');
@@ -351,4 +358,74 @@ test('M4 schema upgrade preserves existing workspace and proxy references and su
     assert.equal(reopened.prepare('SELECT favorite FROM profiles WHERE id=?').get('p').favorite, 1);
     assert.equal(reopened.prepare('SELECT path FROM profile_folders').get().path, 'Empty folder');
   } finally { reopened.close(); }
+});
+
+test('M4.2 hidden folder paths are not usable as parents and locked Trash prevents subtree changes', async () => {
+  const folder = '/api/profile-folders';
+  const { d: ws } = await ui('POST', '/api/workspaces', { name: 'M4.2 private' });
+  await ui('POST', folder, { path: 'M4.2 Shared' });
+  const { d: hidden } = await ui('POST', '/api/profiles', { name: 'Hidden', workspaceId: ws.id, folder: 'M4.2 Shared/Secret' });
+  const { d: publicProfile } = await ui('POST', '/api/profiles', { name: 'Public', folder: 'M4.2 Shared' });
+  await ui('DELETE', '/api/profiles/' + hidden.id);
+  db.prepare('UPDATE workspaces SET vault_locked=1 WHERE id=?').run(ws.id);
+  const absent = await ui('DELETE', folder, { path: 'M4.2 Unknown' });
+  assert.deepEqual(await ui('DELETE', folder, { path: 'M4.2 Shared/Secret' }), absent);
+  assert.deepEqual(await ui('POST', folder, { path: 'M4.2 Shared/Secret/Probe' }), absent);
+  assert.deepEqual(await ui('PATCH', folder, { from: 'M4.2 Shared', to: 'M4.2 Moved' }), absent);
+  assert.equal((await ui('GET', '/api/profiles/' + publicProfile.id)).d.folder, 'M4.2 Shared');
+  assert.ok(!(await ui('GET', '/api/meta')).d.folders.includes('M4.2 Shared/Secret'));
+  db.prepare('UPDATE workspaces SET vault_locked=0 WHERE id=?').run(ws.id);
+
+  db.exec(`CREATE TEMP TRIGGER m42_fail_move BEFORE UPDATE OF folder ON profiles
+    WHEN NEW.folder = 'M4.2 Moved/Secret' BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END`);
+  try {
+    assert.equal((await ui('PATCH', folder, { from: 'M4.2 Shared', to: 'M4.2 Moved' })).s, 500);
+    assert.equal((await ui('GET', '/api/profiles/' + publicProfile.id)).d.folder, 'M4.2 Shared');
+    assert.ok(!(await ui('GET', '/api/meta')).d.folders.includes('M4.2 Moved'));
+  } finally { db.exec('DROP TRIGGER m42_fail_move'); }
+  assert.equal((await ui('PATCH', folder, { from: 'M4.2 Shared', to: 'M4.2 Moved' })).s, 200);
+  assert.equal(db.prepare('SELECT folder FROM profiles WHERE id=?').get(hidden.id).folder, 'M4.2 Moved/Secret');
+});
+
+test('M4.2 managed session authorization, exclusivity, redaction, crash and cancellation', async () => {
+  const { d: a } = await ui('POST', '/api/profiles', { name: 'M4.2 Chromium', automationEnabled: true });
+  const { d: b } = await ui('POST', '/api/profiles', { name: 'M4.2 Other', automationEnabled: true });
+  const route = id => '/profiles/' + id + '/automation-sessions';
+  const p = '/api' + route(a.id);
+  assert.equal((await req('POST', p)).s, 401);
+  assert.equal((await req('GET', '/api/v1' + route(a.id))).s, 401);
+  assert.equal((await ui('POST', p)).s, 409);
+  for (const { id } of [a, b]) assert.equal((await ui('POST', '/api/profiles/' + id + '/launch')).s, 200);
+  const [left, right] = await Promise.all([ui('POST', p), v1('POST', route(a.id))]);
+  assert.deepEqual([left.s, right.s].sort(), [201, 409]);
+  const session = (await ui('GET', p)).d.sessions[0];
+  assert.equal(session.status, 'ready');
+  assert.equal((await ui('POST', '/api/profiles/' + a.id + '/webdriver/start')).s, 409);
+  process.env.AZWAH_OFFICE_ENFORCE = '1';
+  try { assert.equal((await v1('POST', route(b.id))).s, 402); }
+  finally { delete process.env.AZWAH_OFFICE_ENFORCE; }
+  assert.ok(Date.parse(session.startedAt));
+  const cancel = p + '/' + session.id + '/cancel';
+  assert.equal((await ui('POST', '/api' + route(b.id) + '/' + session.id + '/cancel')).s, 404);
+  stopFailure = true;
+  try {
+    const failed = (await ui('POST', cancel)).d;
+    assert.match(failed.sessions[0].error, /Retry cancellation/);
+    assert.doesNotMatch(JSON.stringify(failed), /fixture credential/);
+  } finally { stopFailure = false; }
+  assert.equal((await ui('POST', cancel)).d.sessions[0].status, 'cancelled');
+  assert.equal(running.has(b.id), true);
+  const second = (await v1('POST', route(b.id))).d.sessions[0];
+  running.delete(b.id); automationRuns.delete(b.id);
+  browserEvents.emit('event', { type: 'profile:crashed', id: b.id, error: 'fixture credential' });
+  const afterCrash = (await v1('GET', route(b.id))).d;
+  assert.equal(afterCrash.endpoint, null);
+  assert.equal(afterCrash.sessions[0].id, second.id);
+  assert.equal(afterCrash.sessions[0].status, 'interrupted');
+  assert.doesNotMatch(JSON.stringify(afterCrash), /fixture credential/);
+  await ui('POST', '/api/profiles/' + b.id + '/launch');
+  assert.equal((await v1('POST', route(b.id))).s, 201);
+  const { recoverAutomationSessions } = await import('../server/automation-sessions.js');
+  recoverAutomationSessions();
+  assert.equal((await v1('GET', route(b.id))).d.sessions[0].status, 'interrupted');
 });

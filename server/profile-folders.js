@@ -26,41 +26,47 @@ function folderPaths(profilePaths) {
   return paths;
 }
 
-const storedProfilePaths = () => db.prepare("SELECT DISTINCT folder FROM profiles WHERE folder <> ''").pluck().all();
+const storedProfiles = () => db.prepare("SELECT id, folder, workspace_id FROM profiles WHERE folder <> ''").all();
+const visiblePaths = (profiles, canAccess) => folderPaths(profiles.filter(canAccess).map(profile => profile.folder));
+const unavailable = () => fail(404, 'The folder does not exist or is unavailable.');
 export const listProfileFolders = profilePaths => [...folderPaths(profilePaths)].sort();
 
 function requireParent(path, paths) {
   const parent = parentOf(path);
-  if (parent && !paths.has(parent)) throw fail(404, 'The parent folder does not exist.');
+  if (parent && !paths.has(parent)) throw unavailable();
 }
 
 const remember = path => db.prepare('INSERT OR IGNORE INTO profile_folders (path) VALUES (?)').run(path);
 
-export const createProfileFolder = db.transaction(path => {
+export const createProfileFolder = db.transaction((path, canAccess) => {
   requirePath(path);
-  const paths = folderPaths(storedProfilePaths());
+  const paths = visiblePaths(storedProfiles(), canAccess);
   if (paths.has(path)) throw fail(409, 'That folder already exists.');
   requireParent(path, paths);
   remember(path);
   return { path };
 }).immediate;
 
-export const moveProfileFolder = db.transaction((from, to, checkProfile) => {
+export const moveProfileFolder = db.transaction((from, to, canAccess, checkProfile) => {
   requirePath(from);
   requirePath(to);
-  const paths = folderPaths(storedProfilePaths());
-  if (!paths.has(from)) throw fail(404, 'The folder does not exist.');
+  const profiles = storedProfiles();
+  const visible = visiblePaths(profiles, canAccess);
+  if (!visible.has(from)) throw unavailable();
+  const affected = profiles.filter(profile => under(profile.folder, from));
+  for (const profile of affected) {
+    if (!canAccess(profile)) throw unavailable();
+    checkProfile(profile);
+  }
+  const paths = folderPaths(profiles.map(profile => profile.folder));
   if (under(to, from)) throw fail(409, 'Choose a destination outside this folder.');
-  requireParent(to, paths);
+  requireParent(to, visible);
   const moving = [...paths].filter(path => under(path, from));
   const destination = path => to + path.slice(from.length);
   for (const path of moving) {
     requirePath(destination(path));
-    if (paths.has(destination(path))) throw fail(409, 'A folder already exists at the destination.');
+    if (paths.has(destination(path))) throw fail(409, 'The destination is unavailable.');
   }
-  const profiles = db.prepare("SELECT id, folder, workspace_id FROM profiles WHERE folder = ? OR instr(folder, ? || '/') = 1").all(from, from);
-  for (const profile of profiles) checkProfile(profile);
-
   const oldParent = parentOf(from);
   if (oldParent) remember(oldParent);
   const remove = db.prepare('DELETE FROM profile_folders WHERE path = ?');
@@ -70,7 +76,7 @@ export const moveProfileFolder = db.transaction((from, to, checkProfile) => {
   }
   const update = db.prepare('UPDATE profiles SET folder = ?, updated_at = ? WHERE id = ?');
   const now = new Date().toISOString();
-  for (const profile of profiles) update.run(destination(profile.folder), now, profile.id);
+  for (const profile of affected) update.run(destination(profile.folder), now, profile.id);
 
   const views = db.prepare("SELECT id, query_json FROM saved_views WHERE surface = 'profiles'").all();
   const updateView = db.prepare('UPDATE saved_views SET query_json = ?, updated_at = ? WHERE id = ?');
@@ -83,11 +89,12 @@ export const moveProfileFolder = db.transaction((from, to, checkProfile) => {
   return { path: to };
 }).immediate;
 
-export const deleteProfileFolder = db.transaction(path => {
+export const deleteProfileFolder = db.transaction((path, canAccess) => {
   requirePath(path);
-  const profilePaths = storedProfilePaths();
-  const paths = folderPaths(profilePaths);
-  if (!paths.has(path)) throw fail(404, 'The folder does not exist.');
+  const profiles = storedProfiles();
+  const paths = visiblePaths(profiles, canAccess);
+  if (!paths.has(path) || profiles.some(profile => under(profile.folder, path) && !canAccess(profile))) throw unavailable();
+  const profilePaths = profiles.map(profile => profile.folder);
   if (profilePaths.includes(path) || [...paths].some(other => other !== path && under(other, path))) {
     throw fail(409, 'Move any profiles (including profiles in Trash) and subfolders before deleting this folder.');
   }

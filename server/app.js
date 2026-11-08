@@ -41,6 +41,7 @@ import { readWindowState } from './window-state.js';
 import { rollbackBrowserSlot } from './browser-runtime/update-manager.js';
 import { startWebDriverBridge, stopWebDriverBridge, webDriverBridgeReport } from './webdriver-bridge.js';
 import { buildAttachDescriptor } from './automation-attach.js';
+import { automationBrowserEnded, automationSessions, cancelAutomationSession, recoverAutomationSessions, startAutomationSession } from './automation-sessions.js';
 import { firefoxSessionStatus, firefoxAutomationCommand } from './firefox-session-manager.js';
 import { startGeckodriverBridge, stopGeckodriverBridge, geckodriverBridgeReport } from './geckodriver-bridge.js';
 import {
@@ -233,6 +234,9 @@ const publicP = p => {
   out.tabRestore = tabRestore;
   return out;
 };
+function canAccessFolderProfile(profile) {
+  try { assertWorkspaceAccess(profile.workspace_id); return true; } catch { return false; }
+}
 const get = id => {
   const p = row2p(db.prepare('SELECT * FROM profiles WHERE id=? AND deleted_at IS NULL').get(id));
   if (p) assertWorkspaceAccess(p.workspaceId);
@@ -618,7 +622,8 @@ function batchHandlers(allowOverride) {
     clone: op => ({ profile: publicP(clone(op.id, op.body || {})) }),
   };
 }
-function mountProfileOps(router, { allowOverride = false } = {}) {
+const startingWebDriver = new Set();
+function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
@@ -671,7 +676,13 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
     if (p.browserEngine === 'firefox') throw err(409, 'ChromeDriver bridge is Chromium-only. Use POST /profiles/:id/geckodriver/start for Firefox marionette sessions.');
     const row = engine.runInfo(req.params.id);
     if (!row?.cdp_port) throw err(409, 'WebDriver bridge requires a running automation session (CDP port). Manual native launches cannot attach.');
-    res.json(await startWebDriverBridge(req.params.id, `127.0.0.1:${row.cdp_port}`));
+    const launch = engine.automationLaunch?.(p.id);
+    if (startingWebDriver.has(p.id) || automationSessions(p.id, launch).sessions.some(session => ['ready', 'stopping'].includes(session.status))) {
+      throw err(409, 'This profile already has an automation session or a bridge starting.');
+    }
+    startingWebDriver.add(p.id);
+    try { res.json(await startWebDriverBridge(p.id, `127.0.0.1:${row.cdp_port}`)); }
+    finally { startingWebDriver.delete(p.id); }
   }));
   router.post('/profiles/:id/firefox/command', wrap(async (req, res) => {
     const profile = must(req.params.id);
@@ -724,6 +735,31 @@ function mountProfileOps(router, { allowOverride = false } = {}) {
   router.post('/profiles/:id/webdriver/stop', wrap((req, res) => {
     must(req.params.id);
     res.json(stopWebDriverBridge(req.params.id));
+  }));
+  const sessionLaunch = id => engine.automationLaunch?.(id);
+  router.use('/profiles/:id/automation-sessions', (req, res, next) => {
+    if (!managedSessions) return res.status(403).json({ error: 'Managed sessions require the desktop UI or the authenticated automation API.' });
+    next();
+  });
+  router.get('/profiles/:id/automation-sessions', wrap((req, res) => {
+    const profile = must(req.params.id);
+    res.set('Cache-Control', 'no-store');
+    res.json(automationSessions(profile.id, sessionLaunch(profile.id)));
+  }));
+  router.post('/profiles/:id/automation-sessions', wrap((req, res) => {
+    const profile = must(req.params.id);
+    if (profile.browserEngine !== 'chromium') throw err(409, 'Managed sessions currently support Chromium only.');
+    if (!profile.automationEnabled) throw err(409, 'Enable automation in the profile settings first.');
+    if (startingWebDriver.has(profile.id) || webDriverBridgeReport().activeSessions.includes(profile.id)) {
+      throw err(409, 'Stop the ChromeDriver bridge before starting a managed Playwright session.');
+    }
+    res.set('Cache-Control', 'no-store');
+    res.status(201).json(startAutomationSession(profile.id, sessionLaunch(profile.id)));
+  }));
+  router.post('/profiles/:id/automation-sessions/:sessionId/cancel', wrap(async (req, res) => {
+    const { id } = must(req.params.id);
+    res.set('Cache-Control', 'no-store');
+    res.json(await cancelAutomationSession(id, req.params.sessionId, () => sessionLaunch(id), () => engine.stop(id)));
   }));
   router.get('/profiles/:id/automation-attach', wrap((req, res) => {
     const p = must(req.params.id);
@@ -1471,7 +1507,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
     const all = db.prepare('SELECT tags, folder, favorite, workspace_id FROM profiles WHERE deleted_at IS NULL').all()
-      .filter(row => { try { assertWorkspaceAccess(row.workspace_id); return true; } catch { return false; } });
+      .filter(canAccessFolderProfile);
     const folderCounts = Object.create(null);
     for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
     const trashCount = db.prepare('SELECT COUNT(*) n FROM profiles WHERE deleted_at IS NOT NULL').get().n;
@@ -1498,12 +1534,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       },
     });
   });
-  ui.post('/profile-folders', wrap((req, res) => res.status(201).json(createProfileFolder(req.body.path))));
-  ui.patch('/profile-folders', wrap((req, res) => res.json(moveProfileFolder(req.body.from, req.body.to, profile => {
-    assertWorkspaceAccess(profile.workspace_id);
-    assertProfileOperationAvailable(profile.id);
-  }))));
-  ui.delete('/profile-folders', wrap((req, res) => { deleteProfileFolder(req.body.path); res.status(204).end(); }));
+  ui.post('/profile-folders', wrap((req, res) => res.status(201).json(createProfileFolder(req.body.path, canAccessFolderProfile))));
+  ui.patch('/profile-folders', wrap((req, res) => res.json(moveProfileFolder(req.body.from, req.body.to, canAccessFolderProfile, profile => assertProfileOperationAvailable(profile.id)))));
+  ui.delete('/profile-folders', wrap((req, res) => { deleteProfileFolder(req.body.path, canAccessFolderProfile); res.status(204).end(); }));
   ui.patch('/profiles/:id/favorite', wrap((req, res) => {
     const { id } = must(req.params.id);
     if (typeof req.body.favorite !== 'boolean') throw err(400, 'favorite must be a boolean');
@@ -1558,7 +1591,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/:id/stop', wrap(async (req, res) => res.json(await doStop(req.params.id))));
   mountProxyRoutes(ui);
   mountExtensionRoutes(ui);
-  mountProfileOps(ui);
+  mountProfileOps(ui, { managedSessions: Boolean(uiToken) });
   mountWorkspace(ui);
   mountProviderRoutes(ui);
   ui.post('/proxy/test', wrap(async (req, res) => res.json(await testProxy(req.body.proxy || req.body))));
@@ -1723,6 +1756,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
 // Start everything: recovery, secret migration, health monitor, HTTP listener.
 export async function startServer({ port = Number(process.env.PORT || 3000), host = process.env.HOST || '127.0.0.1', ...appOpts } = {}) {
   const recovery = await engine.recoverAfterRestart();
+  recoverAutomationSessions();
   const dataRecovery = recoverDataOperationsAtStartup();
   const purgeRecovery = resumeIncompletePurges();
   const reencrypted = reencryptSecrets();
@@ -1734,11 +1768,17 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const stopSampler = startProcessSnapshotSampler(Number(process.env.PM_PROCESS_SAMPLE_MS || 4000));
   const app = createApp(appOpts);
   const server = await new Promise((res, rej) => { const s = app.listen(port, host, () => res(s)).on('error', rej); });
+  const onBrowserEvent = event => {
+    if (event.type === 'profile:crashed' || event.type === 'profile:stopped') {
+      automationBrowserEnded(event.id, engine.automationLaunch?.(event.id), event.type === 'profile:crashed' || Boolean(event.error));
+    }
+  };
+  engine.events.on('event', onBrowserEvent);
   const actual = server.address().port;
   return { server, port: actual, url: `http://${host}:${actual}`, recovery, dataRecovery, purgeRecovery, reencrypted, scrubbed, migration, events: engine.events,
     close: async () => {
       stopSampler?.();
-      await engine.shutdown();
+      try { await engine.shutdown(); } finally { engine.events.off('event', onBrowserEvent); }
       const closed = new Promise(r => server.close(() => r()));
       server.closeAllConnections?.(); // includes open SSE streams, which would otherwise keep close() pending
       let closeTimer;

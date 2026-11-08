@@ -1,0 +1,44 @@
+name: Azwah M4 Windows source regression
+on:
+  push:
+    branches: [feature/azwah-ultimate-m4]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-source:
+    if: github.ref == 'refs/heads/feature/azwah-ultimate-m4'
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Confirm Issue 20 ancestry
+        shell: bash
+        run: git merge-base --is-ancestor 4aa3748c1ff7d920b84b490f43f1e2d3bf14575c HEAD
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Build integrated web UI
+        run: npm run build
+        env:
+          VITE_AZWAH_ADMIN: '1'
+      - name: Profile, authorization, migration and Office regressions
+        run: >
+          node --test --experimental-test-module-mocks
+          test/app-security.test.js test/diagnostic-process.test.js
+          test/profile-table.test.js test/profile-table-workspace.test.js
+          test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js
+          test/windows-owner-secrets.test.js test/office-license.test.js
+        env:
+          PM_DATA_DIR: ${{ runner.temp }}/azwah-m4-regression
+      - name: Provision Playwright's locked Chromium runtime
+        run: npx --no-install playwright install chromium --only-shell
+      - name: Require Chromium process identity and real managed sessions
+        run: node --test test/unit.test.js test/automation-sessions-live.test.js
