@@ -9,10 +9,12 @@ import {prepareUltimateStartup} from '../electron/ultimate-migration-startup.js'
 
 test('disposable recovery imports committed WAL and rejects checksum damage', t => {
   const root=fs.mkdtempSync(path.join(os.tmpdir(),'azwah-wal-test-'));
-  t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const file=path.join(root,'profiles.db');
   const db=new DatabaseSync(file);
-  t.after(()=>db.close());
+  t.after(()=>{
+    db.close();
+    fs.rmSync(root,{recursive:true,force:true,maxRetries:5,retryDelay:200});
+  });
   db.exec("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE proof(v TEXT); INSERT INTO proof VALUES ('committed');");
   for (const name of ['valid','corrupt']) {
     const dir=path.join(root,name);

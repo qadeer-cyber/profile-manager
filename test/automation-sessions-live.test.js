@@ -59,11 +59,13 @@ test('real Chromium managed attachment, cancellation, crash recovery and isolati
     let crashed;
     for (let i = 0; i < 80; i++) {
       crashed = await api('GET', routeB);
-      if (crashed.sessions[0].status === 'interrupted') break;
+      if (crashed.sessions[0].status === 'interrupted' &&
+          !(await api('GET', '/profiles/' + b.id)).running) break;
       await delay(250);
     }
     assert.equal(crashed.sessions[0].status, 'interrupted');
     assert.equal(crashed.endpoint, null);
+    assert.equal((await api('GET', '/profiles/' + b.id)).running, false);
     const recovered = await start(b.id);
     assert.notEqual(recovered.session.id, second.session.id);
     const relaunched = await start(a.id);

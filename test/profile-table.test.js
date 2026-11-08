@@ -8,6 +8,7 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m8-table-'));
 process.env.PM_DATA_DIR = dir;
 process.env.PM_API_TOKEN = 'm8-table';
 const { startServer } = await import('../server/app.js');
+const { db } = await import('../server/db.js');
 let server;
 const call = async (method, url, payload) => {
   const response = await fetch(server.url + url, { method, headers: { Authorization: 'Bearer m8-table', 'Content-Type': 'application/json' }, body: payload == null ? undefined : JSON.stringify(payload) });
@@ -15,7 +16,12 @@ const call = async (method, url, payload) => {
   return { status: response.status, body: text ? JSON.parse(text) : null };
 };
 before(async () => { server = await startServer({ port: 0, staticDir: null }); });
-after(async () => { await server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+after(async () => {
+  try { await server?.close(); } finally {
+    db.close();
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  }
+});
 
 test('profile table filters, sorts, pages, and persists a saved view', async () => {
   for (const profile of [{ name: 'Alpha', folder: 'Work', tags: ['shop'] }, { name: 'Bravo', folder: 'Work', tags: ['b'] }, { name: 'Charlie', folder: 'Personal', tags: ['shop'] }]) {
