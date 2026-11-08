@@ -20,9 +20,10 @@ test('real Chromium managed attachment, cancellation, crash recovery and isolati
   let app;
   try {
     app = await startServer({ port: 0, staticDir: null });
+    console.log('Managed fixture server ready');
     async function api(method, route, body, expected = 200) {
       const response = await fetch(app.url + '/api/v1' + route, {
-        method, headers: { Authorization: 'Bearer local-test-token', 'Content-Type': 'application/json' },
+        method, signal: AbortSignal.timeout(30_000), headers: { Authorization: 'Bearer local-test-token', 'Content-Type': 'application/json' },
         body: body && JSON.stringify(body),
       });
       const data = await response.json();
@@ -42,7 +43,9 @@ test('real Chromium managed attachment, cancellation, crash recovery and isolati
     const a = await api('POST', '/profiles', { name: 'Managed A', automationEnabled: true }, 201);
     const b = await api('POST', '/profiles', { name: 'Managed B', automationEnabled: true }, 201);
     const first = await start(a.id);
+    console.log('First Chromium profile attached');
     const second = await start(b.id);
+    console.log('Second Chromium profile attached');
     assert.notEqual(first.endpoint, second.endpoint);
     await first.page.evaluate(() => localStorage.setItem('fixture', 'profile-a'));
     assert.equal(await second.page.evaluate(() => localStorage.getItem('fixture')), null);
@@ -50,6 +53,7 @@ test('real Chromium managed attachment, cancellation, crash recovery and isolati
     const cancelled = await api('POST', routeA + '/' + first.session.id + '/cancel');
     assert.equal(cancelled.sessions[0].status, 'cancelled');
     assert.equal(cancelled.endpoint, null);
+    console.log('First Chromium profile cancelled');
     assert.equal(await second.page.title(), 'Managed fixture');
 
     const routeB = '/profiles/' + b.id + '/automation-sessions';
@@ -66,6 +70,7 @@ test('real Chromium managed attachment, cancellation, crash recovery and isolati
     assert.equal(crashed.sessions[0].status, 'interrupted');
     assert.equal(crashed.endpoint, null);
     assert.equal((await api('GET', '/profiles/' + b.id)).running, false);
+    console.log('Crashed Chromium profile settled');
     const recovered = await start(b.id);
     assert.notEqual(recovered.session.id, second.session.id);
     const relaunched = await start(a.id);
@@ -74,6 +79,7 @@ test('real Chromium managed attachment, cancellation, crash recovery and isolati
     await Promise.allSettled(clients.map(client => client.close()));
     try { await app?.close(); } finally {
       fixture.close();
+      fixture.closeAllConnections();
       db.close();
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }

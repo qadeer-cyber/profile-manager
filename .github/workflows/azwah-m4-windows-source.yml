@@ -39,6 +39,12 @@ jobs:
         env:
           PM_DATA_DIR: ${{ runner.temp }}/azwah-m4-regression
       - name: Provision Playwright's locked Chromium runtime
+        id: chromium
         run: npx --no-install playwright install chromium --only-shell
-      - name: Require Chromium process identity and real managed sessions
-        run: node --test test/unit.test.js test/automation-sessions-live.test.js
+      - name: Require Chromium process identity
+        timeout-minutes: 3
+        run: node --test --test-force-exit --test-name-pattern="installed playwright-core" test/unit.test.js
+      - name: Require real managed sessions
+        if: ${{ !cancelled() && steps.chromium.outcome == 'success' }}
+        timeout-minutes: 4
+        run: node --test --test-force-exit test/automation-sessions-live.test.js
