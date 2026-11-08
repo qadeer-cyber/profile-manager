@@ -219,3 +219,136 @@ test('app.js no longer shells out to the Playwright CLI installer', () => {
   const src = fs.readFileSync(new URL('../server/app.js', import.meta.url), 'utf8');
   assert.ok(!/cli\.js|'install', 'chromium'/.test(src));
 });
+
+test('M4 favorites are authenticated, persisted and composed with saved filters', async () => {
+  const { d: profile } = await ui('POST', '/api/profiles', { name: 'M4 Favorite', folder: 'M4 Flags' });
+  assert.equal(profile.favorite, false);
+  const endpoint = '/api/profiles/' + profile.id + '/favorite';
+  assert.equal((await req('PATCH', endpoint, { favorite: true })).s, 401);
+  assert.equal((await ui('PATCH', endpoint, { favorite: 'true' })).s, 400);
+  assert.equal((await ui('PATCH', endpoint, { favorite: true })).d.favorite, true);
+  assert.equal(db.prepare('SELECT favorite FROM profiles WHERE id=?').get(profile.id).favorite, 1);
+  const { d: view, s } = await ui('POST', '/api/views', { name: 'M4 Starred', query: { favorite: true, folder: 'M4 Flags', q: 'M4', proxy: 'none' } });
+  assert.equal(s, 201);
+  assert.deepEqual((await ui('GET', '/api/views')).d.find(item => item.id === view.id).query, view.query);
+  const query = new URLSearchParams(view.query);
+  assert.deepEqual((await ui('GET', '/api/profile-table?' + query)).d.items.map(item => item.id), [profile.id]);
+  assert.equal((await ui('GET', '/api/meta')).d.favoriteCount, 1);
+  await ui('PATCH', endpoint, { favorite: false });
+  assert.equal((await ui('GET', '/api/profile-table?' + query)).d.total, 0);
+  assert.equal((await ui('GET', '/api/profile-table?favorite=broken')).s, 400);
+});
+
+test('M4 nested folder moves preserve workspace, ciphertext, browser data, and saved queries', async () => {
+  const root = '/api/profile-folders';
+  assert.equal((await req('POST', root, { path: 'M4 tree' })).s, 401);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/Child' })).s, 404);
+  assert.equal((await ui('POST', root, { path: 'M4 tree' })).s, 201);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/Child' })).s, 201);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/Empty' })).s, 201);
+  assert.equal((await ui('POST', root, { path: 'M4 tree/../invalid' })).s, 400);
+  assert.equal((await ui('POST', root, { path: 'M4 destination' })).s, 201);
+  assert.ok((await ui('GET', '/api/meta')).d.folders.includes('M4 tree/Empty'));
+  const { d: workspace } = await ui('POST', '/api/workspaces', { name: 'M4 workspace' });
+  const { d: profile } = await ui('POST', '/api/profiles', {
+    name: 'M4 Nested', folder: 'M4 tree/Child', workspaceId: workspace.id,
+    proxy: { type: 'http', host: 'localhost', port: 8080, username: 'fixture', password: 'm4-synthetic-secret' },
+  });
+  const dataFile = path.join(tmp, 'profiles', profile.id, 'fixture-cookie-data');
+  fs.writeFileSync(dataFile, 'fixture');
+  const ciphertext = () => db.prepare('SELECT password FROM proxies WHERE id = ?').get(profile.proxyId).password;
+  const encrypted = ciphertext();
+  assert.match(encrypted, /^enc:/);
+  const { d: view } = await ui('POST', '/api/views', { name: 'M4 Folder View', query: { folder: 'M4 tree/Child', workspaceId: workspace.id } });
+  assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 tree/Child/Loop' })).s, 409);
+  assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination' })).s, 409);
+  db.prepare('UPDATE workspaces SET vault_locked = 1 WHERE id = ?').run(workspace.id);
+  try {
+    assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 403);
+  } finally { db.prepare('UPDATE workspaces SET vault_locked = 0 WHERE id = ?').run(workspace.id); }
+  assert.equal((await ui('GET', '/api/profiles/' + profile.id)).d.folder, 'M4 tree/Child');
+  assert.equal((await ui('PATCH', root, { from: 'M4 tree', to: 'M4 destination/Renamed' })).s, 200);
+  const moved = (await ui('GET', '/api/profiles/' + profile.id)).d;
+  assert.equal(moved.folder, 'M4 destination/Renamed/Child');
+  assert.equal(moved.workspaceId, workspace.id);
+  assert.equal(moved.proxy.password, '••••');
+  assert.equal(ciphertext(), encrypted);
+  assert.equal(fs.readFileSync(dataFile, 'utf8'), 'fixture');
+  const currentView = (await ui('GET', '/api/views')).d.find(item => item.id === view.id);
+  assert.equal(currentView.query.folder, moved.folder);
+  assert.equal((await ui('DELETE', root, { path: 'M4 destination/Renamed' })).s, 409);
+  assert.equal((await ui('DELETE', root, { path: moved.folder })).s, 409);
+  assert.equal((await ui('DELETE', '/api/profiles/' + profile.id)).s, 204);
+  assert.equal((await ui('DELETE', root, { path: moved.folder })).s, 409);
+  assert.equal((await ui('DELETE', root, { path: 'M4 destination/Renamed/Empty' })).s, 204);
+  assert.ok(!(await ui('GET', '/api/meta')).d.folders.includes('M4 destination/Renamed/Empty'));
+});
+
+test('M4 bulk settings clone reports per-profile failures and does not duplicate session data', async () => {
+  const { d: source } = await ui('POST', '/api/profiles', { name: 'M4 Clone', folder: 'M4 Clones', notes: 'Keep notes', tags: ['test'] });
+  fs.writeFileSync(path.join(tmp, 'profiles', source.id, 'Cookies'), 'private session');
+  const endpoint = '/api/bulk/jobs';
+  assert.equal((await ui('POST', endpoint, { action: 'clone', ids: [source.id, source.id] })).s, 400);
+  const { d: job, s } = await ui('POST', endpoint, { action: 'clone', ids: [source.id, 'missing'] });
+  assert.equal(s, 202);
+  let state = job;
+  for (let i = 0; i < 20 && state.status === 'running'; i++) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    state = (await ui('GET', endpoint + '/' + job.id)).d;
+  }
+  assert.equal(state.status, 'done');
+  assert.deepEqual(state.items.map(item => item.ok), [true, false]);
+  const copy = state.items[0].profile;
+  assert.notEqual(copy.id, source.id);
+  assert.equal(copy.folder, source.folder);
+  assert.equal(copy.notes, source.notes);
+  assert.deepEqual(copy.tags, source.tags);
+  assert.ok(!fs.existsSync(path.join(tmp, 'profiles', copy.id, 'Cookies')));
+  assert.equal(fs.readFileSync(path.join(tmp, 'profiles', source.id, 'Cookies'), 'utf8'), 'private session');
+});
+
+test('M4 sorts before pagination and filters by browser engine and proxy assignment', async () => {
+  const { d: firefox } = await ui('POST', '/api/profiles', {
+    name: 'M4 Sort Firefox', folder: 'M4 Sorting', notes: 'alpha', browserEngine: 'firefox',
+    proxy: { type: 'http', host: 'localhost', port: 8080 },
+  });
+  const { d: chromium } = await ui('POST', '/api/profiles', {
+    name: 'M4 Sort Chromium', folder: 'M4 Sorting', notes: 'zulu',
+  });
+  const url = '/api/profile-table?' + new URLSearchParams({ folder: 'M4 Sorting', sort: 'notes', dir: 'asc', pageSize: 1 });
+  const first = await ui('GET', url);
+  assert.equal(first.d.total, 2);
+  assert.equal(first.d.items[0].id, firefox.id);
+  assert.equal((await ui('GET', url + '&page=2')).d.items[0].id, chromium.id);
+  assert.deepEqual((await ui('GET', url + '&engine=firefox&proxy=assigned')).d.items.map(p => p.id), [firefox.id]);
+  assert.deepEqual((await ui('GET', url + '&engine=chromium&proxy=none')).d.items.map(p => p.id), [chromium.id]);
+  assert.equal((await ui('GET', url + '&engine=unknown')).s, 400);
+});
+
+test('M4 schema upgrade preserves existing workspace and proxy references and survives reopen', async () => {
+  const { default: Database } = await import('better-sqlite3');
+  const { migrate, migrations } = await import('../server/migrations.js');
+  const file = path.join(tmp, 'm4-schema-fixture.db');
+  const db = new Database(file);
+  try {
+    migrate(db, migrations.filter(m => m.version < 20));
+    db.prepare('INSERT INTO workspaces (id,name,created_at,updated_at) VALUES (?,?,?,?)').run('w', 'Existing', 't', 't');
+    db.prepare('INSERT INTO proxies (id,name,type,host,port,password,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
+      .run('x', 'Proxy', 'http', 'localhost', 8080, 'ss:v1:synthetic', 't', 't');
+    db.prepare('INSERT INTO profiles (id,name,folder,workspace_id,proxy_id,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run('p', 'Original', 'Original folder', 'w', 'x', 't', 't');
+    assert.deepEqual(migrate(db).applied, [20]);
+    assert.deepEqual(db.prepare('SELECT name,folder,workspace_id,proxy_id,favorite FROM profiles WHERE id=?').get('p'),
+      { name: 'Original', folder: 'Original folder', workspace_id: 'w', proxy_id: 'x', favorite: 0 });
+    assert.equal(db.prepare('SELECT password FROM proxies WHERE id=?').get('x').password, 'ss:v1:synthetic');
+    db.prepare('UPDATE profiles SET favorite=1 WHERE id=?').run('p');
+    db.prepare('INSERT INTO profile_folders (path) VALUES (?)').run('Empty folder');
+  } finally { db.close(); }
+
+  const reopened = new Database(file);
+  try {
+    assert.deepEqual(migrate(reopened).applied, []);
+    assert.equal(reopened.prepare('SELECT favorite FROM profiles WHERE id=?').get('p').favorite, 1);
+    assert.equal(reopened.prepare('SELECT path FROM profile_folders').get().path, 'Empty folder');
+  } finally { reopened.close(); }
+});

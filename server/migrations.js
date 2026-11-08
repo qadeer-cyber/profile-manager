@@ -194,6 +194,10 @@ export const migrations = [
       )`);
       db.exec('CREATE INDEX IF NOT EXISTS idx_proxy_traffic_sessions_script ON proxy_traffic_sessions(script_id, created_at)');
     } },
+  { version: 20, name: 'profile favorites and persistent folders', up: db => {
+      db.exec('ALTER TABLE profiles ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1))');
+      db.exec('CREATE TABLE profile_folders (path TEXT PRIMARY KEY NOT NULL)');
+    } },
 ];
 
 // Copy the database file before any pending migration changes it. The copy is the

@@ -85,6 +85,7 @@ import { createBackup, createEncryptedBackup, createProfileBackup, inspectBackup
 import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
 import { dashboardStats } from './dashboard.js';
 import { createView, deleteView, listViews, queryProfiles, updateView } from './profile-table.js';
+import { createProfileFolder, deleteProfileFolder, listProfileFolders, moveProfileFolder } from './profile-folders.js';
 import { cleanupStorage, inspectStorage } from './storage.js';
 import { appendJobItem, createJob, finishJob, getJob, listJobs } from './jobs.js';
 import { runBatch } from './batch.js';
@@ -202,7 +203,7 @@ const row2p = r => {
   delete r.workspace_id;
   const purgeError = r.purge_error || null;
   delete r.purge_error;
-  return { ...r, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -460,6 +461,12 @@ function bulkDelete(body, onItem) {
     catch (error) { return { id, ok: false, ...errorBody(error) }; }
   }, onItem);
 }
+function bulkCloneSettings(body, onItem) {
+  return mapPool(body.ids, 1, async id => {
+    try { assertProfileOperationAvailable(id); return { id, ok: true, profile: publicP(clone(id, { mode: 'settings' })) }; }
+    catch (error) { return { id, ok: false, ...errorBody(error) }; }
+  }, onItem);
+}
 function bulkAssign(body, onItem) {
   const ids = body.ids;
   if (!Array.isArray(ids) || !ids.length || ids.length > 100) throw err(400, 'ids must be an array of 1-100 ids');
@@ -543,6 +550,13 @@ function bulkPlan(body) {
     boundedConcurrency(body.concurrency, 4);
     return { action, total: ids.length };
   }
+  if (action === 'clone') {
+    if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100 ||
+        body.ids.some(id => typeof id !== 'string') || new Set(body.ids).size !== body.ids.length) {
+      throw err(400, 'ids must be an array of 1-100 distinct profile IDs');
+    }
+    return { action, total: body.ids.length };
+  }
   if (action === 'assign') {
     if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100) throw err(400, 'ids must be an array of 1-100 ids');
     return { action, total: body.ids.length };
@@ -558,7 +572,7 @@ function bulkPlan(body) {
     if (!Number.isInteger(count) || count < 1 || count > 50) throw err(400, 'count must be an integer from 1 to 50');
     return { action, total: count };
   }
-  throw err(400, 'action must be launch, stop, assign, import, delete, or fromTemplate');
+  throw err(400, 'action must be launch, stop, assign, import, delete, clone, or fromTemplate');
 }
 function startBulkJob(body, allowOverride) {
   const plan = bulkPlan(body);
@@ -569,6 +583,7 @@ function startBulkJob(body, allowOverride) {
     run = plan.action === 'launch' ? bulkLaunch(body, allowOverride, onItem)
       : plan.action === 'stop' ? bulkStop(body, onItem)
       : plan.action === 'assign' ? bulkAssign(body, onItem)
+      : plan.action === 'clone' ? bulkCloneSettings(body, onItem)
       : plan.action === 'import' ? bulkImport(body, onItem)
       : plan.action === 'fromTemplate' ? bulkFromTemplate(body, onItem)
       : bulkDelete(body, onItem);
@@ -1364,8 +1379,8 @@ function mountWorkspace(router) {
   router.get('/profile-table', wrap((req, res) => {
     const query = { ...req.query };
     if (!('folder' in req.query)) query.folder = '__all';
-    const rows = list({ q: query.q, tag: query.tag, folder: query.folder, workspaceId: query.workspaceId }).map(publicP);
-    res.json(queryProfiles(rows, query));
+    const result = queryProfiles(list({ folder: query.folder, workspaceId: query.workspaceId }), query);
+    res.json({ ...result, items: result.items.map(publicP) });
   }));
   router.get('/views', wrap((req, res) => res.json(listViews(req.query.surface || 'profiles'))));
   router.post('/views', wrap((req, res) => res.status(201).json(createView(req.body))));
@@ -1455,13 +1470,15 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
-    const all = db.prepare('SELECT tags, folder FROM profiles WHERE deleted_at IS NULL').all();
-    const folderCounts = {};
+    const all = db.prepare('SELECT tags, folder, favorite, workspace_id FROM profiles WHERE deleted_at IS NULL').all()
+      .filter(row => { try { assertWorkspaceAccess(row.workspace_id); return true; } catch { return false; } });
+    const folderCounts = Object.create(null);
     for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
     const trashCount = db.prepare('SELECT COUNT(*) n FROM profiles WHERE deleted_at IS NOT NULL').get().n;
     res.json({
       tags: [...new Set(all.flatMap(r => JSON.parse(r.tags)))].sort(),
-      folders: [...new Set(all.map(r => r.folder))].sort(),
+      folders: [...(folderCounts[''] ? [''] : []), ...listProfileFolders(all.map(r => r.folder))],
+      favoriteCount: all.filter(r => r.favorite).length,
       folderCounts,
       profileCount: all.length,
       trashCount,
@@ -1473,14 +1490,26 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
         nativeManualLaunch: true,
         geckoExtensionLibrary: true,
         fingerprintStockOnly: true,
-        favorites: false,
-        nestedFolders: false,
+        favorites: true,
+        nestedFolders: true,
         team: false,
         subscriptions: false,
         cloudStorage: false,
       },
     });
   });
+  ui.post('/profile-folders', wrap((req, res) => res.status(201).json(createProfileFolder(req.body.path))));
+  ui.patch('/profile-folders', wrap((req, res) => res.json(moveProfileFolder(req.body.from, req.body.to, profile => {
+    assertWorkspaceAccess(profile.workspace_id);
+    assertProfileOperationAvailable(profile.id);
+  }))));
+  ui.delete('/profile-folders', wrap((req, res) => { deleteProfileFolder(req.body.path); res.status(204).end(); }));
+  ui.patch('/profiles/:id/favorite', wrap((req, res) => {
+    const { id } = must(req.params.id);
+    if (typeof req.body.favorite !== 'boolean') throw err(400, 'favorite must be a boolean');
+    db.prepare('UPDATE profiles SET favorite = ? WHERE id = ?').run(Number(req.body.favorite), id);
+    res.json({ id, favorite: req.body.favorite });
+  }));
   ui.post('/profiles/quick', wrap((req, res) => {
     const id = createQuickProfile({ name: req.body?.name, folder: req.body?.folder, insertFn: v => insert({ ...validate(v), isQuick: true }) });
     res.status(201).json(publicP(get(id)));
