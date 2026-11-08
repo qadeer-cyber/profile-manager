@@ -40,6 +40,8 @@ jobs:
           PM_DATA_DIR: ${{ runner.temp }}/azwah-m4-regression
       - name: Provision Playwright's locked Chromium runtime
         id: chromium
+        run: npx --no-install playwright install chromium --no-shell
+      - name: Provision headless shell for the inherited PID check
         run: npx --no-install playwright install chromium --only-shell
       - name: Require Chromium process identity
         timeout-minutes: 3
