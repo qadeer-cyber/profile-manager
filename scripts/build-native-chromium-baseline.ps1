@@ -55,10 +55,18 @@ function Invoke-BoundedBuildStage {
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
     $shell = (Get-Process -Id $PID).Path
     if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) { throw 'Free disk space is below the build reserve.' }
+    $started = Get-Date
+    Write-Output "BEGIN $([IO.Path]::GetFileName($Program)) free_bytes=$($drive.AvailableFreeSpace)"
+    $nextReport = $started.AddMinutes(5)
     $stage = Start-Process -FilePath $shell -ArgumentList @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) `
         -WorkingDirectory (Get-Location).ProviderPath -NoNewWindow -PassThru
     try {
         while (!$stage.WaitForExit(1000)) {
+            $now = Get-Date
+            if ($now -ge $nextReport) {
+                Write-Output "PROGRESS $([IO.Path]::GetFileName($Program)) elapsed_seconds=$([int]($now - $started).TotalSeconds) free_bytes=$($drive.AvailableFreeSpace)"
+                $nextReport = $now.AddMinutes(5)
+            }
             if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) {
                 throw "Stopped $Program because the build volume reached its free-space reserve."
             }
@@ -68,6 +76,7 @@ function Invoke-BoundedBuildStage {
         if (!$stage.HasExited) {
             & "$env:SystemRoot/System32/taskkill.exe" /PID $stage.Id /T /F | Out-Null
         }
+        Write-Output "END $([IO.Path]::GetFileName($Program)) elapsed_seconds=$([int]((Get-Date) - $started).TotalSeconds) free_bytes=$($drive.AvailableFreeSpace)"
         $stage.Dispose()
     }
 }
@@ -148,12 +157,15 @@ try {
     }
     $sourceHead = Invoke-BuildTool $git @('-C', 'src', 'rev-parse', 'HEAD')
     if ($sourceHead -ne $ChromiumCommit) { throw 'The synced Chromium revision did not match the build pin.' }
+    Write-Output "Synced Chromium revision: $sourceHead; free_bytes=$($drive.AvailableFreeSpace)"
 
     Push-Location -LiteralPath 'src'
     try {
         if ($AzwahSource -and -not $patchApplied) {
             Invoke-BuildTool $git @('apply', '--check', $sourcePatch)
             Invoke-BuildTool $git @('apply', $sourcePatch)
+            Invoke-BuildTool $git @('apply', '--reverse', '--check', $sourcePatch)
+            Invoke-BuildTool $git @('diff', '--check')
         }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'

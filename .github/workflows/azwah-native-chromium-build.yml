@@ -1,0 +1,59 @@
+name: Azwah native Chromium build
+on:
+  push:
+    branches: [feature/azwah-privacy-engine-integration]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: azwah-native-chromium-windows
+  cancel-in-progress: false
+jobs:
+  compile:
+    if: >-
+      ${{ !github.event.repository.private &&
+          github.ref == 'refs/heads/feature/azwah-privacy-engine-integration' &&
+          (github.event_name == 'workflow_dispatch' ||
+           contains(github.event.head_commit.message, '[native-build]')) }}
+    runs-on: windows-2025
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare and verify the pinned Windows toolchain
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+      - name: Checkout pinned depot_tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ("azwah-native-" + $env:GITHUB_RUN_ID + "-" + $env:GITHUB_RUN_ATTEMPT)
+          $tools = Join-Path $root 'depot_tools'
+          $workspace = Join-Path $root 'chromium'
+          $pin = '96a7c1418eedaa6bea333a8941e8a0078681b4d0'
+          New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git -C $tools init --quiet
+          git -C $tools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          git -C $tools fetch --no-tags --depth=1 origin $pin
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
+          git -C $tools checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $pin) { throw 'depot_tools pin did not verify.' }
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_DEPOT_TOOLS_SHA=$pin") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Sync, patch, generate GN and compile native Chromium
+        shell: pwsh
+        run: |
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          Write-Output "Ultimate commit: $env:GITHUB_SHA; Chromium pin: $($pin.revision)"
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 3 -ReserveGiB 10
+      - name: Verify and smoke-test the compiled Windows browser
+        shell: pwsh
+        run: ./scripts/test-native-chromium-build.ps1 -Workspace $env:AZWAH_BUILD_WORKSPACE
+      - name: Record final disk space
+        if: always()
+        shell: pwsh
+        run: |
+          $disk = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE))
+          Write-Output "Final free bytes: $($disk.AvailableFreeSpace)"
