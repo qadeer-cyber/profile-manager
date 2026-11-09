@@ -1,0 +1,9 @@
+{
+  "name": "azwah-privacy-engine-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Isolated Chromium browser shell for Azwah qualification",
+  "author": "Azwah",
+  "type": "module",
+  "main": "main.js"
+}

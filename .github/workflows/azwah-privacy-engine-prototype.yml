@@ -1,0 +1,40 @@
+name: Azwah Privacy Engine installed prototype
+on:
+  push:
+    branches: [feature/azwah-privacy-engine-prototype]
+permissions:
+  contents: read
+jobs:
+  installed-prototype:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Require prototype configuration and Issue 20 regression checks
+        run: node --test test/privacy-engine-prototype.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - name: Package isolated Windows QA prototype
+        working-directory: engine-prototype
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win nsis --x64 --publish never
+      - name: Install prototype in a private QA directory
+        shell: pwsh
+        run: |
+          $install = Join-Path $env:RUNNER_TEMP 'azwah-engine-qa'
+          $setup = (Resolve-Path 'engine-prototype/out/AzwahPrivacyPrototype-Setup.exe').Path
+          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$install") -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Prototype install failed: $($process.ExitCode)" }
+          $exe = Join-Path $install 'AzwahPrivacyPrototype.exe'
+          if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed prototype binary is missing' }
+          "AZWAH_ENGINE_EXE=$exe" >> $env:GITHUB_ENV
+          Get-Item -LiteralPath $exe | Select-Object FullName, Length | Format-List
+          Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
+      - name: Observe installed Chromium location, permissions, isolation and restart
+        run: node --test --test-force-exit test/privacy-engine-installed.test.js
