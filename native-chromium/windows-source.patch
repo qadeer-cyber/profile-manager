@@ -59,7 +59,7 @@ index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..0414ee6fd12da4a3aff50a2787b99df0
  MAC_BUNDLE_ID=org.chromium.Chromium
  MAC_CREATOR_CODE=Cr24
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9bc3abee42 100644
+index 41b28743dfe526afd45efe1dda643e3750b28a11..c9e3dc5da2cfc3635384f19f9ea242daf60744bd 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -8,18 +8,23 @@
@@ -86,7 +86,7 @@ index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9b
  #include "base/strings/strcat.h"
  #include "base/task/current_thread.h"
  #include "base/task/single_thread_task_runner.h"
-@@ -134,6 +139,13 @@
+@@ -134,6 +139,15 @@
  #include "media/audio/audio_manager.h"
  #include "media/base/localized_strings.h"
  #include "net/base/data_url.h"
@@ -96,11 +96,13 @@ index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9b
 +#include "services/network/public/cpp/resource_request.h"
 +#include "services/network/public/cpp/shared_url_loader_factory.h"
 +#include "services/network/public/cpp/simple_url_loader.h"
++#include "third_party/icu/source/common/unicode/unistr.h"
++#include "third_party/icu/source/i18n/unicode/timezone.h"
 +#include "url/gurl.h"
  #include "net/base/module/net_module.h"
  #include "pdf/buildflags.h"
  #include "rlz/buildflags/buildflags.h"
-@@ -362,6 +374,89 @@
+@@ -362,6 +376,103 @@
  
  namespace {
  
@@ -109,16 +111,30 @@ index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9b
 +  auto env = base::Environment::Create();
 +  const auto receipt = env->GetVar("AZWAH_NATIVE_READY_PATH");
 +  const auto exit_ip = env->GetVar("AZWAH_NATIVE_EXPECTED_EXIT_IP");
++  const auto timezone = env->GetVar("AZWAH_NATIVE_PROXY_TIMEZONE");
 +  const bool managed_proxy = env->HasVar("AZWAH_NATIVE_PROXY_RELAY_PORT") ||
 +                             env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE");
 +  if (!receipt) {
 +    return !managed_proxy && !exit_ip;
 +  }
 +  const auto path = base::FilePath::FromUTF8Unsafe(*receipt);
-+  if (!path.IsAbsolute() || managed_proxy != exit_ip.has_value()) {
++  if (!path.IsAbsolute() || managed_proxy != exit_ip.has_value() ||
++      managed_proxy != timezone.has_value()) {
 +    return false;
 +  }
 +  if (exit_ip) {
++    // Verify the browser process's effective ICU default before exposing tabs.
++    // JavaScript realms and workers are covered separately by runtime tests.
++    UErrorCode status = U_ZERO_ERROR;
++    UBool is_system_id = false;
++    icu::UnicodeString canonical, observed_zone;
++    icu::TimeZone::getCanonicalID(icu::UnicodeString::fromUTF8(*timezone),
++                                  canonical, is_system_id, status);
++    std::unique_ptr<icu::TimeZone> effective(icu::TimeZone::createDefault());
++    effective->getID(observed_zone);
++    if (U_FAILURE(status) || !is_system_id || observed_zone != canonical) {
++      return false;
++    }
 +    net::IPAddress expected;
 +    if (!manager || !expected.AssignFromIPLiteral(*exit_ip)) {
 +      return false;
@@ -174,7 +190,7 @@ index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9b
 +          [](base::FilePath receipt_path, std::string value) {
 +            return base::WriteFile(receipt_path, value);
 +          },
-+          path, exit_ip.value_or("direct")),
++          path, exit_ip ? *exit_ip + "\n" + *timezone : "direct"),
 +      base::BindOnce(
 +          [](base::RunLoop* loop, bool* result, bool success) {
 +            *result = success;
@@ -190,7 +206,7 @@ index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9b
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || \
      BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  constexpr base::FilePath::CharType kMediaHistoryDatabaseName[] =
-@@ -2154,6 +2249,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -2154,6 +2265,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
    }
  #endif
  

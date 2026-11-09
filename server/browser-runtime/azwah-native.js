@@ -51,7 +51,7 @@ function proxyRelay(proxy) {
   });
 }
 
-export async function launchAzwahNative(profile, dir, opts, checkCancelled) {
+export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
   const { exe, hash } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
   await verifyBinary(exe, hash);
@@ -113,7 +113,7 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled) {
     child.on('error', () => { spawnFailed = true; });
     child.once('exit', () => { invalidated = true; discardReceipt(); void closeRelay(); });
     const deadline = Date.now() + 25000;
-    const expected = location?.ip ?? 'direct';
+    const expected = location ? `${location.ip}\n${location.timezone}` : 'direct';
     while (true) {
       checkCancelled();
       if (spawnFailed || child.exitCode !== null || child.signalCode !== null || !child.pid || Date.now() >= deadline) {
@@ -129,21 +129,25 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled) {
     discardReceipt();
     if (!assignmentCurrent()) throw error('The assigned proxy changed during native launch.', 'PROXY_BROWSER_IDENTITY_FAILED');
     if (location) {
-      location = { ...location, browserExitVerifiedAt: Date.now() };
+      location = { ...location, browserExitVerifiedAt: Date.now(), nativeTimezoneVerifiedAt: Date.now() };
       delete location.browserVerifiedAt;
       setSetting(locationKey, location);
     }
 
     let lastProbe = Date.now();
     const recheck = async () => {
+      let rotation = false;
       try {
         if (!assignmentCurrent()) throw error('The assigned proxy changed.');
         if (location && Date.now() - lastProbe >= 30000) {
           const current = await resolveLocation();
-          if (['ip', 'timezone', 'latitude', 'longitude', 'accuracy'].some(key => current[key] !== location[key]) ||
-              !assignmentCurrent()) throw error('The proxy exit changed.');
+          if (invalidated) return;
+          if (!assignmentCurrent()) throw error('The assigned proxy changed.');
+          rotation = ['ip', 'timezone', 'latitude', 'longitude', 'accuracy'].some(key => current[key] !== location[key]);
+          if (rotation) throw error('The proxy exit identity changed.');
           if (current.expiresAt !== location.expiresAt) {
-            location = { ...current, browserExitVerifiedAt: location.browserExitVerifiedAt };
+            location = { ...current, browserExitVerifiedAt: location.browserExitVerifiedAt,
+              nativeTimezoneVerifiedAt: location.nativeTimezoneVerifiedAt };
             delete location.browserVerifiedAt;
             setSetting(locationKey, location);
           }
@@ -154,6 +158,7 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled) {
         invalidated = true;
         try { setSetting(locationKey, null); } catch {}
         await closeRelay();
+        if (rotation && onRotation && await onRotation().catch(() => false)) return;
         await killTree(child.pid, { expect: nativeDir }).catch(() => {});
         return;
       }

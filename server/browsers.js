@@ -51,6 +51,7 @@ import { assertFirefoxAddonIdle } from './firefox-session-lock.js';
 import { stopGeckodriverBridge } from './geckodriver-bridge.js';
 
 export const events = new EventEmitter();
+let shuttingDown = false;
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
@@ -332,7 +333,21 @@ async function doLaunch(p, opts = {}) {
 
     if (azwah || dedicated || launchPlan.runtime === 'native') {
       const checkCancelled = () => assertLaunchNotCancelled(p.id);
-      if (azwah) azwahLaunch = await launchAzwahNative(p, dir, { ...opts, automation }, checkCancelled);
+      if (azwah) {
+        const restartForRotation = async () => {
+          if (shuttingDown || !entry || live.get(p.id) !== entry || entry.stopping || opts.nativeRotationRestart) return false;
+          await stop(p.id, { rotationEntry: entry });
+          if (shuttingDown || entry.rotationCancelled) return true;
+          const current = db.prepare(`SELECT p.updated_at, p.proxy_id, x.updated_at AS proxy_revision
+            FROM profiles p JOIN proxies x ON x.id = p.proxy_id WHERE p.id = ? AND p.deleted_at IS NULL`).get(p.id);
+          if (current && current.updated_at === p.updated_at && current.proxy_id === p.proxy?.id &&
+              current.proxy_revision === p.proxy?.revision) {
+            await launch(p, { ...opts, url: undefined, nativeRotationRestart: true }).catch(() => {});
+          }
+          return true;
+        };
+        azwahLaunch = await launchAzwahNative(p, dir, { ...opts, automation }, checkCancelled, restartForRotation);
+      }
       const native = azwahLaunch || (dedicated
         ? await launchPrivacyEngine(p, dir, { ...opts, automation }, checkCancelled)
         : await launchNativeChromium(launchPlan));
@@ -806,14 +821,16 @@ export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INT
 }
 export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTimer); healthTimer = null; };
 
-export async function stop(id, { timeoutMs = 5000 } = {}) {
+export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
   assertFirefoxAddonIdle(id);
   if (firefoxSessionStatus(id)?.busy) throw httpErr(409, 'Wait for the active Firefox operation to finish before stopping.', 'FIREFOX_SESSION_BUSY');
   stopWebDriverBridge(id);
   stopGeckodriverBridge(id);
   if (launching.has(id)) await launching.get(id).catch(() => {});
   const e = live.get(id) || settling.get(id);
+  if (rotationEntry && e !== rotationEntry) return;
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
+  if (!rotationEntry) e.rotationCancelled = true;
   e.stopping = true;
   e.stopWindowTracking?.();
   if (e.restoreTabs && e.ctx) {
@@ -873,6 +890,7 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   if (e.stillAlive) throw httpErr(409, 'Browser is still running. Profile data remains locked; close the browser or explicitly retry Stop.', 'BROWSER_STOP_FAILED');
 }
 export async function shutdown() {
+  shuttingDown = true;
   stopHealthMonitor();
   const { stopAllWebDriverBridges } = await import('./webdriver-bridge.js');
   const { stopAllGeckodriverBridges } = await import('./geckodriver-bridge.js');
