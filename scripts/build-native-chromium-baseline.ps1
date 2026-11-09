@@ -1,4 +1,4 @@
-# Compile a pinned upstream Windows baseline before applying Azwah source changes.
+# Compile pinned upstream Chromium or the Azwah development source on Windows.
 # Outputs stay in the dedicated Chromium build workspace.
 [CmdletBinding()]
 param(
@@ -14,10 +14,20 @@ param(
     [string] $Workspace,
 
     [Parameter(Mandatory)]
-    [string] $DepotTools
+    [string] $DepotTools,
+
+    [switch] $AzwahSource
 )
 
 $ErrorActionPreference = 'Stop'
+$sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
+$sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
+if ($AzwahSource) {
+    $upstream = Get-Content -LiteralPath (Join-Path $sourceRoot 'upstream.json') -Raw | ConvertFrom-Json
+    if ($ChromiumCommit -ne $upstream.revision) {
+        throw "The Azwah source patch requires Chromium $($upstream.revision)."
+    }
+}
 if ([Environment]::OSVersion.Platform -ne 'Win32NT' -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
     throw 'An x64 Windows build worker is required.'
 }
@@ -68,7 +78,9 @@ try {
     $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
 
     $marker = Join-Path $Workspace '.azwah-native-baseline'
+    $kind = if ($AzwahSource) { 'azwah-native-source-development' } else { 'upstream-chromium-build-baseline' }
     $pins = "$ChromiumCommit $DepotToolsCommit"
+    if ($AzwahSource) { $pins += " $kind" }
     if (Test-Path -LiteralPath $marker -PathType Leaf) {
         if ((Get-Content -LiteralPath $marker -Raw).Trim() -ne $pins) {
             throw 'Create a new build workspace for different source or tooling pins.'
@@ -80,20 +92,42 @@ try {
         Set-Content -LiteralPath $marker -Value $pins -Encoding ascii
     }
 
+    $patchApplied = $false
     if (Test-Path -LiteralPath 'src/.git') {
         $sourceChanges = Invoke-BuildTool $git @('-C', 'src', 'status', '--porcelain', '--untracked-files=no')
-        if ($sourceChanges) { throw 'The Chromium source has local changes.' }
+        if ($sourceChanges -and $AzwahSource) {
+            # Compare the full tracked diff before reusing a failed build's source tree.
+            $diff = Invoke-BuildTool $git @('-C', 'src', '-c', 'core.quotePath=true',
+                'diff', '--no-ext-diff', '--no-color', '--binary', '--full-index', 'HEAD')
+            $patchLines = Get-Content -LiteralPath $sourcePatch
+            if (($diff -join "`n") -cne ($patchLines -join "`n")) {
+                throw 'The Chromium checkout differs from the checked-in Azwah patch.'
+            }
+            $patchApplied = $true
+        } elseif ($sourceChanges) {
+            throw 'The Chromium source has local changes.'
+        }
     }
-    if (-not (Test-Path -LiteralPath '.gclient')) {
-        Invoke-BuildTool $gclient @('config', '--unmanaged', 'https://chromium.googlesource.com/chromium/src.git')
+    if (-not $patchApplied) {
+        if (-not (Test-Path -LiteralPath '.gclient')) {
+            Invoke-BuildTool $gclient @('config', '--unmanaged', 'https://chromium.googlesource.com/chromium/src.git')
+        }
+        Invoke-BuildTool $gclient @('sync', '--no-history', '--revision', "src@$ChromiumCommit")
     }
-    Invoke-BuildTool $gclient @('sync', '--no-history', '--revision', "src@$ChromiumCommit")
     $sourceHead = Invoke-BuildTool $git @('-C', 'src', 'rev-parse', 'HEAD')
     if ($sourceHead -ne $ChromiumCommit) { throw 'The synced Chromium revision did not match the build pin.' }
 
     Push-Location -LiteralPath 'src'
     try {
-        $out = 'out/azwah-baseline'
+        if ($AzwahSource -and -not $patchApplied) {
+            Invoke-BuildTool $git @('apply', '--check', $sourcePatch)
+            Invoke-BuildTool $git @('apply', $sourcePatch)
+        }
+        $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
+        $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
+        if (Test-Path -LiteralPath $manifest -PathType Leaf) {
+            Remove-Item -LiteralPath $manifest
+        }
         New-Item -ItemType Directory -Path $out -Force | Out-Null
         @'
 is_debug = false
@@ -103,8 +137,14 @@ target_cpu = "x64"
 symbol_level = 0
 '@ | Set-Content -LiteralPath (Join-Path $out 'args.gn') -Encoding ascii
         Invoke-BuildTool $gn @('gen', $out)
-        Invoke-BuildTool $autoninja @('-C', $out, 'chrome', 'mini_installer')
-        $files = @('chrome.exe', 'chrome.dll', 'mini_installer.exe') | ForEach-Object {
+        $targets = @('chrome')
+        $outputFiles = @('chrome.exe', 'chrome.dll')
+        if (-not $AzwahSource) {
+            $targets += 'mini_installer'
+            $outputFiles += 'mini_installer.exe'
+        }
+        Invoke-BuildTool $autoninja (@('-C', $out) + $targets)
+        $files = $outputFiles | ForEach-Object {
             $file = Get-Item -LiteralPath (Join-Path $out $_)
             @{
                 name = $file.Name
@@ -113,12 +153,13 @@ symbol_level = 0
             }
         }
         @{
-            kind = 'upstream-chromium-build-baseline'
+            kind = $kind
             chromiumCommit = $ChromiumCommit
             depotToolsCommit = $DepotToolsCommit
             buildHost = [Environment]::OSVersion.VersionString
             files = @($files)
-        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $out 'BASELINE-MANIFEST.json') -Encoding utf8
+                    sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
+        } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
     } finally {
         Pop-Location
     }

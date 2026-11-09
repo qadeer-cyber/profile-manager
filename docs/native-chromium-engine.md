@@ -16,6 +16,17 @@ The script builds upstream `chrome` and `mini_installer` targets and writes `BAS
 
 [Chromium Windows build requirements](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/windows_build_instructions.md)
 
+## Development source build
+
+The Windows patch is pinned by `native-chromium/upstream.json`. Use a fresh workspace with `-AzwahSource` to apply it and compile Chromium. The pin is a development revision. The development build does not run the installer target or enter Ultimate packaging.
+
+```powershell
+$ChromiumSha = (Get-Content native-chromium/upstream.json -Raw | ConvertFrom-Json).revision
+./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Workspace C:\src\azwah-native -DepotTools C:\src\depot_tools -ChromiumCommit $ChromiumSha -DepotToolsCommit $DepotToolsSha
+```
+
+The patch adds Azwah product strings and Windows profile path and registration identifiers. In managed mode, Chromium network contexts use a single fixed manager relay, ICU initializes the supplied IANA timezone, and the geolocation service uses the supplied approximate coordinates and accuracy after normal Chromium permission checks. Incomplete managed geolocation returns position unavailable. The manager does not expose this runtime yet. The relay lifecycle, Chromium-observed startup verification, rotation handling, and installed acceptance must be connected before enabling it.
+
 ## Source changes and profile integration
 
 | Area | Implementation boundary |

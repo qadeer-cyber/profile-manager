@@ -1,0 +1,326 @@
+diff --git a/base/i18n/icu_util.cc b/base/i18n/icu_util.cc
+index ebcbcaade988b233ceb1aff9f45c255aed1c36dd..37c49dbd2e5512c8c6d961f05a81b88a381c8a83 100644
+--- a/base/i18n/icu_util.cc
++++ b/base/i18n/icu_util.cc
+@@ -59,11 +59,11 @@
+ #include "base/fuchsia/intl_profile_watcher.h"
+ #endif
+ 
+-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA)
++#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_WIN)
+ #include "third_party/icu/source/common/unicode/unistr.h"
+ #endif
+ 
+-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || \
++#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_WIN) || \
+     BUILDFLAG(IS_CHROMEOS) || (BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CASTOS))
+ #include "third_party/icu/source/i18n/unicode/timezone.h"
+ #endif
+@@ -324,7 +324,20 @@ bool InitializeICUFromDataFile() {
+ // On some platforms, the time zone must be explicitly initialized zone rather
+ // than relying on ICU's internal initialization.
+ void InitializeIcuTimeZone() {
+-#if BUILDFLAG(IS_FUCHSIA)
++#if BUILDFLAG(IS_WIN)
++  // The manager gives each browser process tree its verified proxy timezone.
++  // Initialize this before any renderer or worker observes the ICU default.
++  auto zone_id = Environment::Create()->GetVar("AZWAH_NATIVE_PROXY_TIMEZONE");
++  if (zone_id) {
++    UErrorCode status = U_ZERO_ERROR;
++    UBool is_system_id = false;
++    icu::UnicodeString canonical;
++    icu::TimeZone::getCanonicalID(icu::UnicodeString::fromUTF8(*zone_id),
++                                  canonical, is_system_id, status);
++    CHECK(U_SUCCESS(status) && is_system_id);
++    icu::TimeZone::adoptDefault(icu::TimeZone::createTimeZone(canonical));
++  }
++#elif BUILDFLAG(IS_FUCHSIA)
+   // The platform-specific mechanisms used by ICU's detectHostTimeZone() to
+   // determine the default time zone will not work on Fuchsia. Therefore,
+   // proactively set the default system.
+diff --git a/chrome/app/theme/chromium/BRANDING b/chrome/app/theme/chromium/BRANDING
+index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..0414ee6fd12da4a3aff50a2787b99df0a5d00b04 100644
+--- a/chrome/app/theme/chromium/BRANDING
++++ b/chrome/app/theme/chromium/BRANDING
+@@ -1,9 +1,9 @@
+-COMPANY_FULLNAME=The Chromium Authors
+-COMPANY_SHORTNAME=The Chromium Authors
+-PRODUCT_FULLNAME=Chromium
+-PRODUCT_SHORTNAME=Chromium
+-PRODUCT_INSTALLER_FULLNAME=Chromium Installer
+-PRODUCT_INSTALLER_SHORTNAME=Chromium Installer
++COMPANY_FULLNAME=Azwah
++COMPANY_SHORTNAME=Azwah
++PRODUCT_FULLNAME=Azwah Browser
++PRODUCT_SHORTNAME=Azwah
++PRODUCT_INSTALLER_FULLNAME=Azwah Browser Installer
++PRODUCT_INSTALLER_SHORTNAME=Azwah Installer
+ COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
+ MAC_BUNDLE_ID=org.chromium.Chromium
+ MAC_CREATOR_CODE=Cr24
+diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
+index 387102abd88a010459ef3a5ba4880c5621a96fa3..dbab9e8d91dda2aaa04f06e36b41b3ce3ff927f7 100644
+--- a/chrome/browser/net/proxy_config_monitor.cc
++++ b/chrome/browser/net/proxy_config_monitor.cc
+@@ -7,6 +7,8 @@
+ #include <optional>
+ #include <utility>
+ 
++#include "base/environment.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/strings/utf_string_conversions.h"
+ #include "build/build_config.h"
+ #include "build/chromeos_buildflags.h"
+@@ -19,6 +21,8 @@
+ #include "content/public/browser/browser_thread.h"
+ #include "extensions/buildflags/buildflags.h"
+ #include "mojo/public/cpp/bindings/pending_remote.h"
++#include "net/proxy_resolution/proxy_config_with_annotation.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
+ #include "services/network/public/mojom/network_context.mojom.h"
+ 
+ #if BUILDFLAG(ENTERPRISE_PROXY)
+@@ -35,6 +39,47 @@
+ 
+ using content::BrowserThread;
+ 
++namespace {
++
++std::optional<net::ProxyConfigWithAnnotation> GetAzwahProxyConfig() {
++#if BUILDFLAG(IS_WIN)
++  const auto env = base::Environment::Create();
++  const auto relay_port = env->GetVar("AZWAH_NATIVE_PROXY_RELAY_PORT");
++  if (relay_port || env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE")) {
++    unsigned port = 0;
++    // The manager owns this loopback relay. A numeric port prevents extra
++    // proxy entries, bypass rules, direct routes, or secrets in the handoff.
++    CHECK(relay_port && base::StringToUint(*relay_port, &port) &&
++          port > 0 && port <= 65535);
++    net::ProxyConfig proxy_config;
++    proxy_config.proxy_rules().ParseFromString("http://127.0.0.1:" +
++                                               base::NumberToString(port));
++    proxy_config.proxy_rules().bypass_rules.ParseFromString("<-loopback>");
++    auto annotation = net::DefineNetworkTrafficAnnotation(
++        "azwah_profile_proxy", R"(
++          semantics {
++            sender: "Azwah managed profile proxy"
++            description:
++              "Routes Chromium network requests through the proxy assigned to "
++              "the active Azwah profile by the user."
++            trigger: "An Azwah profile with an assigned proxy is running."
++            data: "Proxy route configuration for the profile."
++            destination: LOCAL
++          }
++          policy {
++            cookies_allowed: NO
++            setting: "The user assigns the proxy in Azwah profile settings."
++            policy_exception_justification:
++              "Proxy assignment is managed by the Azwah profile manager."
++          })");
++    return net::ProxyConfigWithAnnotation(proxy_config, annotation);
++  }
++#endif
++  return std::nullopt;
++}
++
++}  // namespace
++
+ ProxyConfigMonitor::ProxyConfigMonitor(Profile* profile) {
+   CHECK_CURRENTLY_ON(content::BrowserThread::UI, base::NotFatalUntil::M161);
+   CHECK(profile, base::NotFatalUntil::M161);
+@@ -97,6 +142,12 @@ ProxyConfigMonitor::~ProxyConfigMonitor() {
+ 
+ void ProxyConfigMonitor::AddToNetworkContextParams(
+     network::mojom::NetworkContextParams* network_context_params) {
++  if (auto azwah_config = GetAzwahProxyConfig()) {
++    // A managed context receives only this fixed route. Do not attach the
++    // listener for changes from system preferences, policy, or extensions.
++    network_context_params->initial_proxy_config = std::move(*azwah_config);
++    return;
++  }
+   mojo::PendingRemote<network::mojom::ProxyConfigClient> proxy_config_client;
+   network_context_params->proxy_config_client_receiver =
+       proxy_config_client.InitWithNewPipeAndPassReceiver();
+@@ -124,6 +175,9 @@ std::optional<bool> ProxyConfigMonitor::IsProxyConfigured() const {
+   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+             !BrowserThread::IsThreadInitialized(BrowserThread::UI),
+         base::NotFatalUntil::M162);
++  if (GetAzwahProxyConfig()) {
++    return true;
++  }
+   net::ProxyConfigWithAnnotation proxy_config;
+   net::ProxyConfigService::ConfigAvailability availability =
+       proxy_config_service_->GetLatestProxyConfig(&proxy_config);
+diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
+index a6d969df56d13d94eaa968934f909d6fd23b5f2f..cc934d8b8249a2b858d72f3d6a6f595e8c4992ec 100644
+--- a/chrome/install_static/chromium_install_modes.h
++++ b/chrome/install_static/chromium_install_modes.h
+@@ -17,11 +17,11 @@ namespace install_static {
+ 
+ // The brand-specific company name to be included as a component of the install
+ // and user data directory paths. May be empty if no such dir is to be used.
+-inline constexpr wchar_t kCompanyPathName[] = L"";
++inline constexpr wchar_t kCompanyPathName[] = L"Azwah";
+ 
+ // The brand-specific product name to be included as a component of the install
+ // and user data directory paths.
+-inline constexpr wchar_t kProductPathName[] = L"Chromium";
++inline constexpr wchar_t kProductPathName[] = L"Azwah Browser";
+ 
+ // The brand-specific safe browsing client name.
+ inline constexpr char kSafeBrowsingName[] = "chromium";
+@@ -54,15 +54,15 @@ inline constexpr auto kInstallModes = std::to_array<InstallConstants>({
+         .logo_suffix = L"",  // No logo suffix for the primary install mode.
+         .app_guid =
+             L"",  // Empty app_guid since no integration with Google Update.
+-        .base_app_name = L"Chromium",              // A distinct base_app_name.
+-        .base_app_id = L"Chromium",                // A distinct base_app_id.
+-        .browser_prog_id_prefix = L"ChromiumHTM",  // Browser ProgID prefix.
++        .base_app_name = L"Azwah Browser",              // A distinct base_app_name.
++        .base_app_id = L"AzwahBrowser",                // A distinct base_app_id.
++        .browser_prog_id_prefix = L"AzwahBrowserHTM",  // Browser ProgID prefix.
+         .browser_prog_id_description =
+-            L"Chromium HTML Document",  // Browser ProgID description.
+-        .direct_launch_url_scheme = "chromium",
+-        .pdf_prog_id_prefix = L"ChromiumPDF",  // PDF ProgID prefix.
++            L"Azwah Browser HTML Document",  // Browser ProgID description.
++        .direct_launch_url_scheme = "azwah-browser",
++        .pdf_prog_id_prefix = L"AzwahBrowserPDF",  // PDF ProgID prefix.
+         .pdf_prog_id_description =
+-            L"Chromium PDF Document",  // PDF ProgID description.
++            L"Azwah Browser PDF Document",  // PDF ProgID description.
+         .active_setup_guid =
+             L"{7D2B3E1D-D096-4594-9D8F-A6667F12E0AC}",  // Active Setup
+                                                         // GUID.
+diff --git a/services/device/geolocation/geolocation_context.cc b/services/device/geolocation/geolocation_context.cc
+index 51f2529b18dc81f2386b9028ccc903aa492e5270..da6d490ff8070707bee47dde1e3dc71b895b2c08 100644
+--- a/services/device/geolocation/geolocation_context.cc
++++ b/services/device/geolocation/geolocation_context.cc
+@@ -4,10 +4,16 @@
+ 
+ #include "services/device/geolocation/geolocation_context.h"
+ 
++#include <cmath>
+ #include <utility>
+ #include <vector>
+ 
++#include "base/environment.h"
+ #include "base/memory/ptr_util.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
++#include "base/time/time.h"
++#include "build/build_config.h"
+ #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+ #include "services/device/geolocation/geolocation_impl.h"
+ #include "services/device/geolocation/geolocation_provider.h"
+@@ -15,7 +21,47 @@
+ 
+ namespace device {
+ 
+-GeolocationContext::GeolocationContext() = default;
++namespace {
++
++bool UsesProxyLocation() {
++#if BUILDFLAG(IS_WIN)
++  return base::Environment::Create()->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE");
++#else
++  return false;
++#endif
++}
++
++mojom::GeopositionResultPtr ReadProxyLocation() {
++  const auto value = base::Environment::Create()->GetVar(
++      "AZWAH_NATIVE_PROXY_GEOLOCATION");
++  if (value) {
++    const auto fields = base::SplitStringPiece(
++        *value, ",", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++    auto position = mojom::Geoposition::New();
++    if (fields.size() == 3 &&
++        base::StringToDouble(fields[0], &position->latitude) &&
++        base::StringToDouble(fields[1], &position->longitude) &&
++        base::StringToDouble(fields[2], &position->accuracy) &&
++        std::isfinite(position->latitude) && std::isfinite(position->longitude) &&
++        std::isfinite(position->accuracy) && std::abs(position->latitude) <= 90 &&
++        std::abs(position->longitude) <= 180 && position->accuracy > 0) {
++      position->timestamp = base::Time::Now();
++      position->is_precise = false;
++      return mojom::GeopositionResult::NewPosition(std::move(position));
++    }
++  }
++  // A managed profile with missing or invalid data must never query the host.
++  return mojom::GeopositionResult::NewError(mojom::GeopositionError::New(
++      mojom::GeopositionErrorCode::kPositionUnavailable, "", ""));
++}
++
++}  // namespace
++
++GeolocationContext::GeolocationContext() {
++  if (UsesProxyLocation()) {
++    geoposition_override_ = ReadProxyLocation();
++  }
++}
+ 
+ GeolocationContext::~GeolocationContext() = default;
+ 
+@@ -88,6 +134,9 @@ void GeolocationContext::OnConnectionError(GeolocationImpl* impl) {
+ 
+ void GeolocationContext::SetOverride(
+     mojom::GeopositionResultPtr geoposition_result) {
++  if (UsesProxyLocation()) {
++    return;
++  }
+   geoposition_override_ = std::move(geoposition_result);
+   for (auto& impl : impls_) {
+     impl->SetOverride(*geoposition_override_);
+@@ -95,6 +144,9 @@ void GeolocationContext::SetOverride(
+ }
+ 
+ void GeolocationContext::ClearOverride() {
++  if (UsesProxyLocation()) {
++    return;
++  }
+   geoposition_override_.reset();
+   for (auto& impl : impls_) {
+     impl->ClearOverride();
+diff --git a/services/device/time_zone_monitor/time_zone_monitor_win.cc b/services/device/time_zone_monitor/time_zone_monitor_win.cc
+index 5b6d56387d3ad3f59841dea7c0ec41ac965b258d..370689a92f8d8c906525e20fe9d799a090e4ab68 100644
+--- a/services/device/time_zone_monitor/time_zone_monitor_win.cc
++++ b/services/device/time_zone_monitor/time_zone_monitor_win.cc
+@@ -9,6 +9,7 @@
+ #include <memory>
+ 
+ #include "base/callback_list.h"
++#include "base/environment.h"
+ #include "base/functional/bind.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/memory/weak_ptr.h"
+@@ -43,7 +44,9 @@ class TimeZoneMonitorWin : public TimeZoneMonitor {
+       scoped_refptr<base::SequencedTaskRunner> file_task_runner)
+       : main_task_runner_(base::SingleThreadTaskRunner::GetCurrentDefault()),
+         file_task_runner_(file_task_runner) {
+-    InitializeCurrentPlatformTimeZone();
++    if (!use_profile_time_zone_) {
++      InitializeCurrentPlatformTimeZone();
++    }
+   }
+   TimeZoneMonitorWin(const TimeZoneMonitorWin&) = delete;
+   TimeZoneMonitorWin& operator=(const TimeZoneMonitorWin&) = delete;
+@@ -52,7 +55,8 @@ class TimeZoneMonitorWin : public TimeZoneMonitor {
+ 
+  private:
+   void OnWndProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+-    if (message == WM_TIMECHANGE && !pending_update_notification_tasks_) {
++    if (!use_profile_time_zone_ && message == WM_TIMECHANGE &&
++        !pending_update_notification_tasks_) {
+       // Traces show that in some cases there are multiple WM_TIMECHANGE while
+       // performing a power resume. Only sending one is enough
+       // (http://crbug.com/1074036).
+@@ -116,6 +120,8 @@ class TimeZoneMonitorWin : public TimeZoneMonitor {
+     }
+   }
+ 
++  const bool use_profile_time_zone_ =
++      base::Environment::Create()->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE");
+   base::CallbackListSubscription hwnd_subscription_ =
+       gfx::SingletonHwnd::GetInstance()->RegisterCallback(
+           base::BindRepeating(&TimeZoneMonitorWin::OnWndProc,
