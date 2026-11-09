@@ -40,6 +40,7 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
+import { launchAzwahNative } from './browser-runtime/azwah-native.js';
 import { launchPrivacyEngine, PROXY_IDENTITY_EXIT, PROXY_IDENTITY_ERROR } from './browser-runtime/privacy-engine.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import { firefoxSessionStatus, borrowFirefoxSession, releaseFirefoxSession } from './firefox-session-manager.js';
@@ -286,7 +287,7 @@ async function doLaunch(p, opts = {}) {
   await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null, entry = null;
-  let launchPlan = null;
+  let launchPlan = null, azwahLaunch = null;
   try {
     if ((p.browserEngine || 'chromium') === 'firefox') {
       const adv = (await import('./advanced-settings.js')).validateAdvancedSettings(p.advancedSettings || {});
@@ -322,15 +323,19 @@ async function doLaunch(p, opts = {}) {
       return runInfo(p.id);
     }
     const dedicated = p.advancedSettings?.runtime === 'privacy';
-    if (!dedicated) launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
+    const azwah = p.advancedSettings?.runtime === 'azwah-native';
+    if (!dedicated && !azwah) launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
     relayUrl = launchPlan?.relayUrl || null;
     const { args, plan, regional, cdpPort } = launchPlan || {};
     const preferencesBaseline = readPreferences(dir);
     assertLaunchNotCancelled(p.id);
 
-    if (dedicated || launchPlan.runtime === 'native') {
-      const native = dedicated ? await launchPrivacyEngine(p, dir, { ...opts, automation }, () => assertLaunchNotCancelled(p.id))
-        : await launchNativeChromium(launchPlan);
+    if (azwah || dedicated || launchPlan.runtime === 'native') {
+      const checkCancelled = () => assertLaunchNotCancelled(p.id);
+      if (azwah) azwahLaunch = await launchAzwahNative(p, dir, { ...opts, automation }, checkCancelled);
+      const native = azwahLaunch || (dedicated
+        ? await launchPrivacyEngine(p, dir, { ...opts, automation }, checkCancelled)
+        : await launchNativeChromium(launchPlan));
       relayUrl = native.relayUrl || relayUrl;
       markContextReady(metricsHandle);
       entry = {
@@ -358,7 +363,7 @@ async function doLaunch(p, opts = {}) {
       }
       setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
       if (native.proc.exitCode !== null || native.proc.signalCode !== null) onClosed(p.id, null);
-      emit('profile:started', p.id, { runtime: dedicated ? 'privacy' : 'native' });
+      emit('profile:started', p.id, { runtime: azwah ? 'azwah-native' : dedicated ? 'privacy' : 'native' });
       console.log('NATIVE-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid, spawnPid: native.spawnPid }));
       finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native' });
       return runInfo(p.id);
@@ -463,6 +468,17 @@ async function doLaunch(p, opts = {}) {
     return runInfo(p.id);
   } catch (e) {
     entry?.detachTermination?.();
+    if (azwahLaunch) {
+      live.delete(p.id);
+      await azwahLaunch.cleanup();
+      await killTree(azwahLaunch.browserPid, { expect: dir }).catch(() => {});
+      if (isAlive(azwahLaunch.browserPid)) {
+        e.preserveProfileLock = true;
+        e.browserPid = azwahLaunch.browserPid;
+      } else {
+        try { db.prepare('DELETE FROM running WHERE id=?').run(p.id); } catch {}
+      }
+    }
     if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
     if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
     if (e.preserveProfileLock) updateLock(dir, { browserPid: e.browserPid });

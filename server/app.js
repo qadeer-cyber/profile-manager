@@ -233,7 +233,8 @@ const publicP = p => {
     } catch { /* profile dir not created yet */ }
   }
   out.tabRestore = tabRestore;
-  const mode = p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
+  const mode = p.advancedSettings?.runtime === 'azwah-native' && proxy_id
+    ? 'auto' : p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
   if (mode === 'auto' && proxy_id) {
     const location = getSetting('proxy-location:' + p.id, null);
     if (location?.proxyId === proxy_id && location.proxyRevision === p.proxy?.revision && location.expiresAt > Date.now()) out.lastProxyLocation = location;

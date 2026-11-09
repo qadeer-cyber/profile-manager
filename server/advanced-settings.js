@@ -163,7 +163,7 @@ function validatePreferences(value, previous) {
 function finishAdvanced(settings) {
   const out = clone(settings);
   out.runtime ??= 'compatibility';
-  if (!['compatibility', 'privacy'].includes(out.runtime)) invalid('Unknown Chromium runtime');
+  if (!['compatibility', 'privacy', 'azwah-native'].includes(out.runtime)) invalid('Unknown Chromium runtime');
   out.experimental = validateExperimental(out.experimental);
   out.fingerprint = validateFingerprint(out.fingerprint || DEFAULT_FINGERPRINT, out.preferences);
   return out;

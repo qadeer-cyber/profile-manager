@@ -58,6 +58,151 @@ index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..0414ee6fd12da4a3aff50a2787b99df0
  COPYRIGHT=Copyright @LASTCHANGE_YEAR@ The Chromium Authors. All rights reserved.
  MAC_BUNDLE_ID=org.chromium.Chromium
  MAC_CREATOR_CODE=Cr24
+diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
+index 41b28743dfe526afd45efe1dda643e3750b28a11..6686ae13ba5a337a9a9e917a3bcb9f9bc3abee42 100644
+--- a/chrome/browser/chrome_browser_main.cc
++++ b/chrome/browser/chrome_browser_main.cc
+@@ -8,18 +8,23 @@
+ #include <string>
+ #include <string_view>
+ #include <tuple>
++#include <optional>
+ #include <utility>
+ 
+ #include "base/base_switches.h"
+ #include "base/check.h"
+ #include "base/command_line.h"
++#include "base/environment.h"
+ #include "base/feature_list.h"
+ #include "base/files/file_path.h"
+ #include "base/files/file_util.h"
++#include "base/functional/bind.h"
++#include "base/json/json_reader.h"
+ #include "base/memory/raw_ptr.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/metrics/histogram_macros.h"
+ #include "base/path_service.h"
++#include "base/run_loop.h"
+ #include "base/strings/strcat.h"
+ #include "base/task/current_thread.h"
+ #include "base/task/single_thread_task_runner.h"
+@@ -134,6 +139,13 @@
+ #include "media/audio/audio_manager.h"
+ #include "media/base/localized_strings.h"
+ #include "net/base/data_url.h"
++#include "net/base/ip_address.h"
++#include "net/base/load_flags.h"
++#include "net/traffic_annotation/network_traffic_annotation.h"
++#include "services/network/public/cpp/resource_request.h"
++#include "services/network/public/cpp/shared_url_loader_factory.h"
++#include "services/network/public/cpp/simple_url_loader.h"
++#include "url/gurl.h"
+ #include "net/base/module/net_module.h"
+ #include "pdf/buildflags.h"
+ #include "rlz/buildflags/buildflags.h"
+@@ -362,6 +374,89 @@
+ 
+ namespace {
+ 
++#if BUILDFLAG(IS_WIN)
++bool VerifyAzwahManagedStartup(SystemNetworkContextManager* manager) {
++  auto env = base::Environment::Create();
++  const auto receipt = env->GetVar("AZWAH_NATIVE_READY_PATH");
++  const auto exit_ip = env->GetVar("AZWAH_NATIVE_EXPECTED_EXIT_IP");
++  const bool managed_proxy = env->HasVar("AZWAH_NATIVE_PROXY_RELAY_PORT") ||
++                             env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE");
++  if (!receipt) {
++    return !managed_proxy && !exit_ip;
++  }
++  const auto path = base::FilePath::FromUTF8Unsafe(*receipt);
++  if (!path.IsAbsolute() || managed_proxy != exit_ip.has_value()) {
++    return false;
++  }
++  if (exit_ip) {
++    net::IPAddress expected;
++    if (!manager || !expected.AssignFromIPLiteral(*exit_ip)) {
++      return false;
++    }
++    auto factory = manager->GetSharedURLLoaderFactory();
++    auto request = std::make_unique<network::ResourceRequest>();
++    request->url = GURL("https://api64.ipify.org/?format=json");
++    request->credentials_mode = network::mojom::CredentialsMode::kOmit;
++    request->redirect_mode = network::mojom::RedirectMode::kError;
++    request->load_flags = net::LOAD_DISABLE_CACHE;
++    const auto annotation = net::DefineNetworkTrafficAnnotation(
++        "azwah_native_exit_check", R"(
++          semantics {
++            sender: "Azwah managed browser startup"
++            description: "Checks the proxy exit IP before opening profile tabs."
++            trigger: "Starting an Azwah profile with an assigned proxy."
++            data: "The source IP of the connection."
++            destination: OTHER
++          }
++          policy {
++            cookies_allowed: NO
++            setting: "Azwah checks the proxy when one is assigned to a profile."
++            policy_exception_justification: "Required for managed profiles."
++          })");
++    auto loader = network::SimpleURLLoader::Create(std::move(request), annotation);
++    loader->SetTimeoutDuration(base::Seconds(10));
++    base::RunLoop loop(base::RunLoop::Type::kNestableTasksAllowed);
++    std::optional<std::string> body;
++    loader->DownloadToString(
++        factory.get(),
++        base::BindOnce(
++            [](base::RunLoop* loop, std::optional<std::string>* result,
++               std::optional<std::string> response) {
++              *result = std::move(response);
++              loop->Quit();
++            },
++            &loop, &body),
++        1024);
++    loop.Run();
++    auto parsed = body ? base::JSONReader::ReadDict(*body, base::JSON_PARSE_RFC)
++                       : std::nullopt;
++    const auto* value = parsed ? parsed->FindString("ip") : nullptr;
++    net::IPAddress observed;
++    if (!value || !observed.AssignFromIPLiteral(*value) || observed != expected) {
++      return false;
++    }
++  }
++  base::RunLoop write_loop(base::RunLoop::Type::kNestableTasksAllowed);
++  bool written = false;
++  base::ThreadPool::PostTaskAndReplyWithResult(
++      FROM_HERE, {base::MayBlock()},
++      base::BindOnce(
++          [](base::FilePath receipt_path, std::string value) {
++            return base::WriteFile(receipt_path, value);
++          },
++          path, exit_ip.value_or("direct")),
++      base::BindOnce(
++          [](base::RunLoop* loop, bool* result, bool success) {
++            *result = success;
++            loop->Quit();
++          },
++          &write_loop, &written));
++  write_loop.Run();
++  return written;
++}
++#endif
++
++
+ #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || \
+     BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+ constexpr base::FilePath::CharType kMediaHistoryDatabaseName[] =
+@@ -2154,6 +2249,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+   }
+ #endif
+ 
++#if BUILDFLAG(IS_WIN)
++  if (!VerifyAzwahManagedStartup(
++          browser_process_->system_network_context_manager())) {
++    return content::RESULT_CODE_NORMAL_EXIT;
++  }
++#endif
+   // This step is costly.
+   if (browser_creator_->Start(*base::CommandLine::ForCurrentProcess(),
+                               base::FilePath(), profile_info,
 diff --git a/chrome/browser/net/proxy_config_monitor.cc b/chrome/browser/net/proxy_config_monitor.cc
 index 387102abd88a010459ef3a5ba4880c5621a96fa3..dbab9e8d91dda2aaa04f06e36b41b3ce3ff927f7 100644
 --- a/chrome/browser/net/proxy_config_monitor.cc
