@@ -84,6 +84,11 @@ jobs:
           git -C $tools checkout --detach FETCH_HEAD
           if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $pin) { throw 'depot_tools pin did not verify.' }
           @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_DEPOT_TOOLS_SHA=$pin") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Initialize and qualify pinned depot_tools Python before Chromium sync
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:AZWAH_DEPOT_TOOLS_SHA
       - name: Sync, patch, generate GN and compile native Chromium
         shell: pwsh
         run: |
