@@ -15,12 +15,45 @@ const error = (message, code = 'AZWAH_NATIVE_UNAVAILABLE') =>
   Object.assign(new Error(message), { status: 409, code });
 
 function developmentBinary() {
+  if (process.platform !== 'win32') throw error('Native Azwah Chromium is Windows-only.');
+  if (isPackaged()) {
+    // Never substitute the manager's Electron runtime or the stock bundled Chromium.
+    // This directory exists only in the genuine-native, provenance-gated Ultimate build.
+    const directory = path.join(process.resourcesPath, 'native-chromium');
+    const manifestFile = path.join(directory, 'BASELINE-MANIFEST.json');
+    let manifest;
+    try { manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8')); }
+    catch { throw error('This Ultimate installation has no qualified patched native Chromium payload.'); }
+    if (manifest.kind !== 'azwah-native-source-development' ||
+        manifest.chromiumCommit !== 'b0cbb99d9f0f9fbbb6c6780e73b17984e991c866' ||
+        manifest.depotToolsCommit !== '96a7c1418eedaa6bea333a8941e8a0078681b4d0' ||
+        !/^[a-f0-9]{64}$/i.test(manifest.sourcePatchSha256 || '')) {
+      throw error('Packaged Chromium is not a pinned Azwah native source build.');
+    }
+    const fileHash = name => {
+      const entries = Array.isArray(manifest.files) ? manifest.files.filter(item => item?.name === name) : [];
+      if (entries.length !== 1 || !/^[a-f0-9]{64}$/i.test(entries[0].sha256 || '')) {
+        throw error('Packaged Azwah native binary provenance is incomplete: ' + name);
+      }
+      const file = path.join(directory, name);
+      try {
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size !== entries[0].bytes) {
+          throw new Error('Invalid binary file');
+        }
+      } catch {
+        throw error('Packaged Azwah native binary is missing or has the wrong size: ' + name);
+      }
+      return entries[0].sha256.toLowerCase();
+    };
+    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll') };
+  }
   const exe = process.env.AZWAH_NATIVE_CHROMIUM_EXE;
   const hash = process.env.AZWAH_NATIVE_CHROMIUM_SHA256;
   const dllHash = process.env.AZWAH_NATIVE_CHROMIUM_DLL_SHA256;
-  if (process.platform !== 'win32' || isPackaged() || !exe || !path.isAbsolute(exe) ||
+  if (!exe || !path.isAbsolute(exe) ||
       !hash || !/^[a-f0-9]{64}$/i.test(hash) || !dllHash || !/^[a-f0-9]{64}$/i.test(dllHash)) {
-    throw error('Native Azwah requires a qualified Windows development build configured with the executable path and SHA-256 for both chrome.exe and chrome.dll.');
+    throw error('Native Azwah requires an explicitly qualified development build or a genuine packaged native runtime.');
   }
   return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase() };
 }
