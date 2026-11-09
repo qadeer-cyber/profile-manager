@@ -1,0 +1,141 @@
+name: Azwah two-runner native object portability proof
+on:
+  push:
+    branches: [qa/azwah-two-runner-shard-poc]
+    paths: [.github/workflows/azwah-two-runner-shard-poc.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: azwah-two-runner-shard-poc
+  cancel-in-progress: false
+
+# Proof of object-file portability, NOT production Chromium sharding.
+# Two hosted Windows workers compile independently; a third small merge job links.
+# No Chromium checkout, cache, release, or installer is produced.
+jobs:
+  compile:
+    if: ${{ !github.event.repository.private }}
+    name: "Compile ${{ matrix.shard }} on Windows"
+    runs-on: windows-2025
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [left, right]
+    env:
+      SHARD: ${{ matrix.shard }}
+    steps:
+      - name: Compile one independent native object and record provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force shard-out | Out-Null
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          if (!(Test-Path -LiteralPath $vswhere)) { throw 'vswhere unavailable' }
+          $vsroot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (!$vsroot) { throw 'MSVC x64 toolchain unavailable' }
+          $toolset = Get-ChildItem -LiteralPath (Join-Path $vsroot 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          if (!$toolset) { throw 'MSVC toolset unavailable' }
+          $cl = Join-Path $toolset.FullName 'bin/Hostx64/x64/cl.exe'
+          if (!(Test-Path -LiteralPath $cl)) { throw 'x64 cl.exe unavailable' }
+          $shard = $env:SHARD
+          if ($shard -eq 'left') {
+            $code = 'extern "C" __declspec(dllexport) int azwah_left(int x) { return x * 2; }'
+          } elseif ($shard -eq 'right') {
+            $code = 'extern "C" __declspec(dllexport) int azwah_right(int x) { return x + 7; }'
+          } else { throw "Unexpected shard $shard" }
+          $source = Join-Path $PWD "$shard.cpp"
+          $object = Join-Path $PWD "shard-out/$shard.obj"
+          Set-Content -LiteralPath $source -Value $code -Encoding ascii
+          & $cl /nologo /c /W4 "/Fo:$object" $source
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $object)) { throw 'Shard compilation failed' }
+          [ordered]@{
+            shard = $shard
+            commit = $env:GITHUB_SHA
+            toolset = $toolset.Name
+            compiler_sha256 = (Get-FileHash -LiteralPath $cl -Algorithm SHA256).Hash.ToLowerInvariant()
+            object_sha256 = (Get-FileHash -LiteralPath $object -Algorithm SHA256).Hash.ToLowerInvariant()
+            object_bytes = (Get-Item -LiteralPath $object).Length
+          } | ConvertTo-Json | Set-Content -LiteralPath shard-out/manifest.json -Encoding utf8
+          Write-Output "Compiled $shard on $env:RUNNER_NAME; toolset $($toolset.Name)"
+      - name: Upload native object checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: shard-${{ matrix.shard }}
+          path: shard-out/
+          if-no-files-found: error
+          retention-days: 1
+
+  link-and-verify:
+    name: Link objects across runners and validate exports
+    needs: compile
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - name: Download both independent object artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shard-*
+          path: incoming
+      - name: Validate provenance and link one Windows DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $manifests = @{}
+          foreach ($shard in @('left','right')) {
+            $folder = Join-Path $PWD "incoming/shard-$shard"
+            $manifestPath = Join-Path $folder 'manifest.json'
+            $objectPath = Join-Path $folder "$shard.obj"
+            if (!(Test-Path -LiteralPath $manifestPath) -or !(Test-Path -LiteralPath $objectPath)) {
+              throw "Missing artifact for $shard"
+            }
+            $m = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+            if ($m.shard -cne $shard -or $m.commit -cne $env:GITHUB_SHA) { throw "Invalid provenance for $shard" }
+            $actual = (Get-FileHash -LiteralPath $objectPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -cne $m.object_sha256) { throw "Object hash mismatch for $shard" }
+            $manifests[$shard] = $m
+          }
+          if ($manifests.left.compiler_sha256 -cne $manifests.right.compiler_sha256 -or
+              $manifests.left.toolset -cne $manifests.right.toolset) {
+            throw 'Shard toolchains differ. Cannot safely combine objects.'
+          }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsroot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (!$vsroot) { throw 'MSVC unavailable on merge runner' }
+          $toolset = Get-ChildItem -LiteralPath (Join-Path $vsroot 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $bin = Join-Path $toolset.FullName 'bin/Hostx64/x64'
+          $cl = Join-Path $bin 'cl.exe'
+          $link = Join-Path $bin 'link.exe'
+          $dumpbin = Join-Path $bin 'dumpbin.exe'
+          if ((Get-FileHash -LiteralPath $cl -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifests.left.compiler_sha256) {
+            throw 'Merge runner compiler does not match shard workers'
+          }
+          New-Item -ItemType Directory -Force merged | Out-Null
+          $out = Join-Path $PWD 'merged/azwah-two-shard-proof.dll'
+          $left = Join-Path $PWD 'incoming/shard-left/left.obj'
+          $right = Join-Path $PWD 'incoming/shard-right/right.obj'
+          & $link /NOLOGO /DLL /NOENTRY /NODEFAULTLIB /MACHINE:X64 "/OUT:$out" $left $right
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $out)) { throw 'Native object merge/link failed' }
+          $exports = & $dumpbin /exports $out | Out-String
+          if ($LASTEXITCODE -ne 0 -or $exports -notmatch 'azwah_left' -or $exports -notmatch 'azwah_right') {
+            throw 'Linked DLL is missing one or both native exports'
+          }
+          $hash = (Get-FileHash -LiteralPath $out -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            '## Two-runner native checkpoint proof'
+            '- Two independent Windows compile jobs succeeded.'
+            '- Both object hashes and compiler toolchains matched.'
+            '- Third merge job linked both objects into one native Windows DLL.'
+            '- Both exports were verified.'
+            "- DLL SHA256: `$hash`"
+            '- **Not tested:** Chromium GN/Ninja sharding, dependency graph, large state transfers, native browser or installer.'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          Write-Output "Cross-runner link verified: $out sha256=$hash"
+      - name: Keep tiny proof artifact for inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-two-runner-linked-proof
+          path: merged/azwah-two-shard-proof.dll
+          if-no-files-found: error
+          retention-days: 1
