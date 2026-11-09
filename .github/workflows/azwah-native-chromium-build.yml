@@ -51,7 +51,7 @@ jobs:
           }
           ./scripts/qualify-native-chromium-patch.ps1 -Source $source -Patch native-chromium/windows-source.patch -Apply
   compile:
-    needs: qualify:
+    needs: qualify
     if: >-
       ${{ !github.event.repository.private &&
           github.ref == 'refs/heads/feature/azwah-privacy-engine-integration' &&
