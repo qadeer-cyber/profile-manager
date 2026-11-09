@@ -27,6 +27,20 @@ $ChromiumSha = (Get-Content native-chromium/upstream.json -Raw | ConvertFrom-Jso
 
 The patch adds Azwah product strings and Windows profile path and registration identifiers. In managed mode, Chromium network contexts use a single fixed manager relay, ICU initializes the supplied IANA timezone, and the geolocation service uses the supplied approximate coordinates and accuracy after normal Chromium permission checks. Incomplete managed geolocation returns position unavailable. The manager does not expose this runtime yet. The relay lifecycle, Chromium-observed startup verification, rotation handling, and installed acceptance must be connected before enabling it.
 
+## Linux-to-Windows development build
+
+The cross-build script uses Chromium's Windows target support. Point it at a clean, pinned depot_tools checkout and a locally supplied toolchain archive made with upstream's `package_from_installed.py` from the matching Visual Studio and Windows SDK installation.
+
+```sh
+python3 scripts/build-native-chromium-cross.py --workspace "$AZWAH_CROSS_WORKSPACE" \
+  --depot-tools "$AZWAH_DEPOT_TOOLS" --depot-tools-commit "$AZWAH_DEPOT_TOOLS_SHA" \
+  --sdk-archive "$AZWAH_WINDOWS_TOOLCHAIN_ZIP"
+```
+
+This lane uses a shallow dependency sync, two jobs by default, and a release-mode browser target with debug symbols disabled. It checks free space before and during child processes and stops at the configured reserve. The reserve limits disk exhaustion. It does not establish that the source, dependencies and build outputs will fit. The development target excludes installer packaging and requires separate Windows execution tests.
+
+[Chromium Windows cross-compilation](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/win_cross.md)
+
 ## Source changes and profile integration
 
 | Area | Implementation boundary |

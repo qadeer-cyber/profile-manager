@@ -151,6 +151,44 @@ index 387102abd88a010459ef3a5ba4880c5621a96fa3..dbab9e8d91dda2aaa04f06e36b41b3ce
    net::ProxyConfigWithAnnotation proxy_config;
    net::ProxyConfigService::ConfigAvailability availability =
        proxy_config_service_->GetLatestProxyConfig(&proxy_config);
+diff --git a/chrome/browser/renderer_preferences_util.cc b/chrome/browser/renderer_preferences_util.cc
+index 8a64a3bcb6a1bfbaa9428af8fafb28435901ea4b..496194b2ccc448b3865755790e9242d3046fa4ce 100644
+--- a/chrome/browser/renderer_preferences_util.cc
++++ b/chrome/browser/renderer_preferences_util.cc
+@@ -9,6 +9,7 @@
+ #include <string>
+ #include <vector>
+ 
++#include "base/environment.h"
+ #include "base/logging.h"
+ #include "base/strings/string_number_conversions.h"
+ #include "base/strings/string_util.h"
+@@ -47,7 +48,6 @@
+ #endif
+ 
+ #if BUILDFLAG(IS_LINUX)
+-#include "base/environment.h"
+ #include "base/nix/xdg_util.h"
+ #include "ui/linux/linux_ui.h"
+ #endif
+@@ -205,6 +205,17 @@ void UpdateFromSystemSettings(blink::RendererPreferences* prefs,
+                  &prefs->webrtc_udp_min_port, &prefs->webrtc_udp_max_port);
+   prefs->webrtc_local_ips_allowed_urls = GetLocalIpsAllowedUrls(
+       pref_service->GetList(prefs::kWebRtcLocalIpsAllowedUrls));
++#if BUILDFLAG(IS_WIN)
++  const auto env = base::Environment::Create();
++  if (env->HasVar("AZWAH_NATIVE_PROXY_RELAY_PORT") ||
++      env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE")) {
++    // Per-origin preferences must not opt a managed session into direct ICE.
++    prefs->webrtc_ip_handling_policy =
++        blink::ToWebRTCIPHandlingPolicy("disable_non_proxied_udp");
++    prefs->webrtc_ip_handling_urls.clear();
++    prefs->webrtc_local_ips_allowed_urls.clear();
++  }
++#endif
+   prefs->accept_languages = GetLanguageListForProfile(
+       profile, pref_service->GetString(language::prefs::kAcceptLanguages));
+ #if !BUILDFLAG(IS_MAC)
 diff --git a/chrome/install_static/chromium_install_modes.h b/chrome/install_static/chromium_install_modes.h
 index a6d969df56d13d94eaa968934f909d6fd23b5f2f..cc934d8b8249a2b858d72f3d6a6f595e8c4992ec 100644
 --- a/chrome/install_static/chromium_install_modes.h
