@@ -20,7 +20,9 @@ jobs:
       - name: Require prototype configuration and Issue 20 regression checks
         run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
       - name: Install pinned and checksummed Electron distribution
-        run: node node_modules/electron/install.js
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/stage-windows-electron.ps1
       - name: Package dedicated engine payload
         working-directory: engine-prototype
         env:
@@ -55,13 +57,15 @@ jobs:
           node-version: '22'
           cache: npm
       - name: Build actual Ultimate with the dedicated engine, Firefox and Office payload
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
           choco install 7zip nsis -y --no-progress
           npm ci
-          node node_modules/electron/install.js
+          ./scripts/stage-windows-electron.ps1
           Push-Location engine-prototype
           try { ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --config.electronDist=../node_modules/electron/dist --win dir --x64 --publish never }
           finally { Pop-Location }
