@@ -1,15 +1,23 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 import { resolveWindowsChromeStable } from '../server/browser-runtime/chrome-stable.js';
 
 test('visible signed Windows Chrome Stable applies manual location through the private pipe', { timeout: 120000 }, async () => {
   assert.equal(process.platform, 'win32');
-  const stable = await resolveWindowsChromeStable();
+  const execute = promisify(execFile);
+  const stable = await resolveWindowsChromeStable({ run: async (...args) => {
+    try { return await execute(...args); }
+    catch (error) {
+      console.error('Chrome identity probe failed:', error.code, String(error.stderr || '').slice(0, 1800));
+      throw error;
+    }
+  } });
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-stable-'));
   process.env.PM_DATA_DIR = dir;
   process.env.PM_API_TOKEN = 'stable-fixture-token';

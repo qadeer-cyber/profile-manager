@@ -29,7 +29,7 @@ $registry = @('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\c
 foreach ($key in $registry) {
   $entry = Get-Item -LiteralPath $key -ErrorAction SilentlyContinue
   if ($entry) {
-    $candidate = [Environment]::ExpandEnvironmentVariables([string]$entry.GetValue('')).Trim('"')
+    $candidate = [Environment]::ExpandEnvironmentVariables([string]$entry.GetValue('')).Trim([char]34)
     if ($candidate -match '^[A-Z]:\\\\.*\\\\Google\\\\Chrome\\\\Application\\\\chrome\\.exe$') { $paths += $candidate }
   }
 }
@@ -47,7 +47,7 @@ foreach ($candidate in ($paths | Select-Object -Unique)) {
   try {
     const system = process.env.SystemRoot || 'C:\\Windows';
     const { stdout } = await run(path.win32.join(system, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'),
-      ['-NoProfile', '-NonInteractive', '-Command', command], { timeout: 20000, windowsHide: true });
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], { timeout: 20000, windowsHide: true });
     result = stdout.trim() ? JSON.parse(stdout) : null;
   } catch { throw error('CHROME_STABLE_UNVERIFIED', 'Chrome Stable identity could not be verified. Check the official installation and try again.'); }
   if (!result || !path.win32.isAbsolute(result.path) || !versionPattern.test(result.version)) {

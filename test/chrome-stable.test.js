@@ -8,8 +8,10 @@ import { assertProfileVersion, resolveWindowsChromeStable } from '../server/brow
 test('requires discovered signed Chrome Stable metadata and rejects missing or old candidates', async () => {
   const candidate = { path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', version: '156.0.1.0' };
   const run = async (_file, args) => {
-    assert.match(args.at(-1), /Get-AuthenticodeSignature/);
-    assert.match(args.at(-1), /App Paths/);
+    assert.equal(args.at(-2), '-EncodedCommand');
+    const script = Buffer.from(args.at(-1), 'base64').toString('utf16le');
+    assert.match(script, /Get-AuthenticodeSignature/);
+    assert.match(script, /App Paths/);
     return { stdout: JSON.stringify(candidate) };
   };
   assert.deepEqual(await resolveWindowsChromeStable({ run }), candidate);
