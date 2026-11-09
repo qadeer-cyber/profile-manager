@@ -162,10 +162,11 @@ try {
     Push-Location -LiteralPath 'src'
     try {
         if ($AzwahSource -and -not $patchApplied) {
-            Invoke-BuildTool $git @('apply', '--check', $sourcePatch)
-            Invoke-BuildTool $git @('apply', $sourcePatch)
-            Invoke-BuildTool $git @('apply', '--reverse', '--check', $sourcePatch)
-            Invoke-BuildTool $git @('diff', '--check')
+            # Validate the Git index and raw Windows checkout before GN/Ninja.
+            & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -Apply
+        }
+        if ($AzwahSource -and $patchApplied) {
+            & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -AlreadyApplied
         }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
