@@ -94,9 +94,9 @@ test('Azwah manager launches five overlapping installed dedicated browser profil
       assert.match(evidence.ui.address, new RegExp('/profile_' + index));
       assert.equal(evidence.sandboxed, true);
       assert.equal(evidence.first.previous, null);
-      for (const result of [evidence.first, evidence.second]) {
+      for (const [tab, result] of [evidence.first, evidence.second].entries()) {
         assert.equal(result.timezone, profile.timezone);
-        assert.deepEqual(result.position, [profile.location.latitude, profile.location.longitude, profile.location.accuracy]);
+        assert.deepEqual(result.position, [profile.location.latitude, profile.location.longitude, profile.location.accuracy], 'Profile ' + index + ', tab ' + tab);
         assert.equal(result.storage, 'profile_' + index);
         assert.equal(result.cookie, 'qa=profile_' + index);
         assert.equal(result.node, 'undefined');

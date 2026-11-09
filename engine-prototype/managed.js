@@ -59,7 +59,8 @@ export async function startManaged(request, stage) {
   const eligible = (contents, permission, origin, details) => Boolean(location && !data.denyGeolocation &&
     contents && permission === 'geolocation' && details.isMainFrame && allowedUrl(origin) === allowedUrl(contents.getURL()) && allowedUrl(origin));
   web.setPermissionCheckHandler((contents, permission, origin, details) =>
-    eligible(contents, permission, origin, details) && permissions.has(permissionKey(contents, allowedUrl(origin))));
+    eligible(contents, permission, origin, details) &&
+    (data.verify === true || permissions.has(permissionKey(contents, allowedUrl(origin)))));
   web.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (!eligible(contents, permission, details.requestingUrl, details)) { callback(false); return; }
     const origin = allowedUrl(details.requestingUrl);
@@ -110,11 +111,13 @@ export async function startManaged(request, stage) {
     if (restoring || closed || data.verify) return;
     update({ tabs: tabs.map(tab => tab.webContents.getURL()) });
   }
+  const locationRefresh = new WeakMap();
   async function navigate(contents, value) {
     if (typeof value !== 'string' || value.length > 8192) throw new Error('Enter a valid address.');
     const url = /^https?:\/\//i.test(value) ? value : 'https://' + value;
     if (!allowedUrl(url)) throw new Error('Only secure HTTPS addresses are supported.');
     await contents.loadURL(url);
+    await locationRefresh.get(contents);
   }
   async function addTab(url) {
     if (starting || tabs.length >= 20) return;
@@ -160,7 +163,15 @@ export async function startManaged(request, stage) {
             if (!/Timezone override is already in effect/i.test(error.message)) throw error;
           }
         }
-        if (location) await contents.debugger.sendCommand('Emulation.setGeolocationOverride', location);
+        if (location) {
+          const applyLocation = () => contents.debugger.sendCommand('Emulation.setGeolocationOverride', location);
+          await applyLocation();
+          contents.on('dom-ready', () => {
+            const pending = applyLocation();
+            locationRefresh.set(contents, pending);
+            pending.catch(() => { if (!contents.isDestroyed()) app.exit(1); });
+          });
+        }
       }
       tabs.push(tab);
       active = tabs.length - 1;
@@ -234,7 +245,9 @@ export async function startManaged(request, stage) {
   });
   setInterval(() => { if (fs.existsSync(control + '.stop')) window.close(); }, 250).unref();
   if (data.verify === true) {
-    const observe = tab => tab.webContents.executeJavaScript(`(async () => ({
+    const observe = async tab => {
+      await locationRefresh.get(tab.webContents);
+      return tab.webContents.executeJavaScript(`(async () => ({
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       cookie: document.cookie, storage: localStorage.getItem('qa'), previous: globalThis.before ?? null,
       position: await new Promise(resolve => navigator.geolocation.getCurrentPosition(
@@ -242,6 +255,7 @@ export async function startManaged(request, stage) {
         ({code}) => resolve([code]), {timeout: 5000})),
       node: typeof require,
     }))()`);
+    };
     const first = await observe(tabs[0]);
     stage('first tab observed');
     async function until(predicate) {
