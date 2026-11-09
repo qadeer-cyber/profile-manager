@@ -141,8 +141,11 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {f.browserEngine !== 'firefox' && <label>Chromium runtime<select aria-label="Chromium runtime" value={advanced.runtime || 'compatibility'}
             onChange={event => setAdvanced({ ...advanced, runtime: event.target.value })}>
             <option value="compatibility">Chrome Stable compatibility</option>
-            <option value="privacy">Azwah Privacy Engine (QA)</option>
+            <option value="privacy">Azwah Privacy Engine (experimental)</option>
           </select></label>}
+          {f.browserEngine !== 'firefox' && advanced.runtime === 'privacy' && <p className="muted hint">
+            The experimental engine has its own browser storage. Switching runtimes keeps existing browser data in its original storage.
+          </p>}
           {f.browserEngine === 'firefox' && <div className="notice warn" role="note">
             <strong>Firefox limits:</strong> CookieRobot, Chromium extensions, and ChromeDriver do not apply. Use geckodriver when automation is enabled. This is stock Firefox, not a patched build.
           </div>}

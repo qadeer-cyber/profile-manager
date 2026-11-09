@@ -233,7 +233,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
           {p.tabRestore?.enabled && <span className="tag" title={p.running ? 'Tab restore on — saved on graceful stop' : p.tabRestore.savedCount ? `${p.tabRestore.savedCount} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet'}>Tab restore{p.tabRestore.savedCount ? ` · ${p.tabRestore.savedCount}` : ''}</span>}
           {p.cdp && <div className="mono" title="Automation endpoint">{p.cdp.wsEndpoint || p.cdp.debuggerAddress}</div>}</td>}
-        {columns.engine !== false && <td className="col-engine">{p.browserEngine === 'firefox' ? 'Firefox' : p.advancedSettings?.runtime === 'privacy' ? 'Azwah Privacy Engine' : 'Chromium'}</td>}
+        {columns.engine !== false && <td className="col-engine">{p.browserEngine === 'firefox' ? 'Firefox' : p.advancedSettings?.runtime === 'privacy' ? 'Azwah Privacy Engine (experimental)' : 'Chromium'}</td>}
         {columns.storage !== false && <td className="col-storage" title="Stored in the local data folder">Local</td>}
         {columns.folder !== false && <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>}
         {columns.proxy !== false && <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}</td>}

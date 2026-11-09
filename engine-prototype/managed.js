@@ -88,7 +88,7 @@ export async function startManaged(request, stage) {
     return data.verify === true && origin && !/^http:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin) ? null : origin;
   };
   const window = new BrowserWindow({
-    width: 1150, height: 780, show: false, title: 'Azwah Privacy Engine', autoHideMenuBar: true,
+    width: 1150, height: 780, show: false, title: 'Azwah Privacy Engine (experimental)', autoHideMenuBar: true,
     webPreferences: { ...isolated, partition: 'azwah-trusted-toolbar', preload: path.join(here, 'toolbar-preload.cjs') },
   });
   window.removeMenu();
