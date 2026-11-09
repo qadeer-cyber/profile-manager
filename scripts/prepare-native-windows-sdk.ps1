@@ -16,14 +16,24 @@ if (!$report.toolchainPresent) {
         if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation(?:,|$)') {
             throw 'The downloaded SDK bootstrapper did not verify as Microsoft-signed.'
         }
-        Write-Output "Microsoft SDK bootstrapper SHA-256: $((Get-FileHash -LiteralPath $installer).Hash)"
-        $features = @('OptionId.WindowsDesktopSoftwareDevelopmentKit', 'OptionId.DesktopCPPx64')
-        if (!$report.x64DbgHelpVersion -or [version]$report.x64DbgHelpVersion -lt [version]$report.requiredDebuggerVersion) {
-            $features += 'OptionId.WindowsDebuggingTools'
+        $sha = (Get-FileHash -LiteralPath $installer).Hash
+        if ($sha -ne 'E9F1BDE566381355E594E2F90DAF4F714EB5C7EF2C45C501CE236AFE2ABEA300') {
+            throw 'The signed SDK bootstrapper changed. Reverify the official release before updating its checksum.'
         }
-        $arguments = @('/quiet', '/norestart', '/features') + $features
+        Write-Output "Microsoft SDK bootstrapper SHA-256: $sha"
+        $features = @('OptionId.DesktopCPPx64')
+        if (!$report.x64DbgHelpVersion -or [version]$report.x64DbgHelpVersion -lt [version]$report.requiredDebuggerVersion) {
+            $features += 'OptionId.WindowsDesktopDebuggers'
+        }
+        $log = Join-Path $scratch 'sdk-install.log'
+        $arguments = @('/quiet', '/norestart', '/ceip', 'off', '/log', ('"' + $log + '"'), '/features') + $features
         $setup = Start-Process -FilePath $installer -ArgumentList $arguments -Wait -PassThru
-        if ($setup.ExitCode -ne 0) { throw "SDK installation returned $($setup.ExitCode)." }
+        if ($setup.ExitCode -ne 0) {
+            if (Test-Path -LiteralPath $log -PathType Leaf) {
+                Get-Content -LiteralPath $log -Tail 25
+            }
+            throw "SDK installation returned $($setup.ExitCode)."
+        }
     } finally {
         if (Test-Path -LiteralPath $installer -PathType Leaf) { Remove-Item -LiteralPath $installer }
         if (!(Get-ChildItem -LiteralPath $scratch -Force)) { Remove-Item -LiteralPath $scratch }
