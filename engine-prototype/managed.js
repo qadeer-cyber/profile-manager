@@ -116,7 +116,14 @@ export async function startManaged(request, stage) {
       if (timezone || location) {
         contents.debugger.attach('1.3');
         contents.debugger.on('detach', () => { if (!closed && tabs.includes(tab)) app.exit(1); });
-        if (timezone) await contents.debugger.sendCommand('Emulation.setTimezoneOverride', { timezoneId: timezone });
+        if (timezone) {
+          try { await contents.debugger.sendCommand('Emulation.setTimezoneOverride', { timezoneId: timezone }); }
+          catch (error) {
+            // Tabs sharing a renderer also share its timezone override. Every
+            // tab in this process uses the same configured profile timezone.
+            if (!/Timezone override is already in effect/i.test(error.message)) throw error;
+          }
+        }
         if (location) await contents.debugger.sendCommand('Emulation.setGeolocationOverride', location);
       }
       tabs.push(tab);
@@ -137,9 +144,12 @@ export async function startManaged(request, stage) {
   }
   window.on('resize', layout);
   ipcMain.handle('azwah-toolbar', async (event, action, value) => {
-    if (closed || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame) throw new Error('Invalid toolbar sender.');
+    if (closed || event.sender !== window.webContents || event.senderFrame?.parent !== null) throw new Error('Invalid toolbar sender.');
     if (action === 'state') { snapshot(); return; }
-    if (action === 'new') { await addTab(); return; }
+    if (action === 'new') {
+      try { await addTab(); } catch (error) { stage('New tab failed: ' + error.message); throw error; }
+      return;
+    }
     const tab = tabs[active];
     if (!tab) return;
     if (action === 'navigate') await navigate(tab.webContents, value);
@@ -157,6 +167,7 @@ export async function startManaged(request, stage) {
     snapshot();
   });
   stage('toolbar loading');
+  if (data.verify === true) window.webContents.on('console-message', event => stage('Toolbar console: ' + event.message));
   await window.loadFile(path.join(here, 'toolbar.html'));
   stage('toolbar loaded');
   await addTab(data.url);
@@ -182,7 +193,8 @@ export async function startManaged(request, stage) {
     async function until(predicate) {
       const deadline = Date.now() + 8000;
       while (!predicate()) {
-        if (Date.now() >= deadline) throw new Error('Toolbar action did not complete.');
+        if (Date.now() >= deadline) throw new Error('Toolbar action did not complete. ' +
+          await window.webContents.executeJavaScript('JSON.stringify({ bridge: typeof window.toolbar, status: document.querySelector("#status").textContent })'));
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     }
