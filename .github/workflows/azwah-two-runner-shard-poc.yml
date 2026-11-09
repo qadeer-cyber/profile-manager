@@ -128,7 +128,7 @@ jobs:
             '- Both object hashes and compiler toolchains matched.'
             '- Third merge job linked both objects into one native Windows DLL.'
             '- Both exports were verified.'
-            "- DLL SHA256: `$hash`"
+            ('- DLL SHA256: ' + $hash)
             '- **Not tested:** Chromium GN/Ninja sharding, dependency graph, large state transfers, native browser or installer.'
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
           Write-Output "Cross-runner link verified: $out sha256=$hash"
