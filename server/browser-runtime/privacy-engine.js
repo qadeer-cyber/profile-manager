@@ -61,6 +61,8 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     for (const name of Object.keys(env)) {
       if (/^ELECTRON_|^NODE_OPTIONS$|^AZWAH_MAXMIND_|^PM_API_TOKEN$|^PM_SECRET$|^PM_UI_TOKEN$/i.test(name)) delete env[name];
     }
+    delete env.AZWAH_ENGINE_QA_LOG;
+    if (verify) env.AZWAH_ENGINE_QA_LOG = control + '.log';
     fs.writeFileSync(request, JSON.stringify({ version: 1, timezone, location, proxyRules,
       denyGeolocation: geo.permission === 'deny', url: opts.url || null, verify }), { flag: 'wx', mode: 0o600 });
     const argv = [`--azwah-managed=${request}`, `--user-data-dir=${path.join(root, 'chromium')}`];
@@ -83,6 +85,9 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     });
     return { proc: child, browserPid: child.pid, spawnPid: child.pid, argv, requestStop, relayUrl: relay };
   } catch (error) {
+    if (!isPackaged() && process.env.PM_PRIVACY_ENGINE_QA === '1') {
+      try { console.error('Privacy engine QA startup:', fs.readFileSync(control + '.log', 'utf8')); } catch {}
+    }
     if (child?.pid && !exited(child)) {
       try { await killTree(child.pid, { expect: root }); } catch {}
       if (!exited(child)) {

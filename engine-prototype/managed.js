@@ -7,7 +7,8 @@ import { navigationOrigin, validateEngineConfig } from './config.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const isolated = { sandbox: true, contextIsolation: true, nodeIntegration: false, webviewTag: false, devTools: false };
 
-export async function startManaged(request) {
+export async function startManaged(request, stage) {
+  stage('managed entry');
   const root = path.dirname(request);
   if (path.basename(root) !== 'privacy-engine' || !/^[0-9a-f-]{36}\.json$/i.test(path.basename(request))) throw new Error('Invalid profile handoff.');
   const control = request.slice(0, -5);
@@ -23,6 +24,7 @@ export async function startManaged(request) {
   app.enableSandbox();
   if (!app.requestSingleInstanceLock()) { app.exit(2); return; }
   await app.whenReady();
+  stage('Electron ready');
 
   const web = session.defaultSession;
   const proxy = data.proxyRules ? new URL(data.proxyRules) : null;
@@ -154,8 +156,11 @@ export async function startManaged(request) {
     }
     snapshot();
   });
+  stage('toolbar loading');
   await window.loadFile(path.join(here, 'toolbar.html'));
+  stage('toolbar loaded');
   await addTab(data.url);
+  stage('first tab loaded');
   window.show();
   window.on('closed', () => {
     closed = true;
@@ -173,6 +178,7 @@ export async function startManaged(request) {
       node: typeof require,
     }))()`);
     const first = await observe(tabs[0]);
+    stage('first tab observed');
     async function until(predicate) {
       const deadline = Date.now() + 8000;
       while (!predicate()) {
@@ -182,6 +188,7 @@ export async function startManaged(request) {
     }
     await window.webContents.executeJavaScript('document.querySelector("[data-action=new]").click(); void 0');
     await until(() => tabs.length === 2);
+    stage('toolbar created second tab');
     await window.webContents.executeJavaScript(`document.querySelector('#address').value = ${JSON.stringify(data.url)};
       document.querySelector('#navigation').requestSubmit(); void 0`);
     await until(() => tabs[1].webContents.getURL() === data.url && !tabs[1].webContents.isLoading());

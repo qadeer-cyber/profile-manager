@@ -6,7 +6,7 @@ import { navigationOrigin, permitsGeolocation, validateEngineConfig, validatePro
 
 const argument = name => process.argv.find(value => value.startsWith(name + '='))?.slice(name.length + 1);
 const verify = process.argv.includes('--azwah-verify');
-const qaLog = verify && process.env.AZWAH_ENGINE_QA_LOG;
+const qaLog = process.env.AZWAH_ENGINE_QA_LOG;
 const stage = message => { if (qaLog) fs.appendFileSync(qaLog, message + '\n'); };
 
 async function start() {
@@ -116,7 +116,7 @@ async function start() {
 }
 
 const request = argument('--azwah-managed');
-(request ? startManaged(request) : start()).catch(error => {
+(request ? startManaged(request, stage) : start()).catch(error => {
   stage('Prototype failed: ' + error.message);
   console.error('Prototype failed:', error.message);
   app.exit(1);
