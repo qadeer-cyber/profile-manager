@@ -19,11 +19,13 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Require prototype configuration and Issue 20 regression checks
         run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - name: Install pinned and checksummed Electron distribution
+        run: node node_modules/electron/install.js
       - name: Package dedicated engine payload
         working-directory: engine-prototype
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win dir --x64 --publish never
+        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --config.electronDist=../node_modules/electron/dist --win dir --x64 --publish never
       - name: Stage dedicated engine payload for prequalification
         shell: pwsh
         run: |
@@ -59,20 +61,21 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           choco install 7zip nsis -y --no-progress
           npm ci
+          node node_modules/electron/install.js
           Push-Location engine-prototype
-          try { ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win dir --x64 --publish never }
+          try { ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --config.electronDist=../node_modules/electron/dist --win dir --x64 --publish never }
           finally { Pop-Location }
           $env:VITE_AZWAH_ADMIN = '0'
           npm run build
           node scripts/fetch-bundled-chromium.mjs win64
           node scripts/fetch-bundled-firefox.mjs
           npx --no-install electron-builder install-app-deps --arch=x64
-          npx --no-install electron-builder --config electron-builder.office-payload.cjs --win --dir --x64 --publish never
+          npx --no-install electron-builder --config electron-builder.office-payload.cjs --config.electronDist=node_modules/electron/dist --win --dir --x64 --publish never
           $env:VITE_AZWAH_ADMIN = '1'
           npm run build
           New-Item -ItemType Directory -Force build | Out-Null
           Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
-          npx --no-install electron-builder --config electron-builder.ultimate-unified.cjs --win nsis --x64 --publish never
+          npx --no-install electron-builder --config electron-builder.ultimate-unified.cjs --config.electronDist=node_modules/electron/dist --win nsis --x64 --publish never
       - name: Drive installed Ultimate GUI
         env:
           AZWAH_ULTIMATE_QA_EXE: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
