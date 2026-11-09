@@ -180,6 +180,35 @@ index d914cb5a9a231d4b4cb2ddd8f4f0e7d9b6ee2c47..ccd0581bd958c33e4d352b460c7fce7f
    shared_url_loader_factory_ = new URLLoaderFactoryForSystem(this);
  
    pref_change_registrar_.Init(local_state_);
+diff --git a/chrome/browser/preloading/preloading_prefs.cc b/chrome/browser/preloading/preloading_prefs.cc
+index e798a3b3e5afb919eed58059913beb54360e5f1a..3855c2a8f292eebfcf37fc0b7cec738b627e7cb0 100644
+--- a/chrome/browser/preloading/preloading_prefs.cc
++++ b/chrome/browser/preloading/preloading_prefs.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "chrome/browser/preloading/preloading_prefs.h"
+ 
++#include "base/environment.h"
++#include "build/build_config.h"
+ #include "chrome/browser/battery/battery_saver.h"
+ #include "chrome/browser/data_saver/data_saver.h"
+ #include "chrome/browser/prefetch/pref_names.h"
+@@ -21,6 +23,15 @@ void RegisterPredictionOptionsProfilePrefs(
+ }
+ 
+ PreloadPagesState GetPreloadPagesState(const PrefService& prefs) {
++#if BUILDFLAG(IS_WIN)
++  const auto env = base::Environment::Create();
++  if (env->HasVar("AZWAH_NATIVE_PROXY_RELAY_PORT") ||
++      env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE")) {
++    // Managed profiles should connect when they navigate, not speculate about
++    // URLs based on browsing history or prediction preferences.
++    return PreloadPagesState::kNoPreloading;
++  }
++#endif
+   NetworkPredictionOptions network_prediction_options =
+       static_cast<NetworkPredictionOptions>(
+           prefs.GetInteger(prefs::kNetworkPredictionOptions));
 diff --git a/chrome/browser/renderer_preferences_util.cc b/chrome/browser/renderer_preferences_util.cc
 index 8a64a3bcb6a1bfbaa9428af8fafb28435901ea4b..496194b2ccc448b3865755790e9242d3046fa4ce 100644
 --- a/chrome/browser/renderer_preferences_util.cc

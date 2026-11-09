@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import struct
 import subprocess
 import sys
 import zipfile
@@ -110,6 +111,25 @@ def validate_sdk(sdk, manifest):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
+def inspect_windows_binary(path):
+    with path.open("rb") as binary:
+        header = binary.read(64)
+        if len(header) != 64 or header[:2] != b"MZ":
+            raise RuntimeError(f"{path.name} is not a Windows PE binary.")
+        pe_offset = struct.unpack_from("<I", header, 60)[0]
+        if pe_offset < 64 or pe_offset + 26 > path.stat().st_size:
+            raise RuntimeError(f"{path.name} has an invalid PE header offset.")
+        binary.seek(pe_offset)
+        pe = binary.read(26)
+        if pe[:4] != b"PE\0\0" or struct.unpack_from("<H", pe, 4)[0] != 0x8664 or (
+            struct.unpack_from("<H", pe, 24)[0] != 0x20B
+        ):
+            raise RuntimeError(f"{path.name} is not a Windows x64 PE32+ binary.")
+        binary.seek(0)
+        digest = hashlib.file_digest(binary, "sha256").hexdigest()
+    return {"name": path.name, "bytes": path.stat().st_size, "sha256": digest}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
@@ -195,6 +215,8 @@ def main():
 
     output = source / "out/azwah-win-cross"
     output.mkdir(parents=True, exist_ok=True)
+    provenance = output / "AZWAH-CROSS-BUILD-MANIFEST.json"
+    provenance.unlink(missing_ok=True)
     (output / "args.gn").write_text(
         'target_os = "win"\ntarget_cpu = "x64"\nis_debug = false\n'
         'is_component_build = false\nis_chrome_branded = false\nsymbol_level = 0\n'
@@ -202,10 +224,18 @@ def main():
     run([str(tools / "gn"), "gen", str(output)], source, env, reserve)
     run([str(tools / "autoninja"), "-C", str(output), "-j", str(options.jobs), "chrome"],
         source, env, reserve)
-    browser = output / "chrome.exe"
-    if not browser.is_file():
-        raise RuntimeError("Chromium build completed without producing chrome.exe.")
-    print(f"Development target compiled at {browser}. Windows execution and packaging require separate qualification.")
+    binaries = [inspect_windows_binary(output / filename) for filename in ("chrome.exe", "chrome.dll")]
+    result = {
+        "kind": "azwah-windows-x64-cross-build-development",
+        "chromiumRevision": revision,
+        "depotToolsRevision": options.depot_tools_commit,
+        "sourcePatchSha256": hashlib.sha256(patch.read_bytes()).hexdigest(),
+        "toolchainArchiveSha256": sdk_sha256,
+        "files": binaries,
+    }
+    provenance.write_text(json.dumps(result, indent=2) + "\n")
+    print(f"Development target compiled at {output}. Windows execution and packaging require separate qualification.")
+
 
 
 if __name__ == "__main__":
