@@ -57,9 +57,22 @@ async function start() {
   });
   const contents = window.webContents;
   stage('window created');
+  // Electron creates the initial renderer lazily. Initialize it with an
+  // inert document before attaching the debugger or issuing emulation calls.
+  await window.loadURL('about:blank');
   contents.debugger.attach('1.3');
-  if (config.timezone) await contents.debugger.sendCommand('Emulation.setTimezoneOverride', { timezoneId: config.timezone });
-  if (config.location) await contents.debugger.sendCommand('Emulation.setGeolocationOverride', config.location);
+  stage('debugger attached');
+  async function emulate(method, options) {
+    let timeout;
+    try {
+      await Promise.race([
+        contents.debugger.sendCommand(method, options),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(method + ' did not respond.')), 10000); }),
+      ]);
+    } finally { clearTimeout(timeout); }
+  }
+  if (config.timezone) await emulate('Emulation.setTimezoneOverride', { timezoneId: config.timezone });
+  if (config.location) await emulate('Emulation.setGeolocationOverride', config.location);
   contents.debugger.on('detach', () => { if (!contents.isDestroyed()) window.close(); });
   contents.on('render-process-gone', () => { if (!window.isDestroyed()) window.destroy(); });
   stage('emulation installed');
