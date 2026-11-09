@@ -1,7 +1,7 @@
 name: Azwah Privacy Engine installed prototype
 on:
   push:
-    branches: [feature/azwah-privacy-engine-prototype]
+    branches: [feature/azwah-privacy-engine-prototype, feature/azwah-privacy-engine-integration]
 permissions:
   contents: read
 jobs:
@@ -38,3 +38,6 @@ jobs:
           Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
       - name: Observe installed Chromium location, permissions, isolation and restart
         run: node --test --test-force-exit test/privacy-engine-installed.test.js
+      - name: Verify five installed engine profiles through the Azwah manager API
+        if: github.ref == 'refs/heads/feature/azwah-privacy-engine-integration'
+        run: node --test --test-force-exit test/privacy-engine-manager-windows.test.js

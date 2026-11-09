@@ -40,6 +40,7 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
+import { launchPrivacyEngine } from './browser-runtime/privacy-engine.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import { firefoxSessionStatus, borrowFirefoxSession, releaseFirefoxSession } from './firefox-session-manager.js';
 import { requestFirefoxShutdown } from './firefox-shutdown.js';
@@ -320,21 +321,24 @@ async function doLaunch(p, opts = {}) {
       finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native', engine: 'firefox' });
       return runInfo(p.id);
     }
-    launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
-    relayUrl = launchPlan.relayUrl;
-    const { args, plan, regional, cdpPort } = launchPlan;
+    const dedicated = p.advancedSettings?.runtime === 'privacy';
+    if (!dedicated) launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
+    relayUrl = launchPlan?.relayUrl || null;
+    const { args, plan, regional, cdpPort } = launchPlan || {};
     const preferencesBaseline = readPreferences(dir);
     assertLaunchNotCancelled(p.id);
 
-    if (launchPlan.runtime === 'native') {
-      const native = await launchNativeChromium(launchPlan);
+    if (dedicated || launchPlan.runtime === 'native') {
+      const native = dedicated ? await launchPrivacyEngine(p, dir, { ...opts, automation }, () => assertLaunchNotCancelled(p.id))
+        : await launchNativeChromium(launchPlan);
+      relayUrl = native.relayUrl || relayUrl;
       markContextReady(metricsHandle);
       entry = {
         ctx: null, runtime: 'native', engine: 'chromium', relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
-        requestedArgs: native.argv, restoreTabs: launchPlan.restoreTabs, rememberWindow: launchPlan.rememberWindow, tabUrls: [],
+        requestedArgs: native.argv, requestStop: native.requestStop, restoreTabs: launchPlan?.restoreTabs, rememberWindow: launchPlan?.rememberWindow, tabUrls: [],
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, dir);
@@ -353,7 +357,8 @@ async function doLaunch(p, opts = {}) {
         throw e;
       }
       setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
-      emit('profile:started', p.id, { runtime: 'native' });
+      if (native.proc.exitCode !== null || native.proc.signalCode !== null) onClosed(p.id, null);
+      emit('profile:started', p.id, { runtime: dedicated ? 'privacy' : 'native' });
       console.log('NATIVE-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid, spawnPid: native.spawnPid }));
       finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native' });
       return runInfo(p.id);
@@ -825,6 +830,9 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
       const { captureWindowStateForSession } = await import('./window-state.js');
       await captureWindowStateForSession(id, e);
     } catch { /* best effort */ }
+  }
+  if (e.requestStop) {
+    try { e.requestStop(); await waitUntilDead(e, timeoutMs); } catch {}
   }
   // 1) graceful: close the context  2) force: kill the process tree
   if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
