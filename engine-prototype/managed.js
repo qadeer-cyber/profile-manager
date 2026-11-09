@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dedicatedExtensionIssue } from './extension-policy.js';
+import { PROXY_IDENTITY_EXIT, observeBrowserProxyExit, verifyBrowserProxyExit } from './proxy-identity.js';
+import { verifyBrowserLocation } from './location-verification.js';
 import { openBrowserState } from './browser-state.js';
 import { navigationOrigin, validateEngineConfig } from './config.js';
 
@@ -23,6 +25,11 @@ export async function startManaged(request, stage) {
   }
   app.setPath('userData', path.join(root, 'chromium'));
   app.setPath('sessionData', path.join(root, 'session'));
+  if (data.proxyRules) {
+    app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
+    app.commandLine.appendSwitch('disable-quic');
+    app.commandLine.appendSwitch('dns-prefetch-disable');
+  }
   app.enableSandbox();
   if (!app.requestSingleInstanceLock()) { app.exit(2); return; }
   await app.whenReady();
@@ -31,6 +38,32 @@ export async function startManaged(request, stage) {
   const { state, update } = openBrowserState(root);
   const downloads = [];
   const web = session.defaultSession;
+  const proxy = data.proxyRules ? new URL(data.proxyRules) : null;
+  if (proxy && (!['http:', 'https:', 'socks5:'].includes(proxy.protocol) || proxy.username || proxy.password ||
+      proxy.pathname !== '' && proxy.pathname !== '/' || proxy.search || proxy.hash)) throw new Error('Invalid proxy handoff.');
+  if (proxy) {
+    await web.setProxy({ mode: 'fixed_servers', proxyRules: data.proxyRules, proxyBypassRules: '<-loopback>' });
+    await web.closeAllConnections();
+  }
+  if (data.expectedProxyExit) {
+    if (!proxy) throw new Error('Follow Proxy requires a fixed browser proxy.');
+    const failIdentity = () => {
+      web.webRequest.onBeforeRequest((_, callback) => callback({ cancel: true }));
+      app.exit(PROXY_IDENTITY_EXIT);
+    };
+    const verifyExit = () => verifyBrowserProxyExit(web, data.expectedProxyExit);
+    try {
+      await verifyExit();
+      await verifyBrowserLocation(web, isolated, timezone, location);
+    }
+    catch { failIdentity(); return; }
+    const refresh = () => setTimeout(async () => {
+      try { await verifyExit(); refresh(); }
+      catch { failIdentity(); }
+    }, 30000).unref();
+    refresh();
+    setInterval(() => { if (fs.existsSync(control + '.invalidate')) failIdentity(); }, 250).unref();
+  }
   const loadedExtensions = [];
   const extensionRoot = path.join(path.dirname(path.dirname(path.dirname(root))), 'extensions');
   for (const extensionPath of data.extensions || []) {
@@ -50,13 +83,6 @@ export async function startManaged(request, stage) {
     }
   }
 
-  const proxy = data.proxyRules ? new URL(data.proxyRules) : null;
-  if (proxy && (!['http:', 'https:', 'socks5:'].includes(proxy.protocol) || proxy.username || proxy.password ||
-      proxy.pathname !== '' && proxy.pathname !== '/' || proxy.search || proxy.hash)) throw new Error('Invalid proxy handoff.');
-  if (proxy) {
-    await web.setProxy({ mode: 'fixed_servers', proxyRules: data.proxyRules, proxyBypassRules: '<-loopback>' });
-    await web.closeAllConnections();
-  }
   const allowedUrl = value => {
     const origin = navigationOrigin(value, data.verify === true);
     return data.verify === true && origin && !/^http:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin) ? null : origin;
@@ -75,6 +101,8 @@ export async function startManaged(request, stage) {
   let closed = false;
   let starting = false;
   const permissions = new Set();
+  const pageErrors = new WeakMap();
+  let networkDiagnostic;
   const permissionKey = (contents, origin) => contents.id + ':' + origin;
   const eligible = (contents, permission, origin, details) => Boolean(location && !data.denyGeolocation &&
     contents && permission === 'geolocation' && details.isMainFrame && allowedUrl(origin) === allowedUrl(contents.getURL()) && allowedUrl(origin));
@@ -124,7 +152,8 @@ export async function startManaged(request, stage) {
     if (closed) return;
     window.webContents.send('azwah-toolbar-state', { active, tabs: tabs.map(tab => ({
       url: allowedUrl(tab.webContents.getURL()) ? tab.webContents.getURL() : '',
-    })), bookmarks: state.bookmarks, history: state.history, downloads, extensions: loadedExtensions });
+      error: pageErrors.get(tab.webContents),
+    })), networkDiagnostic, bookmarks: state.bookmarks, history: state.history, downloads, extensions: loadedExtensions });
   }
   let restoring = true;
   function persistTabs() {
@@ -136,6 +165,7 @@ export async function startManaged(request, stage) {
     if (typeof value !== 'string' || value.length > 8192) throw new Error('Enter a valid address.');
     const url = /^https?:\/\//i.test(value) ? value : 'https://' + value;
     if (!allowedUrl(url)) throw new Error('Only secure HTTPS addresses are supported.');
+    pageErrors.delete(contents);
     await contents.loadURL(url);
     await locationRefresh.get(contents);
   }
@@ -164,10 +194,23 @@ export async function startManaged(request, stage) {
       }
       snapshot();
     });
-    contents.on('did-fail-load', snapshot);
+    contents.on('did-start-navigation', event => {
+      if (event.isMainFrame && !event.isInPlace) pageErrors.delete(contents);
+    });
+    contents.on('did-fail-load', (_, code, description, __, isMainFrame) => {
+      if (!isMainFrame || code === -3) return;
+      pageErrors.set(contents, /^[A-Z_]+$/.test(description) ? description : 'Navigation failed');
+      snapshot();
+    });
     contents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown' || !input.control || input.alt || input.shift) return;
       const key = input.key.toLowerCase();
+      if (key === 't' || key === 'w' || key === 'r') {
+        event.preventDefault();
+        if (key === 't') addTab().catch(() => stage('New tab failed.'));
+        if (key === 'w' && tabs.length > 1) closeTab(active);
+        if (key === 'r') contents.reload();
+      }
       if (key === 'l') {
         event.preventDefault();
         window.webContents.focus();
@@ -198,6 +241,11 @@ export async function startManaged(request, stage) {
           });
         }
       }
+      if (timezone) {
+        const observed = await contents.executeJavaScript('Intl.DateTimeFormat().resolvedOptions().timeZone');
+        const expected = new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone;
+        if (observed !== expected) throw new Error('Chromium did not apply the configured timezone.');
+      }
       tabs.push(tab);
       active = tabs.length - 1;
       layout();
@@ -214,12 +262,33 @@ export async function startManaged(request, stage) {
       throw error;
     } finally { starting = false; }
   }
+  function closeTab(index) {
+    const [tab] = tabs.splice(index, 1);
+    window.contentView.removeChildView(tab);
+    tab.webContents.close();
+    active = Math.min(index, tabs.length - 1);
+    layout();
+    persistTabs();
+    snapshot();
+  }
   window.on('resize', layout);
   ipcMain.handle('azwah-toolbar', async (event, action, value) => {
     if (closed || event.sender !== window.webContents || event.senderFrame?.parent !== null) throw new Error('Invalid toolbar sender.');
     if (action === 'state') { snapshot(); return; }
     if (action === 'new') {
       try { await addTab(); } catch (error) { stage('New tab failed: ' + error.message); throw error; }
+      return;
+    }
+    if (action === 'network') {
+      if (!proxy) { networkDiagnostic = 'No profile proxy configured.'; snapshot(); return; }
+      try {
+        const exit = data.expectedProxyExit
+          ? await verifyBrowserProxyExit(web, data.expectedProxyExit) : await observeBrowserProxyExit(web);
+        networkDiagnostic = 'Chromium observed ' + exit + ' through the configured proxy. DNS and WebRTC exposure are not measured by this check.';
+      } catch {
+        networkDiagnostic = 'Chromium could not confirm the proxy exit.';
+      }
+      snapshot();
       return;
     }
     const tab = tabs[active];
@@ -236,14 +305,7 @@ export async function startManaged(request, stage) {
     else if (action === 'forward' && tab.webContents.navigationHistory.canGoForward()) tab.webContents.navigationHistory.goForward();
     else if (action === 'reload') tab.webContents.reload();
     else if (action === 'select' && Number.isInteger(value) && tabs[value]) { active = value; layout(); }
-    else if (action === 'close' && tabs.length > 1) {
-      tabs.splice(active, 1);
-      window.contentView.removeChildView(tab);
-      tab.webContents.close();
-      active = Math.min(active, tabs.length - 1);
-      layout();
-      persistTabs();
-    }
+    else if (action === 'close' && tabs.length > 1) closeTab(active);
     snapshot();
   });
   stage('toolbar loading');

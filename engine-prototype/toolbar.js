@@ -29,6 +29,13 @@ const list = (id, label, values) => {
   const select = document.getElementById(id);
   select.replaceChildren(new Option(label, ''), ...values.map(({ label, value }) => new Option(label, value)));
 };
+const historySearch = document.getElementById('history-search');
+let history = [];
+const showHistory = () => {
+  const term = historySearch.value.trim().toLowerCase();
+  list('history', 'History', history.filter(url => url.toLowerCase().includes(term)).map(url => ({ label: url, value: url })));
+};
+historySearch.addEventListener('input', showHistory);
 window.azwahControls.onState(state => {
   tabs.replaceChildren(...state.tabs.map(({ url }, index) => {
     const button = document.createElement('button');
@@ -38,11 +45,13 @@ window.azwahControls.onState(state => {
     return button;
   }));
   list('bookmarks', 'Bookmarks', state.bookmarks.map(url => ({ label: url, value: url })));
-  list('history', 'History', state.history.map(url => ({ label: url, value: url })));
+  history = state.history;
+  showHistory();
   list('downloads', 'Downloads', state.downloads.map(item => ({ label: item.name + ' · ' + item.status, value: '' })));
   list('extensions', 'Extensions', state.extensions.map(item => ({ label: item.name + ' · ' + item.status, value: '' })));
   const current = state.tabs[state.active]?.url || '';
   if (document.activeElement !== address) address.value = current;
-  status.textContent = current ? new URL(current).protocol === 'https:' ? 'HTTPS' : 'HTTP' : '';
+  const error = state.tabs[state.active]?.error;
+  status.textContent = [error, state.networkDiagnostic, !error && current ? new URL(current).protocol.slice(0, -1).toUpperCase() : ''].filter(Boolean).join(' · ');
 });
 act('state');

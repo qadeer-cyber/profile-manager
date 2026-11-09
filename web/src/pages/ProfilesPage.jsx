@@ -228,7 +228,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
         {columns.name !== false && <td className="col-name"><div className="name-line"><span className="name">{p.name}</span>{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>
           {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
           {p.lastProxyLocation && <div className="muted" title={`Last resolved proxy exit ${p.lastProxyLocation.ip}`}>
-            Last proxy location (approx.): {[p.lastProxyLocation.city, p.lastProxyLocation.region, p.lastProxyLocation.country].filter(Boolean).join(', ')} · {p.lastProxyLocation.timezone} · {p.lastProxyLocation.radiusKm} km radius
+            Proxy exit {p.lastProxyLocation.ip} · Approx.: {[p.lastProxyLocation.city, p.lastProxyLocation.region, p.lastProxyLocation.country].filter(Boolean).join(', ')} · {p.lastProxyLocation.timezone} · {p.lastProxyLocation.radiusKm} km radius · {p.lastProxyLocation.source} · {p.lastProxyLocation.browserVerifiedAt ? 'Browser exit, timezone and coordinates checked at launch' : 'Proxy probe only'}
           </div>}
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
           {p.tabRestore?.enabled && <span className="tag" title={p.running ? 'Tab restore on — saved on graceful stop' : p.tabRestore.savedCount ? `${p.tabRestore.savedCount} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet'}>Tab restore{p.tabRestore.savedCount ? ` · ${p.tabRestore.savedCount}` : ''}</span>}

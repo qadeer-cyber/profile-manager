@@ -1,15 +1,20 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { isIP } from 'node:net';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
 import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocation } from '../proxy-location.js';
-import { getSetting, setSetting } from '../db.js';
+import { db, getSetting, setSetting } from '../db.js';
 import { killTree } from '../proc.js';
 import { enabledChromiumExtensionPaths } from '../extensions.js';
+
 import { isPackaged } from '../testflags.js';
+
+export const PROXY_IDENTITY_EXIT = 24;
+export const PROXY_IDENTITY_ERROR = 'Chromium could not confirm the proxy exit, timezone or coordinates, or the proxy changed. Check the proxy and restart the profile. Use a sticky session if the exit rotates per connection.';
 
 const fail = (message, code = 'PRIVACY_ENGINE_UNAVAILABLE') => Object.assign(new Error(message), { code, status: 409 });
 
@@ -30,18 +35,20 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
   const request = control + '.json';
   const ready = control + '.ready';
   const stop = control + '.stop';
+  const invalidate = control + '.invalidate';
   const exited = child => child.exitCode !== null || child.signalCode !== null;
-  let child, relay;
+  let child, relay, autoLocation;
+  const mode = profile.advancedSettings?.geolocation?.mode ?? (profile.proxy ? 'auto' : 'manual');
+  const locationKey = 'proxy-location:' + profile.id;
   try {
     const geo = profile.advancedSettings?.geolocation || {};
-    const mode = geo.mode ?? (profile.proxy ? 'auto' : 'manual');
     let timezone = mode === 'system' ? null : profile.browserSettings?.timezoneId || null;
     let location = mode === 'manual' && geo.latitude != null && geo.longitude != null
       ? { latitude: geo.latitude, longitude: geo.longitude, accuracy: geo.accuracy } : null;
     const proxy = profile.proxy;
     if (mode === 'auto') {
-      const key = 'proxy-location:' + profile.id;
-      const result = await resolveProxyLocation(proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value), credentials: geoIpCredentials });
+      const result = await resolveProxyLocation(proxy, { read: () => getSetting(locationKey, null), credentials: geoIpCredentials });
+      autoLocation = result;
       timezone = result.timezone;
       location = { latitude: result.latitude, longitude: result.longitude, accuracy: result.accuracy };
     }
@@ -50,7 +57,8 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
       const scheme = proxy.type === 'socks5' && proxy.username ? 'socks5h' : proxy.type;
       const credentials = proxy.username
         ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || '')}@` : '';
-      const endpoint = `${scheme}://${proxy.host}:${proxy.port}`;
+      const host = isIP(proxy.host) === 6 ? `[${proxy.host}]` : proxy.host;
+      const endpoint = `${scheme}://${host}:${proxy.port}`;
       if (credentials) relay = await anonymizeProxy({ url: endpoint.replace('://', '://' + credentials), port: 0 });
       proxyRules = relay || endpoint;
     }
@@ -62,7 +70,7 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     }
     delete env.AZWAH_ENGINE_QA_LOG;
     if (verify) env.AZWAH_ENGINE_QA_LOG = control + '.log';
-    fs.writeFileSync(request, JSON.stringify({ version: 1, timezone, location, proxyRules,
+    fs.writeFileSync(request, JSON.stringify({ version: 1, timezone, location, proxyRules, expectedProxyExit: autoLocation?.ip,
       extensions: enabledChromiumExtensionPaths(profile.id), denyGeolocation: geo.permission === 'deny', url: opts.url || null, verify }), { flag: 'wx', mode: 0o600 });
     const argv = [`--azwah-managed=${request}`, `--user-data-dir=${path.join(root, 'chromium')}`];
     child = spawn(executable, argv, { env, windowsHide: false, stdio: 'ignore' });
@@ -71,19 +79,45 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     const deadline = Date.now() + 25000;
     for (;;) {
       checkCancelled();
+      if (child.exitCode === PROXY_IDENTITY_EXIT) throw fail(PROXY_IDENTITY_ERROR, 'PROXY_BROWSER_IDENTITY_FAILED');
       if (spawnError || exited(child) || !child.pid) throw fail('The dedicated engine exited during startup.', 'PRIVACY_ENGINE_START_FAILED');
       if (fs.existsSync(ready)) break;
       if (Date.now() >= deadline) throw fail('The dedicated engine did not confirm readiness.', 'PRIVACY_ENGINE_START_TIMEOUT');
       await delay(100);
     }
+    const proxyStillAssigned = () => {
+      const current = db.prepare('SELECT profiles.proxy_id, proxies.updated_at FROM profiles LEFT JOIN proxies ON proxies.id = profiles.proxy_id WHERE profiles.id = ? AND profiles.deleted_at IS NULL').get(profile.id);
+      return current?.proxy_id === proxy.id && current.updated_at === proxy.revision;
+    };
+    if (autoLocation) {
+      if (!proxyStillAssigned()) throw fail(PROXY_IDENTITY_ERROR, 'PROXY_BROWSER_IDENTITY_FAILED');
+      setSetting(locationKey, { ...autoLocation, browserVerifiedAt: Date.now() });
+    }
+    const monitor = autoLocation && setInterval(() => {
+      try {
+        if (!proxyStillAssigned()) {
+          setSetting(locationKey, null);
+          fs.writeFileSync(invalidate, '');
+        }
+      } catch {
+        try { fs.writeFileSync(invalidate, ''); } catch {}
+      }
+    }, 1000).unref();
     const requestStop = () => fs.writeFileSync(stop, '');
-    child.once('exit', () => {
-      for (const file of [request, ready, stop]) {
+    child.once('exit', code => {
+      if (monitor) clearInterval(monitor);
+      if (code === PROXY_IDENTITY_EXIT) {
+        try { setSetting(locationKey, null); } catch {}
+      }
+      for (const file of [request, ready, stop, invalidate]) {
         try { fs.rmSync(file, { force: true, maxRetries: 2 }); } catch { /* next launch uses a new token */ }
       }
     });
     return { proc: child, browserPid: child.pid, spawnPid: child.pid, argv, requestStop, relayUrl: relay };
   } catch (error) {
+    if (mode === 'auto') {
+      try { setSetting(locationKey, null); } catch {}
+    }
     if (!isPackaged() && process.env.PM_PRIVACY_ENGINE_QA === '1') {
       try { console.error('Privacy engine QA startup:', fs.readFileSync(control + '.log', 'utf8')); } catch {}
     }
@@ -94,7 +128,7 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
         error.browserPid = child.pid;
       }
     }
-    for (const file of [request, ready, stop]) fs.rmSync(file, { force: true, maxRetries: 2 });
+    for (const file of [request, ready, stop, invalidate]) fs.rmSync(file, { force: true, maxRetries: 2 });
     if (relay) await closeAnonymizedProxy(relay, true).catch(() => {});
     throw error;
   }

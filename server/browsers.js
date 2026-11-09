@@ -40,7 +40,7 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
-import { launchPrivacyEngine } from './browser-runtime/privacy-engine.js';
+import { launchPrivacyEngine, PROXY_IDENTITY_EXIT, PROXY_IDENTITY_ERROR } from './browser-runtime/privacy-engine.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import { firefoxSessionStatus, borrowFirefoxSession, releaseFirefoxSession } from './firefox-session-manager.js';
 import { requestFirefoxShutdown } from './firefox-shutdown.js';
@@ -723,7 +723,7 @@ async function finishClose(id, e) {
       }
     } catch {}
     if (crashed) {
-      const message = crashMessage(e, e.closeReason);
+      const message = e.requestStop && e.exitCode === PROXY_IDENTITY_EXIT ? PROXY_IDENTITY_ERROR : crashMessage(e, e.closeReason);
       try { setStatus(id, { last_error: message }); } catch {}
       emit('profile:crashed', id, { error: message });
       emit('profile:stopped', id, { error: message });

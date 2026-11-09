@@ -88,8 +88,26 @@ jobs:
           New-Item -ItemType Directory -Force build | Out-Null
           Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
           npx --no-install electron-builder --config electron-builder.ultimate-unified.cjs --config.electronDist=node_modules/electron/dist --win nsis --x64 --publish never
+      - name: Record QA installer provenance
+        shell: pwsh
+        run: |
+          $name = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $dir = 'release-ultimate'
+          $exe = Join-Path $dir $name
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
+          @(
+            "QA source: $env:GITHUB_SHA"
+            "Installer: $name"
+            "Bytes: $((Get-Item -LiteralPath $exe).Length)"
+            "SHA256: $hash"
+            "Runner: Windows Server 2022"
+          ) | Set-Content -Encoding ascii (Join-Path $dir 'BUILD-MANIFEST.txt')
       - name: Drive installed Ultimate GUI
         env:
+          AZWAH_QA_PROXY_FIXTURES: ${{ secrets.AZWAH_QA_PROXY_FIXTURES }}
+          AZWAH_MAXMIND_ACCOUNT_ID: ${{ secrets.AZWAH_MAXMIND_ACCOUNT_ID }}
+          AZWAH_MAXMIND_LICENSE_KEY: ${{ secrets.AZWAH_MAXMIND_LICENSE_KEY }}
           AZWAH_ULTIMATE_QA_EXE: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
         run: node test/privacy-engine-ultimate-gui.mjs
       - name: Preserve installed GUI evidence
@@ -103,7 +121,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ultimate-engine-qa-only-${{ github.sha }}
-          path: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+          path: |
+            release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+            release-ultimate/SHA256SUMS.txt
+            release-ultimate/BUILD-MANIFEST.txt
           retention-days: 14
           compression-level: 0
           if-no-files-found: error

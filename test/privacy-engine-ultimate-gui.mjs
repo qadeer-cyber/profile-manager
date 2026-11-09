@@ -27,7 +27,9 @@ try {
   proof.manager = { path: exe, sha256: sha(exe) };
   proof.engine = { path: childExe, sha256: sha(childExe) };
   const open = async () => {
-    app = await _electron.launch({ executablePath: exe, env: { ...process.env, PM_USER_DATA: data }, timeout: 90000 });
+    const env = { ...process.env, PM_USER_DATA: data };
+    for (const name of ['AZWAH_QA_PROXY_FIXTURES', 'AZWAH_MAXMIND_ACCOUNT_ID', 'AZWAH_MAXMIND_LICENSE_KEY']) delete env[name];
+    app = await _electron.launch({ executablePath: exe, env, timeout: 90000 });
     const page = await app.firstWindow();
     await page.waitForFunction(() => !!window.pm?.uiToken);
     return page;
@@ -106,6 +108,58 @@ try {
   page = await open();
   assert.deepEqual((await rows()).map(profile => profile.name).sort(), names);
   proof.gui = 'create, launch five, stop and restart one, reinstall profile retention';
+  proof.autoLocation = { status: 'UNVERIFIED', reason: 'Controlled proxy fixtures or MaxMind City credentials are absent.' };
+  const live = process.env.AZWAH_QA_PROXY_FIXTURES;
+  const account = process.env.AZWAH_MAXMIND_ACCOUNT_ID;
+  const license = process.env.AZWAH_MAXMIND_LICENSE_KEY;
+  if (live && account && license) {
+    proof.autoLocation = { status: 'FAIL' };
+    let stage = 'fixture validation';
+    try {
+      const fixtures = JSON.parse(live);
+      if (!Array.isArray(fixtures) || fixtures.length !== 2 ||
+          new Set(fixtures.map(item => item.expected.ip)).size !== 2 ||
+          new Set(fixtures.map(item => item.expected.country)).size !== 2 ||
+          new Set(fixtures.map(item => item.expected.timezone)).size !== 2) throw new Error();
+      stage = 'GeoIP settings';
+      await api('/settings/geoip', { method: 'PUT', body: { account, license } });
+      const create = async (fixture, index) => {
+        const profile = await api('/profiles', { method: 'POST', body: {
+          name: 'Live proxy QA ' + (index + 1), proxy: fixture.proxy,
+          advancedSettings: { runtime: 'privacy' },
+          browserSettings: { timezoneId: 'Pacific/Honolulu' },
+        } });
+        if (profile.advancedSettings.geolocation.mode !== null) throw new Error();
+        return profile;
+      };
+      stage = 'profile creation';
+      const profiles = await Promise.all(fixtures.map(create));
+      stage = 'installed browser launch';
+      await Promise.all(profiles.map(({ id }) => api('/profiles/' + id + '/launch', { method: 'POST', body: {} })));
+      stage = 'independent identity checks';
+      const current = await api('/profiles');
+      const observations = profiles.map(({ id }, i) => {
+        const profile = current.find(row => row.id === id);
+        const result = profile?.lastProxyLocation;
+        const expected = fixtures[i].expected;
+        const canonical = timezone => new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone;
+        if (!profile?.running || !result?.browserVerifiedAt || result.ip !== expected.ip ||
+            result.country !== expected.country || canonical(result.timezone) !== canonical(expected.timezone) ||
+            !result.approximate || !(result.radiusKm > 0) ||
+            !Array.isArray(expected.bounds) || expected.bounds.length !== 4 ||
+            !expected.bounds.every(Number.isFinite) ||
+            result.latitude < expected.bounds[0] || result.latitude > expected.bounds[1] ||
+            result.longitude < expected.bounds[2] || result.longitude > expected.bounds[3]) throw new Error();
+        return { pid: profile.pid, country: result.country, timezone: result.timezone, radiusKm: result.radiusKm,
+          matchedIndependentExit: true, matchedIndependentBounds: true };
+      });
+      if (new Set(observations.map(item => item.pid)).size !== 2) throw new Error();
+      proof.autoLocation = { status: 'PASS', observations };
+    } catch {
+      throw new Error('Live Auto Location acceptance failed at ' + stage + '.');
+    }
+  }
+
 } finally {
   if (app && !proof.gui) {
     try { await (await app.firstWindow()).screenshot({ path: path.join(output, 'gui-failure.png'), timeout: 4000 }); } catch {}

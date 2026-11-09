@@ -183,7 +183,7 @@ const row2p = r => {
   const lib = r.proxy_id ? db.prepare('SELECT * FROM proxies WHERE id=?').get(r.proxy_id) : null;
   let proxy = null, secretError = null;
   if (lib) {
-    proxy = { id: lib.id, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '' };
+    proxy = { id: lib.id, revision: lib.updated_at, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '' };
     try { proxy.password = decrypt(lib.password); } catch (e) { secretError = e.message; }
   }
   delete r.proxy; // legacy inline column (cleared by migration v6)
@@ -236,7 +236,7 @@ const publicP = p => {
   const mode = p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
   if (mode === 'auto' && proxy_id) {
     const location = getSetting('proxy-location:' + p.id, null);
-    if (location?.proxyId === proxy_id && location.expiresAt > Date.now()) out.lastProxyLocation = location;
+    if (location?.proxyId === proxy_id && location.proxyRevision === p.proxy?.revision && location.expiresAt > Date.now()) out.lastProxyLocation = location;
   }
   return out;
 };

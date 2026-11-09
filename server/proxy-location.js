@@ -85,7 +85,7 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
     const { account, license: key } = credentials ? credentials() : {
       account: process.env.AZWAH_MAXMIND_ACCOUNT_ID, license: process.env.AZWAH_MAXMIND_LICENSE_KEY,
     };
-    if (!account || !key) throw fail('Proxy location requires a configured MaxMind GeoIP account. Configure it or choose Manual or System location.');
+    if (!account || !key) throw fail('Proxy location requires a configured MaxMind GeoIP account. Configure MaxMind City in Settings → Proxy location.');
     const payload = await request(`https://geoip.maxmind.com/geoip/v2.1/city/${encodeURIComponent(ip)}`, agent,
       { Authorization: 'Basic ' + Buffer.from(`${account}:${key}`).toString('base64') });
     const location = validateProxyLocation(payload, ip);
@@ -95,6 +95,6 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
     return result;
   } catch (error) {
     if (error.code === 'PROXY_LOCATION_UNAVAILABLE' || error.code === 'GEOIP_CREDENTIALS_UNAVAILABLE') throw error;
-    throw fail('Proxy location could not be verified. Check proxy connectivity and GeoIP service availability.');
+    throw fail('Proxy location could not be verified. Check proxy connectivity and the MaxMind City web-service credentials in Settings → Proxy location.');
   } finally { agent?.destroy(); }
 }
