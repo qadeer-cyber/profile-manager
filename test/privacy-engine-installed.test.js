@@ -28,7 +28,12 @@ test('installed prototype isolates two sandboxed browser profiles, including aft
     const args = [`--azwah-profile=${profile.id}`, `--azwah-url=${host}`, '--azwah-verify'];
     if (marker) args.push(`--azwah-fixture-marker=${marker}`);
     if (hold) args.push('--azwah-fixture-hold');
-    const child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const log = path.join(dir, 'bootstrap.log');
+    fs.rmSync(log, { force: true });
+    const child = spawn(executable, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, AZWAH_ENGINE_QA_LOG: log },
+    });
     live.add(child);
     let stderr = '';
     child.stdout.resume();
@@ -37,7 +42,8 @@ test('installed prototype isolates two sandboxed browser profiles, including aft
     exited.catch(() => {});
     child.on('exit', () => live.delete(child));
     for (let i = 0; i < 160 && !fs.existsSync(report) && child.exitCode === null; i++) await delay(200);
-    assert.ok(fs.existsSync(report), `No installed browser evidence. Exit: ${child.exitCode}. ${stderr}`);
+    const bootstrap = fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : 'No main-process log';
+    assert.ok(fs.existsSync(report), `No installed browser evidence. Exit: ${child.exitCode}. ${stderr}\n${bootstrap}`);
     const result = JSON.parse(fs.readFileSync(report, 'utf8'));
     assert.equal(result.executable.toLowerCase(), executable.toLowerCase());
     assert.equal(result.packaged, true);
