@@ -1,1 +1,4 @@
 third_party/firefox/MPL-2.0.txt text eol=lf
+
+# Git patch context must never become CRLF on Windows.
+native-chromium/*.patch text eol=lf
