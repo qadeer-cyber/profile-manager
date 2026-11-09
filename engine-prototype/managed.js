@@ -194,7 +194,7 @@ export async function startManaged(request, stage) {
       const deadline = Date.now() + 8000;
       while (!predicate()) {
         if (Date.now() >= deadline) throw new Error('Toolbar action did not complete. ' +
-          await window.webContents.executeJavaScript('JSON.stringify({ bridge: typeof window.toolbar, status: document.querySelector("#status").textContent })'));
+          await window.webContents.executeJavaScript('JSON.stringify({ bridge: typeof window.azwahControls, status: document.querySelector("#status").textContent })'));
         await new Promise(resolve => setTimeout(resolve, 50));
       }
     }

@@ -41,3 +41,51 @@ jobs:
       - name: Verify five installed engine profiles through the Azwah manager API
         if: github.ref == 'refs/heads/feature/azwah-privacy-engine-integration'
         run: node --test --test-force-exit test/privacy-engine-manager-windows.test.js
+  ultimate-installed-gui:
+    needs: installed-prototype
+    if: github.ref == 'refs/heads/feature/azwah-privacy-engine-integration'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      AZWAH_PRIVACY_ENGINE_QA_BUNDLE: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build actual Ultimate with the dedicated engine, Firefox and Office payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          choco install 7zip nsis -y --no-progress
+          npm ci
+          Push-Location engine-prototype
+          try { ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win dir --x64 --publish never }
+          finally { Pop-Location }
+          $env:VITE_AZWAH_ADMIN = '0'
+          npm run build
+          node scripts/fetch-bundled-chromium.mjs win64
+          node scripts/fetch-bundled-firefox.mjs
+          npx --no-install electron-builder install-app-deps --arch=x64
+          npx --no-install electron-builder --config electron-builder.office-payload.cjs --win --dir --x64 --publish never
+          $env:VITE_AZWAH_ADMIN = '1'
+          npm run build
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npx --no-install electron-builder --config electron-builder.ultimate-unified.cjs --win nsis --x64 --publish never
+      - name: Drive installed Ultimate GUI
+        env:
+          AZWAH_ULTIMATE_QA_EXE: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+        run: node test/privacy-engine-ultimate-gui.mjs
+      - name: Preserve installed GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dedicated-ultimate-gui-evidence
+          path: build-evidence/ultimate-engine-gui
+          if-no-files-found: ignore
