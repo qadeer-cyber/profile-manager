@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/azwah-native-windows-diagnostics.yml
       - scripts/test-native-windows-host.ps1
+      - scripts/build-native-chromium-baseline.ps1
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,8 +26,17 @@ jobs:
           Write-Output $json
           @('### Azwah native Windows host inventory', '~~~json', $json, '~~~',
             'Standard hosted compute is free for public repositories. This job allocates no Actions cache or artifact storage.',
-            'Current repository cache usage and billing permissions are outside this job’s read-only token.') |
+            'Current repository cache usage and billing permissions are outside the read-only diagnostic token.') |
             Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Parse the native Windows build script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $env:GITHUB_WORKSPACE 'scripts/build-native-chromium-baseline.ps1'),
+            [ref]$tokens, [ref]$errors)
+          if ($errors) { throw ($errors | Out-String) }
       - name: Record eligibility without starting a build
         shell: pwsh
         run: |

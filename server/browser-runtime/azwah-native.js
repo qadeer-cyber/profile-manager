@@ -17,21 +17,22 @@ const error = (message, code = 'AZWAH_NATIVE_UNAVAILABLE') =>
 function developmentBinary() {
   const exe = process.env.AZWAH_NATIVE_CHROMIUM_EXE;
   const hash = process.env.AZWAH_NATIVE_CHROMIUM_SHA256;
+  const dllHash = process.env.AZWAH_NATIVE_CHROMIUM_DLL_SHA256;
   if (process.platform !== 'win32' || isPackaged() || !exe || !path.isAbsolute(exe) ||
-      !hash || !/^[a-f0-9]{64}$/i.test(hash)) {
-    throw error('Native Azwah requires a qualified Windows development build configured with its executable path and SHA-256.');
+      !hash || !/^[a-f0-9]{64}$/i.test(hash) || !dllHash || !/^[a-f0-9]{64}$/i.test(dllHash)) {
+    throw error('Native Azwah requires a qualified Windows development build configured with the executable path and SHA-256 for both chrome.exe and chrome.dll.');
   }
-  return { exe, hash: hash.toLowerCase() };
+  return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase() };
 }
 
-async function verifyBinary(exe, expected) {
+async function verifyBinary(binary, expected) {
   const hash = createHash('sha256');
   try {
-    for await (const chunk of fs.createReadStream(exe)) hash.update(chunk);
+    for await (const chunk of fs.createReadStream(binary)) hash.update(chunk);
   } catch {
-    throw error('The configured native Azwah executable could not be read.');
+    throw error('The configured native Azwah browser binary could not be read.');
   }
-  if (hash.digest('hex') !== expected) throw error('The native Azwah executable SHA-256 does not match.');
+  if (hash.digest('hex') !== expected) throw error('A native Azwah browser binary SHA-256 does not match.');
 }
 
 function proxyRelay(proxy) {
@@ -52,9 +53,9 @@ function proxyRelay(proxy) {
 }
 
 export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
-  const { exe, hash } = developmentBinary();
+  const { exe, hash, dllHash } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
-  await verifyBinary(exe, hash);
+  await Promise.all([verifyBinary(exe, hash), verifyBinary(path.join(path.dirname(exe), 'chrome.dll'), dllHash)]);
   checkCancelled();
 
   const nativeDir = path.join(dir, 'azwah-native');

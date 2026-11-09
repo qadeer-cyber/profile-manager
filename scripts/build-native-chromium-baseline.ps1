@@ -16,6 +16,12 @@ param(
     [Parameter(Mandatory)]
     [string] $DepotTools,
 
+    [ValidateRange(1, 16)]
+    [int] $Jobs = 2,
+
+    [ValidateRange(4, 32)]
+    [int] $ReserveGiB = 8,
+
     [switch] $AzwahSource
 )
 
@@ -37,6 +43,32 @@ function Invoke-BuildTool {
     & $Program @Arguments
     if ($LASTEXITCODE -ne 0) {
         throw "$Program exited with code $LASTEXITCODE."
+    }
+}
+
+function Invoke-BoundedBuildStage {
+    param([string] $Program, [string[]] $Arguments)
+    # An encoded command keeps path quoting in PowerShell and gives us an
+    # owned process tree to stop if the build volume reaches its reserve.
+    $words = (@($Program) + $Arguments) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
+    $command = '$ErrorActionPreference = ''Stop''; & ' + ($words -join ' ') + '; exit $LASTEXITCODE'
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+    $shell = (Get-Process -Id $PID).Path
+    if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) { throw 'Free disk space is below the build reserve.' }
+    $stage = Start-Process -FilePath $shell -ArgumentList @('-NoProfile', '-NonInteractive', '-EncodedCommand', $encoded) `
+        -WorkingDirectory (Get-Location).ProviderPath -NoNewWindow -PassThru
+    try {
+        while (!$stage.WaitForExit(1000)) {
+            if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) {
+                throw "Stopped $Program because the build volume reached its free-space reserve."
+            }
+        }
+        if ($stage.ExitCode -ne 0) { throw "$Program exited with code $($stage.ExitCode)." }
+    } finally {
+        if (!$stage.HasExited) {
+            & "$env:SystemRoot/System32/taskkill.exe" /PID $stage.Id /T /F | Out-Null
+        }
+        $stage.Dispose()
     }
 }
 
@@ -112,7 +144,7 @@ try {
         if (-not (Test-Path -LiteralPath '.gclient')) {
             Invoke-BuildTool $gclient @('config', '--unmanaged', 'https://chromium.googlesource.com/chromium/src.git')
         }
-        Invoke-BuildTool $gclient @('sync', '--no-history', '--revision', "src@$ChromiumCommit")
+        Invoke-BoundedBuildStage $gclient @('sync', '--no-history', '--revision', "src@$ChromiumCommit", '--jobs', "$Jobs")
     }
     $sourceHead = Invoke-BuildTool $git @('-C', 'src', 'rev-parse', 'HEAD')
     if ($sourceHead -ne $ChromiumCommit) { throw 'The synced Chromium revision did not match the build pin.' }
@@ -136,14 +168,14 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@ | Set-Content -LiteralPath (Join-Path $out 'args.gn') -Encoding ascii
-        Invoke-BuildTool $gn @('gen', $out)
+        Invoke-BoundedBuildStage $gn @('gen', $out)
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
         if (-not $AzwahSource) {
             $targets += 'mini_installer'
             $outputFiles += 'mini_installer.exe'
         }
-        Invoke-BuildTool $autoninja (@('-C', $out) + $targets)
+        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets)
         $files = $outputFiles | ForEach-Object {
             $file = Get-Item -LiteralPath (Join-Path $out $_)
             @{
@@ -158,7 +190,7 @@ symbol_level = 0
             depotToolsCommit = $DepotToolsCommit
             buildHost = [Environment]::OSVersion.VersionString
             files = @($files)
-                    sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
+            sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
     } finally {
         Pop-Location

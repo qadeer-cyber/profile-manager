@@ -16,6 +16,18 @@ The script builds upstream `chrome` and `mini_installer` targets and writes `BAS
 
 [Chromium Windows build requirements](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/windows_build_instructions.md)
 
+## Owner-operated Windows worker
+
+Use an already-authorized Windows x64 machine with a dedicated, space-free NTFS workspace. The hosted diagnostics workflow measures the standard runner without installing components, using Actions storage, or downloading Chromium. Run the same host inventory on the owner-operated machine before beginning the full build.
+
+```powershell
+pwsh -NoProfile -File scripts/test-native-windows-host.ps1 -Workspace C:\src\azwah-native
+```
+
+Run the build from a dedicated non-administrator account after an administrator installs the official toolchain. Review the pinned repository revision before running it. Keep toolchain files and build outputs on the worker. The build script starts with at least 100 GiB of free NTFS space, uses two jobs by default, and stops its build process tree when free space reaches the configured reserve.
+
+The direct local command is also the build entry point for an owner-authorized self-hosted runner. Register that runner only in an owner-controlled private repository, allow it to execute trusted manually dispatched jobs from a reviewed revision, and avoid exposing it to public PR workflows. Use a dedicated worker account and keep registration tokens out of source and logs. No runner registration is needed for a direct local build.
+
 ## Development source build
 
 The Windows patch is pinned by `native-chromium/upstream.json`. Use a fresh workspace with `-AzwahSource` to apply it and compile Chromium. The pin is a development revision. The development build does not run the installer target or enter Ultimate packaging.
@@ -25,7 +37,7 @@ $ChromiumSha = (Get-Content native-chromium/upstream.json -Raw | ConvertFrom-Jso
 ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Workspace C:\src\azwah-native -DepotTools C:\src\depot_tools -ChromiumCommit $ChromiumSha -DepotToolsCommit $DepotToolsSha
 ```
 
-The patch adds Azwah product strings and Windows profile path and registration identifiers. In managed mode, Chromium network contexts use a single fixed manager relay, ICU initializes the supplied IANA timezone, and the geolocation service uses the supplied approximate coordinates and accuracy after normal Chromium permission checks. Incomplete managed geolocation returns position unavailable. The manager exposes a development-only Native Chromium runtime. On a Windows source installation, set `AZWAH_NATIVE_CHROMIUM_EXE` to the compiled browser path and `AZWAH_NATIVE_CHROMIUM_SHA256` to its build-manifest checksum before starting Ultimate. The manager waits for a startup receipt from the native browser. For proxy profiles, Chromium checks the public exit through its own network service before opening tabs. JavaScript-observed timezone and coordinates, installed packaging, and leak checks still require Windows qualification.
+The patch adds Azwah product strings and Windows profile path and registration identifiers. In managed mode, Chromium network contexts use a single fixed manager relay, ICU initializes the supplied IANA timezone, and the geolocation service uses the supplied approximate coordinates and accuracy after normal Chromium permission checks. Incomplete managed geolocation returns position unavailable. The manager exposes a development-only Native Chromium runtime. On a Windows source installation, set `AZWAH_NATIVE_CHROMIUM_EXE` to the compiled browser path and `AZWAH_NATIVE_CHROMIUM_SHA256` and `AZWAH_NATIVE_CHROMIUM_DLL_SHA256` to the manifest checksums for `chrome.exe` and `chrome.dll` before starting Ultimate. The manager waits for a startup receipt from the native browser. For proxy profiles, Chromium checks the public exit through its own network service before opening tabs. JavaScript-observed timezone and coordinates, installed packaging, and leak checks still require Windows qualification.
 
 ## Linux-to-Windows development build
 
