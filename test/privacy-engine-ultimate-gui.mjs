@@ -44,13 +44,32 @@ try {
   await api('/settings', { method: 'PUT', body: { maxRunningProfiles: 8 } });
   const names = Array.from({ length: 5 }, (_, index) => 'QA Browser ' + (index + 1));
   const button = name => page.getByRole('button', { name, exact: true });
+  const selected = name => page.getByRole('checkbox', { name: 'Select ' + name, exact: true });
+  const waitForProfile = name => button('Launch ' + name).waitFor({ timeout: 20000 });
   for (const name of names) {
     await button('New profile').click();
     await page.getByPlaceholder('Profile name', { exact: true }).fill(name);
     await page.getByLabel('Chromium runtime', { exact: true }).selectOption('privacy');
     await button('Create profile').click();
-    await button('Launch ' + name).waitFor({ timeout: 20000 });
+    await waitForProfile(name);
   }
+  const originalName = names[0];
+  names[0] += ' renamed';
+  await selected(originalName).check();
+  await button('Edit selected').click();
+  await page.getByPlaceholder('Profile name', { exact: true }).fill(names[0]);
+  assert.equal(await page.getByLabel('Chromium runtime', { exact: true }).inputValue(), 'privacy');
+  await button('Save changes').click();
+  await waitForProfile(names[0]);
+  if (!(await selected(names[0]).isChecked())) await selected(names[0]).check();
+  await button('Duplicate selected').click();
+  const copy = names[0] + ' (copy)';
+  await waitForProfile(copy);
+  if (await selected(names[0]).isChecked()) await selected(names[0]).uncheck();
+  await selected(copy).check();
+  await button('Delete selected').click();
+  await button('Move to trash').click();
+  await button('Launch ' + copy).waitFor({ state: 'detached' });
   for (const name of names) {
     await button('Launch ' + name).click();
     await button('Stop ' + name).waitFor({ timeout: 45000 });
@@ -87,6 +106,9 @@ try {
   assert.deepEqual((await rows()).map(profile => profile.name).sort(), names);
   proof.gui = 'create, launch five, stop and restart one, reinstall profile retention';
 } finally {
+  if (app && !proof.gui) {
+    try { await (await app.firstWindow()).screenshot({ path: path.join(output, 'gui-failure.png'), timeout: 4000 }); } catch {}
+  }
   await app?.close();
   fs.writeFileSync(path.join(output, 'installed-gui.json'), JSON.stringify(proof, null, 2));
 }

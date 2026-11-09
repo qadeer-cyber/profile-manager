@@ -138,7 +138,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             <option value="firefox">Firefox</option>
           </select></label>
           <p className="muted hint">Manual launches use an independent browser process. Firefox uses the executable from Settings. Chromium extensions are not loaded on Firefox profiles. Profile templates are saved from the profile list when that action is available.</p>
-          {f.browserEngine !== 'firefox' && <label>Chromium runtime<select value={advanced.runtime || 'compatibility'}
+          {f.browserEngine !== 'firefox' && <label>Chromium runtime<select aria-label="Chromium runtime" value={advanced.runtime || 'compatibility'}
             onChange={event => setAdvanced({ ...advanced, runtime: event.target.value })}>
             <option value="compatibility">Chrome Stable compatibility</option>
             <option value="privacy">Azwah Privacy Engine (QA)</option>

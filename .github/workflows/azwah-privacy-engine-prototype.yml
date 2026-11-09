@@ -91,3 +91,11 @@ jobs:
           name: dedicated-ultimate-gui-evidence
           path: build-evidence/ultimate-engine-gui
           if-no-files-found: ignore
+      - name: Preserve QA installer after installed GUI passes
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-engine-qa-only-${{ github.sha }}
+          path: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
