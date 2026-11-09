@@ -1,7 +1,8 @@
-import { app, BrowserWindow, WebContentsView, ipcMain, session } from 'electron';
+import { app, BrowserWindow, WebContentsView, dialog, ipcMain, session } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { openBrowserState } from './browser-state.js';
 import { navigationOrigin, validateEngineConfig } from './config.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -26,6 +27,8 @@ export async function startManaged(request, stage) {
   await app.whenReady();
   stage('Electron ready');
 
+  const { state, update } = openBrowserState(root);
+  const downloads = [];
   const web = session.defaultSession;
   const proxy = data.proxyRules ? new URL(data.proxyRules) : null;
   if (proxy && (!['http:', 'https:', 'socks5:'].includes(proxy.protocol) || proxy.username || proxy.password ||
@@ -66,30 +69,46 @@ export async function startManaged(request, stage) {
       return;
     }
     // Native dialog is outside page control. Recheck the origin after the decision.
-    import('electron').then(({ dialog }) => dialog.showMessageBox(window, {
+    dialog.showMessageBox(window, {
       type: 'question', message: 'Share configured location with this site?', detail: origin,
       buttons: ['Block', 'Allow for this tab'], defaultId: 0, cancelId: 0,
-    })).then(({ response }) => {
+    }).then(({ response }) => {
       const allow = response === 1 && !contents.isDestroyed() && allowedUrl(contents.getURL()) === origin;
       if (allow) permissions.add(permissionKey(contents, origin));
       callback(allow);
     }).catch(() => callback(false));
   });
-  web.on('will-download', event => event.preventDefault());
+  web.on('will-download', (event, item, contents) => {
+    if (!tabs.some(tab => tab.webContents === contents) || !allowedUrl(item.getURL())) {
+      event.preventDefault();
+      return;
+    }
+    const entry = { name: item.getFilename(), status: 'in progress' };
+    downloads.unshift(entry);
+    if (downloads.length > 50) downloads.pop();
+    item.setSaveDialogOptions({ title: 'Save download' });
+    item.once('done', (_, result) => { entry.status = result; snapshot(); });
+    snapshot();
+  });
 
   function layout() {
     if (closed) return;
     const [width, height] = window.getContentSize();
     tabs.forEach((tab, index) => {
       tab.setVisible(index === active);
-      tab.setBounds({ x: 0, y: 88, width, height: Math.max(0, height - 88) });
+      tab.setBounds({ x: 0, y: 122, width, height: Math.max(0, height - 122) });
     });
   }
   function snapshot() {
     if (closed) return;
     window.webContents.send('azwah-toolbar-state', { active, tabs: tabs.map(tab => ({
       url: allowedUrl(tab.webContents.getURL()) ? tab.webContents.getURL() : '',
-    })) });
+    })), bookmarks: state.bookmarks, history: state.history, downloads });
+  }
+  let restoring = true;
+  function persistTabs() {
+    if (restoring || closed || data.verify) return;
+    update({ tabs: tabs.map(tab => tab.webContents.getURL()) });
   }
   async function navigate(contents, value) {
     if (typeof value !== 'string' || value.length > 8192) throw new Error('Enter a valid address.');
@@ -109,7 +128,24 @@ export async function startManaged(request, stage) {
     for (const eventName of ['will-frame-navigate', 'will-redirect']) {
       contents.on(eventName, (event, urlValue) => { if (!allowedUrl(event.url || urlValue)) event.preventDefault(); });
     }
-    for (const name of ['did-navigate', 'did-navigate-in-page', 'did-fail-load']) contents.on(name, snapshot);
+    for (const name of ['did-navigate', 'did-navigate-in-page']) contents.on(name, (_, url) => {
+      if (!restoring && !data.verify && allowedUrl(url)) {
+        try {
+          update({ tabs: tabs.map(tab => tab.webContents.getURL()), history: [url, ...state.history.filter(item => item !== url)] });
+        } catch { stage('Browser history could not be saved.'); }
+      }
+      snapshot();
+    });
+    contents.on('did-fail-load', snapshot);
+    contents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown' || !input.control || input.alt || input.shift) return;
+      const key = input.key.toLowerCase();
+      if (key === 'l') {
+        event.preventDefault();
+        window.webContents.focus();
+        window.webContents.send('azwah-toolbar-focus');
+      }
+    });
     contents.on('render-process-gone', () => app.exit(1));
     try {
       await contents.loadURL('about:blank');
@@ -153,6 +189,13 @@ export async function startManaged(request, stage) {
     const tab = tabs[active];
     if (!tab) return;
     if (action === 'navigate') await navigate(tab.webContents, value);
+    else if (action === 'bookmark') {
+      const url = tab.webContents.getURL();
+      if (allowedUrl(url) && !data.verify) {
+        update({ bookmarks: state.bookmarks.includes(url)
+          ? state.bookmarks.filter(item => item !== url) : [url, ...state.bookmarks] });
+      }
+    }
     else if (action === 'back' && tab.webContents.navigationHistory.canGoBack()) tab.webContents.navigationHistory.goBack();
     else if (action === 'forward' && tab.webContents.navigationHistory.canGoForward()) tab.webContents.navigationHistory.goForward();
     else if (action === 'reload') tab.webContents.reload();
@@ -163,6 +206,7 @@ export async function startManaged(request, stage) {
       tab.webContents.close();
       active = Math.min(active, tabs.length - 1);
       layout();
+      persistTabs();
     }
     snapshot();
   });
@@ -170,7 +214,17 @@ export async function startManaged(request, stage) {
   if (data.verify === true) window.webContents.on('console-message', event => stage('Toolbar console: ' + event.message));
   await window.loadFile(path.join(here, 'toolbar.html'));
   stage('toolbar loaded');
-  await addTab(data.url);
+  const startup = data.url ? [data.url] : state.tabs.length ? [...state.tabs] : [null];
+  for (const url of startup) {
+    try { await addTab(url); }
+    catch (error) {
+      if (data.verify) throw error;
+      stage('A startup page could not be restored.');
+    }
+  }
+  if (!tabs.length) await addTab();
+  restoring = false;
+  persistTabs();
   stage('first tab loaded');
   window.show();
   window.on('closed', () => {

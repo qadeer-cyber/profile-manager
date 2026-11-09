@@ -6,11 +6,12 @@
 <title>Azwah Privacy Engine</title>
 <style>
 body { margin: 0; padding: 6px; font: 13px system-ui; color: #182437; background: #e8edf4; }
-form, #tabs { display: flex; align-items: center; gap: 4px; margin: 0 0 4px; }
+form, #tabs, #collections { display: flex; align-items: center; gap: 4px; margin: 0 0 4px; }
 #tabs { overflow-x: auto; }
 #address { flex: 1; min-width: 0; }
 button, input { font: inherit; }
 #status { margin: 0; }
+#collections select { max-width: 230px; }
 </style>
 <script src="./toolbar.js" defer></script>
 </head>
@@ -21,5 +22,11 @@ button, input { font: inherit; }
 <button type="button" data-action="new">New tab</button><button type="button" data-action="close">Close tab</button>
 <input id="address" aria-label="Address" type="text" autocomplete="off" spellcheck="false"><button>Go</button>
 </form>
+<div id="collections">
+<button type="button" data-action="bookmark">Toggle bookmark</button>
+<select id="bookmarks" aria-label="Bookmarks"></select>
+<select id="history" aria-label="History"></select>
+<select id="downloads" aria-label="Downloads"></select>
+</div>
 <p id="status" role="status"></p>
 </body></html>

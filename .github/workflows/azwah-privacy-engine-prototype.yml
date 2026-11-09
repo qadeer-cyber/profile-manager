@@ -18,12 +18,19 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Require prototype configuration and Issue 20 regression checks
-        run: node --test test/privacy-engine-prototype.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+        run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
       - name: Package isolated Windows QA prototype
         working-directory: engine-prototype
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win nsis --x64 --publish never
+        shell: pwsh
+        run: |
+          for ($attempt = 1; $attempt -le 2; $attempt++) {
+            ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win nsis --x64 --publish never
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($attempt -eq 1) { Start-Sleep -Seconds 10 }
+          }
+          exit $LASTEXITCODE
       - name: Install prototype in a private QA directory
         shell: pwsh
         run: |

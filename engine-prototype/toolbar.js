@@ -9,6 +9,26 @@ document.querySelector('#navigation').addEventListener('submit', event => {
   act('navigate', address.value.trim());
 });
 for (const button of document.querySelectorAll('[data-action]')) button.addEventListener('click', () => act(button.dataset.action));
+const focusAddress = () => { address.focus(); address.select(); };
+window.azwahControls.onFocusAddress(focusAddress);
+document.addEventListener('keydown', event => {
+  if (!event.ctrlKey || event.altKey || event.shiftKey) return;
+  const actions = { t: 'new', w: 'close', r: 'reload' };
+  const key = event.key.toLowerCase();
+  if (key === 'l' || actions[key]) {
+    event.preventDefault();
+    if (key === 'l') focusAddress(); else act(actions[key]);
+  }
+});
+for (const name of ['bookmarks', 'history']) {
+  document.getElementById(name).addEventListener('change', event => {
+    if (event.target.value) act('navigate', event.target.value);
+  });
+}
+const list = (id, label, values) => {
+  const select = document.getElementById(id);
+  select.replaceChildren(new Option(label, ''), ...values.map(({ label, value }) => new Option(label, value)));
+};
 window.azwahControls.onState(state => {
   tabs.replaceChildren(...state.tabs.map(({ url }, index) => {
     const button = document.createElement('button');
@@ -17,6 +37,9 @@ window.azwahControls.onState(state => {
     button.addEventListener('click', () => act('select', index));
     return button;
   }));
+  list('bookmarks', 'Bookmarks', state.bookmarks.map(url => ({ label: url, value: url })));
+  list('history', 'History', state.history.map(url => ({ label: url, value: url })));
+  list('downloads', 'Downloads', state.downloads.map(item => ({ label: item.name + ' · ' + item.status, value: '' })));
   const current = state.tabs[state.active]?.url || '';
   if (document.activeElement !== address) address.value = current;
   status.textContent = current ? new URL(current).protocol === 'https:' ? 'HTTPS' : 'HTTP' : '';
