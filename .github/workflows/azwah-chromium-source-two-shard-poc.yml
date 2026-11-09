@@ -1,0 +1,140 @@
+name: Azwah pinned Chromium source two-runner proof
+on:
+  push:
+    branches: [qa/azwah-two-runner-shard-poc]
+    paths: [.github/workflows/azwah-chromium-source-two-shard-poc.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: azwah-chromium-source-two-shard-poc
+  cancel-in-progress: false
+
+# Second-level experiment: real sources from the Azwah-pinned Chromium revision.
+# Not GN/Ninja distribution and not an executable/browser build.
+jobs:
+  compile:
+    if: ${{ !github.event.repository.private }}
+    name: "Compile Chromium zlib ${{ matrix.source }}"
+    runs-on: windows-2025
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        source: [adler32, crc32]
+    env:
+      SOURCE_NAME: ${{ matrix.source }}
+      CHROMIUM_PIN: b0cbb99d9f0f9fbbb6c6780e73b17984e991c866
+    steps:
+      - name: Sparse-fetch pinned Chromium zlib source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config --global core.autocrlf false
+          New-Item -ItemType Directory -Force source | Out-Null
+          git -C source init --quiet
+          if ($LASTEXITCODE -ne 0) { throw 'git init failed' }
+          git -C source remote add origin https://chromium.googlesource.com/chromium/src.git
+          git -C source sparse-checkout init --no-cone
+          if ($LASTEXITCODE -ne 0) { throw 'sparse init failed' }
+          git -C source sparse-checkout set --no-cone -- third_party/zlib
+          if ($LASTEXITCODE -ne 0) { throw 'sparse paths failed' }
+          git -C source fetch --depth=1 --filter=blob:none origin $env:CHROMIUM_PIN
+          if ($LASTEXITCODE -ne 0) { throw 'pinned sparse fetch failed' }
+          git -C source checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0) { throw 'checkout failed' }
+          $head = git -C source rev-parse HEAD
+          if ($head -ne $env:CHROMIUM_PIN) { throw "Unexpected Chromium commit $head" }
+          $source = Join-Path $PWD "source/third_party/zlib/$env:SOURCE_NAME.c"
+          if (!(Test-Path -LiteralPath $source)) { throw "Missing pinned Chromium source $source" }
+      - name: Compile real Chromium C translation unit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsroot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (!$vsroot) { throw 'MSVC toolchain unavailable' }
+          $toolset = Get-ChildItem -LiteralPath (Join-Path $vsroot 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $cl = Join-Path $toolset.FullName 'bin/Hostx64/x64/cl.exe'
+          $srcroot = Join-Path $PWD 'source/third_party/zlib'
+          $src = Join-Path $srcroot "$env:SOURCE_NAME.c"
+          New-Item -ItemType Directory -Force object-out | Out-Null
+          $obj = Join-Path $PWD "object-out/$env:SOURCE_NAME.obj"
+          & $cl /nologo /c /W3 /TC "/I$srcroot" "/Fo$obj" $src
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $obj)) { throw 'Pinned Chromium source compilation failed' }
+          [ordered]@{
+            chromium_revision = $env:CHROMIUM_PIN
+            source = $env:SOURCE_NAME
+            source_sha256 = (Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash.ToLowerInvariant()
+            object_sha256 = (Get-FileHash -LiteralPath $obj -Algorithm SHA256).Hash.ToLowerInvariant()
+            compiler_sha256 = (Get-FileHash -LiteralPath $cl -Algorithm SHA256).Hash.ToLowerInvariant()
+            toolset = $toolset.Name
+          } | ConvertTo-Json | Set-Content -LiteralPath object-out/manifest.json -Encoding utf8
+      - name: Transfer pinned Chromium object checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-zlib-${{ matrix.source }}
+          path: object-out/
+          if-no-files-found: error
+          retention-days: 1
+  merge:
+    name: Archive independently compiled Chromium objects
+    needs: compile
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chromium-zlib-*
+          path: imported
+      - name: Verify pins and hashes; produce native static library
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pins = @()
+          $compilers = @()
+          $objects = @()
+          foreach ($name in @('adler32','crc32')) {
+            $folder = Join-Path $PWD "imported/chromium-zlib-$name"
+            $manifest = Get-Content -LiteralPath (Join-Path $folder 'manifest.json') -Raw | ConvertFrom-Json
+            $object = Join-Path $folder "$name.obj"
+            if (!(Test-Path -LiteralPath $object)) { throw "Missing $name object" }
+            if ($manifest.source -cne $name) { throw 'Source mismatch' }
+            if ((Get-FileHash -LiteralPath $object -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifest.object_sha256) { throw 'Checksum mismatch' }
+            $pins += $manifest.chromium_revision
+            $compilers += $manifest.compiler_sha256
+            $objects += $object
+          }
+          if (@($pins | Sort-Object -Unique).Count -ne 1 -or $pins[0] -cne 'b0cbb99d9f0f9fbbb6c6780e73b17984e991c866') { throw 'Chromium revision mismatch' }
+          if (@($compilers | Sort-Object -Unique).Count -ne 1) { throw 'Compiler mismatch across workers' }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $vsroot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
+          if (!$vsroot) { throw 'Missing MSVC toolchain' }
+          $toolset = Get-ChildItem -LiteralPath (Join-Path $vsroot 'VC/Tools/MSVC') -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $bin = Join-Path $toolset.FullName 'bin/Hostx64/x64'
+          $cl = Join-Path $bin 'cl.exe'
+          $libexe = Join-Path $bin 'lib.exe'
+          if ((Get-FileHash -LiteralPath $cl -Algorithm SHA256).Hash.ToLowerInvariant() -cne $compilers[0]) { throw 'Merge toolchain mismatch' }
+          New-Item -ItemType Directory -Force merged | Out-Null
+          $archive = Join-Path $PWD 'merged/azwah-pinned-chromium-two-shard.lib'
+          & $libexe /NOLOGO /MACHINE:X64 "/OUT:$archive" @objects
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $archive)) { throw 'Archive merge failed' }
+          $members = & $libexe /NOLOGO /LIST $archive | Out-String
+          if ($LASTEXITCODE -ne 0 -or $members -notmatch 'adler32.obj' -or $members -notmatch 'crc32.obj') { throw 'Archive membership check failed' }
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          @(
+            '## Pinned Chromium two-runner source proof'
+            '- Both C translation units fetched at Azwah pinned Chromium SHA.'
+            '- Two independent Windows runners compiled actual Chromium zlib code.'
+            '- Matching compiler hashes and object hashes verified.'
+            '- Merge runner created static library containing both objects.'
+            "- SHA256: $hash"
+            '- Not covered: GN/Ninja dependency-aware sharding, huge source sync, full Chromium browser, installer.'
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+          Write-Output "Pinned Chromium source cross-runner archive verified SHA256=$hash"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: azwah-pinned-chromium-two-shard-lib
+          path: merged/azwah-pinned-chromium-two-shard.lib
+          retention-days: 1
+          if-no-files-found: error
