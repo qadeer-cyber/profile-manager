@@ -1,0 +1,35 @@
+name: Azwah native Windows diagnostics
+on:
+  push:
+    branches: [feature/azwah-privacy-engine-integration]
+    paths:
+      - .github/workflows/azwah-native-windows-diagnostics.yml
+      - scripts/test-native-windows-host.ps1
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostics:
+    if: ${{ !github.event.repository.private }}
+    runs-on: windows-2025
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Inspect the pinned Chromium build requirements
+        shell: pwsh
+        run: |
+          $report = ./scripts/test-native-windows-host.ps1 -Workspace $env:GITHUB_WORKSPACE
+          $json = $report | ConvertTo-Json -Depth 6
+          Write-Output $json
+          @('### Azwah native Windows host inventory', '~~~json', $json, '~~~',
+            'Standard hosted compute is free for public repositories. This job allocates no Actions cache or artifact storage.',
+            'Current repository cache usage and billing permissions are outside this job’s read-only token.') |
+            Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+      - name: Record eligibility without starting a build
+        shell: pwsh
+        run: |
+          $report = ./scripts/test-native-windows-host.ps1 -Workspace $env:GITHUB_WORKSPACE
+          if (!$report.storageMeetsMinimum) { Write-Warning 'Free NTFS capacity is below the 100 GiB project preflight.' }
+          if (!$report.toolchainPresent) { Write-Warning 'One or more pinned toolchain components were not detected.' }
