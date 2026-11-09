@@ -20,6 +20,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $env:GITHUB_WORKSPACE 'scripts/build-native-chromium-baseline.ps1'),
+            [ref]$null, [ref]$parseErrors) | Out-Null
+          if ($parseErrors) { throw ($parseErrors -join [Environment]::NewLine) }
           git config --global core.autocrlf false
           git config --global core.longpaths true
           $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json

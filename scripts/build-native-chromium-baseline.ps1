@@ -87,8 +87,11 @@ if ($Workspace -notmatch '^[A-Za-z]:\\\S+$') {
     throw 'Use a dedicated, space-free checkout directory on a local drive.'
 }
 $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($Workspace))
-if ($drive.DriveType -ne 'Fixed' -or $drive.DriveFormat -ne 'NTFS' -or $drive.AvailableFreeSpace -lt 100GB) {
-    throw 'The Chromium workspace needs a fixed NTFS drive with at least 100 GiB free.'
+if ($drive.DriveType -ne 'Fixed' -or $drive.DriveFormat -ne 'NTFS') {
+    throw 'The Chromium workspace needs a fixed NTFS drive.'
+}
+if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) {
+    throw 'Free disk space is below the build reserve.'
 }
 $memory = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
 if ($memory -lt 8GB) {
@@ -137,23 +140,30 @@ try {
         Set-Content -LiteralPath $marker -Value $pins -Encoding ascii
     }
 
+    # A source checkout or applied patch alone does not prove that DEPS sync finished.
+    $syncMarker = Join-Path $Workspace '.azwah-native-deps-synced'
+    $depsSynced = (Test-Path -LiteralPath $syncMarker -PathType Leaf) -and
+        ((Get-Content -LiteralPath $syncMarker -Raw).Trim() -ceq $pins)
+    if ($depsSynced -and !(Test-Path -LiteralPath 'src/.git')) {
+        throw 'The synchronized workspace is missing its Chromium checkout.'
+    }
+    if (!$depsSynced -and $drive.AvailableFreeSpace -lt 100GB) {
+        throw 'A fresh Chromium dependency sync needs at least 100 GiB free.'
+    }
+
     $patchApplied = $false
     if (Test-Path -LiteralPath 'src/.git') {
         $sourceChanges = Invoke-BuildTool $git @('-C', 'src', 'status', '--porcelain', '--untracked-files=no')
         if ($sourceChanges -and $AzwahSource) {
-            # Compare the full tracked diff before reusing a failed build's source tree.
-            $diff = Invoke-BuildTool $git @('-C', 'src', '-c', 'core.quotePath=true',
-                'diff', '--no-ext-diff', '--no-color', '--binary', '--full-index', 'HEAD')
-            $patchLines = Get-Content -LiteralPath $sourcePatch
-            if (($diff -join "`n") -cne ($patchLines -join "`n")) {
-                throw 'The Chromium checkout differs from the checked-in Azwah patch.'
+            if (!$depsSynced) {
+                throw 'Patched checkout has no matching completed sync receipt. Use a separate clean workspace.'
             }
             $patchApplied = $true
         } elseif ($sourceChanges) {
             throw 'The Chromium source has local changes.'
         }
     }
-    if (-not $patchApplied) {
+    if (!$depsSynced) {
         if (-not (Test-Path -LiteralPath '.gclient')) {
             Invoke-BuildTool $gclient @('config', '--unmanaged', 'https://chromium.googlesource.com/chromium/src.git')
         }
@@ -161,6 +171,11 @@ try {
     }
     $sourceHead = Invoke-BuildTool $git @('-C', 'src', 'rev-parse', 'HEAD')
     if ($sourceHead -ne $ChromiumCommit) { throw 'The synced Chromium revision did not match the build pin.' }
+    if (!$depsSynced) {
+        Set-Content -LiteralPath $syncMarker -Value $pins -Encoding ascii
+    } else {
+        Write-Output 'Reusing the synchronized workspace and existing Ninja outputs, if present.'
+    }
     Write-Output "Synced Chromium revision: $sourceHead; free_bytes=$($drive.AvailableFreeSpace)"
 
     Push-Location -LiteralPath 'src'
@@ -178,13 +193,18 @@ try {
             Remove-Item -LiteralPath $manifest
         }
         New-Item -ItemType Directory -Path $out -Force | Out-Null
-        @'
+        $gnArgs = @'
 is_debug = false
 is_component_build = false
 is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
-'@ | Set-Content -LiteralPath (Join-Path $out 'args.gn') -Encoding ascii
+'@
+        $argsFile = Join-Path $out 'args.gn'
+        if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
+            ((Get-Content -LiteralPath $argsFile -Raw).TrimEnd() -cne $gnArgs.TrimEnd())) {
+            Set-Content -LiteralPath $argsFile -Value $gnArgs -Encoding ascii
+        }
         # Check the real GN binary from synchronized Chromium DEPS, then generate.
         Write-Output 'BEGIN GN executable readiness (actual synced Chromium GN --version).'
         Invoke-BoundedBuildStage $gn @('--version')
