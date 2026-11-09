@@ -95,7 +95,7 @@ if ($memory -lt 8GB) {
     throw 'The build worker needs at least 8 GiB of physical RAM.'
 }
 
-$git = (Get-Command git.exe -CommandType Application).Source
+$git = (Get-Command git.exe -CommandType Application | Select-Object -First 1).Source
 $toolsHead = Invoke-BuildTool $git @('-C', $DepotTools, 'rev-parse', 'HEAD')
 $toolsChanges = Invoke-BuildTool $git @('-C', $DepotTools, 'status', '--porcelain', '--untracked-files=no')
 if ($toolsHead -ne $DepotToolsCommit -or $toolsChanges) {
