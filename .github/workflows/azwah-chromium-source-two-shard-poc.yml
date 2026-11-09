@@ -60,7 +60,12 @@ jobs:
           $src = Join-Path $srcroot "$env:SOURCE_NAME.c"
           New-Item -ItemType Directory -Force object-out | Out-Null
           $obj = Join-Path $PWD "object-out/$env:SOURCE_NAME.obj"
-          & $cl /nologo /c /W3 /TC "/I$srcroot" "/Fo$obj" $src
+          $sdkRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/Include'
+          $sdk = Get-ChildItem -LiteralPath $sdkRoot -Directory | Where-Object { Test-Path (Join-Path $_.FullName 'ucrt/stddef.h') } | Sort-Object Name -Descending | Select-Object -First 1
+          if (!$sdk) { throw 'Windows SDK UCRT headers unavailable' }
+          $vcInclude = Join-Path $toolset.FullName 'include'
+          $ucrtInclude = Join-Path $sdk.FullName 'ucrt'
+          & $cl /nologo /c /W3 /TC "/I$srcroot" "/I$vcInclude" "/I$ucrtInclude" "/Fo$obj" $src
           if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $obj)) { throw 'Pinned Chromium source compilation failed' }
           [ordered]@{
             chromium_revision = $env:CHROMIUM_PIN
