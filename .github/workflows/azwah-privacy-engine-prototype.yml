@@ -56,6 +56,15 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - name: Prepare pinned NSIS tools
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install 7zip nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/stage-windows-nsis.ps1
       - name: Build actual Ultimate with the dedicated engine, Firefox and Office payload
         env:
           GH_TOKEN: ${{ github.token }}
@@ -63,7 +72,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $true
-          choco install 7zip nsis -y --no-progress
           npm ci
           ./scripts/stage-windows-electron.ps1
           Push-Location engine-prototype

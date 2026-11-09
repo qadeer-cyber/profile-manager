@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 $electronDir = Join-Path $PWD 'node_modules/electron'
 $package = Get-Content (Join-Path $electronDir 'package.json') -Raw | ConvertFrom-Json
 $asset = "electron-v$($package.version)-win32-x64.zip"

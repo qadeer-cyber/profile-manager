@@ -20,6 +20,7 @@ const childExe = path.join(target, 'resources', 'privacy-engine', 'AzwahPrivacyP
 const install = () => execFileSync(installer, ['/S', '/D=' + target], { timeout: 240000 });
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 const proof = { source: process.env.GITHUB_SHA, installerSha256: sha(installer), installerBytes: fs.statSync(installer).size };
+console.log(JSON.stringify({ installer: proof }));
 let app;
 try {
   install();
