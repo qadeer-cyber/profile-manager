@@ -21,6 +21,9 @@ export function assertProfileVersion(dir, version) {
 export async function resolveWindowsChromeStable({ run = execute } = {}) {
   const command = `
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$env:PSModulePath = Join-Path $PSHOME 'Modules'
+Import-Module (Join-Path $env:PSModulePath 'Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1')
 $paths = @($env:LOCALAPPDATA, $env:ProgramFiles, \${env:ProgramFiles(x86)}) |
   Where-Object { $_ } | ForEach-Object { Join-Path $_ 'Google\\Chrome\\Application\\chrome.exe' }
 $registry = @('HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\App Paths\\chrome.exe',
