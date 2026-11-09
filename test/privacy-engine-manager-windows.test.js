@@ -81,6 +81,22 @@ test('Azwah manager launches five overlapping installed dedicated browser profil
       }, 201);
       profiles.push({ ...profile, timezone, location, index });
     }
+    const extensionDir = path.join(dir, 'fixture-extension');
+    fs.mkdirSync(extensionDir);
+    fs.writeFileSync(path.join(extensionDir, 'manifest.json'), JSON.stringify({
+      manifest_version: 3, name: 'Azwah QA content script', version: '1.0', permissions: ['storage'],
+      content_scripts: [{ matches: ['http://127.0.0.1/*'], js: ['content.js'], run_at: 'document_idle' }],
+    }));
+    fs.writeFileSync(path.join(extensionDir, 'content.js'), `
+      (async () => {
+        const { qaCount = 0 } = await chrome.storage.local.get('qaCount');
+        await chrome.storage.local.set({ qaCount: qaCount + 1 });
+        document.documentElement.setAttribute('data-azwah-extension-qa', String(qaCount + 1));
+      })();
+    `);
+    const extension = await api('POST', '/extensions/import', { path: extensionDir }, 201);
+    const routeA = '/profiles/' + profiles[0].id;
+    await api('POST', routeA + '/extensions', { extensionId: extension.id, enabled: true }, 201);
     await Promise.all(profiles.map(profile => launch(profile, true)));
     const running = await Promise.all(profiles.map(profile => api('GET', '/profiles/' + profile.id)));
     assert.equal(new Set(running.map(profile => profile.pid)).size, 5);
@@ -96,10 +112,12 @@ test('Azwah manager launches five overlapping installed dedicated browser profil
       assert.equal(evidence.first.previous, null);
       for (const [tab, result] of [evidence.first, evidence.second].entries()) {
         assert.equal(result.timezone, profile.timezone);
-        assert.deepEqual(result.position, [profile.location.latitude, profile.location.longitude, profile.location.accuracy], 'Profile ' + index + ', tab ' + tab);
+        assert.deepEqual(result.position, [profile.location.latitude, profile.location.longitude, profile.location.accuracy], 'Profile ' + index + ', tab ' + tab + ', visibility ' + result.visibility);
         assert.equal(result.storage, 'profile_' + index);
         assert.equal(result.cookie, 'qa=profile_' + index);
         assert.equal(result.node, 'undefined');
+        if (index === 0) assert.equal(result.extensionMarker, String(tab + 1));
+        else assert.equal(result.extensionMarker, null);
       }
       console.log(JSON.stringify({ pid: evidence.pid, chromium: evidence.chromium, executable: evidence.executable,
         timezone: evidence.first.timezone, position: evidence.first.position, tabs: evidence.ui.tabs }));
@@ -124,6 +142,13 @@ test('Azwah manager launches five overlapping installed dedicated browser profil
     assert.equal(recovered.first.cookie, 'qa=profile_1');
     await api('POST', '/profiles/' + profiles[1].id + '/stop');
     assert.equal((await api('GET', pathB)).running, false);
+    await api('POST', routeA + '/stop');
+    await launch(profiles[0], false);
+    assert.equal(read(profiles[0].id).first.extensionMarker, '3', 'Extension local storage persisted after restart');
+    await api('POST', routeA + '/stop');
+    await api('PATCH', routeA + '/extensions/' + extension.id, { enabled: false });
+    await launch(profiles[0], false);
+    assert.equal(read(profiles[0].id).first.extensionMarker, null, 'Disabled extension did not inject');
   } finally {
     try { await server?.close(); } finally {
       for (const listener of [proxy, fixture]) { listener.close(); listener.closeAllConnections(); }

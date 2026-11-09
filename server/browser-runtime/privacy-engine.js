@@ -4,9 +4,11 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
+import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocation } from '../proxy-location.js';
 import { getSetting, setSetting } from '../db.js';
 import { killTree } from '../proc.js';
+import { enabledChromiumExtensionPaths } from '../extensions.js';
 import { isPackaged } from '../testflags.js';
 
 const fail = (message, code = 'PRIVACY_ENGINE_UNAVAILABLE') => Object.assign(new Error(message), { code, status: 409 });
@@ -19,9 +21,6 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     : process.env.PM_PRIVACY_ENGINE_EXE;
   if (!executable || !path.isAbsolute(executable) || !fs.existsSync(executable)) {
     throw fail('The dedicated privacy engine is not installed in this Azwah build.');
-  }
-  if (profile.extensions?.some(extension => extension.enabled !== false)) {
-    throw fail('Dedicated engine extension assignments are not supported. Use the compatibility runtime for this profile.');
   }
   const root = path.join(dir, 'privacy-engine');
   fs.mkdirSync(root, { recursive: true });
@@ -42,7 +41,7 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     const proxy = profile.proxy;
     if (mode === 'auto') {
       const key = 'proxy-location:' + profile.id;
-      const result = await resolveProxyLocation(proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value) });
+      const result = await resolveProxyLocation(proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value), credentials: geoIpCredentials });
       timezone = result.timezone;
       location = { latitude: result.latitude, longitude: result.longitude, accuracy: result.accuracy };
     }
@@ -64,7 +63,7 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
     delete env.AZWAH_ENGINE_QA_LOG;
     if (verify) env.AZWAH_ENGINE_QA_LOG = control + '.log';
     fs.writeFileSync(request, JSON.stringify({ version: 1, timezone, location, proxyRules,
-      denyGeolocation: geo.permission === 'deny', url: opts.url || null, verify }), { flag: 'wx', mode: 0o600 });
+      extensions: enabledChromiumExtensionPaths(profile.id), denyGeolocation: geo.permission === 'deny', url: opts.url || null, verify }), { flag: 'wx', mode: 0o600 });
     const argv = [`--azwah-managed=${request}`, `--user-data-dir=${path.join(root, 'chromium')}`];
     child = spawn(executable, argv, { env, windowsHide: false, stdio: 'ignore' });
     let spawnError = false;

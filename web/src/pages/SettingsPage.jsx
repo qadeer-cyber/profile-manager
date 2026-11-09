@@ -3,6 +3,36 @@ import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { useTheme } from '../hooks/useTheme.js';
 
+function GeoIpSettings() {
+  const toast = useToast();
+  const [state, setState] = useState(null);
+  const [account, setAccount] = useState('');
+  const [license, setLicense] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api('/api/settings/geoip').then(setState).catch(error => toast(error.message, 'error')); }, [toast]);
+  async function change(method) {
+    setBusy(true);
+    try {
+      setState(await api('/api/settings/geoip', { method, ...(method === 'PUT' && { body: { account, license } }) }));
+      setAccount('');
+      setLicense('');
+      toast(method === 'PUT' ? 'GeoIP credentials saved' : 'Stored GeoIP credentials removed', 'success');
+    } catch (error) { toast(error.message, 'error'); }
+    finally { setBusy(false); }
+  }
+  return <section className="panel" id="geoip">
+    <h2>Proxy location</h2>
+    <p>Auto Location uses MaxMind GeoIP City and the assigned proxy’s verified public exit. Results are approximate.</p>
+    <p>{state?.configured ? 'Provider credentials configured' : 'Provider credentials unavailable'}</p>
+    <label>MaxMind account ID<input inputMode="numeric" value={account} onChange={event => setAccount(event.target.value)} autoComplete="off" /></label>
+    <label>MaxMind license key<input type="password" value={license} onChange={event => setLicense(event.target.value)} autoComplete="new-password" /></label>
+    <div className="row">
+      <button disabled={busy || !account.trim() || !license.trim()} onClick={() => change('PUT')}>Save GeoIP credentials</button>
+      <button disabled={busy || state?.source !== 'local'} onClick={() => change('DELETE')}>Remove stored credentials</button>
+    </div>
+  </section>;
+}
+
 export function SettingsPage() {
   const toast = useToast();
   const [theme, setTheme] = useTheme();
@@ -14,7 +44,7 @@ export function SettingsPage() {
   const save = async () => { try { setS(await api('/api/settings', { method: 'PUT', body: s })); toast('Settings saved', 'success'); } catch (e) { toast(e.message, 'error'); } };
   return <div className="settings-layout">
     <nav className="settings-nav" aria-label="Settings sections">
-      {[['edition', 'Edition'], ['appearance', 'Appearance'], ['launch', 'Launch and runtime'], ['data', 'Data and security'], ['backup', 'Backup'], ['diagnostics', 'Diagnostics']].map(([id, label]) => <a key={id} href={'#' + id}>{label}</a>)}
+      {[['edition', 'Edition'], ['appearance', 'Appearance'], ['launch', 'Launch and runtime'], ['geoip', 'Proxy location'], ['data', 'Data and security'], ['backup', 'Backup'], ['diagnostics', 'Diagnostics']].map(([id, label]) => <a key={id} href={'#' + id}>{label}</a>)}
     </nav>
     <div>
     <header className="page-head"><h1>Settings</h1><button className="primary" onClick={save}>Save changes</button></header>
@@ -45,6 +75,7 @@ export function SettingsPage() {
         <div className="row"><input readOnly className="mono-input" value={show ? token : '•'.repeat(24)} /><button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button><button onClick={() => { navigator.clipboard.writeText(token); toast('Token copied', 'success'); }}>Copy</button></div></>
         : <p className="muted">In web mode the token is in <code>data/api-token</code> or <code>PM_API_TOKEN</code>.</p>}
     </section>
+    <GeoIpSettings />
     <section className="panel" id="data"><h2>Data and security</h2>
       <p>Data folder: <code>{diag?.dataDir || 'Unavailable'}</code></p>
       {window.pm?.openDataDir && <button onClick={() => window.pm.openDataDir()}>Open data folder</button>}

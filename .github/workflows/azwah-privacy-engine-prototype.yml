@@ -18,7 +18,7 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Require prototype configuration and Issue 20 regression checks
-        run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+        run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/privacy-engine-extension-policy.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
       - name: Install pinned and checksummed Electron distribution
         env:
           GH_TOKEN: ${{ github.token }}

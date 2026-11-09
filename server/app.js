@@ -32,6 +32,7 @@ import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
 import { summarizeConsistency } from './fingerprint-summary.js';
 import { buildMonitoringReport } from './monitoring-report.js';
 import { computeParityCoverage } from './parity-scorecard.js';
+import { clearGeoIpCredentials, geoIpStatus, saveGeoIpCredentials } from './geoip-settings.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
@@ -1604,6 +1605,18 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const p = must(req.params.id);
     if (!p.proxy_id) throw err(400, 'no proxy configured');
     const r = await testLibraryProxy(p.proxy_id); delete r.proxy; res.json(r);
+  }));
+  ui.get('/settings/geoip', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(geoIpStatus());
+  }));
+  ui.put('/settings/geoip', wrap((req, res) => {
+    if (!uiToken) throw err(403, 'GeoIP credentials require the authenticated desktop UI.');
+    res.json(saveGeoIpCredentials(req.body));
+  }));
+  ui.delete('/settings/geoip', wrap((req, res) => {
+    if (!uiToken) throw err(403, 'GeoIP credentials require the authenticated desktop UI.');
+    res.json(clearGeoIpCredentials());
   }));
   ui.get('/settings', (req, res) => res.json(Object.fromEntries(Object.entries(SETTINGS_DEFAULTS).map(([k, d]) => [k, getSetting(k, d)]))));
   ui.put('/settings', wrap((req, res) => {

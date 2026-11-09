@@ -2,6 +2,7 @@ import { app, BrowserWindow, WebContentsView, dialog, ipcMain, session } from 'e
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { dedicatedExtensionIssue } from './extension-policy.js';
 import { openBrowserState } from './browser-state.js';
 import { navigationOrigin, validateEngineConfig } from './config.js';
 
@@ -30,6 +31,25 @@ export async function startManaged(request, stage) {
   const { state, update } = openBrowserState(root);
   const downloads = [];
   const web = session.defaultSession;
+  const loadedExtensions = [];
+  const extensionRoot = path.join(path.dirname(path.dirname(path.dirname(root))), 'extensions');
+  for (const extensionPath of data.extensions || []) {
+    if (path.dirname(extensionPath).toLowerCase() !== extensionRoot.toLowerCase() ||
+        fs.lstatSync(extensionPath).isSymbolicLink()) throw new Error('Invalid managed extension path.');
+    const manifest = JSON.parse(fs.readFileSync(path.join(extensionPath, 'manifest.json'), 'utf8'));
+    const reason = dedicatedExtensionIssue(manifest);
+    if (reason) {
+      loadedExtensions.push({ name: String(manifest.name).slice(0, 128), status: reason });
+      continue;
+    }
+    try {
+      const extension = await web.extensions.loadExtension(extensionPath, { allowFileAccess: false });
+      loadedExtensions.push({ name: extension.name, status: 'Loaded' });
+    } catch {
+      loadedExtensions.push({ name: String(manifest.name).slice(0, 128), status: 'Chromium declined to load this extension' });
+    }
+  }
+
   const proxy = data.proxyRules ? new URL(data.proxyRules) : null;
   if (proxy && (!['http:', 'https:', 'socks5:'].includes(proxy.protocol) || proxy.username || proxy.password ||
       proxy.pathname !== '' && proxy.pathname !== '/' || proxy.search || proxy.hash)) throw new Error('Invalid proxy handoff.');
@@ -104,7 +124,7 @@ export async function startManaged(request, stage) {
     if (closed) return;
     window.webContents.send('azwah-toolbar-state', { active, tabs: tabs.map(tab => ({
       url: allowedUrl(tab.webContents.getURL()) ? tab.webContents.getURL() : '',
-    })), bookmarks: state.bookmarks, history: state.history, downloads });
+    })), bookmarks: state.bookmarks, history: state.history, downloads, extensions: loadedExtensions });
   }
   let restoring = true;
   function persistTabs() {
@@ -122,7 +142,12 @@ export async function startManaged(request, stage) {
   async function addTab(url) {
     if (starting || tabs.length >= 20) return;
     starting = true;
-    const tab = new WebContentsView({ webPreferences: { ...isolated, session: web } });
+    const tab = new WebContentsView({ webPreferences: {
+      ...isolated, session: web,
+      // Native window occlusion must not suspend an active profile's
+      // location requests just because another profile is in front.
+      backgroundThrottling: false,
+    } });
     tab.setVisible(false);
     window.contentView.addChildView(tab);
     const contents = tab.webContents;
@@ -247,13 +272,20 @@ export async function startManaged(request, stage) {
   if (data.verify === true) {
     const observe = async tab => {
       await locationRefresh.get(tab.webContents);
+      if (loadedExtensions.some(extension => extension.status === 'Loaded')) {
+        const deadline = Date.now() + 5000;
+        while (!(await tab.webContents.executeJavaScript("document.documentElement.hasAttribute('data-azwah-extension-qa')")) && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+      }
       return tab.webContents.executeJavaScript(`(async () => ({
+      visibility: document.visibilityState,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       cookie: document.cookie, storage: localStorage.getItem('qa'), previous: globalThis.before ?? null,
       position: await new Promise(resolve => navigator.geolocation.getCurrentPosition(
         ({coords}) => resolve([coords.latitude,coords.longitude,coords.accuracy]),
         ({code}) => resolve([code]), {timeout: 5000})),
-      node: typeof require,
+      node: typeof require, extensionMarker: document.documentElement.getAttribute('data-azwah-extension-qa'),
     }))()`);
     };
     const first = await observe(tabs[0]);

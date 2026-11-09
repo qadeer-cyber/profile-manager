@@ -68,7 +68,7 @@ function requestJson(url, agent, headers) {
   });
 }
 
-export async function resolveProxyLocation(proxy, { read, save, request = requestJson, now = Date.now } = {}) {
+export async function resolveProxyLocation(proxy, { read, save, request = requestJson, now = Date.now, credentials } = {}) {
   if (!proxy) throw fail('Assign a proxy or select Manual or System location.');
   const auth = proxy.username ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || '')}@` : '';
   const protocol = proxy.type === 'socks5' ? 'socks5h' : proxy.type;
@@ -82,7 +82,9 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
     if (!ip) throw fail('The assigned proxy did not return a valid public exit IP.');
     const cached = read?.();
     if (cached?.ip === ip && cached.proxyId === proxy.id && cached.expiresAt > now()) return cached;
-    const { AZWAH_MAXMIND_ACCOUNT_ID: account, AZWAH_MAXMIND_LICENSE_KEY: key } = process.env;
+    const { account, license: key } = credentials ? credentials() : {
+      account: process.env.AZWAH_MAXMIND_ACCOUNT_ID, license: process.env.AZWAH_MAXMIND_LICENSE_KEY,
+    };
     if (!account || !key) throw fail('Proxy location requires a configured MaxMind GeoIP account. Configure it or choose Manual or System location.');
     const payload = await request(`https://geoip.maxmind.com/geoip/v2.1/city/${encodeURIComponent(ip)}`, agent,
       { Authorization: 'Basic ' + Buffer.from(`${account}:${key}`).toString('base64') });
@@ -92,7 +94,7 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
     save?.(result);
     return result;
   } catch (error) {
-    if (error.code === 'PROXY_LOCATION_UNAVAILABLE') throw error;
+    if (error.code === 'PROXY_LOCATION_UNAVAILABLE' || error.code === 'GEOIP_CREDENTIALS_UNAVAILABLE') throw error;
     throw fail('Proxy location could not be verified. Check proxy connectivity and GeoIP service availability.');
   } finally { agent?.destroy(); }
 }

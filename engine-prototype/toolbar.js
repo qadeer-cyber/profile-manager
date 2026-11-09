@@ -40,6 +40,7 @@ window.azwahControls.onState(state => {
   list('bookmarks', 'Bookmarks', state.bookmarks.map(url => ({ label: url, value: url })));
   list('history', 'History', state.history.map(url => ({ label: url, value: url })));
   list('downloads', 'Downloads', state.downloads.map(item => ({ label: item.name + ' · ' + item.status, value: '' })));
+  list('extensions', 'Extensions', state.extensions.map(item => ({ label: item.name + ' · ' + item.status, value: '' })));
   const current = state.tabs[state.active]?.url || '';
   if (document.activeElement !== address) address.value = current;
   status.textContent = current ? new URL(current).protocol === 'https:' ? 'HTTPS' : 'HTTP' : '';

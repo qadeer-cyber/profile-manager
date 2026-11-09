@@ -14,6 +14,7 @@ import { chromiumIdentity } from '../chromium-identity.js';
 import { extensionLaunchPlan } from '../extensions.js';
 import { getSetting, setSetting } from '../db.js';
 import { assertProfileVersion, resolveWindowsChromeStable } from './chrome-stable.js';
+import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocation } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
@@ -65,7 +66,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     }
     if (mode === 'auto') {
       const key = 'proxy-location:' + p.id;
-      locationOverride = await resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value) });
+      locationOverride = await resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value), credentials: geoIpCredentials });
       regional.timezoneId = locationOverride.timezone;
     } else if (mode === 'system') {
       regional.timezoneId = '';
