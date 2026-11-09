@@ -39,6 +39,7 @@ export function DiagnosticsPage({ eventsLog }) {
     <RecoveryPanel />
     <ProfileDiagnostics />
     <section className="panel"><h2>Stock browser engines (M2 / M3)</h2>
+      <p className="muted">Visible Windows profiles use installed Google Chrome Stable. <a href="https://www.google.com/chrome/" target="_blank" rel="noreferrer">Get Chrome from Google</a>.</p>
       {stockError && <p className="err-text">{stockError}</p>}
       {!stock && !stockError && <p className="muted" aria-busy="true">Loading engine report…</p>}
       {stock && <div className="cols">

@@ -12,7 +12,9 @@ import { readHostDisplays } from '../window-placement.js';
 import { executableCompatibility } from '../chromium-lifecycle.js';
 import { chromiumIdentity } from '../chromium-identity.js';
 import { extensionLaunchPlan } from '../extensions.js';
-import { getSetting } from '../db.js';
+import { getSetting, setSetting } from '../db.js';
+import { assertProfileVersion, resolveWindowsChromeStable } from './chrome-stable.js';
+import { resolveProxyLocation } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
@@ -38,13 +40,43 @@ export function launchRuntimeMode(opts = {}, engine = 'chromium') {
 export async function buildProfileLaunchPlan(p, opts = {}) {
   const { headless, url } = opts;
   const automation = automationEnabled(opts);
-  const runtime = launchRuntimeMode(opts, 'chromium');
+  const stable = process.platform === 'win32' && !headless ? await resolveWindowsChromeStable() : null;
+  let runtime = launchRuntimeMode(opts, 'chromium');
   const regional = validateBrowserSettings(p.browserSettings || {});
-  const contextSettings = browserContextSettings(regional);
   const policy = validateWebRtcSettings(p.webrtcSettings || {});
   const extensionPlan = extensionLaunchPlan(p.id);
   const dir = opts.userDataDir;
   if (!dir) throw httpErr(500, 'userDataDir required', 'INTERNAL');
+  let locationOverride = null;
+  const advanced = p.advancedSettings || {};
+  const geo = advanced.geolocation || {};
+  const mode = geo.mode ?? (p.proxy ? 'auto' : 'manual');
+  if (stable) {
+    const profileRoot = fs.realpathSync(dir);
+    const defaultData = process.env.LOCALAPPDATA && process.env.LOCALAPPDATA + '\\Google\\Chrome\\User Data';
+    const defaultRoot = defaultData && fs.existsSync(defaultData) ? fs.realpathSync(defaultData) : defaultData;
+    if (defaultRoot && (profileRoot.toLowerCase() === defaultRoot.toLowerCase() ||
+      profileRoot.toLowerCase().startsWith(defaultRoot.toLowerCase() + '\\'))) {
+      throw httpErr(409, 'Refusing to launch Chrome with the personal Chrome profile directory.', 'CHROME_PERSONAL_PROFILE');
+    }
+    assertProfileVersion(dir, stable.version);
+    if (extensionPlan.args.some(arg => arg.startsWith('--load-extension'))) {
+      throw httpErr(409, 'Chrome Stable does not support launching with Azwah unpacked extension assignments. Disable the assignments or install trusted extensions within this Chrome profile.', 'CHROME_STABLE_UNPACKED_EXTENSION');
+    }
+    if (mode === 'auto') {
+      const key = 'proxy-location:' + p.id;
+      locationOverride = await resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value) });
+      regional.timezoneId = locationOverride.timezone;
+    } else if (mode === 'system') {
+      regional.timezoneId = '';
+    } else if (geo.latitude != null && geo.longitude != null) {
+      if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
+      locationOverride = geo;
+    }
+    if (locationOverride || regional.timezoneId) runtime = 'playwright';
+  }
+  const contextSettings = browserContextSettings(regional);
+
 
   const cdpPort = automation ? await freePort() : null;
   const args = [];
@@ -52,8 +84,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     args.push(`--remote-debugging-port=${cdpPort}`, '--remote-debugging-address=127.0.0.1');
   }
 
-  let executablePath = getSetting('executablePath', '') || undefined;
-  if (executablePath) {
+  let executablePath = stable?.path || getSetting('executablePath', '') || undefined;
+  if (executablePath && !stable) {
     const compat = executableCompatibility(executablePath);
     if (!compat.launchAllowed) throw httpErr(503, compat.warning, 'CHROMIUM_VERSION_MISMATCH');
   }
@@ -67,14 +99,15 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   const proxyArg = server => `--proxy-server=${server}`;
   if (p.proxy) {
     if (p.proxy.username) {
-      const up = `${p.proxy.type}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
+      const scheme = p.proxy.type === 'socks5' ? 'socks5h' : p.proxy.type;
+      const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
       relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
       args.push(proxyArg(relayUrl));
     } else {
       args.push(proxyArg(`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`));
     }
     // Dev/test: PM_PROXY_LOOPBACK. Packaged manual native: always send loopback through the proxy (offline smoke).
-    if (proxyLoopback() || (isPackaged() && runtime === 'native')) args.push('--proxy-bypass-list=<-loopback>');
+    if (stable || proxyLoopback() || (isPackaged() && runtime === 'native')) args.push('--proxy-bypass-list=<-loopback>');
   }
 
   if (regional.languages.length) {
@@ -87,7 +120,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     throw httpErr(500, 'Refusing to launch because the WebRTC arguments do not match the saved policy.', 'WEBRTC_LAUNCH_MISMATCH');
   }
 
-  const identity = chromiumIdentity(executablePath && fs.existsSync(executablePath) ? executablePath : '');
+  const identity = stable ? { version: stable.version, executableVersion: stable.version, source: 'chrome-stable', versionMismatch: false } : chromiumIdentity(executablePath && fs.existsSync(executablePath) ? executablePath : '');
   const rememberedScreen = screenFromRememberedWindow(p.id, p.advancedSettings || {});
   const mergedAdvanced = { ...(p.advancedSettings || {}) };
   const screenOverride = rememberedScreen ?? mergedAdvanced.screen;
@@ -103,7 +136,10 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   assertPrivateNetworkLaunchPolicy(args);
 
   if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
-  applyAdvancedPreferences(dir, p.advancedSettings || {});
+  const preferences = stable && locationOverride && geo.permission !== 'deny'
+    ? { ...advanced, geolocation: { ...geo, latitude: null, longitude: null, accuracy: null, permission: 'ask' } }
+    : advanced;
+  applyAdvancedPreferences(dir, preferences);
   applyChromiumLanguagePreferences(dir, regional);
 
   const restoreTabs = plan.settings.preferences.restoreTabs === true;
@@ -136,9 +172,29 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     else playwrightOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
   }
   if (extensionPlan.ignoreDefaultArgs.length) playwrightOpts.ignoreDefaultArgs = [...extensionPlan.ignoreDefaultArgs];
+  if (stable) {
+    // Use the inherited CDP pipe while retaining Chrome's ordinary security defaults.
+    // Playwright's automation defaults include switches that disable security services.
+    playwrightOpts.ignoreDefaultArgs = true;
+    playwrightOpts.args = [...args, '--remote-debugging-pipe', `--user-data-dir=${dir}`, '--no-first-run', 'about:blank'];
+    playwrightOpts.chromiumSandbox = true;
+    const env = { ...process.env };
+    delete env.AZWAH_MAXMIND_ACCOUNT_ID;
+    delete env.AZWAH_MAXMIND_LICENSE_KEY;
+    playwrightOpts.env = env;
+    delete playwrightOpts.geolocation;
+    if (locationOverride) {
+      const { latitude, longitude, accuracy } = locationOverride;
+      playwrightOpts.geolocation = { latitude, longitude, accuracy };
+    }
+    // Chrome decides geolocation permission per site. Other saved policies are unchanged.
+    delete plan.permissions.geolocation;
+  }
 
   return {
     runtime,
+    stable,
+    locationMode: stable ? mode : null,
     automation,
     headless: !!headless,
     dir,

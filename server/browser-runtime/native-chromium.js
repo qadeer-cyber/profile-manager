@@ -47,6 +47,8 @@ export async function discoverOwnedBrowserPid(userDataDir, candidates, { timeout
 
 export function nativeChromiumEnv(plan, baseEnv = process.env) {
   const env = { ...baseEnv };
+  delete env.AZWAH_MAXMIND_ACCOUNT_ID;
+  delete env.AZWAH_MAXMIND_LICENSE_KEY;
   const tz = typeof plan?.regional?.timezoneId === 'string' ? plan.regional.timezoneId : '';
   if (tz) env.TZ = tz;
   return env;

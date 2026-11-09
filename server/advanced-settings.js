@@ -17,7 +17,7 @@ const SCALE = new Set([1, 1.25, 1.5, 2, 3]);
 
 export const DEFAULT_ADVANCED_SETTINGS = Object.freeze({
   userAgent: Object.freeze({ mode: 'default' }),
-  geolocation: Object.freeze({ permission: 'default', latitude: null, longitude: null, accuracy: null }),
+  geolocation: Object.freeze({ mode: null, permission: 'default', latitude: null, longitude: null, accuracy: null }),
   screen: Object.freeze({
     preset: 'native', width: null, height: null, viewportWidth: null, viewportHeight: null,
     deviceScaleFactor: null, windowX: null, windowY: null, startMaximized: false,
@@ -72,7 +72,9 @@ function validateUserAgent(value) {
   return { mode: input.mode };
 }
 function validateGeolocation(value) {
-  const input = section(value, ['permission', 'latitude', 'longitude', 'accuracy'], 'location');
+  const input = section(value, ['mode', 'permission', 'latitude', 'longitude', 'accuracy'], 'location')
+  const mode = input.mode ?? null;
+  if (mode !== null && !['auto', 'manual', 'system'].includes(mode)) invalid('Invalid geolocation mode', 'location');;
   const permission = input.permission ?? 'default';
   if (!GEO_STATES.includes(permission)) invalid('geolocation.permission must be default, ask, allow, or deny', 'location');
   const latitude = nullableNumber(input.latitude, 'location', 'latitude');
@@ -83,7 +85,7 @@ function validateGeolocation(value) {
   if (longitude != null && (longitude < -180 || longitude > 180)) invalid('longitude must be between -180 and 180', 'location');
   if (accuracy != null && !(accuracy >= 1 && accuracy <= 100000)) invalid('accuracy must be between 1 and 100000 meters', 'location');
   if (permission !== 'allow' && (latitude != null || accuracy != null)) invalid('coordinates require geolocation permission allow', 'location');
-  return { permission, latitude, longitude, accuracy };
+  return { mode, permission, latitude, longitude, accuracy };
 }
 function validateScreen(value) {
   const input = section(value, ['preset', 'width', 'height', 'viewportWidth', 'viewportHeight', 'deviceScaleFactor', 'windowX', 'windowY', 'startMaximized'], 'window');
