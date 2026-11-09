@@ -9,7 +9,49 @@ concurrency:
   group: azwah-native-chromium-windows
   cancel-in-progress: false
 jobs:
+  qualify:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Qualify Azwah patch against pinned Chromium on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          $source = Join-Path $env:RUNNER_TEMP 'azwah-chromium-patch-qualification'
+          New-Item -ItemType Directory -Path $source | Out-Null
+          git -C $source init --quiet
+          git -C $source config core.autocrlf false
+          git -C $source remote add origin https://chromium.googlesource.com/chromium/src.git
+          git -C $source sparse-checkout init --no-cone
+          $paths = @(
+            'base/i18n/icu_util.cc',
+            'chrome/app/theme/chromium/BRANDING',
+            'chrome/browser/chrome_browser_main.cc',
+            'chrome/browser/net/proxy_config_monitor.cc',
+            'chrome/browser/net/system_network_context_manager.cc',
+            'chrome/browser/preloading/preloading_prefs.cc',
+            'chrome/browser/renderer_preferences_util.cc',
+            'chrome/install_static/chromium_install_modes.h',
+            'services/device/geolocation/geolocation_context.cc',
+            'services/device/time_zone_monitor/time_zone_monitor_win.cc'
+          )
+          git -C $source sparse-checkout set --no-cone -- $paths
+          if ($LASTEXITCODE -ne 0) { throw 'Sparse qualification paths failed.' }
+          git -C $source fetch --depth=1 --filter=blob:none origin $pin.revision
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Chromium qualification fetch failed.' }
+          git -C $source checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $source rev-parse HEAD) -ne $pin.revision) {
+            throw 'Pinned Chromium qualification revision mismatch.'
+          }
+          ./scripts/qualify-native-chromium-patch.ps1 -Source $source -Patch native-chromium/windows-source.patch -Apply
   compile:
+    needs: qualify:
     if: >-
       ${{ !github.event.repository.private &&
           github.ref == 'refs/heads/feature/azwah-privacy-engine-integration' &&
