@@ -118,6 +118,10 @@ try {
     $env:DEPOT_TOOLS_UPDATE = '0'
     $env:DEPOT_TOOLS_WIN_TOOLCHAIN = '0'
 
+    # Hard fail before gclient sync if pinned depot_tools was not initialized.
+    # The CI bootstrap happens in the preceding readiness step.
+    & (Join-Path $PSScriptRoot 'qualify-native-depot-tools.ps1') -DepotTools $DepotTools -ExpectedCommit $DepotToolsCommit -VerifyOnly
+
     $marker = Join-Path $Workspace '.azwah-native-baseline'
     $kind = if ($AzwahSource) { 'azwah-native-source-development' } else { 'upstream-chromium-build-baseline' }
     $pins = "$ChromiumCommit $DepotToolsCommit"
@@ -181,7 +185,16 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@ | Set-Content -LiteralPath (Join-Path $out 'args.gn') -Encoding ascii
+        # Check the real GN binary from synchronized Chromium DEPS, then generate.
+        Write-Output 'BEGIN GN executable readiness (actual synced Chromium GN --version).'
+        Invoke-BoundedBuildStage $gn @('--version')
+        Write-Output 'PASS synced Chromium GN executable.'
         Invoke-BoundedBuildStage $gn @('gen', $out)
+        if (!(Test-Path -LiteralPath (Join-Path $out 'build.ninja') -PathType Leaf)) {
+            throw 'GN reported success but did not create build.ninja.'
+        }
+        Write-Output "PASS GN generated native Windows x64 build.ninja at $out."
+        Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
         if (-not $AzwahSource) {
