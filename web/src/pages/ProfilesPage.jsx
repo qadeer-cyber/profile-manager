@@ -227,6 +227,9 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
         {columns.status !== false && <td className="col-status"><span className={'status ' + st.key}><i />{st.label}</span></td>}
         {columns.name !== false && <td className="col-name"><div className="name-line"><span className="name">{p.name}</span>{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>
           {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
+          {p.lastProxyLocation && <div className="muted" title={`Last resolved proxy exit ${p.lastProxyLocation.ip}`}>
+            Last proxy location (approx.): {[p.lastProxyLocation.city, p.lastProxyLocation.region, p.lastProxyLocation.country].filter(Boolean).join(', ')} · {p.lastProxyLocation.timezone} · {p.lastProxyLocation.radiusKm} km radius
+          </div>}
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
           {p.tabRestore?.enabled && <span className="tag" title={p.running ? 'Tab restore on — saved on graceful stop' : p.tabRestore.savedCount ? `${p.tabRestore.savedCount} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet'}>Tab restore{p.tabRestore.savedCount ? ` · ${p.tabRestore.savedCount}` : ''}</span>}
           {p.cdp && <div className="mono" title="Automation endpoint">{p.cdp.wsEndpoint || p.cdp.debuggerAddress}</div>}</td>}

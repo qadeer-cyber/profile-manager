@@ -279,6 +279,7 @@ async function doLaunch(p, opts = {}) {
   assertLaunchNotCancelled(p.id);
   const { headless, url } = opts, automation = automationEnabled(opts);
   const dir = userDataDir(p.id);
+  if (fs.existsSync(dir) && fs.lstatSync(dir).isSymbolicLink()) throw httpErr(409, 'A browser profile directory cannot be a symbolic link or junction.', 'CHROME_PROFILE_LINK');
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
   await dropStaleRunningRow(p.id, dir);
@@ -365,6 +366,9 @@ async function doLaunch(p, opts = {}) {
       if (/Executable doesn't exist|please run the following command to download/i.test(e.message) && !launchPlan.executablePath) throw chromiumMissingError(!!headless, true);
       const first = String(e.message).split('\n').find(l => l.trim()) || 'unknown error';
       throw httpErr(500, `Failed to launch browser: ${first.replace(/^browserType\.launchPersistentContext:\s*/, '')}`, 'LAUNCH_FAILED');
+    }
+    if (launchPlan.stable && !ctx.pages().length) {
+      await ctx.waitForEvent('page', { timeout: 15000 });
     }
     markContextReady(metricsHandle);
     assertLaunchNotCancelled(p.id);

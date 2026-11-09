@@ -31,7 +31,13 @@ export function LocationFields({ settings, onChange }) {
   const set = patch => onChange({ ...settings, geolocation: { ...geo, ...patch } });
   const allow = geo.permission === 'allow';
   return <div className="form">
-    <div className="notice">Allow with coordinates uses Chromium's geolocation override on the Playwright launch path and is applied again on the next launch. Deny and Ask use Chromium's permission state for each site you open. Default leaves the browser's own prompt alone. A native launch stores the permission and does not apply that coordinate override. These settings do not conceal GPS, Wi-Fi, or IP location outside this browser.</div>
+    <div className="notice">Chrome Stable on Windows applies location settings at launch. Proxy locations are approximate and require a configured GeoIP service. Restart the profile after changing its location or proxy.</div>
+    <label>Location mode<select value={geo.mode ?? ''} onChange={e => set({ mode: e.target.value || null })}>
+      <option value="">Default for this profile</option>
+      <option value="auto">Automatically follow proxy</option>
+      <option value="manual">Manual coordinates and timezone</option>
+      <option value="system">System/default location</option>
+    </select></label>
     <label>Geolocation<select value={geo.permission} onChange={e => set({ permission: e.target.value, ...(e.target.value !== 'allow' ? { latitude: null, longitude: null, accuracy: null } : {}) })}>
       {STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
     </select></label>

@@ -232,6 +232,11 @@ const publicP = p => {
     } catch { /* profile dir not created yet */ }
   }
   out.tabRestore = tabRestore;
+  const mode = p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
+  if (mode === 'auto' && proxy_id) {
+    const location = getSetting('proxy-location:' + p.id, null);
+    if (location?.proxyId === proxy_id && location.expiresAt > Date.now()) out.lastProxyLocation = location;
+  }
   return out;
 };
 function canAccessFolderProfile(profile) {
