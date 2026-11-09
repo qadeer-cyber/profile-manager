@@ -19,33 +19,21 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - name: Require prototype configuration and Issue 20 regression checks
         run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
-      - name: Package isolated Windows QA prototype
+      - name: Package dedicated engine payload
         working-directory: engine-prototype
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win dir --x64 --publish never
+      - name: Stage dedicated engine payload for prequalification
         shell: pwsh
         run: |
-          for ($attempt = 1; $attempt -le 2; $attempt++) {
-            ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win nsis --x64 --publish never
-            if ($LASTEXITCODE -eq 0) { exit 0 }
-            if ($attempt -eq 1) { Start-Sleep -Seconds 10 }
-          }
-          exit $LASTEXITCODE
-      - name: Install prototype in a private QA directory
-        shell: pwsh
-        run: |
-          $install = Join-Path $env:RUNNER_TEMP 'azwah-engine-qa'
-          $setup = (Resolve-Path 'engine-prototype/out/AzwahPrivacyPrototype-Setup.exe').Path
-          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$install") -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw "Prototype install failed: $($process.ExitCode)" }
-          $exe = Join-Path $install 'AzwahPrivacyPrototype.exe'
-          if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed prototype binary is missing' }
+          $exe = (Resolve-Path 'engine-prototype/out/win-unpacked/AzwahPrivacyPrototype.exe').Path
           "AZWAH_ENGINE_EXE=$exe" >> $env:GITHUB_ENV
           Get-Item -LiteralPath $exe | Select-Object FullName, Length | Format-List
           Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
-      - name: Observe installed Chromium location, permissions, isolation and restart
+      - name: Observe packaged Chromium location, permissions, isolation and restart
         run: node --test --test-force-exit test/privacy-engine-installed.test.js
-      - name: Verify five installed engine profiles through the Azwah manager API
+      - name: Verify five packaged engine profiles through the Azwah manager API
         if: github.ref == 'refs/heads/feature/azwah-privacy-engine-integration'
         run: node --test --test-force-exit test/privacy-engine-manager-windows.test.js
   ultimate-installed-gui:
