@@ -151,6 +151,35 @@ index 387102abd88a010459ef3a5ba4880c5621a96fa3..dbab9e8d91dda2aaa04f06e36b41b3ce
    net::ProxyConfigWithAnnotation proxy_config;
    net::ProxyConfigService::ConfigAvailability availability =
        proxy_config_service_->GetLatestProxyConfig(&proxy_config);
+diff --git a/chrome/browser/net/system_network_context_manager.cc b/chrome/browser/net/system_network_context_manager.cc
+index d914cb5a9a231d4b4cb2ddd8f4f0e7d9b6ee2c47..ccd0581bd958c33e4d352b460c7fce7f0fab9537 100644
+--- a/chrome/browser/net/system_network_context_manager.cc
++++ b/chrome/browser/net/system_network_context_manager.cc
+@@ -13,6 +13,7 @@
+ #include "base/check_is_test.h"
+ #include "base/command_line.h"
+ #include "base/compiler_specific.h"
++#include "base/environment.h"
+ #include "base/feature_list.h"
+ #include "base/functional/bind.h"
+ #include "base/logging.h"
+@@ -643,6 +644,16 @@ SystemNetworkContextManager::SystemNetworkContextManager(
+     is_quic_allowed_ = value->GetBool();
+   }
+ #endif  // !BUILDFLAG(IS_ANDROID)
++#if BUILDFLAG(IS_WIN)
++  const auto env = base::Environment::Create();
++  if (env->HasVar("AZWAH_NATIVE_PROXY_RELAY_PORT") ||
++      env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE")) {
++    // The fixed profile relay carries TCP. Apply this when the service starts
++    // and when it restarts so enterprise or local preferences cannot enable
++    // QUIC for a managed proxy process.
++    is_quic_allowed_ = false;
++  }
++#endif
+   shared_url_loader_factory_ = new URLLoaderFactoryForSystem(this);
+ 
+   pref_change_registrar_.Init(local_state_);
 diff --git a/chrome/browser/renderer_preferences_util.cc b/chrome/browser/renderer_preferences_util.cc
 index 8a64a3bcb6a1bfbaa9428af8fafb28435901ea4b..496194b2ccc448b3865755790e9242d3046fa4ce 100644
 --- a/chrome/browser/renderer_preferences_util.cc

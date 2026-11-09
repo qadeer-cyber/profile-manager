@@ -29,7 +29,13 @@ The patch adds Azwah product strings and Windows profile path and registration i
 
 ## Linux-to-Windows development build
 
-The cross-build script uses Chromium's Windows target support. Point it at a clean, pinned depot_tools checkout and a locally supplied toolchain archive made with upstream's `package_from_installed.py` from the matching Visual Studio and Windows SDK installation.
+The cross-build script uses Chromium's Windows target support. On Windows x64, install the Visual Studio C++ workload and Windows SDK listed in `native-chromium/upstream.json`, then run the packaging wrapper with Python 3.11 or later:
+
+```powershell
+python scripts/package-native-chromium-toolchain.py --depot-tools C:\src\depot_tools --output C:\private\azwah-toolchain
+```
+
+Use an empty private output directory. The wrapper calls upstream's `package_from_installed.py` and prints the archive SHA-256. Transfer the archive privately and pass it to the cross-build script along with a clean, pinned depot_tools checkout. The Linux preflight checks the archive layout and binds the build workspace to that SHA-256.
 
 ```sh
 python3 scripts/build-native-chromium-cross.py --workspace "$AZWAH_CROSS_WORKSPACE" \
