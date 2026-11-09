@@ -29,9 +29,14 @@ The patch adds Azwah product strings and Windows profile path and registration i
 
 ## Linux-to-Windows development build
 
-The cross-build script uses Chromium's Windows target support. On Windows x64, install the Visual Studio C++ workload and Windows SDK listed in `native-chromium/upstream.json`, then run the packaging wrapper with Python 3.11 or later:
+The cross-build script uses Chromium's Windows target support. Use an authorized Windows x64 machine with Visual Studio 2026 (18.0.0 or later in the 18.x line), the Desktop development with C++ workload, x64/x86 MSVC tools and ATL/MFC. Install the Microsoft SDK release **10.0.28000.2270**, whose installed include and library directory is **10.0.28000.0**. Select **Debugging Tools for Windows**, version **10.0.26100.3323 or later**, during SDK installation. Chromium uses clang-cl with the Visual Studio headers, libraries and support tools.
+
+[Microsoft Windows SDK downloads](https://learn.microsoft.com/en-us/windows/apps/windows-sdk/downloads)
+
+Run the official Visual Studio installer for your edition, then package the installed toolchain with Python 3.11 or later:
 
 ```powershell
+.\vs_Community.exe --add Microsoft.VisualStudio.Workload.NativeDesktop --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 --add Microsoft.VisualStudio.Component.VC.ATLMFC --includeRecommended --passive
 python scripts/package-native-chromium-toolchain.py --depot-tools C:\src\depot_tools --output C:\private\azwah-toolchain
 ```
 
@@ -40,8 +45,10 @@ Use an empty private output directory. The wrapper calls upstream's `package_fro
 ```sh
 python3 scripts/build-native-chromium-cross.py --workspace "$AZWAH_CROSS_WORKSPACE" \
   --depot-tools "$AZWAH_DEPOT_TOOLS" --depot-tools-commit "$AZWAH_DEPOT_TOOLS_SHA" \
-  --sdk-archive "$AZWAH_WINDOWS_TOOLCHAIN_ZIP"
+  --sdk-archive "$AZWAH_WINDOWS_TOOLCHAIN_ZIP" --sdk-sha256 "$AZWAH_WINDOWS_TOOLCHAIN_SHA256"
 ```
+
+The pinned Linux toolchain hook uses a case-insensitive FUSE mount at `depot_tools/win_toolchain/vs_files`. The worker must be able to create that mount, or have it already provisioned. Use the native Windows lane on hosts without FUSE.
 
 This lane uses a shallow dependency sync, two jobs by default, and a release-mode browser target with debug symbols disabled. It checks free space before and during child processes and stops at the configured reserve. The reserve limits disk exhaustion. It does not establish that the source, dependencies and build outputs will fit. The development target excludes installer packaging and requires separate Windows execution tests.
 

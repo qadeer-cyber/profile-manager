@@ -58,3 +58,27 @@ test('reprobes each launch, caches only matching live exit and rejects exit rota
     if (oldKey == null) delete process.env.AZWAH_MAXMIND_LICENSE_KEY; else process.env.AZWAH_MAXMIND_LICENSE_KEY = oldKey;
   }
 });
+
+test('revalidates GeoIP after editing the assigned proxy even when its exit IP is unchanged', async () => {
+  let cached;
+  let lookups = 0;
+  const options = {
+    credentials: () => ({ account: 'fixture-account', license: 'fixture-key' }),
+    read: () => cached,
+    save: value => { cached = value; },
+    now: () => 1000,
+    request: async url => {
+      if (!url.includes('maxmind')) return { ip };
+      lookups++;
+      return fixture;
+    },
+  };
+  const assignment = { ...proxy, revision: 'revision-one' };
+  const first = await resolveProxyLocation(assignment, options);
+  assert.equal(first.proxyRevision, 'revision-one');
+  assert.equal(await resolveProxyLocation(assignment, options), first);
+  const updated = await resolveProxyLocation({ ...assignment, revision: 'revision-two' }, options);
+  assert.equal(updated.proxyRevision, 'revision-two');
+  assert.equal(updated.ip, first.ip);
+  assert.equal(lookups, 2);
+});

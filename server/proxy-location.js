@@ -81,7 +81,8 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
     const ip = await observe();
     if (!ip) throw fail('The assigned proxy did not return a valid public exit IP.');
     const cached = read?.();
-    if (cached?.ip === ip && cached.proxyId === proxy.id && cached.expiresAt > now()) return cached;
+    if (cached?.ip === ip && cached.proxyId === proxy.id &&
+        (cached.proxyRevision ?? null) === (proxy.revision ?? null) && cached.expiresAt > now()) return cached;
     const { account, license: key } = credentials ? credentials() : {
       account: process.env.AZWAH_MAXMIND_ACCOUNT_ID, license: process.env.AZWAH_MAXMIND_LICENSE_KEY,
     };
@@ -90,7 +91,7 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
       { Authorization: 'Basic ' + Buffer.from(`${account}:${key}`).toString('base64') });
     const location = validateProxyLocation(payload, ip);
     if (await observe() !== ip) throw fail('The proxy exit IP changed during location detection. Retry with a consistent proxy exit.');
-    const result = { ...location, proxyId: proxy.id, expiresAt: now() + 24 * 60 * 60 * 1000 };
+    const result = { ...location, proxyId: proxy.id, proxyRevision: proxy.revision ?? null, expiresAt: now() + 24 * 60 * 60 * 1000 };
     save?.(result);
     return result;
   } catch (error) {

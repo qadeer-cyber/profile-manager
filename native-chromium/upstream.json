@@ -4,5 +4,7 @@
   "version": "159.0.8153.0",
   "windowsToolchainHash": "3bfcb536c8",
   "visualStudioVersion": "2026",
-  "windowsSdkVersion": "10.0.28000.0"
+  "windowsSdkVersion": "10.0.28000.0",
+  "windowsSdkInstallerBuild": "10.0.28000.2270",
+  "minimumWindowsDebuggerVersion": "10.0.26100.3323"
 }

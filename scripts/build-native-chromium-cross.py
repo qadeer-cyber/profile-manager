@@ -95,16 +95,35 @@ def validate_sdk(sdk, manifest):
     try:
         with zipfile.ZipFile(sdk) as archive:
             names = {entry.filename.replace("\\", "/").lower(): entry for entry in archive.infolist()}
-            sdk_root = f'windows kits/10/include/{manifest["windowsSdkVersion"]}/um/'
-            if not all(sdk_root + name in names for name in ("windows.h", "dcomp.h")):
-                raise RuntimeError(f'Archive is missing Windows SDK {manifest["windowsSdkVersion"]} headers.')
+            sdk_version = manifest["windowsSdkVersion"]
+            required = (
+                f"windows kits/10/include/{sdk_version}/um/windows.h",
+                f"windows kits/10/include/{sdk_version}/um/dcomp.h",
+                f"windows kits/10/lib/{sdk_version}/um/x64/kernel32.lib",
+                f"windows kits/10/lib/{sdk_version}/ucrt/x64/ucrt.lib",
+                f"windows kits/10/bin/{sdk_version}/x64/rc.exe",
+                "windows kits/10/bin/setenv.x64.json",
+                "windows kits/10/debuggers/x64/dbghelp.dll",
+                "dia sdk/bin/amd64/msdia140.dll",
+            )
+            for name in required:
+                if name not in names or not names[name].file_size:
+                    raise RuntimeError(f"Toolchain archive is missing {name}.")
             version = names.get("vs_version")
             if not version or version.file_size > 64 or (
                 archive.read(version).decode("ascii").strip() != manifest["visualStudioVersion"]
             ):
                 raise RuntimeError(f'Archive does not declare Visual Studio {manifest["visualStudioVersion"]}.')
-            if not any(re.fullmatch(r"vc/tools/msvc/[^/]+/include/vcruntime\.h", name) for name in names):
-                raise RuntimeError("Archive is missing the MSVC runtime headers.")
+            msvc_roots = {
+                name.removesuffix("/include/vcruntime.h") for name in names
+                if re.fullmatch(r"vc/tools/msvc/[^/]+/include/vcruntime\.h", name)
+            }
+            if not any(all(
+                root + suffix in names and names[root + suffix].file_size
+                for suffix in ("/include/vcruntime.h", "/lib/x64/libcmt.lib",
+                               "/atlmfc/include/atlbase.h", "/atlmfc/lib/x64/atls.lib")
+            ) for root in msvc_roots):
+                raise RuntimeError("Archive is missing a complete x64 MSVC and ATL/MFC toolset.")
     except (zipfile.BadZipFile, UnicodeError) as error:
         raise RuntimeError("The Windows toolchain archive is malformed.") from error
     with sdk.open("rb") as stream:
@@ -139,6 +158,7 @@ def main():
     mode.add_argument("--source-check-only", action="store_true")
     mode.add_argument("--sdk-archive", type=Path,
                         help="Local <toolchain hash>.zip created with Chromium's package_from_installed.py")
+    parser.add_argument("--sdk-sha256", help="Expected archive SHA-256 from the Windows packaging host")
     parser.add_argument("--jobs", type=int, default=2)
     parser.add_argument("--reserve-gib", type=int, default=4)
     options = parser.parse_args()
@@ -169,7 +189,14 @@ def main():
 
     sdk = options.sdk_archive.resolve()
     sdk_sha256 = validate_sdk(sdk, manifest)
+    if options.sdk_sha256 and sdk_sha256 != options.sdk_sha256.lower():
+        raise RuntimeError("Windows toolchain archive SHA-256 does not match the packaging host.")
     print(f"Windows toolchain archive SHA-256: {sdk_sha256}", flush=True)
+    # The pinned Chromium hook mounts this exact path before extracting the SDK.
+    sdk_mount = tools / "win_toolchain/vs_files"
+    if not os.path.ismount(sdk_mount) and not os.access("/dev/fuse", os.R_OK | os.W_OK):
+        raise RuntimeError("Pinned Chromium requires a case-insensitive SDK mount. "
+                           "Use a FUSE-enabled Linux worker or the native Windows build lane.")
     # The key below is part of the pinned upstream build/vs_toolchain.py contract.
     toolchain_hash = manifest["windowsToolchainHash"]
     env = {
