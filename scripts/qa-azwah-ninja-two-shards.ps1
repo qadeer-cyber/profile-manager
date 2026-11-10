@@ -9,7 +9,11 @@ $ErrorActionPreference = 'Stop'
 $pin = 'b0cbb99d9f0f9fbbb6c6780e73b17984e991c866'
 if ($Mode -eq 'shard' -and $Shard -notin @('adler32','crc32')) { throw 'Unknown shard' }
 git config --global core.autocrlf false
-if (!(Test-Path 'chromium/.git')) {
+if ($Mode -eq 'merge') {
+  # Shards already verified their pinned Chromium commit. Avoid a third
+  # remote fetch: restore authenticated artifacts and validate source hashes.
+  New-Item -ItemType Directory -Force 'chromium/third_party/zlib' | Out-Null
+} elseif (!(Test-Path 'chromium/.git')) {
   New-Item -ItemType Directory -Force chromium | Out-Null
   git -C chromium init --quiet
   if ($LASTEXITCODE -ne 0) { throw 'git init failed' }
@@ -23,7 +27,7 @@ if (!(Test-Path 'chromium/.git')) {
   git -C chromium checkout --detach FETCH_HEAD
   if ($LASTEXITCODE -ne 0) { throw 'Pinned source checkout failed' }
 }
-if ((git -C chromium rev-parse HEAD) -ne $pin) { throw 'Wrong Chromium revision' }
+if ($Mode -eq 'shard' -and (git -C chromium rev-parse HEAD) -ne $pin) { throw 'Wrong Chromium revision' }
 $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
 $vsroot = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath | Select-Object -First 1
 if (!$vsroot) { throw 'MSVC toolchain missing' }
@@ -79,6 +83,7 @@ if ($Mode -eq 'shard') {
   $src = "chromium/third_party/zlib/$Shard.c"
   $obj = "out/$Shard.obj"
   Copy-Item -LiteralPath $obj -Destination (Join-Path checkpoint "$Shard.obj")
+  Copy-Item -LiteralPath $src -Destination (Join-Path checkpoint "source-$Shard.c")
   Copy-Item -LiteralPath '.ninja_log' -Destination (Join-Path checkpoint "log-$Shard.txt")
   [ordered]@{
     revision = $pin
@@ -100,7 +105,10 @@ foreach ($name in @('adler32','crc32')) {
   $src = "chromium/third_party/zlib/$name.c"
   $obj = "$folder/$name.obj"
   if ($manifest.revision -cne $pin -or $manifest.shard -cne $name) { throw "Invalid provenance: $name" }
-  if ((Get-FileHash $src -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifest.source_sha256) { throw "Source hash mismatch: $name" }
+  $shardSource = "$folder/source-$name.c"
+  if (!(Test-Path -LiteralPath $shardSource)) { throw "Missing pinned source: $name" }
+  if ((Get-FileHash $shardSource -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifest.source_sha256) { throw "Source hash mismatch: $name" }
+  Copy-Item -LiteralPath $shardSource -Destination $src -Force
   if ((Get-FileHash $obj -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifest.object_sha256) { throw "Object hash mismatch: $name" }
   if ((Get-FileHash $cl -Algorithm SHA256).Hash.ToLowerInvariant() -cne $manifest.compiler_sha256) { throw "Toolchain mismatch: $name" }
   if ($manifest.ninja_version -cne ((& $ninja --version) | Select-Object -First 1)) { throw "Ninja version mismatch: $name" }
