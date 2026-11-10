@@ -207,7 +207,7 @@ target_cpu = "x64"
 symbol_level = 0
 '@
         if ($CheckpointProbe) {
-            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
+            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false' + "`n" + 'use_clang_modules = false'
         }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or

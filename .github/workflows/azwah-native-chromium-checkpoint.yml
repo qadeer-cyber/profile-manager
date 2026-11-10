@@ -1,7 +1,7 @@
 name: Azwah native Chromium checkpoint probe
 on:
   push:
-    branches: [feature/azwah-privacy-engine-integration]
+    branches: [feature/azwah-privacy-engine-integration, experiment/azwah-sccache-checkpoint]
   workflow_dispatch:
 permissions:
   contents: read
@@ -9,13 +9,13 @@ jobs:
   seed:
     if: >-
       ${{ !github.event.repository.private &&
-          github.ref == 'refs/heads/feature/azwah-privacy-engine-integration' &&
+          (github.ref == 'refs/heads/feature/azwah-privacy-engine-integration' ||
+           github.ref == 'refs/heads/experiment/azwah-sccache-checkpoint') &&
           (github.event_name == 'workflow_dispatch' ||
            contains(github.event.head_commit.message, '[native-checkpoint]')) }}
     runs-on: windows-2025
     timeout-minutes: 120
     outputs:
-      checkpoint: ${{ steps.transfer.outputs.checkpoint }}
       object_sha256: ${{ steps.compile.outputs.object_sha256 }}
     steps: &probe_steps
       - uses: actions/checkout@v4
@@ -62,21 +62,23 @@ jobs:
           if ($exe.Count -ne 1) { throw 'Expected exactly one sccache executable.' }
           $exe[0].DirectoryName | Add-Content -LiteralPath $env:GITHUB_PATH
           "SCCACHE_DIR=$(Join-Path $env:RUNNER_TEMP 'sccache-checkpoint')" | Add-Content -LiteralPath $env:GITHUB_ENV
-          'SCCACHE_CACHE_SIZE=32M' | Add-Content -LiteralPath $env:GITHUB_ENV
-      - name: Restore small checkpoint on a fresh runner
+          'SCCACHE_CACHE_SIZE=1G' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Download checkpoint artifact on a fresh runner
+        if: github.job == 'replay'
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-sccache-checkpoint
+          path: ${{ runner.temp }}
+      - name: Restore checkpoint on a fresh runner
         if: github.job == 'replay'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $payload = @'
-          ${{ needs.seed.outputs.checkpoint }}
-          '@
-          if ($payload.Length -gt 409600 -or $payload -cnotmatch '^[a-zA-Z0-9+/]+={0,2}$') {
-            throw 'Missing or invalid checkpoint payload.'
-          }
           $archive = Join-Path $env:RUNNER_TEMP 'checkpoint.zip'
-          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($payload))
-          Expand-Archive -LiteralPath $archive -DestinationPath $env:SCCACHE_DIR
+          if (!(Test-Path -LiteralPath $archive -PathType Leaf)) {
+            throw 'Missing checkpoint archive.'
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:SCCACHE_DIR -Force
       - name: Generate GN and build the patched ICU object
         id: compile
         shell: pwsh
@@ -108,14 +110,20 @@ jobs:
             exit 0
           }
           if ($stats -notmatch '(?m)^Cache misses\s+[1-9]\d*\s*$') { throw 'No cacheable compiler work was observed.' }
+          $rawBytes = (Get-ChildItem -LiteralPath $env:SCCACHE_DIR -Recurse -File | Measure-Object -Property Length -Sum).Sum
+          Write-Output "Uncompressed compiler cache bytes=$rawBytes"
           $archive = Join-Path $env:RUNNER_TEMP 'checkpoint.zip'
           [IO.Compression.ZipFile]::CreateFromDirectory($env:SCCACHE_DIR, $archive)
           $size = (Get-Item -LiteralPath $archive).Length
           Write-Output "Compressed compiler cache checkpoint bytes=$size"
-          # Keep the transfer below GitHub's 1 MB UTF-16 job output limit.
-          # No repository cache, artifact storage, source checkout or SDK upload.
-          if ($size -gt 300KB) { throw 'Checkpoint exceeds the bounded inline transfer budget.' }
-          "checkpoint=$([Convert]::ToBase64String([IO.File]::ReadAllBytes($archive)))" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+      - name: Upload checkpoint artifact for replay
+        if: github.job == 'seed'
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-sccache-checkpoint
+          path: ${{ runner.temp }}/checkpoint.zip
+          retention-days: 1
+          if-no-files-found: error
   replay:
     needs: seed
     runs-on: windows-2025
