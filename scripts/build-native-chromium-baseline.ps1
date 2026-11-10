@@ -28,10 +28,15 @@ param(
 
     [string] $CheckpointDirectory,
 
-    [switch] $StartupObjectProbe
+    [switch] $StartupObjectProbe,
+
+    [switch] $StartupCheckpoint
 )
 
 $ErrorActionPreference = 'Stop'
+if ($StartupCheckpoint -and (!$CheckpointProbe -or !$CheckpointDirectory)) {
+    throw 'StartupCheckpoint requires CheckpointProbe and a checkpoint directory.'
+}
 if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
     throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
 }
@@ -59,7 +64,7 @@ function Invoke-BuildTool {
 }
 
 function Invoke-BoundedBuildStage {
-    param([string] $Program, [string[]] $Arguments)
+    param([string] $Program, [string[]] $Arguments, [int] $MaxMinutes = 0)
     # An encoded command keeps path quoting in PowerShell and gives us an
     # owned process tree to stop if the build volume reaches its reserve.
     $words = (@($Program) + $Arguments) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
@@ -75,6 +80,9 @@ function Invoke-BoundedBuildStage {
     try {
         while (!$stage.WaitForExit(1000)) {
             $now = Get-Date
+            if ($MaxMinutes -and $now -ge $started.AddMinutes($MaxMinutes)) {
+                throw "Stopped $Program at the checkpoint deadline to reserve time for cache upload."
+            }
             if ($now -ge $nextReport) {
                 Write-Output "PROGRESS $([IO.Path]::GetFileName($Program)) elapsed_seconds=$([int]($now - $started).TotalSeconds) free_bytes=$($drive.AvailableFreeSpace)"
                 $nextReport = $now.AddMinutes(5)
@@ -245,7 +253,19 @@ symbol_level = 0
             Write-Output "ICU probe candidates: $($probeTargets -join ', ')"
             $probeTarget = $probeTargets[0]
             Write-Output "Selected ICU probe target: $probeTarget"
-            $commands = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'commands', $probeTarget)
+            $buildTargets = @($probeTarget)
+            if ($StartupCheckpoint) {
+                $startupTargets = @(Invoke-BuildTool $autoninja @('-C', $out, '-t', 'targets', 'all') |
+                    ForEach-Object {
+                        if ($_ -match '^(obj/chrome/[^:]+/chrome_browser_main\.obj):\s+cxx') { $Matches[1] }
+                    } | Sort-Object -Unique)
+                if (!$startupTargets.Count) { throw 'No patched Chrome startup object target found.' }
+                $buildTargets += $startupTargets[0]
+            }
+            $commands = Invoke-BuildTool $autoninja (@('-C', $out, '-t', 'commands') + $buildTargets)
+            if ($StartupCheckpoint -and !($commands | Where-Object { $_ -match 'sccache.*chrome[/\\]browser[/\\]chrome_browser_main\.cc' })) {
+                throw 'The startup compile command does not wrap the patched source with sccache.'
+            }
             if (!($commands | Where-Object { $_ -match 'sccache.*base[/\\]i18n[/\\]icu_util\.cc' })) {
                 throw 'The probe compile command does not wrap the patched source with sccache.'
             }
@@ -274,7 +294,7 @@ symbol_level = 0
                     gn = (Get-FileHash -LiteralPath 'buildtools/win/gn.exe').Hash
                     ninja = (Get-FileHash -LiteralPath $ninjaExe).Hash
                     sccache = (Get-FileHash -LiteralPath (Get-Command sccache.exe).Source).Hash
-                    target = $probeTarget
+                    targets = $buildTargets
                     commands = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
                         [Text.Encoding]::UTF8.GetBytes(($commands -join "`n"))))
                 } | ConvertTo-Json
@@ -288,7 +308,20 @@ symbol_level = 0
                     Set-Content -LiteralPath $identityFile -Value $identity
                 }
             }
-            Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", $probeTarget)
+            $timer = [Diagnostics.Stopwatch]::StartNew()
+            $deadline = if ($StartupCheckpoint) { 100 } else { 0 }
+            Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $buildTargets) $deadline
+            $timer.Stop()
+            if ($StartupCheckpoint) {
+                $outputs = [ordered]@{}
+                foreach ($target in $buildTargets) {
+                    $outputs[$target] = (Get-FileHash -LiteralPath (Join-Path $out $target)).Hash
+                }
+                [ordered]@{
+                    elapsed_seconds = $timer.Elapsed.TotalSeconds
+                    outputs = $outputs
+                } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'azwah-startup-build.json')
+            }
             $probeObject = Join-Path $out $probeTarget
             if (!(Test-Path -LiteralPath $probeObject -PathType Leaf)) { throw 'Probe object is missing.' }
             $probeHash = (Get-FileHash -LiteralPath $probeObject).Hash
