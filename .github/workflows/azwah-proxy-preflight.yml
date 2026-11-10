@@ -29,6 +29,7 @@ jobs:
           import json
           import os
           import socket
+          import ssl
 
           endpoints = ["161.123.129.203:5536","154.6.80.158:8129","45.38.87.226:7148","166.88.245.149:5494","23.229.109.14:5783","192.3.5.4:5389","142.111.36.200:7278","107.172.210.155:6610","146.19.93.129:7414","184.174.57.52:5338","45.39.3.130:7555","142.147.133.108:5448"]
 
@@ -48,5 +49,39 @@ jobs:
               results = list(pool.map(check, endpoints))
           print(json.dumps({'connected': results.count('connected'),
                             'results': dict(enumerate(results, start=1))}))
+
+          def protocol(endpoint):
+              host, port = endpoint.split(':')
+              result = {}
+              for name in ('http-connect', 'https-connect', 'socks5'):
+                  try:
+                      with socket.create_connection((host, int(port)), timeout=3) as raw:
+                          if name == 'socks5':
+                              raw.sendall(b'\x05\x02\x00\x02')
+                              data = raw.makefile('rb').read(2)
+                              result[name] = {b'\x05\x02': 'username-password-selected',
+                                              b'\x05\x00': 'no-auth-selected',
+                                              b'\x05\xff': 'methods-rejected'}.get(data, 'unrecognized')
+                              continue
+                          stream = raw
+                          if name == 'https-connect':
+                              stream = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+                          with stream:
+                              stream.sendall(b'CONNECT api64.ipify.org:443 HTTP/1.1\r\nHost: api64.ipify.org:443\r\n\r\n')
+                              fields = stream.makefile('rb').readline(256).split()
+                              result[name] = ('HTTP-' + fields[1].decode('ascii') if len(fields) >= 2
+                                              and fields[0].startswith(b'HTTP/') and len(fields[1]) == 3
+                                              and fields[1].isdigit() else 'unrecognized')
+                  except ssl.SSLCertVerificationError:
+                      result[name] = 'certificate-verification-failed'
+                  except TimeoutError:
+                      result[name] = 'timeout'
+                  except OSError:
+                      result[name] = 'connection-or-negotiation-failed'
+              return result
+
+          if os.environ.get('RUNNER_OS') == 'Windows':
+              with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                  print(json.dumps({'protocols_without_credentials': dict(enumerate(pool.map(protocol, endpoints), start=1))}))
           '@ | python -
           exit $LASTEXITCODE
