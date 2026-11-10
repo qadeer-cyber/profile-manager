@@ -1,0 +1,50 @@
+name: Azwah native startup object qualification
+on:
+  push:
+    branches: [engineering/azwah-integrated-engine]
+    paths:
+      - native-chromium/windows-source.patch
+      - scripts/build-native-chromium-baseline.ps1
+      - .github/workflows/azwah-native-startup-object.yml
+permissions:
+  contents: read
+jobs:
+  startup:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare and verify the pinned Windows toolchain
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+      - name: Checkout pinned depot_tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ("azwah-native-" + $env:GITHUB_RUN_ID + "-" + $env:GITHUB_RUN_ATTEMPT)
+          $tools = Join-Path $root 'depot_tools'
+          $workspace = Join-Path $root 'chromium'
+          $pin = '96a7c1418eedaa6bea333a8941e8a0078681b4d0'
+          New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git -C $tools init --quiet
+          git -C $tools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          git -C $tools fetch --no-tags --depth=1 origin $pin
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
+          git -C $tools checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $pin) { throw 'depot_tools pin did not verify.' }
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_DEPOT_TOOLS_SHA=$pin") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Initialize and qualify pinned depot_tools Python before Chromium sync
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:AZWAH_DEPOT_TOOLS_SHA
+      - name: Compile the patched Chromium startup translation unit
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -StartupObjectProbe -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 3 -ReserveGiB 10

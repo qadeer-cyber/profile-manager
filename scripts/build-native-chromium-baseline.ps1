@@ -24,12 +24,17 @@ param(
 
     [switch] $AzwahSource,
 
-    [switch] $CheckpointProbe
+    [switch] $CheckpointProbe,
+
+    [switch] $StartupObjectProbe
 )
 
 $ErrorActionPreference = 'Stop'
 if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
     throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
+}
+if ($StartupObjectProbe -and (!$AzwahSource -or $CheckpointProbe)) {
+    throw 'StartupObjectProbe requires AzwahSource and cannot run with CheckpointProbe.'
 }
 $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
@@ -194,6 +199,7 @@ try {
         }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
         if ($CheckpointProbe) { $out = 'out/azwah-checkpoint-probe' }
+        if ($StartupObjectProbe) { $out = 'out/azwah-startup-object-probe' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
         if (Test-Path -LiteralPath $manifest -PathType Leaf) {
             Remove-Item -LiteralPath $manifest
@@ -209,6 +215,7 @@ symbol_level = 0
         if ($CheckpointProbe) {
             $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
         }
+        if ($StartupObjectProbe) { $gnArgs += "`n" + 'use_siso = false' }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
             ((Get-Content -LiteralPath $argsFile -Raw).TrimEnd() -cne $gnArgs.TrimEnd())) {
@@ -246,6 +253,22 @@ symbol_level = 0
             $probeHash = (Get-FileHash -LiteralPath $probeObject).Hash
             Write-Output "Probe object $probeTarget SHA256=$probeHash"
             if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
+            return
+        }
+        if ($StartupObjectProbe) {
+            $targets = @(Invoke-BuildTool $autoninja @('-C', $out, '-t', 'targets', 'all') |
+                ForEach-Object {
+                    if ($_ -match '^(obj/chrome/[^:]+/chrome_browser_main\.obj):\s+cxx') { $Matches[1] }
+                } | Sort-Object -Unique)
+            if (!$targets.Count) { throw 'No default-toolchain Chrome startup object target was found.' }
+            $target = $targets[0]
+            $commands = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'commands', $target)
+            if (!($commands | Where-Object { $_ -match 'clang-cl.*chrome[/\\]browser[/\\]chrome_browser_main\.cc' })) {
+                throw 'The selected target does not compile the patched Chrome startup source.'
+            }
+            Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", $target)
+            $hash = (Get-FileHash -LiteralPath (Join-Path $out $target)).Hash
+            Write-Output "PASS native startup object $target SHA256=$hash"
             return
         }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'

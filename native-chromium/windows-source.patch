@@ -59,7 +59,7 @@ index f8363d5b294fe210ebfdd18374e95b54d6ff5c17..0414ee6fd12da4a3aff50a2787b99df0
  MAC_BUNDLE_ID=org.chromium.Chromium
  MAC_CREATOR_CODE=Cr24
 diff --git a/chrome/browser/chrome_browser_main.cc b/chrome/browser/chrome_browser_main.cc
-index 41b28743dfe526afd45efe1dda643e3750b28a11..c9e3dc5da2cfc3635384f19f9ea242daf60744bd 100644
+index 41b28743dfe526afd45efe1dda643e3750b28a11..2f225d8761b0d6b21c1ac7beb24ac810b453c6c4 100644
 --- a/chrome/browser/chrome_browser_main.cc
 +++ b/chrome/browser/chrome_browser_main.cc
 @@ -8,18 +8,23 @@
@@ -206,7 +206,28 @@ index 41b28743dfe526afd45efe1dda643e3750b28a11..c9e3dc5da2cfc3635384f19f9ea242da
  #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || \
      BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
  constexpr base::FilePath::CharType kMediaHistoryDatabaseName[] =
-@@ -2154,6 +2265,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
+@@ -1027,6 +1138,20 @@ void ChromeBrowserMainParts::RecordBrowserStartupTime() {
+ 
+ int ChromeBrowserMainParts::PreEarlyInitialization() {
+   TRACE_EVENT0("startup", "ChromeBrowserMainParts::PreEarlyInitialization");
++#if BUILDFLAG(IS_WIN)
++  const auto azwah_env = base::Environment::Create();
++  if (azwah_env->HasVar("AZWAH_NATIVE_PROXY_RELAY_PORT") ||
++      azwah_env->HasVar("AZWAH_NATIVE_PROXY_TIMEZONE")) {
++    // Set this before BrowserProcess and network services are initialized.
++    // Destination names are resolved by the assigned proxy. Chromium only
++    // needs to reach the manager-owned numeric loopback relay.
++    auto* command_line = base::CommandLine::ForCurrentProcess();
++    command_line->RemoveSwitch(network::switches::kHostResolverRules);
++    command_line->AppendSwitchASCII(
++        network::switches::kHostResolverRules,
++        "MAP * ~NOTFOUND, EXCLUDE 127.0.0.1");
++  }
++#endif
+   for (auto& chrome_extra_part : chrome_extra_parts_) {
+     chrome_extra_part->PreEarlyInitialization();
+   }
+@@ -2154,6 +2279,12 @@ int ChromeBrowserMainParts::PreMainMessageLoopRunImpl() {
    }
  #endif
  

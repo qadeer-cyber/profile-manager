@@ -6,6 +6,8 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Server } from 'proxy-chain';
 import { db, getSetting, setSetting } from '../db.js';
+import { validateBrowserSettings } from '../browser-settings.js';
+import { applyChromiumLanguagePreferences } from '../regional-preferences.js';
 import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocation } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
@@ -135,6 +137,13 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     checkCancelled();
     if (!assignmentCurrent()) throw error('The assigned proxy changed during native launch.', 'PROXY_BROWSER_IDENTITY_FAILED');
     const args = [`--user-data-dir=${nativeDir}`, '--no-first-run', '--no-default-browser-check'];
+    const regional = validateBrowserSettings(profile.browserSettings || {});
+    if (regional.languages.length) {
+      applyChromiumLanguagePreferences(nativeDir, regional);
+      args.push('--accept-lang=' + regional.languages.join(','));
+    }
+    const locale = regional.locale || regional.languages[0];
+    if (locale) args.push('--lang=' + locale);
     if (opts.url) {
       const url = new URL(opts.url);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw error('Enter an HTTP or HTTPS website URL.');
