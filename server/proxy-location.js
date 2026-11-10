@@ -81,8 +81,12 @@ function proxyAgent(proxy) {
   const auth = proxy.username ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || '')}@` : '';
   const protocol = proxy.type === 'socks5' ? 'socks5h' : proxy.type;
   const host = isIP(proxy.host) === 6 ? `[${proxy.host}]` : proxy.host;
-  const upstream = `${protocol}://${auth}${host}:${proxy.port}`;
-  return protocol === 'socks5h' ? new SocksProxyAgent(upstream) : new HttpsProxyAgent(upstream);
+  if (protocol === 'socks5h') return new SocksProxyAgent(`${protocol}://${auth}${host}:${proxy.port}`);
+  // https-proxy-agent logs its URL when dependency debugging is enabled.
+  const headers = proxy.username ? () => ({
+    'Proxy-Authorization': 'Basic ' + Buffer.from(`${proxy.username}:${proxy.password || ''}`).toString('base64'),
+  }) : undefined;
+  return new HttpsProxyAgent(`${protocol}://${host}:${proxy.port}`, { headers });
 }
 
 export async function probeProxyExit(proxy, { request = requestJson } = {}) {

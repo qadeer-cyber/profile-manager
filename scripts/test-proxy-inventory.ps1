@@ -9,7 +9,10 @@ function Read-PrivateText([string] $Prompt) {
         $secret.Dispose()
     }
 }
+$debugBefore = $env:DEBUG
+$nodeDebugBefore = $env:NODE_DEBUG
 try {
+    Remove-Item Env:DEBUG, Env:NODE_DEBUG -ErrorAction SilentlyContinue
     $service = (Read-Host 'Location lookup: geolite, geoip, or none').Trim().ToLowerInvariant()
     $config = @{
         endpoints = @((Read-Host 'Paste authorized IPv4:port endpoints separated by spaces') -split '\s+' | Where-Object { $_ })
@@ -23,4 +26,8 @@ try {
     }
     $config | ConvertTo-Json -Depth 4 -Compress | node scripts/test-proxy-inventory.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Proxy inventory did not complete successfully.' }
-} finally { Remove-Variable config -ErrorAction SilentlyContinue }
+} finally {
+    $env:DEBUG = $debugBefore
+    $env:NODE_DEBUG = $nodeDebugBefore
+    Remove-Variable config -ErrorAction SilentlyContinue
+}

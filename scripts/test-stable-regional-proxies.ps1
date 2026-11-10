@@ -9,7 +9,10 @@ function Read-PrivateText([string] $Prompt) {
         $secret.Dispose()
     }
 }
+$debugBefore = $env:DEBUG
+$nodeDebugBefore = $env:NODE_DEBUG
 try {
+    Remove-Item Env:DEBUG, Env:NODE_DEBUG -ErrorAction SilentlyContinue
     $config = @{
         service = Read-Host 'MaxMind service (geolite or geoip)'
         account = Read-Host 'MaxMind City account ID'
@@ -24,4 +27,8 @@ try {
     }
     $config | ConvertTo-Json -Depth 4 -Compress | node scripts/test-stable-regional-proxies.mjs
     if ($LASTEXITCODE -ne 0) { throw 'Regional proxy acceptance failed.' }
-} finally { Remove-Variable config -ErrorAction SilentlyContinue }
+} finally {
+    $env:DEBUG = $debugBefore
+    $env:NODE_DEBUG = $nodeDebugBefore
+    Remove-Variable config -ErrorAction SilentlyContinue
+}
