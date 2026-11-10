@@ -1,0 +1,52 @@
+name: Azwah hosted proxy TCP preflight
+on:
+  push:
+    branches: [hardening/azwah-ultimate-stable-chrome]
+    paths: [.github/workflows/azwah-proxy-preflight.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reachability:
+    if: github.ref == 'refs/heads/hardening/azwah-ultimate-stable-chrome'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - name: Check credential availability and TCP reachability
+        shell: pwsh
+        env:
+          HAS_PROXY_USERNAME: ${{ secrets.AZWAH_PROXY_USERNAME != '' }}
+          HAS_PROXY_PASSWORD: ${{ secrets.AZWAH_PROXY_PASSWORD != '' }}
+          HAS_GEOIP_ACCOUNT: ${{ secrets.AZWAH_MAXMIND_ACCOUNT_ID != '' }}
+          HAS_GEOIP_KEY: ${{ secrets.AZWAH_MAXMIND_LICENSE_KEY != '' }}
+        run: |
+          @'
+          import concurrent.futures
+          import json
+          import os
+          import socket
+
+          endpoints = ["161.123.129.203:5536","154.6.80.158:8129","45.38.87.226:7148","166.88.245.149:5494","23.229.109.14:5783","192.3.5.4:5389","142.111.36.200:7278","107.172.210.155:6610","146.19.93.129:7414","184.174.57.52:5338","45.39.3.130:7555","142.147.133.108:5448"]
+
+          def check(endpoint):
+              host, port = endpoint.split(':')
+              try:
+                  with socket.create_connection((host, int(port)), timeout=4):
+                      return 'connected'
+              except TimeoutError:
+                  return 'timeout'
+              except OSError as exc:
+                  return 'socket-error-' + str(exc.winerror if getattr(exc, 'winerror', None) else exc.errno)
+
+          print(json.dumps({key: os.environ.get(key) == 'true' for key in
+              ('HAS_PROXY_USERNAME', 'HAS_PROXY_PASSWORD', 'HAS_GEOIP_ACCOUNT', 'HAS_GEOIP_KEY')}))
+          with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+              results = list(pool.map(check, endpoints))
+          print(json.dumps({'connected': results.count('connected'),
+                            'results': dict(enumerate(results, start=1))}))
+          '@ | python -
+          exit $LASTEXITCODE
