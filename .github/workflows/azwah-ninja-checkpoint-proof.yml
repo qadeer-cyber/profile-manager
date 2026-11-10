@@ -1,0 +1,61 @@
+name: Azwah Ninja cross-runner Chromium checkpoint proof
+on:
+  push:
+    branches: [qa/azwah-two-runner-shard-poc]
+    paths: [.github/workflows/azwah-ninja-checkpoint-proof.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: azwah-ninja-checkpoint-proof
+  cancel-in-progress: false
+
+# Bounded compatibility experiment, not full Chromium GN/Ninja sharding.
+# Compiles two actual pinned Chromium zlib units via a shared Ninja graph on
+# separate hosted Windows runners; transfers objects + logs and validates replay.
+jobs:
+  compile:
+    name: Ninja Chromium zlib ${{ matrix.shard }}
+    if: ${{ !github.event.repository.private }}
+    runs-on: windows-2025
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [adler32, crc32]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Compile pinned Chromium unit under Ninja
+        shell: pwsh
+        run: ./scripts/qa-azwah-ninja-two-shards.ps1 -Mode shard -Shard ${{ matrix.shard }}
+      - name: Transfer object and Ninja checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: chromium-ninja-${{ matrix.shard }}
+          path: checkpoint/
+          if-no-files-found: error
+          retention-days: 1
+  merge:
+    name: Restore checkpoints and replay Ninja archive edge
+    needs: compile
+    runs-on: windows-2025
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: chromium-ninja-*
+          path: incoming
+      - name: Verify source, toolchain, objects and dependency replay
+        shell: pwsh
+        run: ./scripts/qa-azwah-ninja-two-shards.ps1 -Mode merge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: azwah-ninja-merged-chromium-objects
+          path: merged/azwah-ninja-zlib.lib
+          if-no-files-found: error
+          retention-days: 1
