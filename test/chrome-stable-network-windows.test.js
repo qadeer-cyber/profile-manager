@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { createSocket } from 'node:dgram';
 import { connect } from 'node:net';
 import fs from 'node:fs';
-import { createServer } from 'node:http';
+import { createServer, get } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
 import { resolveWindowsChromeStable, stableProxyNetworkArgs } from '../server/browser-runtime/chrome-stable.js';
 
-const listen = server => new Promise((resolve, reject) => {
+const listen = (server, host = '127.0.0.1') => new Promise((resolve, reject) => {
   server.once('error', reject);
-  server.listen(0, '127.0.0.1', () => resolve(server.address().port));
+  server.listen(0, host, () => resolve(server.address().port));
 });
 const close = server => new Promise((resolve, reject) => {
   if (!server.listening) return resolve();
@@ -36,13 +37,44 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
     const accept = createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
     socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
   });
+  const stun = createSocket('udp4');
+  let stunPackets = 0;
+  stun.on('message', data => {
+    if (data.length >= 20 && data.readUInt32BE(4) === 0x2112a442) stunPackets++;
+  });
+  const ipv6 = createServer((req, res) => res.end(req.socket.remoteFamily + ' via relay'));
+  let ipv6Target;
   const relay = createServer((req, res) => {
     routed.add(req.url);
+    if (req.url === ipv6Target) {
+      get({ hostname: '::1', port: ipv6.address().port, path: '/azwah-v6' }, upstream => {
+        res.writeHead(upstream.statusCode);
+        upstream.pipe(res);
+      }).on('error', () => { res.writeHead(502); res.end(); });
+      return;
+    }
     res.setHeader('Connection', 'close');
     res.end('proxy connection');
   });
   try {
     const targetPort = await listen(trap);
+    ipv6Target = 'http://[::1]:' + await listen(ipv6, '::1') + '/azwah-v6';
+    await new Promise((resolve, reject) => {
+      stun.once('error', reject);
+      stun.bind(0, '127.0.0.1', resolve);
+    });
+    const stunPort = stun.address().port;
+    const control = createSocket('udp4');
+    try {
+      const packet = Buffer.alloc(20);
+      packet.writeUInt16BE(1);
+      packet.writeUInt32BE(0x2112a442, 4);
+      const received = new Promise(resolve => stun.once('message', resolve));
+      control.send(packet, stunPort, '127.0.0.1');
+      await received;
+      assert.equal(stunPackets, 1, 'STUN observer can see local UDP traffic');
+    } finally { control.close(); }
+    stunPackets = 0;
     relay.on('connect', (req, client, head) => {
       sockets.add(client);
       if (req.url !== '127.0.0.1:' + targetPort) return client.end('HTTP/1.1 403 Forbidden\r\n\r\n');
@@ -63,7 +95,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
       headless: false, viewport: null,
       args: ['--remote-debugging-pipe', '--user-data-dir=' + dir, '--no-first-run',
         '--proxy-server=' + proxy, '--proxy-bypass-list=<-loopback>',
-        ...stableProxyNetworkArgs('127.0.0.1', false), 'about:blank'],
+        ...stableProxyNetworkArgs('127.0.0.1', false), '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', 'about:blank'],
     });
     const page = context.pages()[0] || await context.newPage();
     const url = 'http://127.0.0.1:' + targetPort + '/azwah-route';
@@ -71,6 +103,26 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
     assert.equal(await response.text(), 'proxy connection');
     assert.ok(routed.has(url));
     assert.equal(directHits, 0);
+    const v6 = await page.goto(ipv6Target, { timeout: 10000 });
+    assert.equal(await v6.text(), 'IPv6 via relay');
+    assert.ok(routed.has(ipv6Target));
+    await page.goto(url, { timeout: 10000 });
+    const candidates = await page.evaluate(async port => {
+      const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:' + port }] });
+      const records = [];
+      peer.onicecandidate = event => {
+        if (event.candidate) records.push(event.candidate.protocol);
+      };
+      try {
+        peer.createDataChannel('azwah-ice');
+        await peer.setLocalDescription(await peer.createOffer());
+        await new Promise(resolve => setTimeout(resolve, 3500));
+        return records;
+      } finally { peer.close(); }
+    }, stunPort);
+    assert.ok(!candidates.includes('udp'), 'No UDP ICE candidates under the restricted policy');
+    assert.equal(stunPackets, 0, 'Restricted browser did not reach the local UDP STUN observer');
+    console.log('Controlled IPv6 relay request passed; restricted Chrome emitted no UDP ICE or local STUN traffic during observation.');
     const wsUrl = 'ws://127.0.0.1:' + targetPort + '/websocket';
     const openSocket = url => page.evaluate(address => new Promise(resolve => {
       const socket = new WebSocket(address);
@@ -91,7 +143,8 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
   } finally {
     for (const socket of sockets) socket.destroy();
     try { await context?.close(); } finally {
-      await Promise.all([close(relay), close(trap)]);
+      try { stun.close(); } catch { /* socket was not bound */ }
+      await Promise.all([close(relay), close(trap), close(ipv6)]);
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   }

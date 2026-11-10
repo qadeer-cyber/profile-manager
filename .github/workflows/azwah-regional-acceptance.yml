@@ -1,0 +1,44 @@
+name: Azwah authorized regional Chrome acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  credentials:
+    if: github.ref == 'refs/heads/hardening/azwah-ultimate-stable-chrome'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+    steps:
+      - id: check
+        env:
+          AVAILABLE: ${{ secrets.AZWAH_REGIONAL_ACCEPTANCE_JSON != '' }}
+        run: echo "available=$AVAILABLE" >> "$GITHUB_OUTPUT"
+  browser:
+    needs: credentials
+    if: needs.credentials.outputs.available == 'true'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - name: Verify automatic regional proxy identities in signed Chrome Stable
+        shell: pwsh
+        env:
+          REGIONAL_CONFIG: ${{ secrets.AZWAH_REGIONAL_ACCEPTANCE_JSON }}
+        run: |
+          Remove-Item Env:DEBUG, Env:NODE_DEBUG -ErrorAction SilentlyContinue
+          $inputJson = $env:REGIONAL_CONFIG
+          Remove-Item Env:REGIONAL_CONFIG
+          try {
+            $inputJson | node scripts/test-stable-regional-proxies.mjs
+            exit $LASTEXITCODE
+          } finally { Remove-Variable inputJson -ErrorAction SilentlyContinue }
