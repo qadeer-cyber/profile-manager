@@ -21,15 +21,18 @@ execFileSync(process.execPath, [path.join(__dirname, 'scripts/verify-native-rele
 });
 module.exports = {
   ...base,
-  directories: {...base.directories, output: 'release-ultimate-native'},
+  productName: 'Azwah',
+  extraMetadata: { ...base.extraMetadata, azwahChromiumRuntime: 'custom-native-chromium' },
+  directories: {...base.directories, output: 'release-azwah'},
   extraResources: [
-    ...(base.extraResources || []).filter(entry => entry.to !== 'privacy-engine'),
+    ...(base.extraResources || []).filter(entry => !['privacy-engine', 'browsers'].includes(entry.to)),
     {from: stage, to: 'native-chromium'},
   ],
   nsis: {
     ...base.nsis,
     deleteAppDataOnUninstall: false,
-    artifactName: 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe',
+    shortcutName: 'Azwah',
+    artifactName: 'Azwah-Setup-x64.exe',
   },
   win: {...base.win, signAndEditExecutable: false},
 };

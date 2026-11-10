@@ -4,4 +4,5 @@ const metadata = JSON.parse(fs.readFileSync(new URL('../../package.json', import
 export const isOwnerEdition = metadata.name === 'azwah-multi-browser-owner' && metadata.azwahEdition === 'owner-personal' && metadata.azwahLicensePolicy === 'personal-no-activation';
 export const isUltimateEdition = metadata.name === 'azwah-multi-browser-ultimate' && metadata.azwahEdition === 'ultimate';
 export const isProvisionedOffice = metadata.azwahEdition === 'provisioned-office';
-export const productName = isUltimateEdition ? 'Azwah Multi Browser Ultimate' : isOwnerEdition ? 'Azwah Multi Browser Owner' : isProvisionedOffice ? 'Azwah Multi Browser Office' : 'Azwah Multi Browser';
+export const hasIntegratedNativeEngine = isUltimateEdition && metadata.azwahChromiumRuntime === 'custom-native-chromium';
+export const productName = hasIntegratedNativeEngine ? 'Azwah' : isUltimateEdition ? 'Azwah Multi Browser Ultimate' : isOwnerEdition ? 'Azwah Multi Browser Owner' : isProvisionedOffice ? 'Azwah Multi Browser Office' : 'Azwah Multi Browser';

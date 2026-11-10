@@ -1,3 +1,4 @@
+import { hasIntegratedNativeEngine } from './office/edition.js';
 import { monitorWindowState } from './window-state.js';
 import { assertProfileOperationAvailable } from './recovery-journal.js';
 import { browserContextSettings, validateBrowserSettings } from './browser-settings.js';
@@ -389,9 +390,16 @@ async function doLaunch(p, opts = {}) {
       finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native', engine: 'firefox' });
       return runInfo(p.id);
     }
-    const dedicated = p.advancedSettings?.runtime === 'privacy';
-    const azwah = ['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime);
-    if (!dedicated && !azwah) launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
+    const runtime = p.advancedSettings?.runtime || 'compatibility';
+    const dedicated = runtime === 'privacy';
+    // Keep existing Chrome profile data in its original runtime. A new
+    // default profile uses the integrated engine and its separate storage.
+    const hasStockData = hasIntegratedNativeEngine && ['Default', 'Local State'].some(name => fs.existsSync(path.join(dir, name)));
+    const azwah = ['azwah-native', 'custom-native-chromium'].includes(runtime) ||
+      (hasIntegratedNativeEngine && runtime === 'compatibility' && !hasStockData);
+    if (!dedicated && !azwah) launchPlan = await buildProfileLaunchPlan(p, {
+      ...opts, userDataDir: dir, requireStable: hasIntegratedNativeEngine,
+    });
     relayUrl = launchPlan?.relayUrl || null;
     const { args, plan, regional, cdpPort } = launchPlan || {};
     const preferencesBaseline = readPreferences(dir);

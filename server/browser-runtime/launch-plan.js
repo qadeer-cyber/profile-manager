@@ -43,7 +43,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   const { headless, url } = opts;
   const automation = automationEnabled(opts);
   const explicitStable = p.advancedSettings?.runtime === 'stable-chrome';
-  const requireStable = explicitStable || process.env.AZWAH_STABLE_CHROME_EDITION === '1';
+  const requireStable = opts.requireStable === true || explicitStable || process.env.AZWAH_STABLE_CHROME_EDITION === '1';
   if (requireStable && process.platform !== 'win32') throw httpErr(503, 'The installed Chrome Stable runtime requires Windows.', 'CHROME_STABLE_UNSUPPORTED');
   const stable = process.platform === 'win32' && (!headless || requireStable) ? await resolveWindowsChromeStable() : null;
   let runtime = launchRuntimeMode(opts, 'chromium');
