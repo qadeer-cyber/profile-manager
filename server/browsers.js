@@ -32,7 +32,9 @@ import path from 'path';
 import { EventEmitter } from 'events';
 import { chromium } from 'playwright';
 import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
-import { db, userDataDir, getSetting } from './db.js';
+import { geoIpCredentials } from './geoip-settings.js';
+import { resolveProxyLocation } from './proxy-location.js';
+import { db, userDataDir, getSetting, setSetting } from './db.js';
 import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
@@ -274,6 +276,65 @@ async function reconcileOrphanRunningRows() {
   }
 }
 
+function stableProxyAssignment(p) {
+  const row = db.prepare(`SELECT p.proxy_id AS id, x.updated_at AS revision
+    FROM profiles p LEFT JOIN proxies x ON x.id = p.proxy_id
+    WHERE p.id = ? AND p.deleted_at IS NULL`).get(p.id);
+  return row && row.id === p.proxy?.id && row.revision === p.proxy?.revision;
+}
+
+function monitorStableProxy(p, opts, entry, location) {
+  const key = 'proxy-location:' + p.id;
+  const active = () => !shuttingDown && live.get(p.id) === entry && !entry.stopping;
+  const schedule = () => {
+    entry.stableProxyTimer = setTimeout(recheck, 60000);
+    entry.stableProxyTimer.unref();
+  };
+  async function recheck() {
+    if (!active()) return;
+    let rotation = false;
+    let message = 'Chrome stopped because the proxy could no longer be verified.';
+    try {
+      if (!stableProxyAssignment(p)) {
+        message = 'The assigned proxy changed. Relaunch to apply the new proxy.';
+        throw new Error(message);
+      }
+      const observed = await resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), credentials: geoIpCredentials });
+      if (!active()) return;
+      if (!stableProxyAssignment(p)) {
+        message = 'The assigned proxy changed. Relaunch to apply the new proxy.';
+        throw new Error(message);
+      }
+      rotation = ['ip', 'timezone', 'latitude', 'longitude', 'accuracy'].some(field => observed[field] !== location[field]);
+      if (rotation) {
+        message = 'The proxy exit identity changed. Relaunch to verify the new identity.';
+        throw new Error(message);
+      }
+      if (observed.expiresAt !== location.expiresAt) {
+        location = { ...location, expiresAt: observed.expiresAt };
+        setSetting(key, location);
+      }
+      schedule();
+    } catch {
+      if (!active()) return;
+      setSetting(key, null);
+      try { await stop(p.id, { rotationEntry: entry }); }
+      catch { return; } // The existing stop path records a locked process failure.
+      if (shuttingDown || entry.rotationCancelled) return;
+      if (rotation && !opts.stableRotationRestart && stableProxyAssignment(p)) {
+        const current = db.prepare('SELECT updated_at FROM profiles WHERE id = ? AND deleted_at IS NULL').get(p.id);
+        if (current?.updated_at === p.updated_at) {
+          await launch(p, { ...opts, url: undefined, stableRotationRestart: true }).catch(() => {});
+          return;
+        }
+      }
+      setStatus(p.id, { last_error: message });
+      emit('profile:launch-failed', p.id, { error: message, code: 'PROXY_BROWSER_IDENTITY_FAILED' });
+    }
+  }
+  schedule();
+}
+
 async function doLaunch(p, opts = {}) {
   assertProfileOperationAvailable(p.id);
   const current = db.prepare('SELECT deleted_at,purge_error FROM profiles WHERE id=?').get(p.id);
@@ -396,8 +457,22 @@ async function doLaunch(p, opts = {}) {
     if (launchPlan.stable && !ctx.pages().length) {
       await ctx.waitForEvent('page', { timeout: 15000 });
     }
+    let verifiedStableLocation = null;
     if (launchPlan.requiredStable && launchPlan.locationMode === 'auto') {
-      await verifyStableBrowserLocation(ctx, launchPlan.stableLocation);
+      const key = 'proxy-location:' + p.id;
+      const verifyCoordinates = p.advancedSettings?.geolocation?.permission !== 'deny';
+      try {
+        await verifyStableBrowserLocation(ctx, launchPlan.stableLocation, { verifyCoordinates });
+        if (!stableProxyAssignment(p)) throw httpErr(409, 'The proxy changed during launch. Retry with the current assignment.', 'PROXY_BROWSER_IDENTITY_FAILED');
+        const { browserVerifiedAt, ...location } = launchPlan.stableLocation;
+        const checkedAt = Date.now();
+        verifiedStableLocation = { ...location, source: 'MaxMind GeoIP City', browserExitVerifiedAt: checkedAt,
+          browserTimezoneVerifiedAt: checkedAt, ...(verifyCoordinates ? { browserVerifiedAt: checkedAt } : {}) };
+        setSetting(key, verifiedStableLocation);
+      } catch (error) {
+        setSetting(key, null);
+        throw error;
+      }
     }
     markContextReady(metricsHandle);
     assertLaunchNotCancelled(p.id);
@@ -455,6 +530,7 @@ async function doLaunch(p, opts = {}) {
     }
     setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
     ctx.on('close', () => onClosed(p.id, ctx));
+    if (verifiedStableLocation) monitorStableProxy(p, opts, entry, verifiedStableLocation);
     emit('profile:started', p.id);
     entry.restoreTabs = launchPlan.restoreTabs;
     entry.rememberWindow = launchPlan.rememberWindow;
@@ -716,6 +792,7 @@ function ownsLock(lock, browserPid) {
 async function finishClose(id, e) {
   if (e.cleaned) return;
   e.cleaned = true;
+  clearTimeout(e.stableProxyTimer);
   let dir = null;
   try { dir = userDataDir(id); } catch {}
   // App Stop used to release the row while the pid was still alive. Wait for the
@@ -836,6 +913,7 @@ export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
   if (!rotationEntry) e.rotationCancelled = true;
   e.stopping = true;
+  clearTimeout(e.stableProxyTimer);
   e.stopWindowTracking?.();
   if (e.restoreTabs && e.ctx) {
     try {

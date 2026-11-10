@@ -24,7 +24,15 @@ test('visible signed Windows Chrome Stable applies manual location through the p
   const engine = await import('../server/browsers.js');
   const { startServer } = await import('../server/app.js');
   const { db } = await import('../server/db.js');
-  const fixture = createServer((req, res) => res.end('<title>Visible Chrome location fixture</title>'));
+  const fixture = createServer((req, res) => {
+    if (req.url === '/sw.js') {
+      res.setHeader('Content-Type', 'application/javascript');
+      res.end('self.addEventListener("install", () => self.skipWaiting());');
+    } else res.end('<title>Visible Chrome location fixture</title>');
+  });
+  const rejectedProxy = createServer();
+  rejectedProxy.on('connect', (_, socket) => socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nConnection: close\r\n\r\n'));
+  await new Promise(resolve => rejectedProxy.listen(0, '127.0.0.1', resolve));
   await new Promise(resolve => fixture.listen(0, '127.0.0.1', resolve));
   const origin = `http://127.0.0.1:${fixture.address().port}`;
   let server;
@@ -42,14 +50,26 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     };
     const profile = await api('POST', '/profiles', {
       name: 'Stable fixture', browserSettings: { timezoneId: 'America/Los_Angeles' },
-      advancedSettings: { geolocation: { mode: 'manual', permission: 'allow', latitude: 37.4, longitude: -122.1, accuracy: 65000 } },
+      advancedSettings: { runtime: 'stable-chrome', geolocation: { mode: 'manual', permission: 'allow', latitude: 37.4, longitude: -122.1, accuracy: 65000 } },
     }, 201);
     const endpoint = '/profiles/' + profile.id;
+    const peer = await api('POST', '/profiles', { name: 'Independent Stable fixture',
+      advancedSettings: { runtime: 'stable-chrome' }, browserSettings: { timezoneId: 'Europe/Berlin' } }, 201);
+    const peerEndpoint = '/profiles/' + peer.id;
+    const peerRun = await api('POST', peerEndpoint + '/launch', { headless: false, url: origin });
+    const peerPage = engine.liveContext(peer.id).pages()[0];
+    const blocked = await api('POST', '/profiles', { name: 'Rejected proxy fixture',
+      advancedSettings: { runtime: 'stable-chrome' },
+      proxy: { type: 'http', host: '127.0.0.1', port: rejectedProxy.address().port, username: 'fixture', password: 'invalid' } }, 201);
+    const failed = await api('POST', '/profiles/' + blocked.id + '/launch', { headless: false }, 503);
+    assert.equal(failed.code, 'PROXY_LOCATION_UNAVAILABLE');
+    assert.equal((await api('GET', '/profiles/' + blocked.id)).running, false);
     for (let run = 0; run < 2; run++) {
       await api('POST', endpoint + '/launch', { headless: false, url: origin });
       const current = await api('GET', endpoint);
       assert.equal(current.cdp, undefined, 'No public debugging port for ordinary browsing');
       assert.ok(Number.isSafeInteger(current.pid) && current.pid > 0);
+      assert.notEqual(current.pid, peerRun.pid);
       const actual = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
         `(Get-Process -Id ${current.pid}).Path`], { encoding: 'utf8', timeout: 10000 }).trim();
       assert.equal(actual.toLowerCase(), stable.path.toLowerCase());
@@ -57,6 +77,38 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       const context = engine.liveContext(profile.id);
       const first = context.pages()[0];
       await first.goto(origin);
+      const storage = (page) => page.evaluate(async () => ({
+        cookie: document.cookie,
+        local: localStorage.getItem('azwah'),
+        session: sessionStorage.getItem('azwah'),
+        databases: (await indexedDB.databases()).map(db => db.name),
+        caches: await caches.keys(),
+        workers: (await navigator.serviceWorker.getRegistrations()).length,
+      }));
+      if (run === 0) await first.evaluate(async () => {
+        document.cookie = 'azwah=private; Max-Age=86400; Path=/';
+        localStorage.setItem('azwah', 'profile-a');
+        sessionStorage.setItem('azwah', 'profile-a');
+        await new Promise((resolve, reject) => {
+          const request = indexedDB.open('azwah-private', 1);
+          request.onsuccess = () => { request.result.close(); resolve(); };
+          request.onerror = () => reject(request.error);
+        });
+        await caches.open('azwah-private');
+        await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+      });
+      const stored = await storage(first);
+      assert.deepEqual({ ...stored, session: null }, {
+        cookie: 'azwah=private', local: 'profile-a', session: null,
+        databases: ['azwah-private'], caches: ['azwah-private'], workers: 1,
+      });
+      if (run === 0) assert.equal(stored.session, 'profile-a');
+      await peerPage.reload();
+      assert.deepEqual(await storage(peerPage), { cookie: '', local: null, session: null, databases: [], caches: [], workers: 0 });
+      assert.equal(await peerPage.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), 'Europe/Berlin');
+      assert.deepEqual(await first.evaluate(() => [new Date('2025-01-15T12:00Z').getTimezoneOffset(),
+        new Date('2025-07-15T12:00Z').getTimezoneOffset()]), [480, 420]);
       assert.equal(await first.evaluate(async () => (await navigator.permissions.query({ name: 'geolocation' })).state), 'prompt');
       await context.grantPermissions(['geolocation'], { origin });
       const second = await context.newPage();
@@ -73,8 +125,11 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       }
       await api('POST', endpoint + '/stop');
     }
+    await api('POST', peerEndpoint + '/stop');
   } finally {
     try { await server?.close(); } finally {
+      rejectedProxy.close();
+      rejectedProxy.closeAllConnections();
       fixture.close();
       fixture.closeAllConnections();
       db.close();

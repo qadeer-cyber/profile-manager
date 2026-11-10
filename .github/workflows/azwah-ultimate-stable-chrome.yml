@@ -62,6 +62,7 @@ jobs:
             'Windows 10/11 client acceptance: pending', 'Unsigned installer candidate')
           $manifest | Set-Content (Join-Path $dir 'BUILD-MANIFEST.txt')
           $manifest | Add-Content $env:GITHUB_STEP_SUMMARY
+          $manifest | Write-Output
       - uses: actions/upload-artifact@v4
         with:
           name: azwah-ultimate-stable-chrome-x64-${{ github.sha }}
@@ -97,7 +98,7 @@ jobs:
           if (!$uninstaller) { throw 'Uninstaller missing.' }
           $removed = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
           if ($removed.ExitCode -ne 0 -or (Test-Path $app) -or !(Test-Path $env:PM_USER_DATA)) { throw 'Uninstall or data retention check failed.' }
-      - name: Test live Chrome page timezone, geolocation and restart
+      - name: Test concurrent Chrome isolation, timezone, geolocation and failed proxy
         shell: pwsh
         run: |
           node --test --test-force-exit test/chrome-stable-windows-live.test.js

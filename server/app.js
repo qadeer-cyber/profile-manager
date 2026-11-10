@@ -239,7 +239,8 @@ const publicP = p => {
     } catch { /* profile dir not created yet */ }
   }
   out.tabRestore = tabRestore;
-  const mode = p.advancedSettings?.runtime === 'azwah-native' && proxy_id
+  const mode = proxy_id && p.browserEngine !== 'firefox' && (['azwah-native', 'custom-native-chromium', 'stable-chrome'].includes(p.advancedSettings?.runtime) ||
+    (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && p.advancedSettings?.runtime !== 'privacy'))
     ? 'auto' : p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
   if (mode === 'auto' && proxy_id) {
     const location = getSetting('proxy-location:' + p.id, null);

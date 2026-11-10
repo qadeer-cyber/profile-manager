@@ -71,9 +71,11 @@ foreach ($candidate in ($paths | Select-Object -Unique)) {
   return result;
 }
 
-export async function verifyStableBrowserLocation(context, expected) {
-  const page = await context.newPage();
+export async function verifyStableBrowserLocation(context, expected, { verifyCoordinates = true } = {}) {
+  let page;
+  let permissionsGranted = false;
   try {
+    page = await context.newPage();
     const response = await page.goto('https://api64.ipify.org/?format=json', { timeout: 15000 });
     const { publicIp } = await import('../proxy-location.js');
     if (!response?.ok() || publicIp((await response.json())?.ip) !== expected.ip) {
@@ -83,9 +85,21 @@ export async function verifyStableBrowserLocation(context, expected) {
     if (new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone !== expected.timezone) {
       throw new Error('Timezone mismatch');
     }
+    if (verifyCoordinates) {
+      await context.grantPermissions(['geolocation'], { origin: 'https://api64.ipify.org' });
+      permissionsGranted = true;
+      const coordinates = await page.evaluate(() => new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(({ coords }) => resolve({
+          latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
+        }), reject, { timeout: 5000, maximumAge: 0 });
+      }));
+      if (!['latitude', 'longitude', 'accuracy'].every(key => Number.isFinite(coordinates[key]) &&
+        Math.abs(coordinates[key] - expected[key]) < 0.000001)) throw new Error('Coordinates mismatch');
+    }
   } catch {
-    throw error('PROXY_BROWSER_IDENTITY_FAILED', 'Chrome could not verify the proxy exit IP and page timezone. Check the proxy and retry.');
+    throw error('PROXY_BROWSER_IDENTITY_FAILED', 'Chrome could not verify the proxy exit IP or page location. Check the proxy and retry.');
   } finally {
-    await page.close().catch(() => {});
+    try { if (permissionsGranted) await context.clearPermissions(); }
+    finally { await page?.close().catch(() => {}); }
   }
 }

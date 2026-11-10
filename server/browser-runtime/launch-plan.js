@@ -1,6 +1,7 @@
 // Shared launch plan for native Chromium vs Playwright automation adapter.
 import fs from 'fs';
 import net from 'net';
+import { isIP } from 'node:net';
 import { anonymizeProxy } from 'proxy-chain';
 import { browserContextSettings, validateBrowserSettings } from '../browser-settings.js';
 import { chromiumPolicyArgs, validateWebRtcSettings } from '../webrtc-policy.js';
@@ -69,7 +70,10 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     }
     if (mode === 'auto') {
       const key = 'proxy-location:' + p.id;
-      locationOverride = await resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), save: value => setSetting(key, value), credentials: geoIpCredentials });
+      const cached = getSetting(key, null);
+      if (requireStable) setSetting(key, null);
+      locationOverride = await resolveProxyLocation(p.proxy, { read: () => cached,
+        save: requireStable ? undefined : value => setSetting(key, value), credentials: geoIpCredentials });
       regional.timezoneId = locationOverride.timezone;
     } else if (mode === 'system') {
       regional.timezoneId = '';
@@ -100,16 +104,17 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   }
 
   let relayUrl = null;
+  const proxyHost = p.proxy && isIP(p.proxy.host) === 6 ? `[${p.proxy.host}]` : p.proxy?.host;
   const proxyArg = server => `--proxy-server=${server}`;
   if (p.proxy) {
     if (requireStable) args.push('--disable-quic', '--dns-prefetch-disable');
     if (p.proxy.username) {
       const scheme = p.proxy.type === 'socks5' ? 'socks5h' : p.proxy.type;
-      const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
+      const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${proxyHost}:${p.proxy.port}`;
       relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
       args.push(proxyArg(relayUrl));
     } else {
-      args.push(proxyArg(`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`));
+      args.push(proxyArg(`${p.proxy.type}://${proxyHost}:${p.proxy.port}`));
     }
     // Dev/test: PM_PROXY_LOOPBACK. Packaged manual native: always send loopback through the proxy (offline smoke).
     if (stable || proxyLoopback() || (isPackaged() && runtime === 'native')) args.push('--proxy-bypass-list=<-loopback>');
@@ -174,7 +179,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   if (plan.launch.geolocation) playwrightOpts.geolocation = plan.launch.geolocation;
   if (p.proxy) {
     if (relayUrl) playwrightOpts.proxy = { server: relayUrl };
-    else playwrightOpts.proxy = { server: `${p.proxy.type}://${p.proxy.host}:${p.proxy.port}` };
+    else playwrightOpts.proxy = { server: `${p.proxy.type}://${proxyHost}:${p.proxy.port}` };
   }
   if (extensionPlan.ignoreDefaultArgs.length) playwrightOpts.ignoreDefaultArgs = [...extensionPlan.ignoreDefaultArgs];
   if (stable) {
