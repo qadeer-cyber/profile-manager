@@ -1,3 +1,4 @@
+import { publicIp, resolveProxyLocation } from './proxy-location.js';
 import { resolveWindowsChromeStable } from './browser-runtime/chrome-stable.js';
 import { parseProxyLine } from './proxy-line.js';
 import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
@@ -33,7 +34,7 @@ import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
 import { summarizeConsistency } from './fingerprint-summary.js';
 import { buildMonitoringReport } from './monitoring-report.js';
 import { computeParityCoverage } from './parity-scorecard.js';
-import { clearGeoIpCredentials, geoIpStatus, saveGeoIpCredentials } from './geoip-settings.js';
+import { geoIpCredentials, clearGeoIpCredentials, geoIpStatus, saveGeoIpCredentials } from './geoip-settings.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
@@ -1127,7 +1128,9 @@ async function runProxyTest(px) {
   const timeoutMs = Number(process.env.PM_PROXY_TEST_TIMEOUT_MS || 10000);
   const auth = px.username ? `${encodeURIComponent(px.username)}:${encodeURIComponent(px.password)}@` : '';
   const host = px.host;
-  const url = `${px.type}://${auth}${host}:${px.port}`; // https = TLS to the proxy itself
+  const authority = host.includes(':') && !host.startsWith('[') ? `[${host}]` : host;
+  const scheme = px.type === 'socks5' ? 'socks5h' : px.type;
+  const url = `${scheme}://${auth}${authority}:${px.port}`; // https = TLS to the proxy itself
   const agent = px.type === 'socks5' ? new SocksProxyAgent(url, { timeout: timeoutMs }) : new HttpsProxyAgent(url, { timeout: timeoutMs, rejectUnauthorized: !proxyTestInsecureTls() });
   const target = process.env.PROXY_TEST_URL || 'https://api.ipify.org?format=json';
   const t0 = Date.now();
@@ -1142,16 +1145,17 @@ async function runProxyTest(px) {
   return await new Promise(resolve => {
     let settled = false;
     const done = v => { if (!settled) { settled = true; clearTimeout(hard); resolve({ latencyMs: Date.now() - t0, ...v }); } };
-    const fail = e => { const error = classifyProxyError(e); done({ ok: false, ip: null, error, message: error === 'timeout' ? `No response from proxy within ${timeoutMs} ms` : String(e?.message || e).slice(0, 300) }); };
+    const fail = e => { const error = classifyProxyError(e); done({ ok: false, ip: null, error, message: error === 'timeout' ? `No response from proxy within ${timeoutMs} ms` : error === 'auth' ? 'Proxy authentication failed. Check the saved username and password.' : `Proxy connection failed (${error}).` }); };
     const hard = setTimeout(() => { req.destroy(); fail(Object.assign(new Error('timeout'), { code: 'PROXY_TIMEOUT' })); }, timeoutMs);
     const req = (target.startsWith('https') ? https : http).get(target, { agent }, resp => {
       let body = ''; resp.on('data', d => { if (body.length < 4096) body += d; });
       resp.on('end', () => {
         if (resp.statusCode === 407) return fail(Object.assign(new Error('Proxy authentication required (407)'), { code: 'PROXY_AUTH' }));
-        if (resp.statusCode >= 400) return done({ ok: false, ip: null, error: 'unknown', message: `IP lookup returned HTTP ${resp.statusCode}`, status: resp.statusCode });
+        if (resp.statusCode !== 200) return done({ ok: false, ip: null, error: 'unknown', message: `IP lookup returned HTTP ${resp.statusCode}`, status: resp.statusCode });
         let ip = null;
         try { ip = JSON.parse(body).ip ?? null; } catch { ip = body.trim().split(/\s/)[0] || null; }
-        if (ip && !/^[0-9a-fA-F:.]{3,45}$/.test(ip)) ip = null;
+        ip = publicIp(ip);
+        if (!ip) return done({ ok: false, ip: null, error: 'unknown', message: 'The proxy did not return a verified public IP.' });
         done({ ok: true, ip, error: null, message: null, status: resp.statusCode });
       });
       resp.on('error', fail);
@@ -1162,17 +1166,23 @@ async function runProxyTest(px) {
     });
   });
 }
-async function testLibraryProxy(id) {
+async function testLibraryProxy(id, previewLocation = false) {
   const r = mustProxy(id);
   let password;
   try { password = decrypt(r.password); } catch (e) { throw Object.assign(err(500, 'Cannot decrypt this proxy\'s password: ' + e.message + '. Re-enter it.'), { code: e.code }); }
-  const res = await runProxyTest({ type: r.type, host: r.host, port: r.port, username: r.username, password });
+  const proxy = { id, revision: r.updated_at, type: r.type, host: r.host, port: r.port, username: r.username, password };
+  const res = await runProxyTest(proxy);
   const testedAt = new Date().toISOString();
   db.prepare('UPDATE proxies SET last_test_status=?, last_test_ip=?, last_test_latency_ms=?, last_test_error=?, last_tested_at=? WHERE id=?')
     .run(res.ok ? 'ok' : 'failed', res.ip, res.latencyMs, res.error, testedAt, id);
   db.prepare('INSERT INTO proxy_checks (proxy_id, status, latency_ms, error, tested_at) VALUES (?,?,?,?,?)').run(id, res.ok ? 'ok' : 'failed', res.latencyMs, res.error, testedAt);
   db.prepare('DELETE FROM proxy_checks WHERE proxy_id=? AND id NOT IN (SELECT id FROM proxy_checks WHERE proxy_id=? ORDER BY id DESC LIMIT 50)').run(id, id);
-  return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, proxy: publicProxy(proxyRow(id)) };
+  let location, locationError;
+  if (previewLocation && res.ok) {
+    try { location = await resolveProxyLocation(proxy, { credentials: geoIpCredentials }); }
+    catch (error) { locationError = error.message; }
+  }
+  return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, location, locationError, proxy: publicProxy(proxyRow(id)) };
 }
 // Legacy ad-hoc test (inline proxy object, not saved)
 async function testProxy(px) {
@@ -1365,7 +1375,7 @@ function mountProxyRoutes(r) {
   r.patch('/proxies/:id', wrap((req, res) => res.json(patchProxy(req.params.id, req.body))));
   r.delete('/proxies/:id', wrap((req, res) => { deleteProxy(req.params.id, req.query.force === '1' || req.query.force === 'true'); res.status(204).end(); }));
   r.post('/proxies/:id/duplicate', wrap((req, res) => res.status(201).json(duplicateProxy(req.params.id, req.body || {}))));
-  r.post('/proxies/:id/test', wrap(async (req, res) => res.json(await testLibraryProxy(req.params.id))));
+  r.post('/proxies/:id/test', wrap(async (req, res) => res.json(await testLibraryProxy(req.params.id, req.query.location === '1'))));
   r.get('/proxies/:id/checks', wrap((req, res) => {
     mustProxy(req.params.id);
     res.json(db.prepare('SELECT status, latency_ms AS latencyMs, error, tested_at AS testedAt FROM proxy_checks WHERE proxy_id=? ORDER BY tested_at ASC, id ASC').all(req.params.id));

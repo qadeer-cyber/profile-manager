@@ -34,8 +34,12 @@ export function ProxiesPage() {
     setTesting(t => ({ ...t, ...Object.fromEntries(ids.map(i => [i, true])) }));
     try {
       if (ids.length === 1) {
-        await api(`/api/proxies/${ids[0]}/test`, { method: 'POST' });
-        toast('Proxy test finished', 'success');
+        const result = await api(`/api/proxies/${ids[0]}/test?location=1`, { method: 'POST' });
+        if (!result.ok) toast(result.message || proxyErrorLabel(result.error), 'error');
+        else if (result.location) {
+          const { ip, city, region, country, timezone, radiusKm } = result.location;
+          toast(`${ip} · ${[city, region, country].filter(Boolean).join(', ')} · ${timezone} · ~${radiusKm} km`, 'success');
+        } else toast(`Proxy reachable · ${result.ip}. ${result.locationError || ''}`, 'success');
       } else {
         const batch = await api('/api/proxies/test-batch', { method: 'POST', body: { ids: ids.slice(0, 50) } });
         const failed = (batch.results || []).filter(r => !r.ok || r.status === 'failed');

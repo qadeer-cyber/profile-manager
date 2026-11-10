@@ -3,7 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { assertProfileVersion, resolveWindowsChromeStable } from '../server/browser-runtime/chrome-stable.js';
+import { assertProfileVersion, resolveWindowsChromeStable, verifyStableBrowserLocation } from '../server/browser-runtime/chrome-stable.js';
 
 test('requires discovered signed Chrome Stable metadata and rejects missing or old candidates', async () => {
   const candidate = { path: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', version: '156.0.1.0' };
@@ -28,4 +28,26 @@ test('guards existing Chrome profile data against version downgrade', t => {
   assert.throws(() => assertProfileVersion(dir, '156.0.1.0'), { code: 'CHROME_PROFILE_DOWNGRADE' });
   assert.doesNotThrow(() => assertProfileVersion(dir, '157.0.0.0'));
   assert.equal(fs.readFileSync(path.join(dir, 'Last Version'), 'utf8'), '156.0.2.0');
+});
+
+test('Stable Chrome identity gate rejects mismatches and clears its temporary location permission', async () => {
+  const expected = { ip: '8.8.8.8', timezone: 'Europe/Berlin', latitude: 52.5, longitude: 13.4, accuracy: 50000 };
+  for (const mismatch of [null, 'ip', 'timezone', 'coordinates']) {
+    const calls = [];
+    const page = {
+      goto: async () => ({ ok: () => true, json: async () => ({ ip: mismatch === 'ip' ? '1.1.1.1' : expected.ip }) }),
+      evaluate: async () => calls.includes('grant')
+        ? { ...expected, accuracy: mismatch === 'coordinates' ? 50 : expected.accuracy }
+        : mismatch === 'timezone' ? 'UTC' : expected.timezone,
+      close: async () => { calls.push('close'); },
+    };
+    const context = { newPage: async () => page,
+      grantPermissions: async () => { calls.push('grant'); },
+      clearPermissions: async () => { calls.push('clear'); },
+    };
+    const check = verifyStableBrowserLocation(context, expected);
+    if (mismatch) await assert.rejects(check, { code: 'PROXY_BROWSER_IDENTITY_FAILED' });
+    else await check;
+    assert.deepEqual(calls, mismatch === 'ip' || mismatch === 'timezone' ? ['close'] : ['grant', 'clear', 'close']);
+  }
 });
