@@ -22,10 +22,15 @@ param(
     [ValidateRange(4, 32)]
     [int] $ReserveGiB = 8,
 
-    [switch] $AzwahSource
+    [switch] $AzwahSource,
+
+    [switch] $CheckpointProbe
 )
 
 $ErrorActionPreference = 'Stop'
+if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
+    throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
+}
 $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
 if ($AzwahSource) {
@@ -188,6 +193,7 @@ try {
             & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -AlreadyApplied
         }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
+        if ($CheckpointProbe) { $out = 'out/azwah-checkpoint-probe' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
         if (Test-Path -LiteralPath $manifest -PathType Leaf) {
             Remove-Item -LiteralPath $manifest
@@ -200,6 +206,9 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@
+        if ($CheckpointProbe) {
+            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
+        }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
             ((Get-Content -LiteralPath $argsFile -Raw).TrimEnd() -cne $gnArgs.TrimEnd())) {
@@ -214,6 +223,27 @@ symbol_level = 0
             throw 'GN reported success but did not create build.ninja.'
         }
         Write-Output "PASS GN generated native Windows x64 build.ninja at $out."
+        if ($CheckpointProbe) {
+            $probeTargets = @(Invoke-BuildTool $autoninja @('-C', $out, '-t', 'targets', 'all') |
+                ForEach-Object {
+                    if ($_ -match '^(obj/[^:]+/icu_util\.obj):\s+cxx') { $Matches[1] }
+                } | Sort-Object -Unique)
+            if ($probeTargets.Count -ne 1) {
+                throw "Expected one C++ object target for patched base/i18n/icu_util.cc; found $($probeTargets.Count)."
+            }
+            $probeTarget = $probeTargets[0]
+            $commands = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'commands', $probeTarget)
+            if (!($commands | Where-Object { $_ -match 'sccache.*base[/\\]i18n[/\\]icu_util\.cc' })) {
+                throw 'The probe compile command does not wrap the patched source with sccache.'
+            }
+            Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", $probeTarget)
+            $probeObject = Join-Path $out $probeTarget
+            if (!(Test-Path -LiteralPath $probeObject -PathType Leaf)) { throw 'Probe object is missing.' }
+            $probeHash = (Get-FileHash -LiteralPath $probeObject).Hash
+            Write-Output "Probe object $probeTarget SHA256=$probeHash"
+            if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
+            return
+        }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
