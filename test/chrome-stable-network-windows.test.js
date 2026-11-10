@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { createHash, randomUUID, X509Certificate } from 'node:crypto';
+import { createHash, X509Certificate } from 'node:crypto';
 import { createSocket } from 'node:dgram';
 import { connect } from 'node:net';
 import fs from 'node:fs';
@@ -23,27 +23,20 @@ const close = server => new Promise((resolve, reject) => {
   server.closeAllConnections();
 });
 
-function createTlsFixture() {
-  const passphrase = randomUUID();
-  const command = `
-$ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'
-$cert = $null
-$file = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.pfx')
-try {
-  $cert = New-SelfSignedCertificate -DnsName localhost -CertStoreLocation Cert:\\CurrentUser\\My -KeyExportPolicy Exportable -NotAfter (Get-Date).AddHours(1)
-  $password = ConvertTo-SecureString '${passphrase}' -AsPlainText -Force
-  Export-PfxCertificate -Cert $cert -FilePath $file -Password $password | Out-Null
-  @{ pfx = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)); cert = [Convert]::ToBase64String($cert.RawData) } | ConvertTo-Json -Compress
-} finally {
-  if ($cert) { Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $cert.Thumbprint) }
-  Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue
-}`;
-  const result = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
-    Buffer.from(command, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 25000 }));
-  const key = new X509Certificate(Buffer.from(result.cert, 'base64')).publicKey.export({ type: 'spki', format: 'der' });
-  return { pfx: Buffer.from(result.pfx, 'base64'), passphrase,
-    pin: createHash('sha256').update(key).digest('base64') };
+function createTlsFixture(dir) {
+  const gitOpenSsl = path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'usr', 'bin', 'openssl.exe');
+  const openssl = fs.existsSync(gitOpenSsl) ? gitOpenSsl : 'openssl.exe';
+  const keyFile = path.join(dir, 'test-key.pem');
+  const certFile = path.join(dir, 'test-cert.pem');
+  execFileSync(openssl, ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+    '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost', '-keyout', keyFile, '-out', certFile],
+    { stdio: ['ignore', 'ignore', 'pipe'], timeout: 20000 });
+  const key = fs.readFileSync(keyFile);
+  const cert = fs.readFileSync(certFile);
+  fs.unlinkSync(keyFile);
+  fs.unlinkSync(certFile);
+  const spki = new X509Certificate(cert).publicKey.export({ type: 'spki', format: 'der' });
+  return { key, cert, pin: createHash('sha256').update(spki).digest('base64') };
 }
 
 test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and refuses direct fallback after outage', { timeout: 75000 }, async () => {
@@ -85,7 +78,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and re
   });
   try {
     const targetPort = await listen(trap);
-    const { pin, ...tlsOptions } = createTlsFixture();
+    const { pin, ...tlsOptions } = createTlsFixture(dir);
     tlsTarget = createTlsServer(tlsOptions, (_, res) => { directHits++; res.end('unexpected HTTPS request'); });
     tlsTarget.on('upgrade', upgrade);
     const tlsPort = await listen(tlsTarget);
