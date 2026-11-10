@@ -2,7 +2,9 @@ name: Azwah Ninja cross-runner Chromium checkpoint proof
 on:
   push:
     branches: [qa/azwah-two-runner-shard-poc]
-    paths: [.github/workflows/azwah-ninja-checkpoint-proof.yml]
+    paths:
+      - .github/workflows/azwah-ninja-checkpoint-proof.yml
+      - scripts/qa-azwah-ninja-two-shards.ps1
   workflow_dispatch:
 permissions:
   contents: read
