@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { chromium } from 'playwright';
+import { applyWebRtcPreference } from '../server/webrtc-settings.js';
 import { resolveWindowsChromeStable, stableProxyNetworkArgs } from '../server/browser-runtime/chrome-stable.js';
 
 const listen = (server, host = '127.0.0.1') => new Promise((resolve, reject) => {
@@ -90,6 +91,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
     });
     const proxyPort = await listen(relay);
     const proxy = 'http://127.0.0.1:' + proxyPort;
+    assert.equal(applyWebRtcPreference(dir, 'disable_non_proxied_udp'), true);
     context = await chromium.launchPersistentContext(dir, {
       executablePath: stable.path, chromiumSandbox: true, ignoreDefaultArgs: true,
       headless: false, viewport: null,
@@ -111,7 +113,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
       const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:' + port }] });
       const records = [];
       peer.onicecandidate = event => {
-        if (event.candidate) records.push(event.candidate.protocol);
+        if (event.candidate) records.push({ protocol: event.candidate.protocol, type: event.candidate.type });
       };
       try {
         peer.createDataChannel('azwah-ice');
@@ -120,7 +122,8 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
         return records;
       } finally { peer.close(); }
     }, stunPort);
-    assert.ok(!candidates.includes('udp'), 'No UDP ICE candidates under the restricted policy');
+    console.log(JSON.stringify({ iceCandidates: candidates, localStunPackets: stunPackets }));
+    assert.ok(!candidates.some(candidate => candidate.protocol === 'udp'), 'No UDP ICE candidates under the restricted policy');
     assert.equal(stunPackets, 0, 'Restricted browser did not reach the local UDP STUN observer');
     console.log('Controlled IPv6 relay request passed; restricted Chrome emitted no UDP ICE or local STUN traffic during observation.');
     const wsUrl = 'ws://127.0.0.1:' + targetPort + '/websocket';
