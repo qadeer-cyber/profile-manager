@@ -1,0 +1,309 @@
+name: Azwah parallel sccache subsystem experiment
+on:
+  push:
+    branches: [experiment/azwah-parallel-native-build]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: azwah-parallel-sccache-experiment
+  cancel-in-progress: false
+
+jobs:
+  shard:
+    if: >-
+      ${{ !github.event.repository.private &&
+          github.ref == 'refs/heads/experiment/azwah-parallel-native-build' &&
+          (github.event_name == 'workflow_dispatch' ||
+           contains(github.event.head_commit.message, '[parallel-exp]')) }}
+    name: "Shard ${{ matrix.name }}"
+    runs-on: windows-2025
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: core-patched
+            targets: "url,crypto,obj/base/i18n/icu_util.obj"
+          - name: mojo-tz
+            targets: "services/device/time_zone_monitor"
+          - name: sql-elf
+            targets: "sql,chrome_elf.dll"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare and verify the pinned Windows toolchain
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+      - name: Checkout pinned depot_tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ("azwah-native-" + $env:GITHUB_RUN_ID + "-" + $env:GITHUB_RUN_ATTEMPT)
+          $tools = Join-Path $root 'depot_tools'
+          $workspace = Join-Path $root 'chromium'
+          $pin = '96a7c1418eedaa6bea333a8941e8a0078681b4d0'
+          New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git -C $tools init --quiet
+          git -C $tools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          git -C $tools fetch --no-tags --depth=1 origin $pin
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
+          git -C $tools checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $pin) { throw 'depot_tools pin did not verify.' }
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_DEPOT_TOOLS_SHA=$pin") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Initialize and qualify pinned depot_tools Python before Chromium sync
+        shell: pwsh
+        run: ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:AZWAH_DEPOT_TOOLS_SHA
+      - name: Verify pinned Mozilla sccache
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+          Invoke-WebRequest 'https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive).Hash -ine '28be8c61f6b2c89b9eb2869f6af7f78e6f992e78a8abae0ce855fcc129cbeac1') {
+            throw 'sccache release checksum mismatch.'
+          }
+          $directory = Join-Path $env:RUNNER_TEMP 'sccache'
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          $exe = @(Get-ChildItem -LiteralPath $directory -Recurse -Filter 'sccache.exe' -File)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one sccache executable.' }
+          $exe[0].DirectoryName | Add-Content -LiteralPath $env:GITHUB_PATH
+          "SCCACHE_DIR=$(Join-Path $env:RUNNER_TEMP 'sccache-shard')" | Add-Content -LiteralPath $env:GITHUB_ENV
+          'SCCACHE_CACHE_SIZE=4G' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Sync Chromium, patch, GN gen, and build shard targets
+        shell: pwsh
+        env:
+          SHARD_TARGETS: ${{ matrix.targets }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          $targets = @($env:SHARD_TARGETS -split ',' | Where-Object { $_ })
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -UseSccache -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 4 -ReserveGiB 10 -BuildTargets $targets
+      - name: Measure sccache, hash shard outputs, and package checkpoint
+        shell: pwsh
+        env:
+          SHARD_NAME: ${{ matrix.name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stats = (& sccache.exe --show-stats | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read sccache statistics.' }
+          Write-Output $stats
+          & sccache.exe --stop-server
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot stop sccache cleanly.' }
+          if ($stats -notmatch '(?m)^Non-cacheable calls\s+0\s*$') {
+            Write-Warning 'Observed non-cacheable sccache calls on shard!'
+          }
+          $out = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src/out/azwah-native-development'
+          $hashes = [ordered]@{}
+          if ($env:SHARD_NAME -eq 'core-patched') {
+            $icu = Join-Path $out 'obj/base/i18n/icu_util.obj'
+            if (!(Test-Path -LiteralPath $icu -PathType Leaf)) { throw "Missing $icu" }
+            $hashes['icu_util.obj'] = (Get-FileHash -LiteralPath $icu -Algorithm SHA256).Hash.ToLowerInvariant()
+          } elseif ($env:SHARD_NAME -eq 'mojo-tz') {
+            $tz = @(Get-ChildItem -LiteralPath (Join-Path $out 'obj/services/device/time_zone_monitor') -Recurse -Filter 'time_zone_monitor_win.obj' -File | Select-Object -First 1)
+            if ($tz.Count -ne 1) { throw 'Missing time_zone_monitor_win.obj' }
+            $hashes['time_zone_monitor_win.obj'] = (Get-FileHash -LiteralPath $tz[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          } elseif ($env:SHARD_NAME -eq 'sql-elf') {
+            $elf = Join-Path $out 'chrome_elf.dll'
+            if (!(Test-Path -LiteralPath $elf -PathType Leaf)) { throw "Missing $elf" }
+            $hashes['chrome_elf.dll'] = (Get-FileHash -LiteralPath $elf -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $files = @(Get-ChildItem -LiteralPath $env:SCCACHE_DIR -Recurse -File)
+          $rawBytes = ($files | Measure-Object -Property Length -Sum).Sum
+          $nonHex = @($files | Where-Object { $_.Name -notmatch '^[0-9a-f]+$' } | Select-Object -ExpandProperty Name)
+          Write-Output "SCCACHE_DIR files=$($files.Count) raw_bytes=$rawBytes non_hex_files=$($nonHex -join ',')"
+          $stage = Join-Path $env:RUNNER_TEMP 'shard-artifact'
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          $zipStart = Get-Date
+          $archive = Join-Path $stage "sccache-$($env:SHARD_NAME).zip"
+          [IO.Compression.ZipFile]::CreateFromDirectory($env:SCCACHE_DIR, $archive)
+          $zipSec = [Math]::Round(((Get-Date) - $zipStart).TotalSeconds, 2)
+          $zipBytes = (Get-Item -LiteralPath $archive).Length
+          Write-Output "Compressed $archive bytes=$zipBytes in ${zipSec}s"
+          [ordered]@{
+            shard = $env:SHARD_NAME
+            cache_files = $files.Count
+            raw_bytes = $rawBytes
+            compressed_bytes = $zipBytes
+            compression_seconds = $zipSec
+            non_hex_files = $nonHex
+            outputs = $hashes
+          } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $stage 'shard-manifest.json') -Encoding utf8
+          Get-Content -LiteralPath (Join-Path $stage 'shard-manifest.json')
+      - name: Upload shard checkpoint artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-parallel-shard-${{ matrix.name }}
+          path: ${{ runner.temp }}/shard-artifact
+          retention-days: 1
+          if-no-files-found: error
+
+  merge-replay:
+    name: Merge caches, audit chrome graph, and verify replay
+    needs: shard
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download all 3 shard checkpoints
+        uses: actions/download-artifact@v4
+        with:
+          pattern: azwah-parallel-shard-*
+          path: ${{ runner.temp }}/incoming
+      - name: Merge shard sccache directories and audit collisions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $merged = Join-Path $env:RUNNER_TEMP 'sccache-merged'
+          New-Item -ItemType Directory -Path $merged -Force | Out-Null
+          $mergeStart = Get-Date
+          $seen = @{}
+          $stats = [ordered]@{ shards = [ordered]@{}; duplicates = 0; conflicts = @() }
+          foreach ($dir in (Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'incoming') -Directory | Sort-Object Name)) {
+            $manifest = Get-Content -LiteralPath (Join-Path $dir.FullName 'shard-manifest.json') -Raw | ConvertFrom-Json
+            $zip = Join-Path $dir.FullName "sccache-$($manifest.shard).zip"
+            $tmp = Join-Path $env:RUNNER_TEMP ("extract-" + $manifest.shard)
+            Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
+            $files = @(Get-ChildItem -LiteralPath $tmp -Recurse -File)
+            $stats.shards[$manifest.shard] = [ordered]@{
+              files = $files.Count
+              raw_bytes = $manifest.raw_bytes
+              compressed_bytes = $manifest.compressed_bytes
+              outputs = $manifest.outputs
+            }
+            foreach ($f in $files) {
+              $rel = $f.FullName.Substring($tmp.Length).TrimStart('\', '/')
+              $h = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash
+              if ($seen.ContainsKey($rel)) {
+                $stats.duplicates++
+                if ($seen[$rel] -cne $h) {
+                  $stats.conflicts += $rel
+                }
+              } else {
+                $seen[$rel] = $h
+                $dest = Join-Path $merged $rel
+                $parent = Split-Path -Parent $dest
+                if (!(Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+                Copy-Item -LiteralPath $f.FullName -Destination $dest
+              }
+            }
+          }
+          $mergeSec = [Math]::Round(((Get-Date) - $mergeStart).TotalSeconds, 2)
+          $mergedFiles = @(Get-ChildItem -LiteralPath $merged -Recurse -File)
+          $stats['merged_unique_files'] = $mergedFiles.Count
+          $stats['merged_raw_bytes'] = ($mergedFiles | Measure-Object -Property Length -Sum).Sum
+          $stats['merge_seconds'] = $mergeSec
+          $stats | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'merge-audit.json') -Encoding utf8
+          Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'merge-audit.json')
+          if ($stats.conflicts.Count -gt 0) {
+            throw "Detected cache blob conflicts on identical keys: $($stats.conflicts -join ', ')"
+          }
+          "SCCACHE_DIR=$merged" | Add-Content -LiteralPath $env:GITHUB_ENV
+          'SCCACHE_CACHE_SIZE=4G' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Prepare and verify the pinned Windows toolchain
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+      - name: Checkout pinned depot_tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ("azwah-native-" + $env:GITHUB_RUN_ID + "-" + $env:GITHUB_RUN_ATTEMPT)
+          $tools = Join-Path $root 'depot_tools'
+          $workspace = Join-Path $root 'chromium'
+          $pin = '96a7c1418eedaa6bea333a8941e8a0078681b4d0'
+          New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git -C $tools init --quiet
+          git -C $tools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          git -C $tools fetch --no-tags --depth=1 origin $pin
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
+          git -C $tools checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $pin) { throw 'depot_tools pin did not verify.' }
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_DEPOT_TOOLS_SHA=$pin") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Initialize and qualify pinned depot_tools Python before Chromium sync
+        shell: pwsh
+        run: ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:AZWAH_DEPOT_TOOLS_SHA
+      - name: Verify pinned Mozilla sccache
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+          Invoke-WebRequest 'https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive).Hash -ine '28be8c61f6b2c89b9eb2869f6af7f78e6f992e78a8abae0ce855fcc129cbeac1') {
+            throw 'sccache release checksum mismatch.'
+          }
+          $directory = Join-Path $env:RUNNER_TEMP 'sccache'
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          $exe = @(Get-ChildItem -LiteralPath $directory -Recurse -Filter 'sccache.exe' -File)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one sccache executable.' }
+          $exe[0].DirectoryName | Add-Content -LiteralPath $env:GITHUB_PATH
+      - name: Sync, patch, generate GN, and replay combined shard targets from merged cache
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          $allTargets = @('url', 'crypto', 'obj/base/i18n/icu_util.obj', 'services/device/time_zone_monitor', 'sql', 'chrome_elf.dll')
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -UseSccache -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 4 -ReserveGiB 10 -BuildTargets $allTargets
+      - name: Audit full chrome Ninja graph and verify merged cache hits + output SHA-256
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stats = (& sccache.exe --show-stats | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read sccache statistics.' }
+          Write-Output '=== MERGED REPLAY SCCACHE STATS ==='
+          Write-Output $stats
+          & sccache.exe --stop-server
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot stop sccache cleanly.' }
+          $out = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src/out/azwah-native-development'
+          $ninja = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src/third_party/ninja/ninja.exe'
+          if (!(Test-Path -LiteralPath $ninja -PathType Leaf)) {
+            $ninja = Join-Path $env:AZWAH_DEPOT_TOOLS 'ninja.exe'
+          }
+          $pythonRel = (Get-Content -LiteralPath (Join-Path $env:AZWAH_DEPOT_TOOLS 'python3_bin_reldir.txt') -Raw).Trim()
+          $python = Join-Path (Join-Path $env:AZWAH_DEPOT_TOOLS $pythonRel) 'python3.exe'
+          $reportDir = Join-Path $env:RUNNER_TEMP 'parallel-report'
+          New-Item -ItemType Directory -Path $reportDir -Force | Out-Null
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'merge-audit.json') -Destination (Join-Path $reportDir 'merge-audit.json')
+          & $python ./scripts/analyze-chromium-ninja-graph.py `
+            --ninja $ninja `
+            --out $out `
+            --json-out (Join-Path $reportDir 'chrome-ninja-graph.json') `
+            --shard "core-patched=url,crypto,obj/base/i18n/icu_util.obj" `
+            --shard "mojo-tz=services/device/time_zone_monitor" `
+            --shard "sql-elf=sql,chrome_elf.dll"
+          if ($LASTEXITCODE -ne 0) { throw 'Ninja graph analysis failed.' }
+          $audit = Get-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'merge-audit.json') -Raw | ConvertFrom-Json
+          $actual = [ordered]@{
+            'icu_util.obj' = (Get-FileHash -LiteralPath (Join-Path $out 'obj/base/i18n/icu_util.obj') -Algorithm SHA256).Hash.ToLowerInvariant()
+            'time_zone_monitor_win.obj' = (Get-FileHash -LiteralPath @(Get-ChildItem -LiteralPath (Join-Path $out 'obj/services/device/time_zone_monitor') -Recurse -Filter 'time_zone_monitor_win.obj' -File | Select-Object -First 1).FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            'chrome_elf.dll' = (Get-FileHash -LiteralPath (Join-Path $out 'chrome_elf.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $expected = [ordered]@{
+            'icu_util.obj' = $audit.shards.'core-patched'.outputs.'icu_util.obj'
+            'time_zone_monitor_win.obj' = $audit.shards.'mojo-tz'.outputs.'time_zone_monitor_win.obj'
+            'chrome_elf.dll' = $audit.shards.'sql-elf'.outputs.'chrome_elf.dll'
+          }
+          Write-Output '=== OBJECT & DLL SHA-256 PARITY ==='
+          foreach ($k in $expected.Keys) {
+            Write-Output "$k expected=$($expected[$k]) actual=$($actual[$k])"
+            if ($expected[$k] -cne $actual[$k]) { throw "SHA-256 mismatch on $k" }
+          }
+          if ($stats -notmatch '(?m)^Cache hits\s+[1-9]\d*\s*$' -or
+              $stats -notmatch '(?m)^Non-cacheable calls\s+0\s*$') {
+            throw 'Merged sccache replay failed hit or cacheability verification.'
+          }
+          Write-Output 'PASS merged sccache replay verified object/DLL SHA-256 parity.'
+      - name: Upload Phase A report artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-parallel-experiment-report
+          path: ${{ runner.temp }}/parallel-report
+          retention-days: 7
+          if-no-files-found: warn

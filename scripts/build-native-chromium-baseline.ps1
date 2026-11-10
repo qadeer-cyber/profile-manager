@@ -24,12 +24,16 @@ param(
 
     [switch] $AzwahSource,
 
-    [switch] $CheckpointProbe
+    [switch] $CheckpointProbe,
+
+    [switch] $UseSccache,
+
+    [string[]] $BuildTargets = @()
 )
 
 $ErrorActionPreference = 'Stop'
-if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
-    throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
+if (($CheckpointProbe -or $UseSccache) -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
+    throw 'sccache mode requires Azwah source and the verified sccache executable on PATH.'
 }
 $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
@@ -206,8 +210,8 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@
-        if ($CheckpointProbe) {
-            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
+        if ($CheckpointProbe -or $UseSccache) {
+            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false' + "`n" + 'use_clang_modules = false'
         }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
@@ -246,6 +250,11 @@ symbol_level = 0
             $probeHash = (Get-FileHash -LiteralPath $probeObject).Hash
             Write-Output "Probe object $probeTarget SHA256=$probeHash"
             if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
+            return
+        }
+        if ($BuildTargets.Count -gt 0) {
+            Write-Output "BEGIN bounded subsystem targets compilation: $($BuildTargets -join ', ')"
+            Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $BuildTargets)
             return
         }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
