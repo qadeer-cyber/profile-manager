@@ -11,6 +11,7 @@ function Read-PrivateText([string] $Prompt) {
 }
 try {
     $config = @{
+        service = Read-Host 'MaxMind service (geolite or geoip)'
         account = Read-Host 'MaxMind City account ID'
         license = Read-PrivateText 'MaxMind City license key'
         proxies = @(foreach ($label in @('A', 'B')) {

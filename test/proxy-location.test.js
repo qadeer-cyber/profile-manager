@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { publicIp, resolveProxyLocation, validateProxyLocation } from '../server/proxy-location.js';
+import { publicIp, probeProxyExit, resolveProxyLocation, validateProxyLocation } from '../server/proxy-location.js';
 
 const ip = '8.8.8.8';
 const fixture = {
@@ -107,4 +107,20 @@ test('keeps simultaneous proxy GeoIP identities distinct and preserves IANA DST 
       .map(date => format.formatToParts(new Date(date)).find(part => part.type === 'timeZoneName').value);
     assert.deepEqual(offsets, row.offsets);
   }
+});
+
+test('inventory probe verifies an exit without a GeoIP lookup and GeoLite uses its own trusted origin', async () => {
+  const calls = [];
+  const request = async (url, agent, headers) => {
+    assert.equal(agent.shouldLookup, false);
+    calls.push([new URL(url).hostname, Boolean(headers?.Authorization)]);
+    return new URL(url).hostname === 'geolite.info' ? fixture : { ip };
+  };
+  assert.equal((await probeProxyExit(proxy, { request })).ip, ip);
+  const result = await resolveProxyLocation(proxy, {
+    request, service: 'geolite', credentials: () => ({ account: 'fixture', license: 'fixture' }),
+    read: () => ({ ip, proxyId: proxy.id, expiresAt: Infinity, source: 'MaxMind GeoIP City' }),
+  });
+  assert.equal(result.source, 'MaxMind GeoLite City');
+  assert.deepEqual(calls, [['api64.ipify.org', false], ['api64.ipify.org', false], ['geolite.info', true], ['api64.ipify.org', false]]);
 });

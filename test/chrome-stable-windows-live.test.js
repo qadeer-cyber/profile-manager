@@ -62,7 +62,7 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       advancedSettings: { runtime: 'stable-chrome' },
       proxy: { type: 'http', host: '127.0.0.1', port: rejectedProxy.address().port, username: 'fixture', password: 'invalid' } }, 201);
     const failed = await api('POST', '/profiles/' + blocked.id + '/launch', { headless: false }, 503);
-    assert.equal(failed.code, 'PROXY_LOCATION_UNAVAILABLE');
+    assert.equal(failed.code, 'PROXY_AUTH_REQUIRED');
     assert.equal((await api('GET', '/profiles/' + blocked.id)).running, false);
     for (let run = 0; run < 2; run++) {
       await api('POST', endpoint + '/launch', { headless: false, url: origin });

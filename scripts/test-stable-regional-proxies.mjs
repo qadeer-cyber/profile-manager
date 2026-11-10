@@ -24,9 +24,11 @@ try {
     input += chunk;
     assert.ok(input.length < 16000);
   }
-  const { account, license, proxies } = JSON.parse(input.trim());
+  const { account, license, proxies, service } = JSON.parse(input.trim());
   input = '';
   assert.equal(proxies.length, 2);
+  assert.ok(['geoip', 'geolite'].includes(service));
+  process.env.AZWAH_MAXMIND_SERVICE = service;
   const expected = proxies.map(({ endpoint, ip, timezone }) => {
     assert.match(endpoint, /^(https?|socks5h?):\/\//);
     const proxy = parseProxyLine(endpoint);

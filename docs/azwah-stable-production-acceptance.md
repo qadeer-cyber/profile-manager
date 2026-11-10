@@ -19,7 +19,11 @@ Multilogin's [published fingerprint controls](https://multilogin.com/help/profil
 
 ## GeoIP source
 
-The implementation uses [MaxMind City web services](https://dev.maxmind.com/geoip/docs/web-services/). Enter your own account and license key locally. The service returns approximate coordinates and an accuracy radius. It cannot establish a street address or prove a proxy's physical location. GeoLite City is a possible lower-cost alternative with separate service terms, quotas and credentials. It has not been integrated or qualified. No GeoIP database is redistributed by this build.
+The implementation uses [MaxMind City web services](https://dev.maxmind.com/geoip/docs/web-services/). Enter your own account and license key locally. The service returns approximate coordinates and an accuracy radius. It cannot establish a street address or prove a proxy's physical location. Paid GeoIP City is the default. To use the free GeoLite City web service, set `AZWAH_MAXMIND_SERVICE=geolite` before starting Azwah and use credentials authorized for GeoLite. The service has its own terms and quota. A separately downloaded GeoLite City MMDB avoids web requests for geolocation but needs regular updates and is not supported by this build.
+
+## Inventory all authorized proxies
+
+Run `pwsh -NoProfile -File scripts/test-proxy-inventory.ps1` after installing Node dependencies. Paste endpoints on one line separated by spaces and enter the shared credentials in the hidden prompts. Choose `geolite`, `geoip`, or `none`. The runner tries HTTPS destination requests through HTTP CONNECT, TLS-verified HTTPS CONNECT, and SOCKS5 with remote DNS. It reports exit IP, elapsed milliseconds for the exit request, an anonymous-authentication comparison, and any verified approximate location. An anonymous-probe failure alone does not prove authentication was required. Credentials travel through stdin and are not written to disk or output. A matching exit and provider result is not a Chrome acceptance result.
 
 ## Regional proxy acceptance on a Windows client
 

@@ -466,7 +466,7 @@ async function doLaunch(p, opts = {}) {
         if (!stableProxyAssignment(p)) throw httpErr(409, 'The proxy changed during launch. Retry with the current assignment.', 'PROXY_BROWSER_IDENTITY_FAILED');
         const { browserVerifiedAt, ...location } = launchPlan.stableLocation;
         const checkedAt = Date.now();
-        verifiedStableLocation = { ...location, source: 'MaxMind GeoIP City', browserExitVerifiedAt: checkedAt,
+        verifiedStableLocation = { ...location, browserExitVerifiedAt: checkedAt,
           browserTimezoneVerifiedAt: checkedAt, ...(verifyCoordinates ? { browserVerifiedAt: checkedAt } : {}) };
         setSetting(key, verifiedStableLocation);
       } catch (error) {

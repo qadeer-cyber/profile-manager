@@ -48,7 +48,8 @@ function requestJson(url, agent, headers) {
     const req = https.get(url, { agent, headers, signal: AbortSignal.timeout(10000) }, response => {
       if (response.statusCode !== 200) {
         response.resume();
-        reject(fail('The proxy or location service returned an unsuccessful response.'));
+        reject(response.statusCode === 407 ? fail('The proxy rejected authentication.', 'PROXY_AUTH_REQUIRED') :
+          fail('The proxy or location service returned an unsuccessful response.'));
         return;
       }
       let bytes = 0;
@@ -68,34 +69,58 @@ function requestJson(url, agent, headers) {
   });
 }
 
-export async function resolveProxyLocation(proxy, { read, save, request = requestJson, now = Date.now, credentials } = {}) {
+const exitEndpoint = 'https://api64.ipify.org?format=json';
+const cityServices = Object.freeze({
+  geoip: { origin: 'https://geoip.maxmind.com', label: 'MaxMind GeoIP City' },
+  geolite: { origin: 'https://geolite.info', label: 'MaxMind GeoLite City' },
+});
+
+function proxyAgent(proxy) {
   if (!proxy) throw fail('Assign a proxy or select Manual or System location.');
+  if (!['http', 'https', 'socks5'].includes(proxy.type)) throw fail('Unsupported proxy protocol.');
   const auth = proxy.username ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || '')}@` : '';
   const protocol = proxy.type === 'socks5' ? 'socks5h' : proxy.type;
   const host = isIP(proxy.host) === 6 ? `[${proxy.host}]` : proxy.host;
   const upstream = `${protocol}://${auth}${host}:${proxy.port}`;
+  return protocol === 'socks5h' ? new SocksProxyAgent(upstream) : new HttpsProxyAgent(upstream);
+}
+
+export async function probeProxyExit(proxy, { request = requestJson } = {}) {
+  const agent = proxyAgent(proxy);
+  const started = performance.now();
+  try {
+    const ip = publicIp((await request(exitEndpoint, agent))?.ip);
+    if (!ip) throw fail('The assigned proxy did not return a valid public exit IP.');
+    return { ip, latencyMs: Math.round(performance.now() - started) };
+  } finally { agent.destroy(); }
+}
+
+export async function resolveProxyLocation(proxy, { read, save, request = requestJson, now = Date.now, credentials,
+  service = process.env.AZWAH_MAXMIND_SERVICE || 'geoip' } = {}) {
+  if (!Object.hasOwn(cityServices, service)) throw fail('Select geoip or geolite for AZWAH_MAXMIND_SERVICE.');
+  const provider = cityServices[service];
   let agent;
   try {
-    agent = protocol === 'socks5h' ? new SocksProxyAgent(upstream) : new HttpsProxyAgent(upstream);
-    const observe = async () => publicIp((await request('https://api64.ipify.org?format=json', agent))?.ip);
+    agent = proxyAgent(proxy);
+    const observe = async () => publicIp((await request(exitEndpoint, agent))?.ip);
     const ip = await observe();
     if (!ip) throw fail('The assigned proxy did not return a valid public exit IP.');
     const cached = read?.();
-    if (cached?.ip === ip && cached.proxyId === proxy.id &&
+    if (cached?.ip === ip && (cached.source ?? cityServices.geoip.label) === provider.label && cached.proxyId === proxy.id &&
         (cached.proxyRevision ?? null) === (proxy.revision ?? null) && cached.expiresAt > now()) return cached;
     const { account, license: key } = credentials ? credentials() : {
       account: process.env.AZWAH_MAXMIND_ACCOUNT_ID, license: process.env.AZWAH_MAXMIND_LICENSE_KEY,
     };
     if (!account || !key) throw fail('Proxy location requires a configured MaxMind GeoIP account. Configure MaxMind City in Settings → Proxy location.');
-    const payload = await request(`https://geoip.maxmind.com/geoip/v2.1/city/${encodeURIComponent(ip)}`, agent,
+    const payload = await request(`${provider.origin}/geoip/v2.1/city/${encodeURIComponent(ip)}`, agent,
       { Authorization: 'Basic ' + Buffer.from(`${account}:${key}`).toString('base64') });
     const location = validateProxyLocation(payload, ip);
     if (await observe() !== ip) throw fail('The proxy exit IP changed during location detection. Retry with a consistent proxy exit.');
-    const result = { ...location, proxyId: proxy.id, proxyRevision: proxy.revision ?? null, expiresAt: now() + 24 * 60 * 60 * 1000 };
+    const result = { ...location, source: provider.label, proxyId: proxy.id, proxyRevision: proxy.revision ?? null, expiresAt: now() + 24 * 60 * 60 * 1000 };
     save?.(result);
     return result;
   } catch (error) {
-    if (error.code === 'PROXY_LOCATION_UNAVAILABLE' || error.code === 'GEOIP_CREDENTIALS_UNAVAILABLE') throw error;
+    if (['PROXY_LOCATION_UNAVAILABLE', 'GEOIP_CREDENTIALS_UNAVAILABLE', 'PROXY_AUTH_REQUIRED'].includes(error.code)) throw error;
     throw fail('Proxy location could not be verified. Check proxy connectivity and the MaxMind City web-service credentials in Settings → Proxy location.');
   } finally { agent?.destroy(); }
 }
