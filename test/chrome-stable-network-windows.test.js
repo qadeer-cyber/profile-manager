@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { createHash, randomUUID, X509Certificate } from 'node:crypto';
 import { createSocket } from 'node:dgram';
 import { connect } from 'node:net';
 import fs from 'node:fs';
 import { createServer, get } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -21,23 +23,47 @@ const close = server => new Promise((resolve, reject) => {
   server.closeAllConnections();
 });
 
-test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and refuses direct fallback after outage', { timeout: 75000 }, async () => {
+function createTlsFixture() {
+  const passphrase = randomUUID();
+  const command = `
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$cert = $null
+$file = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString() + '.pfx')
+try {
+  $cert = New-SelfSignedCertificate -DnsName localhost -CertStoreLocation Cert:\\CurrentUser\\My -KeyExportPolicy Exportable -NotAfter (Get-Date).AddHours(1)
+  $password = ConvertTo-SecureString '${passphrase}' -AsPlainText -Force
+  Export-PfxCertificate -Cert $cert -FilePath $file -Password $password | Out-Null
+  @{ pfx = [Convert]::ToBase64String([IO.File]::ReadAllBytes($file)); cert = [Convert]::ToBase64String($cert.RawData) } | ConvertTo-Json -Compress
+} finally {
+  if ($cert) { Remove-Item -LiteralPath ('Cert:\\CurrentUser\\My\\' + $cert.Thumbprint) }
+  Remove-Item -LiteralPath $file -ErrorAction SilentlyContinue
+}`;
+  const result = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand',
+    Buffer.from(command, 'utf16le').toString('base64')], { encoding: 'utf8', timeout: 25000 }));
+  const key = new X509Certificate(Buffer.from(result.cert, 'base64')).publicKey.export({ type: 'spki', format: 'der' });
+  return { pfx: Buffer.from(result.pfx, 'base64'), passphrase,
+    pin: createHash('sha256').update(key).digest('base64') };
+}
+
+test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and refuses direct fallback after outage', { timeout: 75000 }, async () => {
   assert.equal(process.platform, 'win32');
   const stable = await resolveWindowsChromeStable();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-proxy-route-'));
-  let context;
+  let context, tlsTarget;
   let directHits = 0;
   const routed = new Set();
   const tunnels = new Set();
   const sockets = new Set();
   let webSocketPeer;
   const trap = createServer((_, res) => { directHits++; res.end('direct connection'); });
-  trap.on('upgrade', (req, socket) => {
+  const upgrade = (req, socket) => {
     sockets.add(socket);
     webSocketPeer = socket.remotePort;
     const accept = createHash('sha1').update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
     socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n\r\n');
-  });
+  };
+  trap.on('upgrade', upgrade);
   const stun = createSocket('udp4');
   let stunPackets = 0;
   stun.on('message', data => {
@@ -59,6 +85,10 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
   });
   try {
     const targetPort = await listen(trap);
+    const { pin, ...tlsOptions } = createTlsFixture();
+    tlsTarget = createTlsServer(tlsOptions, (_, res) => { directHits++; res.end('unexpected HTTPS request'); });
+    tlsTarget.on('upgrade', upgrade);
+    const tlsPort = await listen(tlsTarget);
     ipv6Target = 'http://[::1]:' + await listen(ipv6, '::1') + '/azwah-v6';
     await new Promise((resolve, reject) => {
       stun.once('error', reject);
@@ -78,8 +108,10 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
     stunPackets = 0;
     relay.on('connect', (req, client, head) => {
       sockets.add(client);
-      if (req.url !== '127.0.0.1:' + targetPort) return client.end('HTTP/1.1 403 Forbidden\r\n\r\n');
-      const upstream = connect(targetPort, '127.0.0.1', () => {
+      const destination = req.url === '127.0.0.1:' + targetPort ? targetPort :
+        req.url === 'localhost:' + tlsPort ? tlsPort : null;
+      if (!destination) return client.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+      const upstream = connect(destination, '127.0.0.1', () => {
         tunnels.add(upstream.localPort);
         client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         if (head.length) upstream.write(head);
@@ -97,6 +129,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
       headless: false, viewport: null,
       args: ['--remote-debugging-pipe', '--user-data-dir=' + dir, '--no-first-run',
         '--proxy-server=' + proxy, '--proxy-bypass-list=<-loopback>',
+        '--ignore-certificate-errors-spki-list=' + pin,
         ...stableProxyNetworkArgs('127.0.0.1', false), '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', 'about:blank'],
     });
     const page = context.pages()[0] || await context.newPage();
@@ -135,10 +168,15 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
     }), url);
     assert.equal(await openSocket(wsUrl), true);
     assert.ok(tunnels.has(webSocketPeer), 'WebSocket target peer is the relay tunnel, not Chrome');
+    const wssUrl = 'wss://localhost:' + tlsPort + '/secure-websocket';
+    webSocketPeer = undefined;
+    assert.equal(await openSocket(wssUrl), true);
+    assert.ok(tunnels.has(webSocketPeer), 'TLS WebSocket reached the target through a CONNECT tunnel');
     const peerBeforeOutage = webSocketPeer;
     for (const socket of sockets) socket.destroy();
     await close(relay);
     assert.equal(await openSocket(wsUrl + '-outage'), false);
+    assert.equal(await openSocket(wssUrl + '-outage'), false);
     assert.equal(webSocketPeer, peerBeforeOutage);
     await assert.rejects(page.goto(url + '-outage', { timeout: 10000 }),
       /ERR_PROXY_CONNECTION_FAILED|ERR_CONNECTION_REFUSED/);
@@ -147,7 +185,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP and WebSocket and 
     for (const socket of sockets) socket.destroy();
     try { await context?.close(); } finally {
       try { stun.close(); } catch { /* socket was not bound */ }
-      await Promise.all([close(relay), close(trap), close(ipv6)]);
+      await Promise.all([close(relay), close(trap), close(ipv6), ...(tlsTarget ? [close(tlsTarget)] : [])]);
       fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   }
