@@ -162,6 +162,8 @@ function validatePreferences(value, previous) {
 
 function finishAdvanced(settings) {
   const out = clone(settings);
+  out.runtime ??= 'compatibility';
+  if (!['compatibility', 'privacy', 'azwah-native'].includes(out.runtime)) invalid('Unknown Chromium runtime');
   out.experimental = validateExperimental(out.experimental);
   out.fingerprint = validateFingerprint(out.fingerprint || DEFAULT_FINGERPRINT, out.preferences);
   return out;
@@ -171,8 +173,9 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
   if (!keysOf(value).length) return finishAdvanced(base);
-  if (keysOf(value).some(key => !['userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental'].includes(key))) invalid('Unknown advancedSettings field');
+  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
+  if ('runtime' in value) out.runtime = value.runtime;
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
   if ('geolocation' in value) out.geolocation = validateGeolocation(value.geolocation);
   if ('screen' in value) out.screen = validateScreen(value.screen);

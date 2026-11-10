@@ -287,18 +287,20 @@ export function extensionCommandArgs(paths) {
   };
 }
 
-export function extensionLaunchPlan(profileId) {
-  if (typeof profileId !== 'string' || !/^[0-9a-f-]{36}$/i.test(profileId)) return extensionCommandArgs([]);
+export function enabledChromiumExtensionPaths(profileId) {
+  if (typeof profileId !== 'string' || !/^[0-9a-f-]{36}$/i.test(profileId)) return [];
   const rows = db.prepare(`SELECT e.* FROM extensions e
     JOIN profile_extensions pe ON pe.extension_id = e.id
     WHERE pe.profile_id = ? AND pe.enabled = 1 AND COALESCE(e.browser_engine, 'chromium') = 'chromium' ORDER BY e.id`).all(profileId);
-  if (!rows.length) return extensionCommandArgs([]);
-  const paths = rows.map(row => {
+  return rows.map(row => {
     const dir = storagePath(row.storage_dir);
     if (!fs.existsSync(path.join(dir, 'manifest.json'))) {
       invalid(`Extension "${row.name}" is missing from disk. Remove it from the library or import it again.`, 500, 'EXTENSION_MISSING');
     }
     return dir;
   });
-  return extensionCommandArgs(paths);
+}
+
+export function extensionLaunchPlan(profileId) {
+  return extensionCommandArgs(enabledChromiumExtensionPaths(profileId));
 }

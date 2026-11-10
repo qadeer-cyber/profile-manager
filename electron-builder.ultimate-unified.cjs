@@ -1,5 +1,12 @@
+const path = require('node:path');
+const fs = require('node:fs');
 const base = require('./electron-builder.ultimate-firefox-owner.cjs');
 const firefox = require('./scripts/firefox-extra-resources.cjs');
+const qaEngine = process.env.AZWAH_PRIVACY_ENGINE_QA_BUNDLE === '1'
+  ? path.join(__dirname, 'engine-prototype', 'out', 'win-unpacked') : null;
+if (qaEngine && !fs.existsSync(path.join(qaEngine, 'AzwahPrivacyPrototype.exe'))) {
+  throw new Error('Build the dedicated Windows QA engine before bundling it.');
+}
 module.exports = {
   ...base,
   appId: 'local.azwahmultibrowser.ultimate',
@@ -13,6 +20,7 @@ module.exports = {
   files: [...new Set([...(base.files || []), 'scripts/license-admin/**', 'admin-desktop/office.nsi'])],
   extraResources: [
     ...(base.extraResources || []),
+    ...(qaEngine ? [{from: qaEngine, to: 'privacy-engine'}] : []),
     ...firefox.filter(item => !(base.extraResources || []).some(existing => existing.to === item.to)),
     {from: 'release-office-payload/win-unpacked', to: 'office-payload'},
     {from: 'build/admin-nsis', to: 'nsis'},

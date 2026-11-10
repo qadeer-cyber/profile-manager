@@ -58,3 +58,53 @@ test('reprobes each launch, caches only matching live exit and rejects exit rota
     if (oldKey == null) delete process.env.AZWAH_MAXMIND_LICENSE_KEY; else process.env.AZWAH_MAXMIND_LICENSE_KEY = oldKey;
   }
 });
+
+test('revalidates GeoIP after editing the assigned proxy even when its exit IP is unchanged', async () => {
+  let cached;
+  let lookups = 0;
+  const options = {
+    credentials: () => ({ account: 'fixture-account', license: 'fixture-key' }),
+    read: () => cached,
+    save: value => { cached = value; },
+    now: () => 1000,
+    request: async url => {
+      if (!url.includes('maxmind')) return { ip };
+      lookups++;
+      return fixture;
+    },
+  };
+  const assignment = { ...proxy, revision: 'revision-one' };
+  const first = await resolveProxyLocation(assignment, options);
+  assert.equal(first.proxyRevision, 'revision-one');
+  assert.equal(await resolveProxyLocation(assignment, options), first);
+  const updated = await resolveProxyLocation({ ...assignment, revision: 'revision-two' }, options);
+  assert.equal(updated.proxyRevision, 'revision-two');
+  assert.equal(updated.ip, first.ip);
+  assert.equal(lookups, 2);
+});
+
+test('keeps simultaneous proxy GeoIP identities distinct and preserves IANA DST rules', async () => {
+  const cases = [
+    { ip: '8.8.8.8', timezone: 'America/Los_Angeles', offsets: ['GMT-08:00', 'GMT-07:00'] },
+    { ip: '1.1.1.1', timezone: 'Europe/Berlin', offsets: ['GMT+01:00', 'GMT+02:00'] },
+    { ip: '9.9.9.9', timezone: 'Asia/Karachi', offsets: ['GMT+05:00', 'GMT+05:00'] },
+  ];
+  const results = await Promise.all(cases.map((row, index) => resolveProxyLocation({ ...proxy, id: 'proxy-' + index }, {
+    credentials: () => ({ account: 'fixture', license: 'fixture' }),
+    request: async url => url.includes('maxmind') ? {
+      traits: { ip_address: row.ip },
+      location: { latitude: index, longitude: index, accuracy_radius: 25, time_zone: row.timezone },
+    } : { ip: row.ip },
+  })));
+  for (const [index, result] of results.entries()) {
+    const row = cases[index];
+    assert.equal(result.ip, row.ip);
+    assert.equal(result.timezone, row.timezone);
+    assert.equal(result.latitude, index);
+    assert.equal(result.accuracy, 25000);
+    const format = new Intl.DateTimeFormat('en-US', { timeZone: result.timezone, timeZoneName: 'longOffset' });
+    const offsets = ['2026-01-15T12:00:00Z', '2026-07-15T12:00:00Z']
+      .map(date => format.formatToParts(new Date(date)).find(part => part.type === 'timeZoneName').value);
+    assert.deepEqual(offsets, row.offsets);
+  }
+});

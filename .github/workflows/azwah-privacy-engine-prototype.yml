@@ -1,11 +1,12 @@
 name: Azwah Privacy Engine installed prototype
 on:
   push:
-    branches: [feature/azwah-privacy-engine-prototype]
+    branches: [feature/azwah-privacy-engine-prototype, feature/azwah-privacy-engine-integration]
 permissions:
   contents: read
 jobs:
   installed-prototype:
+    if: ${{ !contains(github.event.head_commit.message, '[native-only]') }}
     runs-on: windows-2022
     timeout-minutes: 20
     steps:
@@ -18,23 +19,113 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Require prototype configuration and Issue 20 regression checks
-        run: node --test test/privacy-engine-prototype.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
-      - name: Package isolated Windows QA prototype
+        run: node --test test/privacy-engine-prototype.test.js test/privacy-engine-browser-state.test.js test/privacy-engine-extension-policy.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - name: Install pinned and checksummed Electron distribution
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/stage-windows-electron.ps1
+      - name: Package dedicated engine payload
         working-directory: engine-prototype
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --win nsis --x64 --publish never
-      - name: Install prototype in a private QA directory
+        run: ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --config.electronDist=../node_modules/electron/dist --win dir --x64 --publish never
+      - name: Stage dedicated engine payload for prequalification
         shell: pwsh
         run: |
-          $install = Join-Path $env:RUNNER_TEMP 'azwah-engine-qa'
-          $setup = (Resolve-Path 'engine-prototype/out/AzwahPrivacyPrototype-Setup.exe').Path
-          $process = Start-Process -FilePath $setup -ArgumentList @('/S', "/D=$install") -PassThru -Wait
-          if ($process.ExitCode -ne 0) { throw "Prototype install failed: $($process.ExitCode)" }
-          $exe = Join-Path $install 'AzwahPrivacyPrototype.exe'
-          if (!(Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'Installed prototype binary is missing' }
+          $exe = (Resolve-Path 'engine-prototype/out/win-unpacked/AzwahPrivacyPrototype.exe').Path
           "AZWAH_ENGINE_EXE=$exe" >> $env:GITHUB_ENV
           Get-Item -LiteralPath $exe | Select-Object FullName, Length | Format-List
           Get-FileHash -LiteralPath $exe -Algorithm SHA256 | Format-List
-      - name: Observe installed Chromium location, permissions, isolation and restart
+      - name: Observe packaged Chromium location, permissions, isolation and restart
         run: node --test --test-force-exit test/privacy-engine-installed.test.js
+      - name: Verify five packaged engine profiles through the Azwah manager API
+        if: github.ref == 'refs/heads/feature/azwah-privacy-engine-integration'
+        run: node --test --test-force-exit test/privacy-engine-manager-windows.test.js
+  ultimate-installed-gui:
+    needs: installed-prototype
+    if: github.ref == 'refs/heads/feature/azwah-privacy-engine-integration'
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      AZWAH_PRIVACY_ENGINE_QA_BUNDLE: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Prepare pinned NSIS tools
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install 7zip nsis -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./scripts/stage-windows-nsis.ps1
+      - name: Build actual Ultimate with the dedicated engine, Firefox and Office payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          npm ci
+          ./scripts/stage-windows-electron.ps1
+          Push-Location engine-prototype
+          try { ..\node_modules\.bin\electron-builder.cmd --config electron-builder.cjs --config.electronDist=../node_modules/electron/dist --win dir --x64 --publish never }
+          finally { Pop-Location }
+          $env:VITE_AZWAH_ADMIN = '0'
+          npm run build
+          node scripts/fetch-bundled-chromium.mjs win64
+          node scripts/fetch-bundled-firefox.mjs
+          npx --no-install electron-builder install-app-deps --arch=x64
+          npx --no-install electron-builder --config electron-builder.office-payload.cjs --config.electronDist=node_modules/electron/dist --win --dir --x64 --publish never
+          $env:VITE_AZWAH_ADMIN = '1'
+          npm run build
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npx --no-install electron-builder --config electron-builder.ultimate-unified.cjs --config.electronDist=node_modules/electron/dist --win nsis --x64 --publish never
+      - name: Record QA installer provenance
+        shell: pwsh
+        run: |
+          $name = 'Azwah-Multi-Browser-Ultimate-Setup-x64.exe'
+          $dir = 'release-ultimate'
+          $exe = Join-Path $dir $name
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
+          @(
+            "QA source: $env:GITHUB_SHA"
+            "Installer: $name"
+            "Bytes: $((Get-Item -LiteralPath $exe).Length)"
+            "SHA256: $hash"
+            "Runner: Windows Server 2022"
+          ) | Set-Content -Encoding ascii (Join-Path $dir 'BUILD-MANIFEST.txt')
+      - name: Drive installed Ultimate GUI
+        env:
+          AZWAH_QA_PROXY_FIXTURES: ${{ secrets.AZWAH_QA_PROXY_FIXTURES }}
+          AZWAH_MAXMIND_ACCOUNT_ID: ${{ secrets.AZWAH_MAXMIND_ACCOUNT_ID }}
+          AZWAH_MAXMIND_LICENSE_KEY: ${{ secrets.AZWAH_MAXMIND_LICENSE_KEY }}
+          AZWAH_ULTIMATE_QA_EXE: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+        run: node test/privacy-engine-ultimate-gui.mjs
+      - name: Preserve installed GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dedicated-ultimate-gui-evidence
+          path: build-evidence/ultimate-engine-gui
+          if-no-files-found: ignore
+      - name: Preserve QA installer after installed GUI passes
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-engine-qa-only-${{ github.sha }}
+          path: |
+            release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+            release-ultimate/SHA256SUMS.txt
+            release-ultimate/BUILD-MANIFEST.txt
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error

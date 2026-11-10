@@ -32,6 +32,7 @@ import { launchLimits, resourceLimitsSummary } from './launch-limits.js';
 import { summarizeConsistency } from './fingerprint-summary.js';
 import { buildMonitoringReport } from './monitoring-report.js';
 import { computeParityCoverage } from './parity-scorecard.js';
+import { clearGeoIpCredentials, geoIpStatus, saveGeoIpCredentials } from './geoip-settings.js';
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
@@ -182,7 +183,7 @@ const row2p = r => {
   const lib = r.proxy_id ? db.prepare('SELECT * FROM proxies WHERE id=?').get(r.proxy_id) : null;
   let proxy = null, secretError = null;
   if (lib) {
-    proxy = { id: lib.id, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '' };
+    proxy = { id: lib.id, revision: lib.updated_at, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '' };
     try { proxy.password = decrypt(lib.password); } catch (e) { secretError = e.message; }
   }
   delete r.proxy; // legacy inline column (cleared by migration v6)
@@ -232,10 +233,11 @@ const publicP = p => {
     } catch { /* profile dir not created yet */ }
   }
   out.tabRestore = tabRestore;
-  const mode = p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
+  const mode = p.advancedSettings?.runtime === 'azwah-native' && proxy_id
+    ? 'auto' : p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
   if (mode === 'auto' && proxy_id) {
     const location = getSetting('proxy-location:' + p.id, null);
-    if (location?.proxyId === proxy_id && location.expiresAt > Date.now()) out.lastProxyLocation = location;
+    if (location?.proxyId === proxy_id && location.proxyRevision === p.proxy?.revision && location.expiresAt > Date.now()) out.lastProxyLocation = location;
   }
   return out;
 };
@@ -1604,6 +1606,18 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const p = must(req.params.id);
     if (!p.proxy_id) throw err(400, 'no proxy configured');
     const r = await testLibraryProxy(p.proxy_id); delete r.proxy; res.json(r);
+  }));
+  ui.get('/settings/geoip', wrap((req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(geoIpStatus());
+  }));
+  ui.put('/settings/geoip', wrap((req, res) => {
+    if (!uiToken) throw err(403, 'GeoIP credentials require the authenticated desktop UI.');
+    res.json(saveGeoIpCredentials(req.body));
+  }));
+  ui.delete('/settings/geoip', wrap((req, res) => {
+    if (!uiToken) throw err(403, 'GeoIP credentials require the authenticated desktop UI.');
+    res.json(clearGeoIpCredentials());
   }));
   ui.get('/settings', (req, res) => res.json(Object.fromEntries(Object.entries(SETTINGS_DEFAULTS).map(([k, d]) => [k, getSetting(k, d)]))));
   ui.put('/settings', wrap((req, res) => {

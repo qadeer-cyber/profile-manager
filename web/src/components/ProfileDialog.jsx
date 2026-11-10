@@ -138,6 +138,18 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             <option value="firefox">Firefox</option>
           </select></label>
           <p className="muted hint">Manual launches use an independent browser process. Firefox uses the executable from Settings. Chromium extensions are not loaded on Firefox profiles. Profile templates are saved from the profile list when that action is available.</p>
+          {f.browserEngine !== 'firefox' && <label>Chromium runtime<select aria-label="Chromium runtime" value={advanced.runtime || 'compatibility'}
+            onChange={event => setAdvanced({ ...advanced, runtime: event.target.value })}>
+            <option value="compatibility">Chrome Stable compatibility</option>
+            <option value="azwah-native">Azwah Native Chromium (development)</option>
+            <option value="privacy">Azwah Privacy Engine (experimental)</option>
+          </select></label>}
+          {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <p className="muted hint">
+            Requires a configured Windows development build. This runtime keeps separate profile storage and follows the assigned proxy automatically.
+          </p>}
+          {f.browserEngine !== 'firefox' && advanced.runtime === 'privacy' && <p className="muted hint">
+            The experimental engine has its own browser storage. Switching runtimes keeps existing browser data in its original storage.
+          </p>}
           {f.browserEngine === 'firefox' && <div className="notice warn" role="note">
             <strong>Firefox limits:</strong> CookieRobot, Chromium extensions, and ChromeDriver do not apply. Use geckodriver when automation is enabled. This is stock Firefox, not a patched build.
           </div>}

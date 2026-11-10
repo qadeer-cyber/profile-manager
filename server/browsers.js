@@ -40,6 +40,8 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
+import { launchAzwahNative } from './browser-runtime/azwah-native.js';
+import { launchPrivacyEngine, PROXY_IDENTITY_EXIT, PROXY_IDENTITY_ERROR } from './browser-runtime/privacy-engine.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import { firefoxSessionStatus, borrowFirefoxSession, releaseFirefoxSession } from './firefox-session-manager.js';
 import { requestFirefoxShutdown } from './firefox-shutdown.js';
@@ -49,6 +51,7 @@ import { assertFirefoxAddonIdle } from './firefox-session-lock.js';
 import { stopGeckodriverBridge } from './geckodriver-bridge.js';
 
 export const events = new EventEmitter();
+let shuttingDown = false;
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
@@ -285,7 +288,7 @@ async function doLaunch(p, opts = {}) {
   await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null, entry = null;
-  let launchPlan = null;
+  let launchPlan = null, azwahLaunch = null;
   try {
     if ((p.browserEngine || 'chromium') === 'firefox') {
       const adv = (await import('./advanced-settings.js')).validateAdvancedSettings(p.advancedSettings || {});
@@ -320,21 +323,42 @@ async function doLaunch(p, opts = {}) {
       finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native', engine: 'firefox' });
       return runInfo(p.id);
     }
-    launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
-    relayUrl = launchPlan.relayUrl;
-    const { args, plan, regional, cdpPort } = launchPlan;
+    const dedicated = p.advancedSettings?.runtime === 'privacy';
+    const azwah = p.advancedSettings?.runtime === 'azwah-native';
+    if (!dedicated && !azwah) launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
+    relayUrl = launchPlan?.relayUrl || null;
+    const { args, plan, regional, cdpPort } = launchPlan || {};
     const preferencesBaseline = readPreferences(dir);
     assertLaunchNotCancelled(p.id);
 
-    if (launchPlan.runtime === 'native') {
-      const native = await launchNativeChromium(launchPlan);
+    if (azwah || dedicated || launchPlan.runtime === 'native') {
+      const checkCancelled = () => assertLaunchNotCancelled(p.id);
+      if (azwah) {
+        const restartForRotation = async () => {
+          if (shuttingDown || !entry || live.get(p.id) !== entry || entry.stopping || opts.nativeRotationRestart) return false;
+          await stop(p.id, { rotationEntry: entry });
+          if (shuttingDown || entry.rotationCancelled) return true;
+          const current = db.prepare(`SELECT p.updated_at, p.proxy_id, x.updated_at AS proxy_revision
+            FROM profiles p JOIN proxies x ON x.id = p.proxy_id WHERE p.id = ? AND p.deleted_at IS NULL`).get(p.id);
+          if (current && current.updated_at === p.updated_at && current.proxy_id === p.proxy?.id &&
+              current.proxy_revision === p.proxy?.revision) {
+            await launch(p, { ...opts, url: undefined, nativeRotationRestart: true }).catch(() => {});
+          }
+          return true;
+        };
+        azwahLaunch = await launchAzwahNative(p, dir, { ...opts, automation }, checkCancelled, restartForRotation);
+      }
+      const native = azwahLaunch || (dedicated
+        ? await launchPrivacyEngine(p, dir, { ...opts, automation }, checkCancelled)
+        : await launchNativeChromium(launchPlan));
+      relayUrl = native.relayUrl || relayUrl;
       markContextReady(metricsHandle);
       entry = {
         ctx: null, runtime: 'native', engine: 'chromium', relayUrl, launchId: randomUUID(), browserPid: native.browserPid,
         stopping: false, closed: false, proc: native.proc, exitCode: null, exitSignal: null,
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
-        requestedArgs: native.argv, restoreTabs: launchPlan.restoreTabs, rememberWindow: launchPlan.rememberWindow, tabUrls: [],
+        requestedArgs: native.argv, requestStop: native.requestStop, restoreTabs: launchPlan?.restoreTabs, rememberWindow: launchPlan?.rememberWindow, tabUrls: [],
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, dir);
@@ -353,7 +377,8 @@ async function doLaunch(p, opts = {}) {
         throw e;
       }
       setStatus(p.id, { last_launched_at: new Date().toISOString(), last_error: null });
-      emit('profile:started', p.id, { runtime: 'native' });
+      if (native.proc.exitCode !== null || native.proc.signalCode !== null) onClosed(p.id, null);
+      emit('profile:started', p.id, { runtime: azwah ? 'azwah-native' : dedicated ? 'privacy' : 'native' });
       console.log('NATIVE-LAUNCH ' + JSON.stringify({ id: p.id, launchId: entry.launchId, browserPid: native.browserPid, spawnPid: native.spawnPid }));
       finalizeLaunchMetrics(metricsHandle, { success: true, runtime: 'native' });
       return runInfo(p.id);
@@ -458,6 +483,17 @@ async function doLaunch(p, opts = {}) {
     return runInfo(p.id);
   } catch (e) {
     entry?.detachTermination?.();
+    if (azwahLaunch) {
+      live.delete(p.id);
+      await azwahLaunch.cleanup();
+      await killTree(azwahLaunch.browserPid, { expect: dir }).catch(() => {});
+      if (isAlive(azwahLaunch.browserPid)) {
+        e.preserveProfileLock = true;
+        e.browserPid = azwahLaunch.browserPid;
+      } else {
+        try { db.prepare('DELETE FROM running WHERE id=?').run(p.id); } catch {}
+      }
+    }
     if (ctx && !live.has(p.id)) await ctx.close().catch(() => {});
     if (relayUrl) await closeAnonymizedProxy(relayUrl, true).catch(() => {});
     if (e.preserveProfileLock) updateLock(dir, { browserPid: e.browserPid });
@@ -718,7 +754,7 @@ async function finishClose(id, e) {
       }
     } catch {}
     if (crashed) {
-      const message = crashMessage(e, e.closeReason);
+      const message = e.requestStop && e.exitCode === PROXY_IDENTITY_EXIT ? PROXY_IDENTITY_ERROR : crashMessage(e, e.closeReason);
       try { setStatus(id, { last_error: message }); } catch {}
       emit('profile:crashed', id, { error: message });
       emit('profile:stopped', id, { error: message });
@@ -785,14 +821,16 @@ export function startHealthMonitor(intervalMs = Number(process.env.PM_HEALTH_INT
 }
 export const stopHealthMonitor = () => { if (healthTimer) clearInterval(healthTimer); healthTimer = null; };
 
-export async function stop(id, { timeoutMs = 5000 } = {}) {
+export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
   assertFirefoxAddonIdle(id);
   if (firefoxSessionStatus(id)?.busy) throw httpErr(409, 'Wait for the active Firefox operation to finish before stopping.', 'FIREFOX_SESSION_BUSY');
   stopWebDriverBridge(id);
   stopGeckodriverBridge(id);
   if (launching.has(id)) await launching.get(id).catch(() => {});
   const e = live.get(id) || settling.get(id);
+  if (rotationEntry && e !== rotationEntry) return;
   if (!e) { db.prepare('DELETE FROM running WHERE id=?').run(id); return; }
+  if (!rotationEntry) e.rotationCancelled = true;
   e.stopping = true;
   e.stopWindowTracking?.();
   if (e.restoreTabs && e.ctx) {
@@ -826,6 +864,9 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
       await captureWindowStateForSession(id, e);
     } catch { /* best effort */ }
   }
+  if (e.requestStop) {
+    try { e.requestStop(); await waitUntilDead(e, timeoutMs); } catch {}
+  }
   // 1) graceful: close the context  2) force: kill the process tree
   if (e.ctx) await Promise.race([e.ctx.close().catch(() => {}), new Promise(r => setTimeout(r, timeoutMs))]);
   if (e.engine === 'firefox' && e.runtime === 'native' && e.browserPid && isAlive(e.browserPid)) {
@@ -849,6 +890,7 @@ export async function stop(id, { timeoutMs = 5000 } = {}) {
   if (e.stillAlive) throw httpErr(409, 'Browser is still running. Profile data remains locked; close the browser or explicitly retry Stop.', 'BROWSER_STOP_FAILED');
 }
 export async function shutdown() {
+  shuttingDown = true;
   stopHealthMonitor();
   const { stopAllWebDriverBridges } = await import('./webdriver-bridge.js');
   const { stopAllGeckodriverBridges } = await import('./geckodriver-bridge.js');

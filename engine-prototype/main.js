@@ -1,11 +1,12 @@
 import { app, BrowserWindow, session } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import { startManaged } from './managed.js';
 import { navigationOrigin, permitsGeolocation, validateEngineConfig, validateProfileId } from './config.js';
 
 const argument = name => process.argv.find(value => value.startsWith(name + '='))?.slice(name.length + 1);
 const verify = process.argv.includes('--azwah-verify');
-const qaLog = verify && process.env.AZWAH_ENGINE_QA_LOG;
+const qaLog = process.env.AZWAH_ENGINE_QA_LOG;
 const stage = message => { if (qaLog) fs.appendFileSync(qaLog, message + '\n'); };
 
 async function start() {
@@ -114,7 +115,8 @@ async function start() {
   if (!process.argv.includes('--azwah-fixture-hold')) app.quit();
 }
 
-start().catch(error => {
+const request = argument('--azwah-managed');
+(request ? startManaged(request, stage) : start()).catch(error => {
   stage('Prototype failed: ' + error.message);
   console.error('Prototype failed:', error.message);
   app.exit(1);

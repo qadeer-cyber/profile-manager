@@ -429,3 +429,19 @@ test('M4.2 managed session authorization, exclusivity, redaction, crash and canc
   recoverAutomationSessions();
   assert.equal((await v1('GET', route(b.id))).d.sessions[0].status, 'interrupted');
 });
+
+test('GeoIP credentials require desktop authentication and are encrypted and write-only', async () => {
+  const route = '/api/settings/geoip';
+  const account = '1234567', license = 'fixture-local-geoip-credential';
+  assert.equal((await req('PUT', route, { account, license })).s, 401);
+  assert.equal((await ui('PUT', route, { account: 'invalid', license })).s, 400);
+  const saved = await ui('PUT', route, { account, license });
+  assert.deepEqual(saved.d, { configured: true, source: 'local' });
+  assert.deepEqual((await ui('GET', route)).d, saved.d);
+  const ciphertext = db.prepare('SELECT value FROM settings WHERE key=?').get('geoip-maxmind-credentials').value;
+  assert.match(ciphertext, /enc:v1:/);
+  assert.ok(!ciphertext.includes(license));
+  assert.ok(!JSON.stringify((await ui('GET', '/api/settings')).d).includes(license));
+  await ui('DELETE', route);
+  assert.equal(db.prepare('SELECT value FROM settings WHERE key=?').get('geoip-maxmind-credentials'), undefined);
+});

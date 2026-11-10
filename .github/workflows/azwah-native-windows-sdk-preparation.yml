@@ -1,0 +1,22 @@
+name: Azwah native Windows SDK preparation
+on:
+  push:
+    branches: [feature/azwah-privacy-engine-integration]
+    paths:
+      - .github/workflows/azwah-native-windows-sdk-preparation.yml
+      - scripts/prepare-native-windows-sdk.ps1
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  prepare:
+    if: ${{ !github.event.repository.private }}
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install and qualify the pinned Microsoft SDK
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
