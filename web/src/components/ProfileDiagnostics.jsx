@@ -4,6 +4,7 @@ import { useToast } from './Toasts.jsx';
 import { statusOf, crashSummary } from '../lib.js';
 import { useProfileDiagnostics, CONSENT } from '../hooks/useProfileDiagnostics.js';
 import '../diagnostics.css';
+import { privacyEvidence } from '../lib/privacy-evidence.js';
 
 // ---------- human-readable text for every contract enum ----------
 export const REASON_TEXT = {
@@ -206,6 +207,19 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
     : obs.state === 'invalidated' ? 'This observation was invalidated. Refresh it first.' : null;
 
   const st = profile ? statusOf(profile) : null;
+  const evidence = profile ? privacyEvidence(profile, { runtime: data?.runtime, environment: envSrc?.environment,
+    fresh: fresh && !envOther && (!envFromProbe || Date.now() < Date.parse(envSrc.observation.validUntil)) }) : null;
+  const exportEvidence = () => {
+    const blob = new Blob([JSON.stringify(evidence, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'azwah-privacy-evidence.json';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
   return <section className="panel pd" aria-labelledby="pd-title" data-testid="profile-diagnostics">
     <div className="pd-head">
       <div><h2 id="pd-title">Profile diagnostics</h2>
@@ -232,6 +246,16 @@ export const ProfileDiagnostics = React.memo(function ProfileDiagnostics() {
       </div>
     </div>
 
+    {evidence && <Card title="Privacy evidence" id="pd-privacy-evidence">
+      <p className="muted small">Results describe this profile. Controlled CI tests do not verify your current network.</p>
+      <dl className="pd-facts">
+        <div className="pd-fact"><dt>Engine and version</dt><dd>{[evidence.browser.engine, evidence.browser.runtime, evidence.browser.version].filter(Boolean).join(' · ') || 'UNVERIFIED'}</dd></div>
+        <div className="pd-fact"><dt>Proxy exit at launch</dt><dd>{[evidence.proxy.exit.status, evidence.proxy.type, evidence.proxy.exit.ip, evidence.proxy.approximateCountry].filter(Boolean).join(' · ')}</dd></div>
+        <div className="pd-fact"><dt>Browser timezone</dt><dd>{[evidence.proxy.timezone.status, evidence.proxy.timezone.observed].filter(Boolean).join(' · ')}</dd></div>
+        <div className="pd-fact"><dt>IPv4, IPv6, DNS, WebRTC and fingerprint consistency</dt><dd>UNVERIFIED for this profile</dd></div>
+      </dl>
+      <button onClick={exportEvidence}>Download sanitized evidence</button>
+    </Card>}
     <div className="pd-live" role="status" aria-live="polite" aria-atomic="true" data-live>{announce}</div>
 
     {selected && <>

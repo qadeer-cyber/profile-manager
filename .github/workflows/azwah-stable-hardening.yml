@@ -20,5 +20,6 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --no-audit --no-fund
-      - run: node --test test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - run: node --test test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - run: npm run build
       - run: node --test --test-force-exit test/chrome-stable-windows-live.test.js test/chrome-stable-network-windows.test.js

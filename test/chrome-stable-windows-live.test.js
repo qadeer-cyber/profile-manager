@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { execFile, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { createServer } from 'node:http';
@@ -25,7 +26,10 @@ test('visible signed Windows Chrome Stable applies manual location through the p
   const { startServer } = await import('../server/app.js');
   const { db } = await import('../server/db.js');
   const fixture = createServer((req, res) => {
-    if (req.url === '/sw.js') {
+    if (req.url === '/identity') {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ ua: req.headers['user-agent'], languages: req.headers['accept-language'] }));
+    } else if (req.url === '/sw.js') {
       res.setHeader('Content-Type', 'application/javascript');
       res.end('self.addEventListener("install", () => self.skipWaiting());');
     } else res.end('<title>Visible Chrome location fixture</title>');
@@ -49,12 +53,12 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       return data;
     };
     const profile = await api('POST', '/profiles', {
-      name: 'Stable fixture', browserSettings: { timezoneId: 'America/Los_Angeles' },
+      name: 'Stable fixture', browserSettings: { timezoneId: 'America/Los_Angeles', locale: 'en-US', languages: ['en-US', 'en'] },
       advancedSettings: { runtime: 'stable-chrome', geolocation: { mode: 'manual', permission: 'allow', latitude: 37.4, longitude: -122.1, accuracy: 65000 } },
     }, 201);
     const endpoint = '/profiles/' + profile.id;
     const peer = await api('POST', '/profiles', { name: 'Independent Stable fixture',
-      advancedSettings: { runtime: 'stable-chrome' }, browserSettings: { timezoneId: 'Europe/Berlin' } }, 201);
+      advancedSettings: { runtime: 'stable-chrome' }, browserSettings: { timezoneId: 'Europe/Berlin', locale: 'de-DE', languages: ['de-DE', 'de'] } }, 201);
     const peerEndpoint = '/profiles/' + peer.id;
     const peerRun = await api('POST', peerEndpoint + '/launch', { headless: false, url: origin });
     const peerPage = engine.liveContext(peer.id).pages()[0];
@@ -64,6 +68,30 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     const failed = await api('POST', '/profiles/' + blocked.id + '/launch', { headless: false }, 503);
     assert.equal(failed.code, 'PROXY_AUTH_REQUIRED');
     assert.equal((await api('GET', '/profiles/' + blocked.id)).running, false);
+    async function observeIdentity(page, languages) {
+      const observed = await page.evaluate(async () => {
+        const http = await fetch('/identity').then(response => response.json());
+        const canvas = document.createElement('canvas');
+        canvas.width = 32; canvas.height = 32;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#1379b1';
+        ctx.fillRect(2, 4, 24, 19);
+        return { http, userAgent: navigator.userAgent, languages: [...navigator.languages],
+          locale: Intl.DateTimeFormat().resolvedOptions().locale, brands: navigator.userAgentData?.brands,
+          platform: navigator.userAgentData?.platform, canvas: canvas.toDataURL(),
+          hardwareConcurrency: navigator.hardwareConcurrency };
+      });
+      assert.equal(observed.userAgent, observed.http.ua);
+      assert.deepEqual(observed.languages, languages);
+      assert.deepEqual(observed.http.languages.split(',').map(item => item.split(';')[0]), languages);
+      assert.equal(observed.locale, languages[0]);
+      assert.equal(observed.platform, 'Windows');
+      assert.ok(observed.brands.some(brand => brand.brand === 'Google Chrome' && brand.version === stable.version.split('.')[0]));
+      const { canvas, ...report } = observed;
+      return { ...report, canvasSha256: createHash('sha256').update(canvas).digest('hex') };
+    }
+    const peerIdentity = await observeIdentity(peerPage, ['de-DE', 'de']);
+    let priorIdentity;
     for (let run = 0; run < 2; run++) {
       await api('POST', endpoint + '/launch', { headless: false, url: origin });
       const current = await api('GET', endpoint);
@@ -114,6 +142,10 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       const second = await context.newPage();
       for (const page of [first, second]) {
         await page.goto(origin + '/location');
+        const identity = await observeIdentity(page, ['en-US', 'en']);
+        if (priorIdentity) assert.deepEqual(identity, priorIdentity);
+        else priorIdentity = identity;
+        assert.equal(identity.userAgent, peerIdentity.userAgent);
         const result = await page.evaluate(() => new Promise((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(({ coords }) => resolve({
             latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy,
@@ -125,6 +157,8 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       }
       await api('POST', endpoint + '/stop');
     }
+    console.log(JSON.stringify({ identity: 'stock Chrome', version: stable.version, profiles: 2, consistentAcrossTabsAndRelaunch: true,
+      checked: ['UA header', 'UA client hints brand/version/platform', 'locale', 'ordered languages', 'canvas sample', 'hardware concurrency'] }));
     await api('POST', peerEndpoint + '/stop');
   } finally {
     try { await server?.close(); } finally {
