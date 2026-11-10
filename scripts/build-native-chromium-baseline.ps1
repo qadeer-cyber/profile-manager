@@ -26,6 +26,8 @@ param(
 
     [switch] $CheckpointProbe,
 
+    [string] $CheckpointDirectory,
+
     [switch] $StartupObjectProbe
 )
 
@@ -213,7 +215,7 @@ target_cpu = "x64"
 symbol_level = 0
 '@
         if ($CheckpointProbe) {
-            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
+            $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false' + "`n" + 'use_clang_modules = false'
         }
         if ($StartupObjectProbe) { $gnArgs += "`n" + 'use_siso = false' }
         $argsFile = Join-Path $out 'args.gn'
@@ -247,11 +249,53 @@ symbol_level = 0
             if (!($commands | Where-Object { $_ -match 'sccache.*base[/\\]i18n[/\\]icu_util\.cc' })) {
                 throw 'The probe compile command does not wrap the patched source with sccache.'
             }
+            if ($CheckpointDirectory) {
+                $hostReport = & (Join-Path $PSScriptRoot 'test-native-windows-host.ps1') -Workspace $Workspace
+                if (!$hostReport.toolchainPresent -or !$hostReport.imageVersion) {
+                    throw 'Cannot fingerprint the Windows compiler environment.'
+                }
+                $ninjaExe = 'third_party/ninja/ninja.exe'
+                if (!(Test-Path -LiteralPath $ninjaExe -PathType Leaf)) {
+                    $ninjaExe = Join-Path $DepotTools 'ninja.exe'
+                }
+                $identity = [ordered]@{
+                    commit = $env:GITHUB_SHA
+                    image = $hostReport.imageVersion
+                    visual_studio = $hostReport.visualStudioVersion
+                    msvc = @($hostReport.msvcToolsets | ForEach-Object version | Sort-Object)
+                    sdk = @($hostReport.installedSdkDirectories | Sort-Object)
+                    sdk_debugger = $hostReport.x64DbgHelpVersion
+                    chromium = $ChromiumCommit
+                    depot_tools = $DepotToolsCommit
+                    workspace = $Workspace
+                    patch = (Get-FileHash -LiteralPath $sourcePatch).Hash
+                    gn_args = (Get-FileHash -LiteralPath $argsFile).Hash
+                    clang = (Get-FileHash -LiteralPath 'third_party/llvm-build/Release+Asserts/bin/clang-cl.exe').Hash
+                    gn = (Get-FileHash -LiteralPath 'buildtools/win/gn.exe').Hash
+                    ninja = (Get-FileHash -LiteralPath $ninjaExe).Hash
+                    sccache = (Get-FileHash -LiteralPath (Get-Command sccache.exe).Source).Hash
+                    target = $probeTarget
+                    commands = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+                        [Text.Encoding]::UTF8.GetBytes(($commands -join "`n"))))
+                } | ConvertTo-Json
+                $identityFile = Join-Path $CheckpointDirectory 'identity.json'
+                if ($env:GITHUB_JOB -eq 'replay') {
+                    if ((Get-Content -Raw -LiteralPath $identityFile).TrimEnd() -cne $identity.TrimEnd()) {
+                        throw 'Checkpoint inputs differ from the fresh runner. No cache replay attempted.'
+                    }
+                } else {
+                    New-Item -ItemType Directory -Force -Path $CheckpointDirectory | Out-Null
+                    Set-Content -LiteralPath $identityFile -Value $identity
+                }
+            }
             Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", $probeTarget)
             $probeObject = Join-Path $out $probeTarget
             if (!(Test-Path -LiteralPath $probeObject -PathType Leaf)) { throw 'Probe object is missing.' }
             $probeHash = (Get-FileHash -LiteralPath $probeObject).Hash
             Write-Output "Probe object $probeTarget SHA256=$probeHash"
+            if ($CheckpointDirectory) {
+                Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'azwah-icu-object.sha256') -Value $probeHash
+            }
             if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
             return
         }
