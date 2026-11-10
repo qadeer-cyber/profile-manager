@@ -153,7 +153,13 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     if (p.proxy.username) {
       const scheme = p.proxy.type === 'socks5' ? 'socks5h' : p.proxy.type;
       const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${proxyHost}:${p.proxy.port}`;
-      relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
+      try {
+        // Let the relay bind atomically instead of releasing a probed port
+        // that another concurrently launching profile can claim.
+        relayUrl = await anonymizeProxy({ url: up, port: 0 });
+      } catch {
+        throw httpErr(503, 'Could not start the authenticated proxy relay. Check the proxy configuration and retry.', 'PROXY_RELAY_START_FAILED');
+      }
       args.push(proxyArg(relayUrl));
     } else {
       args.push(proxyArg(`${p.proxy.type}://${proxyHost}:${p.proxy.port}`));

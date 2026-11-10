@@ -318,6 +318,10 @@ function monitorStableProxy(p, opts, entry, location) {
     } catch {
       if (!active()) return;
       setSetting(key, null);
+      // Revoke the authenticated browser's route before attempting shutdown.
+      // An unresponsive Chrome process must not keep using a stale relay.
+      if (entry.relayUrl) await closeAnonymizedProxy(entry.relayUrl, true).catch(() => {});
+      if (!active()) return;
       try { await stop(p.id, { rotationEntry: entry }); }
       catch { return; } // The existing stop path records a locked process failure.
       if (shuttingDown || entry.rotationCancelled) return;
