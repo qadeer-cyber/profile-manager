@@ -98,7 +98,7 @@ if ($Mode -eq 'shard') {
   exit 0
 }
 $manifests = @{}
-$logRows = @('# ninja log v5')
+$logRows = @()
 foreach ($name in @('adler32','crc32')) {
   $folder = "incoming/chromium-ninja-$name"
   $manifest = Get-Content -LiteralPath "$folder/manifest.json" -Raw | ConvertFrom-Json
@@ -115,8 +115,39 @@ foreach ($name in @('adler32','crc32')) {
   $manifests[$name] = $manifest
   Copy-Item -LiteralPath $obj -Destination "out/$name.obj"
   $log = @(Get-Content -LiteralPath "$folder/log-$name.txt")
-  if (!$log.Count -or $log[0] -cne '# ninja log v5') { throw "Unexpected Ninja log: $name" }
-  $logRows += $log | Select-Object -Skip 1
+  $header = if ($log.Count) { $log[0].TrimStart([char]0xFEFF).Trim() } else { '' }
+  if ($header -notmatch '^# ninja log v[0-9]+
+  # Artifact transfer changes mtimes; source integrity is guaranteed above by SHA256.
+  (Get-Item -LiteralPath $src).LastWriteTimeUtc = [datetime]'2020-01-01T00:00:00Z'
+}
+Set-Content -LiteralPath '.ninja_log' -Value $logRows -Encoding ascii
+$dry = (& $ninja -f qa-two-shard.ninja -n -v 'out/azwah-ninja-zlib.lib') | Out-String
+if ($LASTEXITCODE -ne 0) { throw 'Ninja dry run failed' }
+Write-Output "DRY-RUN: $dry"
+if ($dry -match 'qa-ninja-cc.cmd') { throw 'Ninja attempted to rebuild a transferred object' }
+if ($dry -notmatch 'qa-ninja-lib.cmd') { throw 'Ninja did not schedule archive edge' }
+& $ninja -f qa-two-shard.ninja 'out/azwah-ninja-zlib.lib'
+if ($LASTEXITCODE -ne 0) { throw 'Ninja archive edge failed' }
+$built = 'out/azwah-ninja-zlib.lib'
+$members = (& $lib /NOLOGO /LIST $built) | Out-String
+if ($LASTEXITCODE -ne 0 -or $members -notmatch 'adler32.obj' -or $members -notmatch 'crc32.obj') { throw 'Missing archive members' }
+New-Item -ItemType Directory -Force merged | Out-Null
+Copy-Item -LiteralPath $built -Destination merged/
+$hash = (Get-FileHash -LiteralPath $built -Algorithm SHA256).Hash.ToLowerInvariant()
+@(
+  '## Azwah Ninja two-runner checkpoint proof'
+  '- Both pinned Chromium zlib units compiled via a Ninja graph on separate Windows workers.'
+  '- Objects + Ninja logs transferred across hosted runners with SHA256 provenance.'
+  '- Final Ninja dry-run scheduled the archive but no object recompilation.'
+  '- Combined static library contains both compiled objects.'
+  "- SHA256: $hash"
+  '- Not proven: Chromium GN dependency graph, full browser sharding, production installer.'
+) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY
+Write-Output "NINJA CROSS-RUNNER PROOF PASS: $hash"
+) { throw "Unexpected Ninja log: $name header=[$header]" }
+  if ($logRows.Count -eq 0) { $logRows = @($header) }
+  elseif ($logRows[0] -cne $header) { throw "Ninja log schema mismatch between shards: $header" }
+  $logRows += @($log | Select-Object -Skip 1)
   # Artifact transfer changes mtimes; source integrity is guaranteed above by SHA256.
   (Get-Item -LiteralPath $src).LastWriteTimeUtc = [datetime]'2020-01-01T00:00:00Z'
 }
