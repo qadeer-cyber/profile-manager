@@ -1,5 +1,8 @@
 name: Azwah authorized regional Chrome acceptance
 on:
+  push:
+    branches: [hardening/azwah-ultimate-stable-chrome]
+    paths: [.github/workflows/azwah-regional-acceptance.yml]
   workflow_dispatch:
 permissions:
   contents: read
