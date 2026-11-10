@@ -116,7 +116,10 @@ foreach ($name in @('adler32','crc32')) {
   Copy-Item -LiteralPath $obj -Destination "out/$name.obj"
   $log = @(Get-Content -LiteralPath "$folder/log-$name.txt")
   $header = if ($log.Count) { $log[0].TrimStart([char]0xFEFF).Trim() } else { '' }
-  if ($header -notmatch '^# ninja log v[0-9]+
+  if ($header -notmatch '^# ninja log v[0-9]+$') { throw "Unexpected Ninja log: $name header=[$header]" }
+  if ($logRows.Count -eq 0) { $logRows = @($header) }
+  elseif ($logRows[0] -cne $header) { throw "Ninja log schema mismatch between shards: $header" }
+  $logRows += @($log | Select-Object -Skip 1)
   # Artifact transfer changes mtimes; source integrity is guaranteed above by SHA256.
   (Get-Item -LiteralPath $src).LastWriteTimeUtc = [datetime]'2020-01-01T00:00:00Z'
 }
