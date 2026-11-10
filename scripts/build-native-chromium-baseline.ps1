@@ -228,10 +228,14 @@ symbol_level = 0
                 ForEach-Object {
                     if ($_ -match '^(obj/[^:]+/icu_util\.obj):\s+cxx') { $Matches[1] }
                 } | Sort-Object -Unique)
-            if ($probeTargets.Count -ne 1) {
-                throw "Expected one C++ object target for patched base/i18n/icu_util.cc; found $($probeTargets.Count)."
+            if (!$probeTargets.Count) {
+                throw 'No C++ object targets found for patched base/i18n/icu_util.cc.'
             }
+            # GN can compile the same source into multiple targets. Keep the
+            # same deterministic default-toolchain selection on both runners.
+            Write-Output "ICU probe candidates: $($probeTargets -join ', ')"
             $probeTarget = $probeTargets[0]
+            Write-Output "Selected ICU probe target: $probeTarget"
             $commands = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'commands', $probeTarget)
             if (!($commands | Where-Object { $_ -match 'sccache.*base[/\\]i18n[/\\]icu_util\.cc' })) {
                 throw 'The probe compile command does not wrap the patched source with sccache.'
