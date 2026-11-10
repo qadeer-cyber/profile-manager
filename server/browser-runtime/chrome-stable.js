@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isIP } from 'node:net';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -71,21 +72,38 @@ foreach ($candidate in ($paths | Select-Object -Unique)) {
   return result;
 }
 
+export function stableProxyNetworkArgs(host, authenticated) {
+  // Chrome resolves only an unauthenticated proxy's hostname. The authenticated
+  // route uses the loopback relay, which resolves its own upstream.
+  const name = host.replace(/^\[|\]$/g, '');
+  let rules = 'MAP * ~NOTFOUND';
+  if (!authenticated && !isIP(name)) {
+    if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
+      throw error('CHROME_PROXY_HOST_INVALID', 'Use a valid proxy hostname or IP address.');
+    }
+    rules += ', EXCLUDE ' + name;
+  }
+  return ['--disable-quic', '--dns-prefetch-disable', '--host-resolver-rules=' + rules];
+}
+
 export async function verifyStableBrowserLocation(context, expected, { verifyCoordinates = true } = {}) {
   let page;
   let permissionsGranted = false;
+  let stage = 'proxy exit IP';
   try {
     page = await context.newPage();
     const response = await page.goto('https://api64.ipify.org/?format=json', { timeout: 15000 });
     const { publicIp } = await import('../proxy-location.js');
-    if (!response?.ok() || publicIp((await response.json())?.ip) !== expected.ip) {
+    if (!response?.ok() || new URL(response.url()).origin !== 'https://api64.ipify.org' || publicIp((await response.json())?.ip) !== expected.ip) {
       throw new Error('Exit IP mismatch');
     }
+    stage = 'page timezone';
     const timezone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
     if (new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone !== expected.timezone) {
       throw new Error('Timezone mismatch');
     }
     if (verifyCoordinates) {
+      stage = 'browser geolocation';
       await context.grantPermissions(['geolocation'], { origin: 'https://api64.ipify.org' });
       permissionsGranted = true;
       const coordinates = await page.evaluate(() => new Promise((resolve, reject) => {
@@ -97,7 +115,7 @@ export async function verifyStableBrowserLocation(context, expected, { verifyCoo
         Math.abs(coordinates[key] - expected[key]) < 0.000001)) throw new Error('Coordinates mismatch');
     }
   } catch {
-    throw error('PROXY_BROWSER_IDENTITY_FAILED', 'Chrome could not verify the proxy exit IP or page location. Check the proxy and retry.');
+    throw error('PROXY_BROWSER_IDENTITY_FAILED', `Chrome could not verify the ${stage}. Check the proxy and GeoIP configuration, then retry.`);
   } finally {
     try { if (permissionsGranted) await context.clearPermissions(); }
     finally { await page?.close().catch(() => {}); }

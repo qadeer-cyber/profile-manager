@@ -1,0 +1,24 @@
+name: Azwah Stable Chrome hardening checks
+on:
+  push:
+    branches: [hardening/azwah-ultimate-stable-chrome]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    if: github.ref == 'refs/heads/hardening/azwah-ultimate-stable-chrome'
+    runs-on: windows-2022
+    timeout-minutes: 15
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --no-audit --no-fund
+      - run: node --test test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - run: node --test --test-force-exit test/chrome-stable-windows-live.test.js

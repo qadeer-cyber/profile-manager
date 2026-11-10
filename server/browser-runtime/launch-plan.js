@@ -14,7 +14,7 @@ import { executableCompatibility } from '../chromium-lifecycle.js';
 import { chromiumIdentity } from '../chromium-identity.js';
 import { extensionLaunchPlan } from '../extensions.js';
 import { getSetting, setSetting } from '../db.js';
-import { assertProfileVersion, resolveWindowsChromeStable } from './chrome-stable.js';
+import { assertProfileVersion, resolveWindowsChromeStable, stableProxyNetworkArgs } from './chrome-stable.js';
 import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocation } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
@@ -103,22 +103,6 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     try { executablePath = chromium.executablePath(); } catch {}
   }
 
-  let relayUrl = null;
-  const proxyHost = p.proxy && isIP(p.proxy.host) === 6 ? `[${p.proxy.host}]` : p.proxy?.host;
-  const proxyArg = server => `--proxy-server=${server}`;
-  if (p.proxy) {
-    if (requireStable) args.push('--disable-quic', '--dns-prefetch-disable');
-    if (p.proxy.username) {
-      const scheme = p.proxy.type === 'socks5' ? 'socks5h' : p.proxy.type;
-      const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${proxyHost}:${p.proxy.port}`;
-      relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
-      args.push(proxyArg(relayUrl));
-    } else {
-      args.push(proxyArg(`${p.proxy.type}://${proxyHost}:${p.proxy.port}`));
-    }
-    // Dev/test: PM_PROXY_LOOPBACK. Packaged manual native: always send loopback through the proxy (offline smoke).
-    if (stable || proxyLoopback() || (isPackaged() && runtime === 'native')) args.push('--proxy-bypass-list=<-loopback>');
-  }
 
   if (regional.languages.length) {
     args.push('--accept-lang=' + regional.languages.join(','));
@@ -161,6 +145,23 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     savedUrls: saved.urls,
   });
 
+  let relayUrl = null;
+  const proxyHost = p.proxy && isIP(p.proxy.host) === 6 ? `[${p.proxy.host}]` : p.proxy?.host;
+  const proxyArg = server => `--proxy-server=${server}`;
+  if (p.proxy) {
+    if (requireStable) args.push(...stableProxyNetworkArgs(p.proxy.host, Boolean(p.proxy.username)));
+    if (p.proxy.username) {
+      const scheme = p.proxy.type === 'socks5' ? 'socks5h' : p.proxy.type;
+      const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${proxyHost}:${p.proxy.port}`;
+      relayUrl = await anonymizeProxy({ url: up, port: await freePort() });
+      args.push(proxyArg(relayUrl));
+    } else {
+      args.push(proxyArg(`${p.proxy.type}://${proxyHost}:${p.proxy.port}`));
+    }
+    // Dev/test: PM_PROXY_LOOPBACK. Packaged manual native: always send loopback through the proxy (offline smoke).
+    if (stable || proxyLoopback() || (isPackaged() && runtime === 'native')) args.push('--proxy-bypass-list=<-loopback>');
+  }
+
   const playwrightOpts = {
     ...contextSettings,
     headless: !!headless,
@@ -188,9 +189,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     playwrightOpts.ignoreDefaultArgs = true;
     playwrightOpts.args = [...args, '--remote-debugging-pipe', `--user-data-dir=${dir}`, '--no-first-run', ...(headless ? ['--headless=new'] : []), 'about:blank'];
     playwrightOpts.chromiumSandbox = true;
-    const env = { ...process.env };
-    delete env.AZWAH_MAXMIND_ACCOUNT_ID;
-    delete env.AZWAH_MAXMIND_LICENSE_KEY;
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+      !/^(AZWAH_MAXMIND_|ELECTRON_|NODE_OPTIONS$|PM_API_TOKEN$|PM_SECRET$|PM_UI_TOKEN$)/i.test(key)));
     playwrightOpts.env = env;
     delete playwrightOpts.geolocation;
     if (locationOverride) {
