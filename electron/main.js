@@ -15,6 +15,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
 // Overwrite any inherited value before the backend is loaded (dynamic import in startBackend).
 applyPackagedFlag(process.env, app.isPackaged);
+const packageMetadata = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
+if (app.isPackaged && packageMetadata.azwahChromiumRuntime === 'stable-chrome') process.env.AZWAH_STABLE_CHROME_EDITION = '1';
 
 if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
@@ -218,6 +220,18 @@ async function runSmoke() {
   const call = (m, u, b) => fetch(backend.url + u, { method: m, headers: H, body: b && JSON.stringify(b) }).then(r => r.json().catch(() => null).then(d => ({ s: r.status, d })));
   const r = {};
   r.unauthorized = (await fetch(backend.url + '/api/profiles')).status;
+  if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
+    const profile = await call('POST', '/api/profiles', { name: 'Stable installer smoke', advancedSettings: { runtime: 'stable-chrome' } });
+    if (profile.s !== 201) throw new Error('Installed smoke profile creation failed: ' + JSON.stringify(profile));
+    const endpoint = '/api/profiles/' + profile.d.id;
+    const launch = await call('POST', endpoint + '/launch', { headless: false, url: 'about:blank' });
+    if (launch.s !== 200 || !launch.d?.pid || launch.d?.cdp) throw new Error('Installed Chrome launch failed: ' + JSON.stringify(launch));
+    const stopped = await call('POST', endpoint + '/stop');
+    if (stopped.s !== 200) throw new Error('Installed Chrome stop failed: ' + JSON.stringify(stopped));
+    fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, userData }));
+    app.quit();
+    return;
+  }
   // First-run browser download (packaged builds start without Chromium)
   r.browserBefore = (await call('GET', '/api/browser')).d;
   if (!r.browserBefore.installed) {

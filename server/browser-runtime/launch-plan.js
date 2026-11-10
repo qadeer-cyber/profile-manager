@@ -41,17 +41,20 @@ export function launchRuntimeMode(opts = {}, engine = 'chromium') {
 export async function buildProfileLaunchPlan(p, opts = {}) {
   const { headless, url } = opts;
   const automation = automationEnabled(opts);
-  const stable = process.platform === 'win32' && !headless ? await resolveWindowsChromeStable() : null;
+  const explicitStable = p.advancedSettings?.runtime === 'stable-chrome';
+  const requireStable = explicitStable || process.env.AZWAH_STABLE_CHROME_EDITION === '1';
+  if (requireStable && process.platform !== 'win32') throw httpErr(503, 'The installed Chrome Stable runtime requires Windows.', 'CHROME_STABLE_UNSUPPORTED');
+  const stable = process.platform === 'win32' && (!headless || requireStable) ? await resolveWindowsChromeStable() : null;
   let runtime = launchRuntimeMode(opts, 'chromium');
   const regional = validateBrowserSettings(p.browserSettings || {});
-  const policy = validateWebRtcSettings(p.webrtcSettings || {});
+  const policy = validateWebRtcSettings(requireStable && p.proxy ? { mode: 'disable_non_proxied_udp' } : p.webrtcSettings || {});
   const extensionPlan = extensionLaunchPlan(p.id);
   const dir = opts.userDataDir;
   if (!dir) throw httpErr(500, 'userDataDir required', 'INTERNAL');
   let locationOverride = null;
   const advanced = p.advancedSettings || {};
   const geo = advanced.geolocation || {};
-  const mode = geo.mode ?? (p.proxy ? 'auto' : 'manual');
+  const mode = requireStable && p.proxy ? 'auto' : geo.mode ?? (p.proxy ? 'auto' : 'manual');
   if (stable) {
     const profileRoot = fs.realpathSync(dir);
     const defaultData = process.env.LOCALAPPDATA && process.env.LOCALAPPDATA + '\\Google\\Chrome\\User Data';
@@ -74,7 +77,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
       locationOverride = geo;
     }
-    if (locationOverride || regional.timezoneId) runtime = 'playwright';
+    if (requireStable || locationOverride || regional.timezoneId) runtime = 'playwright';
   }
   const contextSettings = browserContextSettings(regional);
 
@@ -99,6 +102,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   let relayUrl = null;
   const proxyArg = server => `--proxy-server=${server}`;
   if (p.proxy) {
+    if (requireStable) args.push('--disable-quic', '--dns-prefetch-disable');
     if (p.proxy.username) {
       const scheme = p.proxy.type === 'socks5' ? 'socks5h' : p.proxy.type;
       const up = `${scheme}://${encodeURIComponent(p.proxy.username)}:${encodeURIComponent(p.proxy.password)}@${p.proxy.host}:${p.proxy.port}`;
@@ -177,7 +181,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     // Use the inherited CDP pipe while retaining Chrome's ordinary security defaults.
     // Playwright's automation defaults include switches that disable security services.
     playwrightOpts.ignoreDefaultArgs = true;
-    playwrightOpts.args = [...args, '--remote-debugging-pipe', `--user-data-dir=${dir}`, '--no-first-run', 'about:blank'];
+    playwrightOpts.args = [...args, '--remote-debugging-pipe', `--user-data-dir=${dir}`, '--no-first-run', ...(headless ? ['--headless=new'] : []), 'about:blank'];
     playwrightOpts.chromiumSandbox = true;
     const env = { ...process.env };
     delete env.AZWAH_MAXMIND_ACCOUNT_ID;
@@ -195,6 +199,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   return {
     runtime,
     stable,
+    requiredStable: requireStable,
+    stableLocation: locationOverride,
     locationMode: stable ? mode : null,
     automation,
     headless: !!headless,

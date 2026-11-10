@@ -42,6 +42,17 @@ foreach ($candidate in ($paths | Select-Object -Unique)) {
   $signature = Get-AuthenticodeSignature -LiteralPath $file.FullName
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch '(^|, )CN=Google LLC(,|$)') { continue }
   if ($file.VersionInfo.ProductName -ne 'Google Chrome') { continue }
+  $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($file.FullName))
+  try {
+    if ($reader.ReadUInt16() -ne 0x5A4D) { continue }
+    $reader.BaseStream.Position = 60
+    $offset = $reader.ReadUInt32()
+    if ($offset -lt 64 -or ($offset + 26) -gt $reader.BaseStream.Length) { continue }
+    $reader.BaseStream.Position = $offset
+    if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x8664) { continue }
+    $reader.BaseStream.Position = $offset + 24
+    if ($reader.ReadUInt16() -ne 0x20B) { continue }
+  } finally { $reader.Dispose() }
   @{path=$file.FullName;version=$file.VersionInfo.ProductVersion} | ConvertTo-Json -Compress
   exit 0
 }
@@ -58,4 +69,23 @@ foreach ($candidate in ($paths | Select-Object -Unique)) {
   }
   if (Number(result.version.split('.')[0]) < 136) throw error('CHROME_STABLE_TOO_OLD', 'Update Chrome Stable to a supported version before launch.');
   return result;
+}
+
+export async function verifyStableBrowserLocation(context, expected) {
+  const page = await context.newPage();
+  try {
+    const response = await page.goto('https://api64.ipify.org/?format=json', { timeout: 15000 });
+    const { publicIp } = await import('../proxy-location.js');
+    if (!response?.ok() || publicIp((await response.json())?.ip) !== expected.ip) {
+      throw new Error('Exit IP mismatch');
+    }
+    const timezone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+    if (new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone !== expected.timezone) {
+      throw new Error('Timezone mismatch');
+    }
+  } catch {
+    throw error('PROXY_BROWSER_IDENTITY_FAILED', 'Chrome could not verify the proxy exit IP and page timezone. Check the proxy and retry.');
+  } finally {
+    await page.close().catch(() => {});
+  }
 }

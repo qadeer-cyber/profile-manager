@@ -230,7 +230,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
           {p.lastProxyLocation && <div className="muted" title={`Last resolved proxy exit ${p.lastProxyLocation.ip}`}>
             Proxy exit {p.lastProxyLocation.ip} · Approx.: {[p.lastProxyLocation.city, p.lastProxyLocation.region, p.lastProxyLocation.country].filter(Boolean).join(', ')} · {p.lastProxyLocation.timezone} · {p.lastProxyLocation.radiusKm} km radius · {p.lastProxyLocation.source} · {p.lastProxyLocation.browserVerifiedAt ? 'Browser exit, timezone and coordinates checked at launch' : p.lastProxyLocation.browserExitVerifiedAt ? 'Browser exit checked at launch' : 'Proxy probe only'}
           </div>}
-          {p.advancedSettings?.runtime === 'azwah-native' && p.browserEngine !== 'firefox' && <div className="muted small">
+          {['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime) && p.browserEngine !== 'firefox' && <div className="muted small">
             {p.proxy && <>
               Proxy exit: {p.running && p.lastProxyLocation?.browserExitVerifiedAt ? 'Verified at startup' : 'No current browser verification'} ·{' '}
               Location: {p.running && p.lastProxyLocation ? 'Approximate GeoIP' : 'No current GeoIP result'} ·{' '}
@@ -242,7 +242,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
           {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
           {p.tabRestore?.enabled && <span className="tag" title={p.running ? 'Tab restore on — saved on graceful stop' : p.tabRestore.savedCount ? `${p.tabRestore.savedCount} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet'}>Tab restore{p.tabRestore.savedCount ? ` · ${p.tabRestore.savedCount}` : ''}</span>}
           {p.cdp && <div className="mono" title="Automation endpoint">{p.cdp.wsEndpoint || p.cdp.debuggerAddress}</div>}</td>}
-        {columns.engine !== false && <td className="col-engine">{p.browserEngine === 'firefox' ? 'Firefox' : p.advancedSettings?.runtime === 'azwah-native' ? 'Azwah Native Chromium (development)' : p.advancedSettings?.runtime === 'privacy' ? 'Azwah Privacy Engine (experimental)' : 'Chromium'}</td>}
+        {columns.engine !== false && <td className="col-engine">{p.browserEngine === 'firefox' ? 'Firefox' : ['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime) ? 'Azwah Native Chromium (development)' : p.advancedSettings?.runtime === 'privacy' ? 'Azwah Privacy Engine (experimental)' : p.advancedSettings?.runtime === 'stable-chrome' ? 'Google Chrome Stable' : 'Chromium'}</td>}
         {columns.storage !== false && <td className="col-storage" title="Stored in the local data folder">Local</td>}
         {columns.folder !== false && <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>}
         {columns.proxy !== false && <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}</td>}

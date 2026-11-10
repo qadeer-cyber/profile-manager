@@ -40,6 +40,7 @@ import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
 import { chooseLaunchUrls, readSavedTabs, snapshotTabUrls, writeSavedTabs } from './tab-restore.js';
 import { buildProfileLaunchPlan } from './browser-runtime/launch-plan.js';
 import { launchNativeChromium } from './browser-runtime/native-chromium.js';
+import { verifyStableBrowserLocation } from './browser-runtime/chrome-stable.js';
 import { launchAzwahNative } from './browser-runtime/azwah-native.js';
 import { launchPrivacyEngine, PROXY_IDENTITY_EXIT, PROXY_IDENTITY_ERROR } from './browser-runtime/privacy-engine.js';
 import { buildFirefoxLaunchPlan, launchFirefoxNative, geckoUserDataDir } from './browser-runtime/firefox-launch.js';
@@ -324,7 +325,7 @@ async function doLaunch(p, opts = {}) {
       return runInfo(p.id);
     }
     const dedicated = p.advancedSettings?.runtime === 'privacy';
-    const azwah = p.advancedSettings?.runtime === 'azwah-native';
+    const azwah = ['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime);
     if (!dedicated && !azwah) launchPlan = await buildProfileLaunchPlan(p, { ...opts, userDataDir: dir });
     relayUrl = launchPlan?.relayUrl || null;
     const { args, plan, regional, cdpPort } = launchPlan || {};
@@ -394,6 +395,9 @@ async function doLaunch(p, opts = {}) {
     }
     if (launchPlan.stable && !ctx.pages().length) {
       await ctx.waitForEvent('page', { timeout: 15000 });
+    }
+    if (launchPlan.requiredStable && launchPlan.locationMode === 'auto') {
+      await verifyStableBrowserLocation(ctx, launchPlan.stableLocation);
     }
     markContextReady(metricsHandle);
     assertLaunchNotCancelled(p.id);

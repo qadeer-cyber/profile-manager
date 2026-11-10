@@ -1,3 +1,4 @@
+import { resolveWindowsChromeStable } from './browser-runtime/chrome-stable.js';
 import { parseProxyLine } from './proxy-line.js';
 import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
 import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
@@ -118,6 +119,11 @@ export function browserStatus() {
     firefox: { path: firefoxPath, bundled: !!firefoxPath && firefoxPath === bundledFirefoxExecutable(), systemSearch: process.env.PM_PACKAGED !== '1' && process.env.PM_FIREFOX_NO_SYSTEM !== '1' } };
 }
 export function installBrowser({ install } = {}) {
+  if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
+    Object.assign(browserInstall, { state: 'failed', log: '', code: 'CHROME_STABLE_EXTERNAL',
+      error: 'Install Google Chrome Stable from https://www.google.com/chrome/ and retry.' });
+    return Promise.resolve();
+  }
   if (browserInstall.state === 'running') return null;
   // Already-present Chromium (bundled offline build or a previous download) is not fetched again.
   if (install == null && browserStatus().installed) {
@@ -1664,7 +1670,14 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     res.json(recoverOperation(req.params.id, { cleanup: req.body?.cleanup === true }));
   }));
   ui.get('/diagnostics', (req, res) => res.json(diagnostics()));
-  ui.get('/browser', (req, res) => res.json(browserStatus()));
+  ui.get('/browser', wrap(async (req, res) => {
+    const status = browserStatus();
+    if (process.env.AZWAH_STABLE_CHROME_EDITION !== '1') return res.json(status);
+    const chrome = await resolveWindowsChromeStable().catch(() => null);
+    return res.json({ ...status, installed: !!chrome, path: chrome?.path ?? null, custom: false,
+      chromium: chrome ? { ...chrome, source: 'chrome-stable' } : null, runtime: 'stable-chrome',
+      downloadUrl: 'https://www.google.com/chrome/' });
+  }));
   ui.get('/browser/compatibility', wrap((req, res) => {
     let pathValue = getSetting('executablePath', '');
     if (!pathValue) { try { pathValue = chromium.executablePath(); } catch {} }
