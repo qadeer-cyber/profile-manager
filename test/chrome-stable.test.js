@@ -56,8 +56,10 @@ test('Stable Chrome blocks destination resolution without a wildcard proxy excep
   assert.deepEqual(stableProxyNetworkArgs('proxy.example.org', false), [
     '--disable-quic', '--dns-prefetch-disable', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE proxy.example.org',
   ]);
-  for (const [host, relay] of [['proxy.example.org', true], ['[2001:db8::1]', false], ['192.0.2.1', false]]) {
-    assert.equal(stableProxyNetworkArgs(host, relay).at(-1), '--host-resolver-rules=MAP * ~NOTFOUND');
+  for (const [host, relay, expected] of [
+    ['proxy.example.org', true, '127.0.0.1'], ['[2001:db8::1]', false, '2001:db8::1'], ['192.0.2.1', false, '192.0.2.1'],
+  ]) {
+    assert.equal(stableProxyNetworkArgs(host, relay).at(-1), '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE ' + expected);
   }
   assert.throws(() => stableProxyNetworkArgs('proxy.example, EXCLUDE *', false), { code: 'CHROME_PROXY_HOST_INVALID' });
 });

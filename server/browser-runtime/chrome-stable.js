@@ -73,17 +73,13 @@ foreach ($candidate in ($paths | Select-Object -Unique)) {
 }
 
 export function stableProxyNetworkArgs(host, authenticated) {
-  // Chrome resolves only an unauthenticated proxy's hostname. The authenticated
-  // route uses the loopback relay, which resolves its own upstream.
-  const name = host.replace(/^\[|\]$/g, '');
-  let rules = 'MAP * ~NOTFOUND';
-  if (!authenticated && !isIP(name)) {
-    if (!/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
-      throw error('CHROME_PROXY_HOST_INVALID', 'Use a valid proxy hostname or IP address.');
-    }
-    rules += ', EXCLUDE ' + name;
+  // Chromium applies resolver mapping to the proxy endpoint too, even when
+  // it is an IP literal. Exempt only the actual endpoint seen by Chrome.
+  const name = authenticated ? '127.0.0.1' : host.replace(/^\[|\]$/g, '');
+  if (!isIP(name) && !/^[a-z0-9][a-z0-9.-]*$/i.test(name)) {
+    throw error('CHROME_PROXY_HOST_INVALID', 'Use a valid proxy hostname or IP address.');
   }
-  return ['--disable-quic', '--dns-prefetch-disable', '--host-resolver-rules=' + rules];
+  return ['--disable-quic', '--dns-prefetch-disable', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE ' + name];
 }
 
 export async function verifyStableBrowserLocation(context, expected, { verifyCoordinates = true } = {}) {
