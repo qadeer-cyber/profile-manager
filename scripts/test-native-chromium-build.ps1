@@ -1,7 +1,10 @@
 [CmdletBinding()]
-param([Parameter(Mandatory)][string] $Workspace)
+param(
+    [Parameter(Mandatory)][string] $Workspace,
+    [string] $OutputDirectory = 'src/out/azwah-native-development'
+)
 $ErrorActionPreference = 'Stop'
-$out = Join-Path $Workspace 'src/out/azwah-native-development'
+$out = Join-Path $Workspace $OutputDirectory
 $manifest = Get-Content -LiteralPath (Join-Path $out 'BASELINE-MANIFEST.json') -Raw | ConvertFrom-Json
 $repo = Split-Path -Parent $PSScriptRoot
 $pin = Get-Content -LiteralPath (Join-Path $repo 'native-chromium/upstream.json') -Raw | ConvertFrom-Json

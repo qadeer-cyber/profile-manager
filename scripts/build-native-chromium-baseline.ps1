@@ -30,14 +30,19 @@ param(
 
     [switch] $StartupObjectProbe,
 
-    [switch] $StartupCheckpoint
+    [switch] $StartupCheckpoint,
+
+    [switch] $FullCheckpoint
 )
 
 $ErrorActionPreference = 'Stop'
+if ($FullCheckpoint -and (!$AzwahSource -or !$CheckpointDirectory -or $CheckpointProbe -or $StartupObjectProbe)) {
+    throw 'FullCheckpoint requires Azwah source and its own checkpoint directory.'
+}
 if ($StartupCheckpoint -and (!$CheckpointProbe -or !$CheckpointDirectory)) {
     throw 'StartupCheckpoint requires CheckpointProbe and a checkpoint directory.'
 }
-if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
+if (($CheckpointProbe -or $FullCheckpoint) -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
     throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
 }
 if ($StartupObjectProbe -and (!$AzwahSource -or $CheckpointProbe)) {
@@ -81,6 +86,7 @@ function Invoke-BoundedBuildStage {
         while (!$stage.WaitForExit(1000)) {
             $now = Get-Date
             if ($MaxMinutes -and $now -ge $started.AddMinutes($MaxMinutes)) {
+                if ($FullCheckpoint -and $env:GITHUB_OUTPUT) { 'resume=true' | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
                 throw "Stopped $Program at the checkpoint deadline to reserve time for cache upload."
             }
             if ($now -ge $nextReport) {
@@ -208,7 +214,7 @@ try {
             & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -AlreadyApplied
         }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
-        if ($CheckpointProbe) { $out = 'out/azwah-checkpoint-probe' }
+        if ($CheckpointProbe -or $FullCheckpoint) { $out = 'out/azwah-checkpoint-probe' }
         if ($StartupObjectProbe) { $out = 'out/azwah-startup-object-probe' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
         if (Test-Path -LiteralPath $manifest -PathType Leaf) {
@@ -222,7 +228,7 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@
-        if ($CheckpointProbe) {
+        if ($CheckpointProbe -or $FullCheckpoint) {
             $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false' + "`n" + 'use_clang_modules = false'
         }
         if ($StartupObjectProbe) { $gnArgs += "`n" + 'use_siso = false' }
@@ -348,6 +354,51 @@ symbol_level = 0
             Write-Output "PASS native startup object $target SHA256=$hash"
             return
         }
+        if ($FullCheckpoint) {
+            $commands = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'commands', 'chrome')
+                $hostReport = & (Join-Path $PSScriptRoot 'test-native-windows-host.ps1') -Workspace $Workspace
+                if (!$hostReport.toolchainPresent -or !$hostReport.imageVersion) {
+                    throw 'Cannot fingerprint the Windows compiler environment.'
+                }
+                $ninjaExe = 'third_party/ninja/ninja.exe'
+                if (!(Test-Path -LiteralPath $ninjaExe -PathType Leaf)) {
+                    $ninjaExe = Join-Path $DepotTools 'ninja.exe'
+                }
+                $identity = [ordered]@{
+                    commit = $env:GITHUB_SHA
+                    image = $hostReport.imageVersion
+                    visual_studio = $hostReport.visualStudioVersion
+                    msvc = @($hostReport.msvcToolsets | ForEach-Object version | Sort-Object)
+                    sdk = @($hostReport.installedSdkDirectories | Sort-Object)
+                    sdk_debugger = $hostReport.x64DbgHelpVersion
+                    chromium = $ChromiumCommit
+                    depot_tools = $DepotToolsCommit
+                    workspace = $Workspace
+                    patch = (Get-FileHash -LiteralPath $sourcePatch).Hash
+                    gn_args = (Get-FileHash -LiteralPath $argsFile).Hash
+                    clang = (Get-FileHash -LiteralPath 'third_party/llvm-build/Release+Asserts/bin/clang-cl.exe').Hash
+                    gn = (Get-FileHash -LiteralPath 'buildtools/win/gn.exe').Hash
+                    ninja = (Get-FileHash -LiteralPath $ninjaExe).Hash
+                    sccache = (Get-FileHash -LiteralPath (Get-Command sccache.exe).Source).Hash
+                    targets = @('chrome')
+                    commands = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData(
+                        [Text.Encoding]::UTF8.GetBytes(($commands -join "`n"))))
+                }
+
+            $identityFile = Join-Path $CheckpointDirectory 'identity.json'
+            $prior = Get-Content -LiteralPath $identityFile -Raw | ConvertFrom-Json
+            foreach ($key in $identity.Keys) {
+                if ($env:GITHUB_JOB -eq 'build' -and $key -in @('commit', 'targets', 'commands')) { continue }
+                if ((ConvertTo-Json -InputObject $identity[$key] -Compress) -cne
+                    (ConvertTo-Json -InputObject $prior.$key -Compress)) {
+                    throw "Incompatible compiler checkpoint field: $key"
+                }
+            }
+            $identity | ConvertTo-Json | Set-Content -LiteralPath $identityFile
+            Copy-Item -LiteralPath $identityFile -Destination (Join-Path $env:RUNNER_TEMP 'azwah-full-identity.json')
+            $plan = Invoke-BuildTool $autoninja @('-C', $out, '-n', 'chrome') | Select-Object -Last 1
+            Write-Output "Full chrome graph dry-run: $plan"
+        }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
@@ -355,7 +406,8 @@ symbol_level = 0
             $targets += 'mini_installer'
             $outputFiles += 'mini_installer.exe'
         }
-        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets)
+        $compileBudget = if ($FullCheckpoint) { 265 } else { 0 }
+        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets) $compileBudget
         $files = $outputFiles | ForEach-Object {
             $file = Get-Item -LiteralPath (Join-Path $out $_)
             @{
@@ -372,6 +424,7 @@ symbol_level = 0
             files = @($files)
             sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
+        if ($FullCheckpoint) { 'linked=true' | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
     } finally {
         Pop-Location
     }
