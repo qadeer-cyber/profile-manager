@@ -4,6 +4,8 @@ import { dbipRecordLocation, parseDbipRelease } from '../server/dbip-location.js
 import { resolveProxyLocation } from '../server/proxy-location.js';
 
 const cases = [
+  ['4.2.2.2', 'US', 40.7128, -74.006, 'America/New_York', ['GMT-05:00', 'GMT-04:00']],
+  ['4.2.2.1', 'US', 41.8781, -87.6298, 'America/Chicago', ['GMT-06:00', 'GMT-05:00']],
   ['8.8.8.8', 'US', 37.422, -122.085, 'America/Los_Angeles', ['GMT-08:00', 'GMT-07:00']],
   ['1.1.1.1', 'DE', 52.52, 13.405, 'Europe/Berlin', ['GMT+01:00', 'GMT+02:00']],
   ['9.9.9.9', 'PK', 24.86, 67.01, 'Asia/Karachi', ['GMT+05:00', 'GMT+05:00']],

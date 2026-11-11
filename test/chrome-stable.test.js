@@ -32,23 +32,29 @@ test('guards existing Chrome profile data against version downgrade', t => {
 
 test('Stable Chrome identity gate rejects mismatches and clears its temporary location permission', async () => {
   const expected = { ip: '8.8.8.8', timezone: 'Europe/Berlin', latitude: 52.5, longitude: 13.4, accuracy: 50000 };
-  for (const mismatch of [null, 'ip', 'redirect', 'timezone', 'coordinates']) {
+  for (const mismatch of [null, 'ip', 'redirect', 'timezone', 'offset', 'coordinates', 'denied']) {
     const calls = [];
     const page = {
       goto: async () => ({ ok: () => true, url: () => mismatch === 'redirect' ? 'https://elsewhere.example/' : 'https://api64.ipify.org/', json: async () => ({ ip: mismatch === 'ip' ? '1.1.1.1' : expected.ip }) }),
-      evaluate: async () => calls.includes('grant')
+      evaluate: async (_, samples) => calls.includes('grant')
         ? { ...expected, accuracy: mismatch === 'coordinates' ? 50 : expected.accuracy }
-        : mismatch === 'timezone' ? 'UTC' : expected.timezone,
+        : { timezone: mismatch === 'timezone' ? 'UTC' : expected.timezone,
+            offsets: samples.map(date => {
+              if (mismatch === 'offset') return 0;
+              const text = new Intl.DateTimeFormat('en', { timeZone: expected.timezone, timeZoneName: 'shortOffset' })
+                .formatToParts(new Date(date)).find(part => part.type === 'timeZoneName').value;
+              return Number(text.slice(3)) * 60;
+            }) },
       close: async () => { calls.push('close'); },
     };
     const context = { newPage: async () => page,
       grantPermissions: async () => { calls.push('grant'); },
       clearPermissions: async () => { calls.push('clear'); },
     };
-    const check = verifyStableBrowserLocation(context, expected);
-    if (mismatch) await assert.rejects(check, { code: 'PROXY_BROWSER_IDENTITY_FAILED' });
+    const check = verifyStableBrowserLocation(context, expected, { verifyCoordinates: mismatch !== 'denied' });
+    if (mismatch && mismatch !== 'denied') await assert.rejects(check, { code: 'PROXY_BROWSER_IDENTITY_FAILED' });
     else await check;
-    assert.deepEqual(calls, ['ip', 'redirect', 'timezone'].includes(mismatch) ? ['close'] : ['grant', 'clear', 'close']);
+    assert.deepEqual(calls, ['ip', 'redirect', 'timezone', 'offset', 'denied'].includes(mismatch) ? ['close'] : ['grant', 'clear', 'close']);
   }
 });
 

@@ -466,11 +466,11 @@ async function doLaunch(p, opts = {}) {
       const key = 'proxy-location:' + p.id;
       const verifyCoordinates = p.advancedSettings?.geolocation?.permission !== 'deny';
       try {
-        await verifyStableBrowserLocation(ctx, launchPlan.stableLocation, { verifyCoordinates });
+        const { utcOffsetMinutes } = await verifyStableBrowserLocation(ctx, launchPlan.stableLocation, { verifyCoordinates });
         if (!stableProxyAssignment(p)) throw httpErr(409, 'The proxy changed during launch. Retry with the current assignment.', 'PROXY_BROWSER_IDENTITY_FAILED');
         const { browserVerifiedAt, ...location } = launchPlan.stableLocation;
         const checkedAt = Date.now();
-        verifiedStableLocation = { ...location, browserExitVerifiedAt: checkedAt,
+        verifiedStableLocation = { ...location, utcOffsetMinutes, browserExitVerifiedAt: checkedAt,
           browserTimezoneVerifiedAt: checkedAt, ...(verifyCoordinates ? { browserVerifiedAt: checkedAt } : {}) };
         setSetting(key, verifiedStableLocation);
       } catch (error) {

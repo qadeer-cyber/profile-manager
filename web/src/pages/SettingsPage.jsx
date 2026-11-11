@@ -23,7 +23,7 @@ function GeoIpSettings() {
   return <section className="panel" id="geoip">
     <h2>Proxy location</h2>
     <p>Auto Location uses the assigned proxy’s verified public exit. Locations are approximate and timezones are inferred from coordinates. IP geolocation by <a href="https://db-ip.com/" target="_blank" rel="noreferrer">DB-IP City Lite</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">CC BY 4.0</a>). MaxMind is optional.</p>
-    <p>{state?.configured ? 'Provider credentials configured' : 'Provider credentials unavailable'}</p>
+    <p>{state?.configured ? 'MaxMind advanced provider configured' : 'Using offline DB-IP City Lite'}</p>
     <label>MaxMind account ID<input inputMode="numeric" value={account} onChange={event => setAccount(event.target.value)} autoComplete="off" /></label>
     <label>MaxMind license key<input type="password" value={license} onChange={event => setLicense(event.target.value)} autoComplete="new-password" /></label>
     <div className="row">

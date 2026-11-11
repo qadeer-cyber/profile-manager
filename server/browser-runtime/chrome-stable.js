@@ -94,10 +94,27 @@ export async function verifyStableBrowserLocation(context, expected, { verifyCoo
       throw new Error('Exit IP mismatch');
     }
     stage = 'page timezone';
-    const timezone = await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+    const instant = new Date();
+    const year = instant.getUTCFullYear();
+    const samples = [instant.toISOString(), `${year}-01-15T12:00:00Z`, `${year}-07-15T12:00:00Z`];
+    const { timezone, offsets } = await page.evaluate(dates => ({
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      offsets: dates.map(date => -new Date(date).getTimezoneOffset()),
+    }), samples);
     if (new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone !== expected.timezone) {
       throw new Error('Timezone mismatch');
     }
+    const formatter = new Intl.DateTimeFormat('en', { timeZone: expected.timezone, timeZoneName: 'longOffset' });
+    const expectedOffsets = samples.map(date => {
+      const name = formatter.formatToParts(new Date(date)).find(part => part.type === 'timeZoneName').value;
+      if (name === 'GMT') return 0;
+      const match = /^GMT([+-])(\d\d):(\d\d)$/.exec(name);
+      if (!match) throw new Error('Unexpected timezone offset');
+      return (match[1] === '-' ? -1 : 1) * (Number(match[2]) * 60 + Number(match[3]));
+    });
+    stage = 'browser UTC offsets';
+    if (!Array.isArray(offsets) || offsets.length !== expectedOffsets.length ||
+        !expectedOffsets.every((offset, index) => offsets[index] === offset)) throw new Error('Timezone offset mismatch');
     if (verifyCoordinates) {
       stage = 'browser geolocation';
       await context.grantPermissions(['geolocation'], { origin: 'https://api64.ipify.org' });
@@ -110,6 +127,7 @@ export async function verifyStableBrowserLocation(context, expected, { verifyCoo
       if (!['latitude', 'longitude', 'accuracy'].every(key => Number.isFinite(coordinates[key]) &&
         Math.abs(coordinates[key] - expected[key]) < 0.000001)) throw new Error('Coordinates mismatch');
     }
+    return { utcOffsetMinutes: offsets[0] };
   } catch {
     throw error('PROXY_BROWSER_IDENTITY_FAILED', `Chrome could not verify the ${stage}. Check the proxy and GeoIP configuration, then retry.`);
   } finally {
