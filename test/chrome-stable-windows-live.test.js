@@ -9,7 +9,7 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 import { resolveWindowsChromeStable } from '../server/browser-runtime/chrome-stable.js';
 
-test('visible signed Windows Chrome Stable applies manual location through the private pipe', { timeout: 120000 }, async () => {
+test('visible signed Windows Chrome Stable applies manual location through the private pipe', { timeout: 180000 }, async () => {
   assert.equal(process.platform, 'win32');
   const execute = promisify(execFile);
   const stable = await resolveWindowsChromeStable({ run: async (...args) => {
@@ -62,6 +62,13 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     const peerEndpoint = '/profiles/' + peer.id;
     const peerRun = await api('POST', peerEndpoint + '/launch', { headless: false, url: origin });
     const peerPage = engine.liveContext(peer.id).pages()[0];
+    const third = await api('POST', '/profiles', { name: 'Third independent Stable fixture',
+      advancedSettings: { runtime: 'stable-chrome' },
+      browserSettings: { timezoneId: 'Asia/Karachi', locale: 'ur-PK', languages: ['ur-PK', 'ur'] } }, 201);
+    const thirdEndpoint = '/profiles/' + third.id;
+    const thirdRun = await api('POST', thirdEndpoint + '/launch', { headless: false, url: origin });
+    assert.notEqual(thirdRun.pid, peerRun.pid);
+    const thirdPage = engine.liveContext(third.id).pages()[0];
     const blocked = await api('POST', '/profiles', { name: 'Rejected proxy fixture',
       advancedSettings: { runtime: 'stable-chrome' },
       proxy: { type: 'http', host: '127.0.0.1', port: rejectedProxy.address().port, username: 'fixture', password: 'invalid' } }, 201);
@@ -98,6 +105,7 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       assert.equal(current.cdp, undefined, 'No public debugging port for ordinary browsing');
       assert.ok(Number.isSafeInteger(current.pid) && current.pid > 0);
       assert.notEqual(current.pid, peerRun.pid);
+      assert.notEqual(current.pid, thirdRun.pid);
       const actual = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
         `(Get-Process -Id ${current.pid}).Path`], { encoding: 'utf8', timeout: 10000 }).trim();
       assert.equal(actual.toLowerCase(), stable.path.toLowerCase());
@@ -134,6 +142,9 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       if (run === 0) assert.equal(stored.session, 'profile-a');
       await peerPage.reload();
       assert.deepEqual(await storage(peerPage), { cookie: '', local: null, session: null, databases: [], caches: [], workers: 0 });
+      await thirdPage.reload();
+      assert.deepEqual(await storage(thirdPage), { cookie: '', local: null, session: null, databases: [], caches: [], workers: 0 });
+      assert.equal(await thirdPage.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), 'Asia/Karachi');
       assert.equal(await peerPage.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), 'Europe/Berlin');
       assert.deepEqual(await first.evaluate(() => [new Date('2025-01-15T12:00Z').getTimezoneOffset(),
         new Date('2025-07-15T12:00Z').getTimezoneOffset()]), [480, 420]);
@@ -157,9 +168,10 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       }
       await api('POST', endpoint + '/stop');
     }
-    console.log(JSON.stringify({ identity: 'stock Chrome', version: stable.version, profiles: 2, consistentAcrossTabsAndRelaunch: true,
+    console.log(JSON.stringify({ identity: 'stock Chrome', version: stable.version, profiles: 3, consistentAcrossTabsAndRelaunch: true,
       checked: ['UA header', 'UA client hints brand/version/platform', 'locale', 'ordered languages', 'canvas sample', 'hardware concurrency'] }));
     await api('POST', peerEndpoint + '/stop');
+    await api('POST', thirdEndpoint + '/stop');
   } finally {
     try { await server?.close(); } finally {
       rejectedProxy.close();

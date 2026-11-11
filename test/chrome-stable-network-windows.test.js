@@ -44,6 +44,9 @@ test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and re
   const stable = await resolveWindowsChromeStable();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-proxy-route-'));
   let context, tlsTarget;
+  const netLog = path.join(dir, 'fixture-netlog.json');
+  const domain = 'azwah-routing.invalid';
+  let ipv6Hits = 0;
   let directHits = 0;
   const routed = new Set();
   const tunnels = new Set();
@@ -62,10 +65,25 @@ test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and re
   stun.on('message', data => {
     if (data.length >= 20 && data.readUInt32BE(4) === 0x2112a442) stunPackets++;
   });
-  const ipv6 = createServer((req, res) => res.end(req.socket.remoteFamily + ' via relay'));
+  const ipv6 = createServer((req, res) => { ipv6Hits++; res.end(req.socket.remoteFamily + ' via relay'); });
   let ipv6Target;
   const relay = createServer((req, res) => {
     routed.add(req.url);
+    if (req.url === 'http://' + domain + '/redirect') {
+      res.writeHead(302, { Location: 'http://' + domain + '/page' });
+      res.end();
+      return;
+    }
+    if (req.url === 'http://' + domain + '/page') {
+      res.setHeader('Content-Type', 'text/html');
+      res.end('<script src="/subresource"></script>');
+      return;
+    }
+    if (req.url === 'http://' + domain + '/subresource') {
+      res.setHeader('Content-Type', 'application/javascript');
+      res.end('window.proxySubresourceLoaded = true;');
+      return;
+    }
     if (req.url === ipv6Target) {
       get({ hostname: '::1', port: ipv6.address().port, path: '/azwah-v6' }, upstream => {
         res.writeHead(upstream.statusCode);
@@ -121,7 +139,7 @@ test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and re
       executablePath: stable.path, chromiumSandbox: true, ignoreDefaultArgs: true,
       headless: false, viewport: null,
       args: ['--remote-debugging-pipe', '--user-data-dir=' + dir, '--no-first-run',
-        '--proxy-server=' + proxy, '--proxy-bypass-list=<-loopback>',
+        '--log-net-log=' + netLog, '--proxy-server=' + proxy, '--proxy-bypass-list=<-loopback>',
         '--ignore-certificate-errors-spki-list=' + pin,
         ...stableProxyNetworkArgs('127.0.0.1', false), '--force-webrtc-ip-handling-policy=disable_non_proxied_udp', 'about:blank'],
     });
@@ -131,6 +149,13 @@ test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and re
     assert.equal(await response.text(), 'proxy connection');
     assert.ok(routed.has(url));
     assert.equal(directHits, 0);
+    const tab = await context.newPage();
+    await tab.goto('http://' + domain + '/redirect', { timeout: 10000 });
+    assert.equal(await tab.evaluate(() => window.proxySubresourceLoaded), true);
+    for (const route of ['/redirect', '/page', '/subresource']) {
+      assert.ok(routed.has('http://' + domain + route), 'Proxy receives the destination hostname');
+    }
+    await tab.close();
     const v6 = await page.goto(ipv6Target, { timeout: 10000 });
     assert.equal(await v6.text(), 'IPv6 via relay');
     assert.ok(routed.has(ipv6Target));
@@ -174,6 +199,19 @@ test('signed Chrome uses the explicit proxy for loopback HTTP, WS and WSS and re
     await assert.rejects(page.goto(url + '-outage', { timeout: 10000 }),
       /ERR_PROXY_CONNECTION_FAILED|ERR_CONNECTION_REFUSED/);
     assert.equal(directHits, 0);
+    await assert.rejects(page.goto(ipv6Target + '-outage', { timeout: 10000 }),
+      /ERR_PROXY_CONNECTION_FAILED|ERR_CONNECTION_REFUSED/);
+    assert.equal(ipv6Hits, 1, 'Browser must not contact the reachable IPv6 target directly after outage');
+    await context.close();
+    context = undefined;
+    const log = JSON.parse(fs.readFileSync(netLog, 'utf8'));
+    const dnsEvents = new Set(Object.entries(log.constants.logEventTypes)
+      .filter(([name]) => name.startsWith('DNS_TRANSACTION') || name === 'HOST_RESOLVER_SYSTEM_TASK')
+      .map(([, id]) => id));
+    assert.ok(dnsEvents.size > 0, 'Chrome exposes DNS and resolver NetLog event types');
+    assert.equal(log.events.filter(event => dnsEvents.has(event.type) &&
+      JSON.stringify(event.params || {}).includes(domain)).length, 0,
+    'Chrome NetLog recorded no DNS transaction or system resolver task for the controlled hostname');
   } finally {
     for (const socket of sockets) socket.destroy();
     try { await context?.close(); } finally {
