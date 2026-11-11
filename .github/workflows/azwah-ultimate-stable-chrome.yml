@@ -1,15 +1,16 @@
-name: Azwah Ultimate Stable Chrome Windows installer
+name: AZWAH Windows installer acceptance
 on:
   push:
-    branches: [release/azwah-ultimate-stable-chrome]
+    branches: [release/azwah-windows]
   workflow_dispatch:
 permissions:
   contents: read
+  actions: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/release/azwah-ultimate-stable-chrome'
+    if: github.ref == 'refs/heads/release/azwah-windows'
     runs-on: windows-2022
-    timeout-minutes: 50
+    timeout-minutes: 65
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
@@ -25,12 +26,21 @@ jobs:
           $ErrorActionPreference = 'Stop'
           npm ci --no-audit --no-fund
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --input-type=module -e "import {resolveWindowsChromeStable as detect} from './server/browser-runtime/chrome-stable.js'; console.log(await detect())"
+          $version = node --input-type=module -e "import {resolveWindowsChromeStable as detect} from './server/browser-runtime/chrome-stable.js'; console.log((await detect()).version)"
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw 'Chrome Stable version verification failed.' }
+          "AZWAH_ACCEPTANCE_CHROME=$version" | Add-Content $env:GITHUB_ENV
+          Write-Output "Signed Chrome Stable x64 $version"
+      - name: Unit and security checks
+        shell: pwsh
+        run: |
+          npm run test:unit
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:security
           exit $LASTEXITCODE
       - name: Stable Chrome and migration tests
         shell: pwsh
         run: |
-          node --test test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+          node --test test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
           exit $LASTEXITCODE
       - name: Build Office payload and Ultimate NSIS without a Chrome binary
         shell: pwsh
@@ -53,35 +63,25 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = 'release-ultimate-stable'
-          $name = 'Azwah-Ultimate-Stable-Chrome-Setup-x64.exe'
+          $name = 'Azwah-Setup-x64.exe'
           $exe = Get-Item (Join-Path $dir $name)
           $hash = (Get-FileHash -LiteralPath $exe.FullName).Hash.ToLowerInvariant()
           "$hash  $name" | Set-Content (Join-Path $dir 'SHA256SUMS.txt')
           $manifest = @("Source: $env:GITHUB_SHA", "Bytes: $($exe.Length)", "SHA-256: $hash",
-            'Browser: external, signed Google Chrome Stable x64', 'Host: Windows Server 2022',
+            "Browser: external, signed Google Chrome Stable x64 $env:AZWAH_ACCEPTANCE_CHROME", 'Host: Windows Server 2022',
             'Windows 10/11 client acceptance: pending', 'Unsigned installer candidate')
           $manifest | Set-Content (Join-Path $dir 'BUILD-MANIFEST.txt')
           $manifest | Add-Content $env:GITHUB_STEP_SUMMARY
           $manifest | Write-Output
-      - uses: actions/upload-artifact@v4
-        with:
-          name: azwah-ultimate-stable-chrome-x64-${{ github.sha }}
-          path: |
-            release-ultimate-stable/Azwah-Ultimate-Stable-Chrome-Setup-x64.exe
-            release-ultimate-stable/SHA256SUMS.txt
-            release-ultimate-stable/BUILD-MANIFEST.txt
-          retention-days: 7
-          compression-level: 0
-          if-no-files-found: error
       - name: Install, launch Chrome Stable, stop and uninstall
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $dir = Join-Path $env:RUNNER_TEMP 'azwah-stable-install'
-          $installer = Resolve-Path 'release-ultimate-stable/Azwah-Ultimate-Stable-Chrome-Setup-x64.exe'
+          $installer = Resolve-Path 'release-ultimate-stable/Azwah-Setup-x64.exe'
           $setup = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
           if ($setup.ExitCode -ne 0) { throw "Setup failed with exit $($setup.ExitCode)" }
-          $app = Join-Path $dir 'Azwah Multi Browser Ultimate.exe'
+          $app = Join-Path $dir 'AZWAH.exe'
           $env:PM_SMOKE = '1'
           $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'azwah-stable-smoke.json'
           $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-stable-smoke-data'
@@ -101,5 +101,65 @@ jobs:
       - name: Test concurrent Chrome isolation, timezone, geolocation and failed proxy
         shell: pwsh
         run: |
-          node --test --test-force-exit test/chrome-stable-windows-live.test.js
+          node --test --test-force-exit test/chrome-stable-windows-live.test.js test/chrome-stable-network-windows.test.js
           exit $LASTEXITCODE
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42790260276
+          name: azwah-ultimate-stable-chrome-x64-4a45831209cbf603ff9328a086f8f5f7ad5dd118
+          path: prior
+      - name: Verify in-place upgrade and preserve the profile database
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PM_SMOKE = '1'
+          $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-upgrade-data'
+          $dir = Join-Path $env:RUNNER_TEMP 'azwah-upgrade-install'
+          $db = Join-Path $env:PM_USER_DATA 'data/profiles.db'
+          function ProfileIds {
+            node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.argv[1],{readOnly:true}); for(const r of db.prepare('SELECT id FROM profiles ORDER BY id').all()) console.log(r.id)" $db
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect installed profile database.' }
+          }
+          function InstallAndSmoke($folder, $name, $appName, $expectedHash) {
+            $app = Join-Path $dir $appName
+            $exe = Resolve-Path (Join-Path $folder $name)
+            $actual = (Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant()
+            if ($actual -ne $expectedHash) { throw 'Historical installer SHA-256 mismatch.' }
+            Write-Output "$folder EXE SHA256=$actual"
+            $setup = Start-Process -FilePath $exe -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
+            if ($setup.ExitCode -ne 0) { throw 'Install or upgrade failed.' }
+            $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP "$folder-smoke.json"
+            $proc = Start-Process -FilePath $app -PassThru
+            try {
+              if (!$proc.WaitForExit(120000)) { throw 'Installed Chrome smoke timed out.' }
+              $smoke = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
+              if ($proc.ExitCode -ne 0 -or !$smoke.chromeStable -or !$smoke.stopped) { throw 'Installed Chrome smoke failed.' }
+            } finally { if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
+          }
+          InstallAndSmoke prior 'Azwah-Ultimate-Stable-Chrome-Setup-x64.exe' 'Azwah Multi Browser Ultimate.exe' '5e21b46f79dc471fbfb144c1d4eaddb6d89b53549988ffa734a1b9196c0019f9'
+          $priorIds = @(ProfileIds)
+          if ($priorIds.Count -lt 1) { throw 'Prior installation did not create a profile.' }
+          $expected = ((Get-Content -Raw 'release-ultimate-stable/SHA256SUMS.txt').Trim() -split '\s+')[0]
+          InstallAndSmoke release-ultimate-stable 'Azwah-Setup-x64.exe' 'AZWAH.exe' $expected
+          $nextIds = @(ProfileIds)
+          if ($nextIds.Count -le $priorIds.Count -or @($priorIds | Where-Object { $_ -notin $nextIds }).Count) {
+            throw 'Existing profile IDs were lost during upgrade.'
+          }
+          $uninstaller = Get-ChildItem -LiteralPath $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          if (!$uninstaller) { throw 'Missing uninstaller.' }
+          $removed = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($removed.ExitCode -ne 0 -or (Test-Path (Join-Path $dir 'AZWAH.exe')) -or !(Test-Path $db)) { throw 'Uninstall retention failed.' }
+          $after = @(ProfileIds)
+          if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
+          Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: azwah-windows-x64-${{ github.sha }}
+          path: |
+            release-ultimate-stable/Azwah-Setup-x64.exe
+            release-ultimate-stable/SHA256SUMS.txt
+            release-ultimate-stable/BUILD-MANIFEST.txt
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error

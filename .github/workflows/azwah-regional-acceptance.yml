@@ -1,14 +1,14 @@
 name: Azwah authorized regional Chrome acceptance
 on:
   push:
-    branches: [hardening/azwah-ultimate-stable-chrome]
+    branches: [release/azwah-windows]
     paths: [.github/workflows/azwah-regional-acceptance.yml]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   credentials:
-    if: github.ref == 'refs/heads/hardening/azwah-ultimate-stable-chrome'
+    if: github.ref == 'refs/heads/release/azwah-windows'
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:

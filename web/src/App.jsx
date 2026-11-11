@@ -29,7 +29,7 @@ export function App() {
   const [scope, setScope] = useState('all');
   const [folderQuery, setFolderQuery] = useState('');
   const [folderDialog, setFolderDialog] = useState(null);
-  useEffect(()=>{api('/api/activation').then(state=>{setEdition(state);if(state.edition==='ultimate')document.title='Azwah Multi Browser Ultimate';if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
+  useEffect(()=>{api('/api/activation').then(state=>{setEdition(state);if(state.edition==='ultimate')document.title='AZWAH';if(state.edition==='owner-personal')document.title='Azwah Multi Browser Owner';if(state.enforced&&!state.active)setPage('activation');}).catch(()=>{});},[]);
   const [folder, setFolder] = useState('__all');
   const [workspaceFilter, setWorkspaceFilter] = useState('');
   const [theme, setTheme] = useTheme();
@@ -89,7 +89,7 @@ export function App() {
     {folderDialog && <ProfileFolderDialog from={folderDialog.from} onClose={() => setFolderDialog(null)}
       onSaved={path => { setFolderDialog(null); showProfiles(path); reloadMeta(); }} />}
     <header className="topbar">
-      <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="22" height="22" /></span><span>Azwah</span></div>
+      <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="22" height="22" /></span><span>AZWAH</span></div>
       <nav className="topnav" aria-label="Main">
         {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} title={label} onClick={() => { setPage(k); if (k === 'profiles') { setScope('all'); setFolder('__all'); } }}>
           <Icon name={k === 'cookie-robot' ? 'bolt' : k} />{label}
