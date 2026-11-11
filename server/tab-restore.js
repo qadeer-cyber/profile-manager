@@ -85,8 +85,8 @@ export function snapshotTabUrls(pages, { preserveDuplicates = false } = {}) {
     let raw = '';
     try { raw = typeof page.url === 'function' ? page.url() : ''; } catch { raw = ''; }
     const eligible = eligibleTabUrl(raw);
-    if (eligible && !urls.includes(eligible)) urls.push(eligible);
-    if (urls.length >= MAX_RESTORED_TABS) break;
+    if (eligible && (preserveDuplicates || !urls.includes(eligible))) urls.push(eligible);
+    if (!preserveDuplicates && urls.length >= MAX_RESTORED_TABS) break;
   }
   return urls;
 }
