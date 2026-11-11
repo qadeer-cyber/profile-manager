@@ -115,7 +115,10 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       if (run === 1) {
         const deadline = Date.now() + 15000;
         while (Date.now() < deadline && context.pages().length < sessionUrls.length) await new Promise(resolve => setTimeout(resolve, 100));
-        assert.deepEqual(context.pages().map(page => page.url()), sessionUrls, 'Chrome restores all tabs in order, including duplicates');
+        // Restored CDP targets attach asynchronously. Playwright's page list is
+        // not Chrome's visible tab-strip order.
+        assert.deepEqual(context.pages().map(page => page.url()).sort(), [...sessionUrls].sort(),
+          'Chrome restores every tab URL, including duplicate instances');
       }
       const first = context.pages()[0];
       await first.goto(origin);
