@@ -59,6 +59,12 @@ export function ProxiesPage() {
       <div className="row"><button onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import</button>
         <button onClick={() => setDialog({ kind: 'edit', data: null, template: true })}>New template</button>
         <button className="primary" onClick={() => setDialog({ kind: 'edit', data: null })}><Icon name="plus" /> Add proxy</button></div></header>
+    {summary && <div className="proxy-summary">
+      <section className="stat"><span>Working</span><b className="ok-text">{summary.testedOk}</b></section>
+      <section className="stat"><span>Failing</span><b className="err-text">{summary.testedFailed}</b></section>
+      <section className="stat"><span>Templates</span><b>{summary.templates}</b></section>
+      <section className="stat"><span>Provider accounts</span><b>{summary.providerAccounts}</b></section>
+    </div>}
     {analytics && <p className="muted small">{analytics.note} Local checks (7d): {analytics.checksLast7Days}{analytics.avgOkLatencyMs != null ? ` · avg ok latency ${analytics.avgOkLatencyMs} ms` : ''} · {analytics.profilesDirect} direct / {analytics.profilesAssigned} proxied profiles.</p>}
     {!!groups.length && <div className="chips">{groups.slice(0, 12).map(g => <button key={g.tag} type="button" className="tag" onClick={() => setTag(g.tag === '_untagged' ? '' : g.tag)}>{g.tag === '_untagged' ? 'Untagged' : g.tag} ({g.count})</button>)}</div>}
     <div className="toolbar">
@@ -76,7 +82,7 @@ export function ProxiesPage() {
       <th>Status</th><th>Name</th><th>Address</th><th>Auth</th><th>Tags</th><th>Profiles</th><th>Last test</th><th></th></tr></thead><tbody>
       {lib.list.map(p => { const st = p.lastTest?.status || 'untested'; return <tr key={p.id} className={S.sel.has(p.id) ? 'selected' : ''}>
         <td className="cb"><input type="checkbox" aria-label={'Select ' + p.name} checked={S.sel.has(p.id)} onChange={() => S.toggle(p.id)} /></td>
-        <td><span className={'status ' + ({ ok: 'running', failed: 'error' }[st] || 'stopped')}><i />{testing[p.id] ? 'Testing' : { ok: 'Working', failed: 'Failing', untested: 'Untested' }[st]}</span></td>
+        <td><span className={'status ' + (testing[p.id] ? 'testing' : ({ ok: 'running', failed: 'error' }[st] || 'stopped'))}><i />{testing[p.id] ? 'Testing' : { ok: 'Working', failed: 'Failing', untested: 'Untested' }[st]}</span></td>
         <td className="name">{p.name}</td>
         <td className="mono-sm">{p.type}://{p.host}:{p.port}</td>
         <td>{p.username ? <span title={p.hasPassword ? 'Username and password' : 'Username only'}><Icon name="lock" size={12} /> {p.username}</span> : <span className="muted">None</span>}</td>

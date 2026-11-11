@@ -182,7 +182,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <button onClick={() => setDialog({ kind: 'import' })}>Import</button>
       <button aria-label="Export selected" disabled={!one || one.running} onClick={() => setDialog({ kind: 'portable', data: one })}>Export</button>
       <button className="ghost-danger" aria-label="Delete selected" disabled={!selected.length || bulkBusy} onClick={() => selected.length === 1 ? setDialog({ kind: 'delete', data: selected[0] }) : setDialog({ kind: 'bulk-delete' })}><Icon name="trash" /></button>
-      <div className="search"><Icon name="search" /><input type="search" placeholder="Search" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} /></div>
+      <div className="search"><Icon name="search" /><input type="search" aria-label="Search profiles" placeholder="Search profiles…" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} /></div>
       <button type="button" aria-expanded={columnsOpen} onClick={() => setColumnsOpen(v => !v)}>Columns</button>
     </div>
     {columnsOpen && <div className="column-picker" role="group" aria-label="Visible columns">{COLUMN_DEFS.map(([key, label]) => <label key={key} className="check"><input type="checkbox" checked={columns[key] !== false} onChange={e => setColumns(current => ({ ...current, [key]: e.target.checked }))} />{label}</label>)}</div>}
@@ -227,7 +227,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
         {columns.status !== false && <td className="col-status"><span className={'status ' + st.key}><i />{st.label}</span></td>}
         {columns.name !== false && <td className="col-name"><div className="name-line"><span className="name">{p.name}</span>{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>
           {st.showError && <div className="err-text small clamp" title={p.last_error}>{crashSummary(p.last_error)}</div>}
-          {p.lastProxyLocation && <div className="muted" title={`Last resolved proxy exit ${p.lastProxyLocation.ip}`}>
+          {p.lastProxyLocation && <div className="proxy-evidence" title={`Last resolved proxy exit ${p.lastProxyLocation.ip}`}>
             Proxy exit {p.lastProxyLocation.ip} · Approx.: {[p.lastProxyLocation.city, p.lastProxyLocation.region, p.lastProxyLocation.country].filter(Boolean).join(', ')} · {p.lastProxyLocation.timezone} · {Number.isFinite(p.lastProxyLocation.utcOffsetMinutes) ? 'UTC offset ' + (p.lastProxyLocation.utcOffsetMinutes >= 0 ? '+' : '') + p.lastProxyLocation.utcOffsetMinutes + ' min · ' : ''}{p.lastProxyLocation.latitude?.toFixed(2)}, {p.lastProxyLocation.longitude?.toFixed(2)} · {p.lastProxyLocation.radiusKm == null ? 'Provider accuracy radius unavailable' : p.lastProxyLocation.radiusKm + ' km provider radius'} · {p.lastProxyLocation.source} · {p.lastProxyLocation.browserVerifiedAt ? 'Browser exit, timezone and coordinates checked at launch' : p.lastProxyLocation.browserTimezoneVerifiedAt ? 'Browser exit and timezone checked at launch' : p.lastProxyLocation.browserExitVerifiedAt ? 'Browser exit checked at launch' : 'Proxy probe only'} · {new Date(p.lastProxyLocation.browserExitVerifiedAt || p.lastProxyLocation.expiresAt - 86_400_000).toLocaleString()}
           </div>}
           {['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime) && p.browserEngine !== 'firefox' && <div className="muted small">

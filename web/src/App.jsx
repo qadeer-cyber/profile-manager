@@ -25,6 +25,7 @@ const MORE = [['dashboard', 'Dashboard'], ['templates', 'Templates'], ['monitori
 export function App() {
   const toast = useToast();
   const [page, setPage] = useState('profiles');
+  const [backupRequest, setBackupRequest] = useState(0);
   const [edition, setEdition] = useState(null);
   const [scope, setScope] = useState('all');
   const [folderQuery, setFolderQuery] = useState('');
@@ -47,7 +48,7 @@ export function App() {
     const onKey = event => {
       const target = event.target;
       if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
-      if (event.key === '/' && page === 'profiles') { event.preventDefault(); document.querySelector('.search input')?.focus(); return; }
+      if (event.key === '/') { event.preventDefault(); document.querySelector(page === 'profiles' ? '.search input' : '.command-search input')?.focus(); return; }
       if (event.key === 'n' && page === 'profiles') { event.preventDefault(); document.querySelector('[data-action=new-profile]')?.click(); return; }
       if (event.key === 'g') { prefix = 'g'; return; }
       if (prefix === 'g') {
@@ -90,11 +91,11 @@ export function App() {
       onSaved={path => { setFolderDialog(null); showProfiles(path); reloadMeta(); }} />}
     <header className="topbar">
       <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="22" height="22" /></span><span>AZWAH</span></div>
-      <nav className="topnav" aria-label="Main">
-        {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} title={label} onClick={() => { setPage(k); if (k === 'profiles') { setScope('all'); setFolder('__all'); } }}>
-          <Icon name={k === 'cookie-robot' ? 'bolt' : k} />{label}
-        </button>)}
-      </nav>
+      <form className="command-search" role="search" onSubmit={event => { event.preventDefault(); const query = new FormData(event.currentTarget).get('destination').trim().toLowerCase(); const match = query && [...NAV, ...MORE, ['trash', 'Trash']].find(([,label]) => label.toLowerCase().includes(query)); if (match) { setPage(match[0]); event.currentTarget.reset(); } }}>
+        <Icon name="search" /><input name="destination" aria-label="Find a page" placeholder="Find a page…" list="azwah-destinations" />
+        <datalist id="azwah-destinations">{[...NAV, ...MORE, ['trash', 'Trash']].map(([key,label]) => <option key={key} value={label} />)}</datalist>
+      </form>
+      {page === 'profiles' && <button className="primary top-create" onClick={() => document.querySelector('[data-action=new-profile]')?.click()}>＋ New profile</button>}
       <div className="top-meta">
         <span className="edition-pill">{edition?.edition === 'owner-personal' ? 'Owner' : edition?.active ? 'Office' : edition?.enforced ? 'Office · not activated' : 'Local'}</span>
         <div className="seg sm" role="radiogroup" aria-label="Theme">{[['light', 'Light theme', 'sun'], ['system', 'System theme', 'diagnostics'], ['dark', 'Dark theme', 'moon']].map(([k, label, ic]) =>
@@ -102,7 +103,15 @@ export function App() {
       </div>
     </header>
     <div className="shell-body">
-      <nav className="side" aria-label="Profiles">
+      <aside className="side" aria-label="Navigation sidebar">
+        <div className="side-section">Workspace</div>
+      <nav className="side-primary" aria-label="Workspace tools">
+        {NAV.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} aria-current={page === k ? 'page' : undefined} title={label} onClick={() => { setPage(k); if (k === 'profiles') { setScope('all'); setFolder('__all'); } }}>
+          <Icon name={k === 'cookie-robot' ? 'bolt' : k} /><span>{label}</span>
+        </button>)}
+      </nav>
+        <details className="profile-scopes" open={page === 'profiles'}>
+          <summary>Profile collections</summary>
         <button className={'nav' + (page === 'profiles' && scope === 'all' && folder === '__all' ? ' sel' : '')} onClick={() => { setScope('all'); showProfiles('__all'); }}><Icon name="profiles" />All profiles <span className="count">{meta.profileCount ?? ''}</span></button>
         <button className={'nav' + (page === 'profiles' && scope === 'running' ? ' sel' : '')} onClick={() => showProfiles('__all', 'running')}><Icon name="play" />Running profiles <span className="count">{meta.running.length}</span></button>
         <button className={'nav' + (page === 'profiles' && scope === 'favorites' ? ' sel' : '')} onClick={() => showProfiles('__all', 'favorites')}><Icon name="star" />Favorites <span className="count">{meta.favoriteCount ?? ''}</span></button>
@@ -118,15 +127,23 @@ export function App() {
           {meta.folders.includes('') && !folderQuery && <button className={'nav sub' + (page === 'profiles' && folder === '' ? ' sel' : '')} onClick={() => { setScope('all'); showProfiles(''); }}><Icon name="folder" /><span className="folder-name">No folder</span><span className="count">{count('')}</span></button>}
           {!named.length && <div className="side-empty">{folderQuery.trim() ? 'No matching folders.' : 'Create a folder to organize profiles.'}</div>}
         </div>
+        </details>
+        <div className="side-section">Manage</div>
         <button data-nav="trash" className={'nav' + (page === 'trash' ? ' sel' : '')} onClick={() => setPage('trash')}><Icon name="trash" />Trash <span className="count">{meta.trashCount ?? 0}</span></button>
-        <button data-nav="backup" className={'nav' + (page === 'settings' ? ' sel' : '')} onClick={() => setPage('settings')}><Icon name="download" />Backup</button>
+        <button data-nav="backup" className={'nav' + (page === 'settings' ? ' sel' : '')} onClick={() => { setPage('settings'); setBackupRequest(value => value + 1); }}><Icon name="download" />Backup</button>
         {MORE.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} onClick={() => setPage(k)}><Icon name={k} />{label}</button>)}
         <div className="side-foot">
-          <p className="side-note">Team accounts, subscriptions, and cloud profile storage are not part of this local build.</p>
           <button className="ghost" onClick={() => setCompact(value => !value)}>{compact ? 'Comfortable rows' : 'Compact rows'}</button>
         </div>
-      </nav>
+      </aside>
       <main className="content" data-shot={page}>
+        {page === 'profiles' && <div className="profile-heading">
+          <div><h1>Profiles</h1><p>Manage isolated browser sessions and their network settings.</p></div>
+          <div className="profile-metrics" aria-label="Profile summary">
+            <div><strong>{meta.profileCount ?? '—'}</strong><span>Profiles</span></div>
+            <div><strong>{meta.running.length}</strong><span><i /> Running</span></div>
+          </div>
+        </div>}
         {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
         {page === 'dashboard' && <DashboardPage onOpenProfiles={() => showProfiles('__all')} />}
         {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={showProfiles} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} scope={scope} />}
@@ -139,7 +156,7 @@ export function App() {
         {page === 'monitoring' && <MonitoringPage />}
         {page === 'activation' && <OfficeActivation />}
         {SHOW_ADMIN && page === 'license-admin' && <LicenseAdminPage />}
-        {page === 'settings' && <SettingsPage />}
+        {page === 'settings' && <SettingsPage backupRequest={backupRequest} />}
         {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
       </main>
     </div>

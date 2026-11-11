@@ -35,10 +35,12 @@ export function WorkspacesPage({ onOpenProfiles }) {
         }} /></label>
         <button className="primary" onClick={() => setDialog({ kind: 'new' })}>New workspace</button></div></header>
     <div className="toolbar"><input type="search" placeholder="Search name or notes…" value={q} onChange={e => setQ(e.target.value)} aria-label="Search workspaces" /></div>
-    <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Profiles</th><th>Vault</th><th></th></tr></thead><tbody>
-      {items.map(w => <tr key={w.id}><td>{w.name}{w.notes && <div className="muted small">{w.notes}</div>}</td><td>{w.profileCount}</td>
-        <td>{w.vaultLocked ? 'Locked' : '—'}</td>
-        <td className="actions"><button onClick={() => setDialog({ kind: 'sync', data: w })}>Synchronize</button>
+    <div className="workspace-cards">
+      {items.map(w => <article className="panel workspace-card" key={w.id}>
+        <header><h2>{w.name}</h2><span className="pill">{w.vaultLocked ? 'Vault locked' : 'Local'}</span></header>
+        <p className="muted">{w.profileCount} {w.profileCount === 1 ? 'profile' : 'profiles'}</p>
+        {w.notes && <p className="muted">{w.notes}</p>}
+        <div className="actions"><button onClick={() => setDialog({ kind: 'sync', data: w })}>Synchronize</button>
           {w.profileCount > 0 && onOpenProfiles && <button onClick={() => onOpenProfiles(w.id)}>View profiles</button>}
           <button onClick={() => setDialog({ kind: 'exportEncrypted', data: w })}>Encrypted export</button>
           <button onClick={async () => {
@@ -54,9 +56,9 @@ export function WorkspacesPage({ onOpenProfiles }) {
             } catch (e) { toast(e.message, 'error'); }
           }}>Export metadata JSON</button>
           <button onClick={() => setDialog({ kind: 'edit', data: w })}>Edit</button>
-          <button className="ghost-danger" onClick={async () => { try { await api(`/api/workspaces/${w.id}`, { method: 'DELETE' }); toast('Deleted', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Delete</button></td></tr>)}
-      {!items.length && <tr><td colSpan="4" className="empty">No workspaces yet.</td></tr>}
-    </tbody></table></div>
+          <button className="ghost-danger" onClick={async () => { try { await api(`/api/workspaces/${w.id}`, { method: 'DELETE' }); toast('Deleted', 'success'); load(); } catch (e) { toast(e.message, 'error'); } }}>Delete</button></div></article>)}
+      {!items.length && <section className="panel empty">{q ? "No matching workspaces." : "Create a workspace to group profiles and manage encrypted snapshots."}</section>}
+    </div>
     {dialog?.kind === 'sync' && <WorkspaceSyncDialog workspace={dialog.data} onClose={() => setDialog(null)} onDone={load} />}
     {['exportEncrypted', 'restoreEncrypted'].includes(dialog?.kind) && <WorkspaceTransferDialog workspace={dialog.data} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); toast('Encrypted workspace operation completed', 'success'); }} />}
     {dialog?.kind === 'new' && <NewWorkspace vault={vault} onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} toast={toast} />}

@@ -33,13 +33,16 @@ function GeoIpSettings() {
   </section>;
 }
 
-export function SettingsPage() {
+export function SettingsPage({ backupRequest = 0 }) {
   const toast = useToast();
   const [theme, setTheme] = useTheme();
   const [edition, setEdition] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [s, setS] = useState(null), [token, setToken] = useState(''), [show, setShow] = useState(false), [diag, setDiag] = useState(null);
   useEffect(() => { api('/api/settings').then(setS); api('/api/diagnostics').then(setDiag); api('/api/api-token').then(r => setToken(r.token)).catch(() => {}); api('/api/activation').then(setEdition).catch(() => {}); api('/api/browser').then(b => setRuntime(b.firefox || null)).catch(() => {}); }, []);
+  useEffect(() => {
+    if (s && backupRequest) document.getElementById('backup')?.scrollIntoView({ block: 'start' });
+  }, [Boolean(s), backupRequest]);
   if (!s) return <p className="muted" aria-busy="true">Loading settings…</p>;
   const save = async () => { try { setS(await api('/api/settings', { method: 'PUT', body: s })); toast('Settings saved', 'success'); } catch (e) { toast(e.message, 'error'); } };
   return <div className="settings-layout">
