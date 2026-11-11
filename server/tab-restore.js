@@ -2,6 +2,7 @@
 // The list lives in the profile directory, not in the database, and it is not a
 // browser fingerprint. Crash classification does not write it.
 import fs from 'fs';
+import { randomUUID } from 'node:crypto';
 import path from 'path';
 
 export const TAB_STATE_NAME = '.pm-tabs.json';
@@ -32,7 +33,7 @@ function stateFile(dir) {
   return file;
 }
 
-export function readSavedTabs(dir) {
+export function readSavedTabs(dir, { preserveDuplicates = false } = {}) {
   let file;
   try { file = stateFile(dir); } catch { return { urls: [], corrupt: true }; }
   if (!fs.existsSync(file)) return { urls: [], corrupt: false };
@@ -42,8 +43,8 @@ export function readSavedTabs(dir) {
     const urls = [];
     for (const item of parsed.urls) {
       const eligible = eligibleTabUrl(item);
-      if (eligible && !urls.includes(eligible)) urls.push(eligible);
-      if (urls.length >= MAX_RESTORED_TABS) break;
+      if (eligible && (preserveDuplicates || !urls.includes(eligible))) urls.push(eligible);
+      if (!preserveDuplicates && urls.length >= MAX_RESTORED_TABS) break;
     }
     return { urls, corrupt: false };
   } catch {
@@ -51,23 +52,28 @@ export function readSavedTabs(dir) {
   }
 }
 
-export function writeSavedTabs(dir, urls) {
+export function writeSavedTabs(dir, urls, { preserveDuplicates = false } = {}) {
   const file = stateFile(dir);
   const saved = [];
   for (const item of urls || []) {
     const eligible = eligibleTabUrl(item);
-    if (eligible && !saved.includes(eligible)) saved.push(eligible);
-    if (saved.length >= MAX_RESTORED_TABS) break;
+    if (eligible && (preserveDuplicates || !saved.includes(eligible))) saved.push(eligible);
+    if (!preserveDuplicates && saved.length >= MAX_RESTORED_TABS) break;
   }
-  const tmp = file + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify({ version: 1, urls: saved }), { mode: 0o600 });
-  fs.renameSync(tmp, file);
+  if (preserveDuplicates && !saved.length) return saved;
+  const tmp = file + '.' + randomUUID() + '.tmp';
+  try {
+    fs.writeFileSync(tmp, JSON.stringify({ version: 1, urls: saved }), { mode: 0o600, flag: 'wx', flush: true });
+    fs.renameSync(tmp, file);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
   return saved;
 }
 
 // null means there is no open page, so the caller keeps the previous list.
 // An empty array means pages are open and none of them are eligible.
-export function snapshotTabUrls(pages) {
+export function snapshotTabUrls(pages, { preserveDuplicates = false } = {}) {
   const open = [];
   for (const page of pages || []) {
     try { if (page?.isClosed?.()) continue; } catch { continue; }
@@ -93,4 +99,19 @@ export function chooseLaunchUrls({ explicitUrl, startupUrls, savedUrls } = {}) {
   if (explicit) return [explicit];
   if (Array.isArray(startupUrls) && startupUrls.length) return startupUrls.slice();
   return Array.isArray(savedUrls) ? savedUrls.slice(0, MAX_RESTORED_TABS) : [];
+}
+
+export function hasChromeSession(dir) {
+  const sessions = path.join(dir, 'Default', 'Sessions');
+  try {
+    return fs.readdirSync(sessions, { withFileTypes: true }).some(entry =>
+      entry.isFile() && /^Session_\d+$/.test(entry.name) && fs.statSync(path.join(sessions, entry.name)).size > 8);
+  } catch { return false; }
+}
+
+export function chooseStableLaunchUrls({ explicitUrl, startupUrls, savedUrls, nativeSession } = {}) {
+  const explicit = explicitUrl?.trim();
+  if (nativeSession) return explicit ? [explicit] : [];
+  if (savedUrls?.length) return explicit && !savedUrls.includes(explicit) ? [...savedUrls, explicit] : savedUrls.slice();
+  return chooseLaunchUrls({ explicitUrl, startupUrls });
 }

@@ -537,12 +537,13 @@ async function doLaunch(p, opts = {}) {
     if (verifiedStableLocation) monitorStableProxy(p, opts, entry, verifiedStableLocation);
     emit('profile:started', p.id);
     entry.restoreTabs = launchPlan.restoreTabs;
+    entry.preserveTabDuplicates = Boolean(launchPlan.stable);
     entry.rememberWindow = launchPlan.rememberWindow;
     monitorWindowState(p.id, entry, p.advancedSettings?.screen);
     entry.tabUrls = [];
     const openUrls = launchPlan.openUrls;
     if (openUrls.length) {
-      const first = ctx.pages()[0] || await ctx.newPage();
+      const first = launchPlan.nativeSession ? await ctx.newPage() : ctx.pages()[0] || await ctx.newPage();
       await first.goto(openUrls[0]).catch(() => {});
       await applyDocumentPermissions(first, first.url(), plan.permissions).catch(() => {});
       for (const extra of openUrls.slice(1)) {
@@ -553,8 +554,13 @@ async function doLaunch(p, opts = {}) {
     }
     if (launchPlan.restoreTabs) {
       const note = () => {
-        const next = snapshotTabUrls(ctx.pages());
-        if (next) entry.tabUrls = next;
+        if (entry.stopping) return;
+        const next = snapshotTabUrls(ctx.pages(), { preserveDuplicates: entry.preserveTabDuplicates });
+        if (!next || (entry.preserveTabDuplicates && !next.length)) return;
+        if (entry.preserveTabDuplicates && JSON.stringify(next) !== JSON.stringify(entry.tabUrls)) {
+          try { writeSavedTabs(dir, next, { preserveDuplicates: true }); } catch { /* retain the previous checkpoint */ }
+        }
+        entry.tabUrls = next;
       };
       const watch = page => page.on?.('framenavigated', frame => {
         try { if (!page.mainFrame || frame === page.mainFrame()) note(); } catch { note(); }
@@ -855,7 +861,7 @@ async function finishClose(id, e) {
               existing: e.tabUrls || [],
             })
             : (e.tabUrls || []);
-          writeSavedTabs(dir, tabs);
+          writeSavedTabs(dir, tabs, { preserveDuplicates: e.preserveTabDuplicates });
         } catch { /* a tab list must not change the stop result */ }
       }
       emit('profile:stopped', id, { error: null });
@@ -921,8 +927,11 @@ export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
   e.stopWindowTracking?.();
   if (e.restoreTabs && e.ctx) {
     try {
-      const next = snapshotTabUrls(e.ctx.pages());
-      if (next) e.tabUrls = next;
+      const next = snapshotTabUrls(e.ctx.pages(), { preserveDuplicates: e.preserveTabDuplicates });
+      if (next && (!e.preserveTabDuplicates || next.length)) {
+        e.tabUrls = next;
+        if (e.preserveTabDuplicates) writeSavedTabs(userDataDir(id), next, { preserveDuplicates: true });
+      }
     } catch { /* keep the last navigation snapshot */ }
   } else if (e.restoreTabs && e.runtime === 'native') {
     try {

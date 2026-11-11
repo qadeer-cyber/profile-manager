@@ -132,8 +132,12 @@ function validateUrl(value) {
   return url.href;
 }
 function validatePreferences(value, previous) {
-  const input = section(value, ['startupUrls', 'restoreTabs', 'rememberLastWindow', 'permissions'], 'preferences');
+  const input = section(value, ['startupUrls', 'restoreTabs', 'sessionStartup', 'rememberLastWindow', 'permissions'], 'preferences');
   const out = clone(previous);
+  if ('sessionStartup' in input) {
+    if (!['restore', 'fresh'].includes(input.sessionStartup)) invalid('Invalid Chrome session startup mode', 'preferences');
+    out.sessionStartup = input.sessionStartup;
+  }
   if ('restoreTabs' in input) {
     if (typeof input.restoreTabs !== 'boolean') invalid('restoreTabs must be a boolean', 'preferences');
     out.restoreTabs = input.restoreTabs;

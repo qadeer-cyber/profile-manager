@@ -99,8 +99,9 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     }
     const peerIdentity = await observeIdentity(peerPage, ['de-DE', 'de']);
     let priorIdentity;
+    let sessionUrls;
     for (let run = 0; run < 2; run++) {
-      await api('POST', endpoint + '/launch', { headless: false, url: origin });
+      await api('POST', endpoint + '/launch', { headless: false, ...(run === 0 ? { url: origin } : {}) });
       const current = await api('GET', endpoint);
       assert.equal(current.cdp, undefined, 'No public debugging port for ordinary browsing');
       assert.ok(Number.isSafeInteger(current.pid) && current.pid > 0);
@@ -111,6 +112,11 @@ test('visible signed Windows Chrome Stable applies manual location through the p
       assert.equal(actual.toLowerCase(), stable.path.toLowerCase());
       console.log(JSON.stringify({ executable: actual, version: stable.version, pid: current.pid, run }));
       const context = engine.liveContext(profile.id);
+      if (run === 1) {
+        const deadline = Date.now() + 15000;
+        while (Date.now() < deadline && context.pages().length < sessionUrls.length) await new Promise(resolve => setTimeout(resolve, 100));
+        assert.deepEqual(context.pages().map(page => page.url()), sessionUrls, 'Chrome restores all tabs in order, including duplicates');
+      }
       const first = context.pages()[0];
       await first.goto(origin);
       const storage = (page) => page.evaluate(async () => ({
@@ -165,6 +171,14 @@ test('visible signed Windows Chrome Stable applies manual location through the p
         }));
         assert.deepEqual(result, { latitude: 37.4, longitude: -122.1, accuracy: 65000, timezone: 'America/Los_Angeles' });
         console.log(JSON.stringify(result));
+      }
+      if (run === 0) {
+        for (let index = 0; index < 24; index++) {
+          const tab = await context.newPage();
+          await tab.goto(origin + '/restored?tab=' + (index % 12));
+        }
+        sessionUrls = context.pages().map(page => page.url());
+        assert.ok(sessionUrls.length >= 26 && new Set(sessionUrls).size < sessionUrls.length);
       }
       await api('POST', endpoint + '/stop');
     }

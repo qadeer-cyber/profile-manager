@@ -21,7 +21,7 @@ import { chromiumMissingError } from '../chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
 const automationEnabled = opts => !!opts.automation || automationDefault();
-import { chooseLaunchUrls, readSavedTabs } from '../tab-restore.js';
+import { chooseLaunchUrls, chooseStableLaunchUrls, hasChromeSession, readSavedTabs } from '../tab-restore.js';
 import { screenFromRememberedWindow } from '../window-state.js';
 import { chromium } from 'playwright';
 
@@ -138,13 +138,16 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   const preferences = stable && locationOverride && geo.permission !== 'deny'
     ? { ...advanced, geolocation: { ...geo, latitude: null, longitude: null, accuracy: null, permission: 'ask' } }
     : advanced;
-  applyAdvancedPreferences(dir, preferences);
+  // Startup navigation stays under AZWAH's control. Native restoration is an explicit launch switch.
+  applyAdvancedPreferences(dir, preferences, { chromeSessionStartup: stable ? 5 : undefined });
   applyChromiumLanguagePreferences(dir, regional);
 
-  const restoreTabs = plan.settings.preferences.restoreTabs === true;
+  const restoreTabs = stable ? plan.settings.preferences.sessionStartup !== 'fresh' : plan.settings.preferences.restoreTabs === true;
+  const nativeSession = Boolean(stable && !p.proxy && restoreTabs && hasChromeSession(dir));
   const rememberWindow = plan.settings.preferences.rememberLastWindow === true;
-  const saved = restoreTabs ? readSavedTabs(dir) : { urls: [], corrupt: false };
-  const openUrls = chooseLaunchUrls({
+  const saved = restoreTabs ? readSavedTabs(dir, { preserveDuplicates: Boolean(stable) }) : { urls: [], corrupt: false };
+  const openUrls = (stable ? chooseStableLaunchUrls : chooseLaunchUrls)({
+    nativeSession,
     explicitUrl: url,
     startupUrls: plan.startupUrls,
     savedUrls: saved.urls,
@@ -198,7 +201,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     // Use the inherited CDP pipe while retaining Chrome's ordinary security defaults.
     // Playwright's automation defaults include switches that disable security services.
     playwrightOpts.ignoreDefaultArgs = true;
-    playwrightOpts.args = [...args, '--remote-debugging-pipe', `--user-data-dir=${dir}`, '--no-first-run', ...(headless ? ['--headless=new'] : []), 'about:blank'];
+    playwrightOpts.args = [...args, '--remote-debugging-pipe', `--user-data-dir=${dir}`, '--no-first-run', ...(headless ? ['--headless=new'] : []), ...(nativeSession ? ['--restore-last-session'] : ['about:blank'])];
     playwrightOpts.chromiumSandbox = true;
     const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
       !/^(AZWAH_MAXMIND_|ELECTRON_|NODE_OPTIONS$|PM_API_TOKEN$|PM_SECRET$|PM_UI_TOKEN$)/i.test(key)));
@@ -230,6 +233,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     regional,
     openUrls,
     restoreTabs,
+    nativeSession,
     rememberWindow,
     playwrightOpts,
     identity,

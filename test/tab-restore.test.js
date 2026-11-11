@@ -5,7 +5,7 @@ import os from 'os';
 import path from 'path';
 import { DEFAULT_ADVANCED_SETTINGS, validateAdvancedSettings } from '../server/advanced-settings.js';
 import {
-  chooseLaunchUrls, eligibleTabUrl, readSavedTabs, snapshotTabUrls, writeSavedTabs, TAB_STATE_NAME,
+  chooseLaunchUrls, chooseStableLaunchUrls, eligibleTabUrl, readSavedTabs, snapshotTabUrls, writeSavedTabs, TAB_STATE_NAME,
 } from '../server/tab-restore.js';
 
 test('restoreTabs defaults off and rejects a non-boolean', () => {
@@ -66,4 +66,19 @@ test('corrupt tab state is ignored and profiles do not share a file', () => {
   assert.deepEqual(snapshotTabUrls(pages), ['https://example.com/one']);
   assert.equal(snapshotTabUrls([]), null);
   assert.deepEqual(snapshotTabUrls([{ url: () => 'about:blank', isClosed: () => false }]), []);
+});
+
+test('Chrome checkpoints keep duplicate ordered tabs beyond twenty and reject empty overwrites', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-stable-tabs-'));
+  try {
+    const urls = Array.from({ length: 30 }, (_, index) => 'https://example.com/' + (index % 10));
+    const options = { preserveDuplicates: true };
+    assert.deepEqual(snapshotTabUrls(urls.map(url => ({ url: () => url })), options), urls);
+    writeSavedTabs(dir, urls, options);
+    writeSavedTabs(dir, [], options);
+    assert.deepEqual(readSavedTabs(dir, options).urls, urls);
+    assert.deepEqual(chooseStableLaunchUrls({ savedUrls: urls, startupUrls: ['https://example.org/'] }), urls);
+    assert.deepEqual(chooseStableLaunchUrls({ savedUrls: urls, explicitUrl: urls[0] }), urls);
+    assert.deepEqual(chooseStableLaunchUrls({ savedUrls: urls, nativeSession: true }), []);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

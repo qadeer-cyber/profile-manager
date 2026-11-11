@@ -128,7 +128,7 @@ function contentState(settings, key) {
 
 // Merge managed permission values into Default/Preferences. Other keys, including
 // exit_type and WebRTC, are left in place. default removes only that one key.
-export function applyAdvancedPreferences(dir, settings) {
+export function applyAdvancedPreferences(dir, settings, { chromeSessionStartup } = {}) {
   const advanced = validateAdvancedSettings(settings || {});
   const { prefDir, file } = preferenceFile(dir);
   let prefs = {};
@@ -146,7 +146,9 @@ export function applyAdvancedPreferences(dir, settings) {
     if (!state || state === 'default') delete next[prefKey];
     else next[prefKey] = CONTENT_VALUES[state];
   }
-  if (JSON.stringify(next) === JSON.stringify(current)) return false;
+  const sessionChanged = chromeSessionStartup != null && prefs.session?.restore_on_startup !== chromeSessionStartup;
+  if (sessionChanged) prefs.session = { ...prefs.session, restore_on_startup: chromeSessionStartup };
+  if (JSON.stringify(next) === JSON.stringify(current) && !sessionChanged) return false;
   prefs.profile = profile;
   if (Object.keys(next).length) profile.default_content_setting_values = next;
   else delete profile.default_content_setting_values;
