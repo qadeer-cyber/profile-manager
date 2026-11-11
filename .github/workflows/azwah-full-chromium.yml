@@ -71,7 +71,7 @@ jobs:
         if: github.job == 'build'
         uses: actions/download-artifact@v4
         with:
-          name: azwah-full-cache-build-1
+          name: azwah-full-cache-resume-1
           run-id: '42962642150'
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/azwah-checkpoint-transfer
@@ -99,8 +99,9 @@ jobs:
         timeout-minutes: 300
         shell: pwsh
         run: |
+          $budget = if ($env:GITHUB_JOB -eq 'build') { 25 } else { 265 }
           $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
-          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -FullCheckpoint -CheckpointDirectory (Join-Path $env:RUNNER_TEMP 'azwah-checkpoint-transfer') -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 4 -ReserveGiB 15
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -FullCheckpoint -CheckpointDirectory (Join-Path $env:RUNNER_TEMP 'azwah-checkpoint-transfer') -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 4 -ReserveGiB 15 -FullCheckpointMinutes $budget
       - name: Save compiler work and cache statistics
         if: ${{ !cancelled() && steps.compile.outcome != 'skipped' }}
         shell: pwsh

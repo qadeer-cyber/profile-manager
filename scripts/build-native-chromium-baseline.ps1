@@ -32,7 +32,10 @@ param(
 
     [switch] $StartupCheckpoint,
 
-    [switch] $FullCheckpoint
+    [switch] $FullCheckpoint,
+
+    [ValidateRange(1, 265)]
+    [int] $FullCheckpointMinutes = 265
 )
 
 $ErrorActionPreference = 'Stop'
@@ -441,7 +444,7 @@ symbol_level = 0
             $targets += 'mini_installer'
             $outputFiles += 'mini_installer.exe'
         }
-        $compileBudget = if ($FullCheckpoint) { 265 } else { 0 }
+        $compileBudget = if ($FullCheckpoint) { $FullCheckpointMinutes } else { 0 }
         Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets) $compileBudget
         $files = $outputFiles | ForEach-Object {
             $file = Get-Item -LiteralPath (Join-Path $out $_)
