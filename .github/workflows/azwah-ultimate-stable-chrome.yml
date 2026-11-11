@@ -33,6 +33,8 @@ jobs:
       - name: Unit and security checks
         shell: pwsh
         run: |
+          npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:unit
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npm run test:security
