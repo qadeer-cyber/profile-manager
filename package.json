@@ -65,9 +65,11 @@
     "better-sqlite3": "^13.0.3",
     "express": "^5.3.0",
     "https-proxy-agent": "^7.0.5",
+    "mmdb-lib": "3.0.5",
     "playwright": "^1.48.0",
     "proxy-chain": "^2.7.1",
-    "socks-proxy-agent": "^8.0.4"
+    "socks-proxy-agent": "^8.0.4",
+    "tz-lookup": "6.1.25"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
@@ -83,7 +85,7 @@
     "electron-winstaller": true
   },
   "main": "electron/main.js",
-  "description": "Azwah Multi Browser \u2014 Office Edition, local browser profiles and secure office activation",
+  "description": "Azwah Multi Browser — Office Edition, local browser profiles and secure office activation",
   "author": "Mohammad Abbas",
   "build": {
     "appId": "local.profilemanager.app",

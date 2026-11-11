@@ -75,6 +75,11 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       locationOverride = await resolveProxyLocation(p.proxy, { read: () => cached,
         save: requireStable ? undefined : value => setSetting(key, value), credentials: geoIpCredentials });
       regional.timezoneId = locationOverride.timezone;
+      if (/^[A-Z]{2}$/.test(locationOverride.country || '') && !regional.locale && !regional.languages.length) {
+        const inferred = new Intl.Locale('und-' + locationOverride.country).maximize();
+        regional.locale = inferred.language + '-' + locationOverride.country;
+        regional.languages = [regional.locale, inferred.language];
+      }
     } else if (mode === 'system') {
       regional.timezoneId = '';
     } else if (geo.latitude != null && geo.longitude != null) {

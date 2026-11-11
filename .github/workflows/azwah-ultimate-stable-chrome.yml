@@ -42,7 +42,7 @@ jobs:
       - name: Stable Chrome and migration tests
         shell: pwsh
         run: |
-          node --test test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+          node --test test/dbip-location.test.js test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
           exit $LASTEXITCODE
       - name: Build Office payload and Ultimate NSIS without a Chrome binary
         shell: pwsh
@@ -51,6 +51,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           choco install nsis -y --no-progress
           node scripts/fetch-bundled-firefox.mjs
+          node scripts/fetch-dbip-lite.mjs
           npx electron-builder install-app-deps --arch=x64
           $env:VITE_AZWAH_ADMIN = '0'
           npm run build
@@ -103,7 +104,7 @@ jobs:
       - name: Test concurrent Chrome isolation, timezone, geolocation and failed proxy
         shell: pwsh
         run: |
-          node --test --test-force-exit test/chrome-stable-windows-live.test.js test/chrome-stable-network-windows.test.js
+          node --test --test-force-exit test/chrome-stable-windows-live.test.js test/chrome-stable-network-windows.test.js test/chrome-stable-dbip-windows.test.js
           exit $LASTEXITCODE
       - uses: actions/download-artifact@v4
         with:
