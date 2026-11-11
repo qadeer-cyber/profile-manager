@@ -8,8 +8,8 @@ if ($Restore) {
     $manifest = Get-Content -Raw -LiteralPath (Join-Path $transfer 'checkpoint.json') | ConvertFrom-Json
     $archive = Get-Item -LiteralPath (Join-Path $transfer 'compiler-cache.zip')
     $identity = Get-FileHash -LiteralPath (Join-Path $transfer 'identity.json')
-    $sourceRun = if ($env:GITHUB_JOB -eq 'build') { '42900614067' } else { $env:GITHUB_RUN_ID }
-    $sourceCommit = if ($env:GITHUB_JOB -eq 'build') { '8d07dc688ca425ff95d3e749843f4af3c404e9b6' } else { $env:GITHUB_SHA }
+    $sourceRun = if ($env:GITHUB_JOB -eq 'build') { '42962642150' } else { $env:GITHUB_RUN_ID }
+    $sourceCommit = if ($env:GITHUB_JOB -eq 'build') { '747344682ad4ce9bff797b799a0deef10c2b23b1' } else { $env:GITHUB_SHA }
     $sourceAttempt = if ($env:GITHUB_JOB -eq 'build') { '1' } else { $env:GITHUB_RUN_ATTEMPT }
     if ($manifest.run -cne $sourceRun -or $manifest.commit -cne $sourceCommit -or
         $manifest.attempt -cne $sourceAttempt -or $archive.Length -gt $limit -or
@@ -85,3 +85,13 @@ if ($bytes -gt $limit) { throw "Compiler cache archive exceeds the 4 GiB transfe
     identity_sha256 = (Get-FileHash -LiteralPath $identityFile).Hash
 } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage 'checkpoint.json')
 Write-Output "Saved compiler checkpoint bytes=$bytes"
+
+if ($env:AZWAH_NINJA_CHECKPOINT) {
+    $out = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src/out/azwah-checkpoint-probe'
+    $bundle = Join-Path $stage 'ninja.zip'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $bundle) | Out-Null
+    & python.exe (Join-Path $PSScriptRoot 'native-ninja-checkpoint.py') save $out $bundle $identityFile
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'Ninja output checkpoint was not saved; the compiler checkpoint is still available.'
+    }
+}

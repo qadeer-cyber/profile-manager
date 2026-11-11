@@ -12,13 +12,15 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
-    if: ${{ !github.event.repository.private && github.ref == 'refs/heads/engineering/azwah-integrated-engine' }}
+    if: ${{ !github.event.repository.private && github.ref == 'refs/heads/engineering/azwah-integrated-engine' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[resume-full-chromium]')) }}
     runs-on: windows-2025
     timeout-minutes: 340
     outputs:
       linked: ${{ steps.compile.outputs.linked }}
       resume: ${{ steps.compile.outputs.resume }}
-      checkpoint: ${{ steps.upload.outputs.artifact-id }}
+      checkpoint: ${{ steps.save.outcome == 'success' && steps.upload.outputs.cache-key || '' }}
+    env:
+      PREVIOUS_CACHE: ''
     steps: &build_steps
       - uses: actions/checkout@v4
         with:
@@ -64,14 +66,31 @@ jobs:
           if ($exe.Count -ne 1) { throw 'Expected exactly one sccache executable.' }
           $exe[0].DirectoryName | Add-Content -LiteralPath $env:GITHUB_PATH
           "SCCACHE_DIR=$(Join-Path $env:RUNNER_TEMP 'sccache-checkpoint')" | Add-Content -LiteralPath $env:GITHUB_ENV
-          'SCCACHE_CACHE_SIZE=3G' | Add-Content -LiteralPath $env:GITHUB_ENV
+          'SCCACHE_CACHE_SIZE=1G' | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Download the retained compiler checkpoint
+        if: github.job == 'build'
         uses: actions/download-artifact@v4
         with:
-          name: ${{ github.job == 'build' && 'azwah-startup-checkpoint-1' || format('azwah-full-cache-build-{0}', github.run_attempt) }}
-          run-id: ${{ github.job == 'build' && '42900614067' || github.run_id }}
+          name: azwah-full-cache-build-1
+          run-id: '42962642150'
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/azwah-checkpoint-transfer
+      - name: Restore the previous output tree and compiler cache
+        if: github.job != 'build'
+        uses: actions/cache/restore@v4
+        with:
+          key: ${{ env.PREVIOUS_CACHE }}
+          path: ${{ runner.temp }}/azwah-checkpoint-transfer
+          fail-on-cache-miss: true
+      - name: Locate the Ninja checkpoint archive
+        shell: pwsh
+        run: |
+          $path = if ($env:GITHUB_JOB -eq 'build') {
+            Join-Path $env:RUNNER_TEMP 'azwah-full-cache/ninja.zip'
+          } else {
+            Join-Path $env:RUNNER_TEMP 'azwah-checkpoint-transfer/ninja.zip'
+          }
+          "AZWAH_NINJA_CHECKPOINT=$path" | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Verify and restore compiler checkpoint
         shell: pwsh
         run: ./scripts/native-full-checkpoint.ps1 -Restore
@@ -86,33 +105,74 @@ jobs:
         if: ${{ !cancelled() && steps.compile.outcome != 'skipped' }}
         shell: pwsh
         run: ./scripts/native-full-checkpoint.ps1
-      - name: Upload compiler checkpoint
+      - name: Check the repository's free cache budget
         id: upload
-        if: ${{ !cancelled() && steps.compile.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() && steps.compile.outputs.resume == 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'azwah-full-cache'
+          if (!(Test-Path -LiteralPath (Join-Path $stage 'ninja.zip') -PathType Leaf)) {
+            throw 'Ninja checkpoint is missing. Stop before scheduling another compiler-only replay.'
+          }
+          $bytes = (Get-ChildItem -LiteralPath $stage -File | Measure-Object Length -Sum).Sum
+          $usage = gh api "repos/$env:GITHUB_REPOSITORY/actions/cache/usage" --jq .active_caches_size_in_bytes
+          if ($LASTEXITCODE -ne 0 -or $usage -notmatch '^\d+$') { throw 'Cannot verify cache usage.' }
+          if ([long]$usage + $bytes -gt 9500000000) { throw 'Checkpoint would exceed the free cache budget.' }
+          $transfer = Join-Path $env:RUNNER_TEMP 'azwah-checkpoint-transfer'
+          Remove-Item -LiteralPath $transfer -Recurse -Force
+          Move-Item -LiteralPath $stage -Destination $transfer
+          "cache-key=azwah-ninja-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+      - name: Save the bounded checkpoint to the repository cache
+        id: save
+        if: ${{ !cancelled() && steps.upload.outputs.cache-key != '' }}
+        uses: actions/cache/save@v4
         with:
-          name: azwah-full-cache-${{ github.job }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/azwah-full-cache
-          compression-level: 0
-          retention-days: 3
-          if-no-files-found: error
+          key: ${{ steps.upload.outputs.cache-key }}
+          path: ${{ runner.temp }}/azwah-checkpoint-transfer
       - name: Verify linked browser and assemble runtime
         if: ${{ !cancelled() && steps.compile.outputs.linked == 'true' }}
         shell: pwsh
         run: |
           ./scripts/test-native-chromium-build.ps1 -Workspace $env:AZWAH_BUILD_WORKSPACE -OutputDirectory 'src/out/azwah-checkpoint-probe'
           ./scripts/native-full-checkpoint.ps1 -Payload
-      - name: Upload verified browser runtime
-        if: ${{ !cancelled() && steps.compile.outputs.linked == 'true' }}
-        uses: actions/upload-artifact@v4
+      - name: Check free cache capacity for the verified runtime
+        id: runtime
+        if: ${{ steps.compile.outputs.linked == 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $bytes = (Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'azwah-linked-browser') -Recurse -File | Measure-Object Length -Sum).Sum
+          $usage = gh api "repos/$env:GITHUB_REPOSITORY/actions/cache/usage" --jq .active_caches_size_in_bytes
+          if ($LASTEXITCODE -ne 0 -or $usage -notmatch '^\d+$' -or [long]$usage + $bytes -gt 9500000000) {
+            throw 'Unable to retain the runtime within the free repository cache budget.'
+          }
+          "key=azwah-linked-browser-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+      - name: Save verified browser runtime to the repository cache
+        if: ${{ steps.runtime.outputs.key != '' }}
+        uses: actions/cache/save@v4
         with:
-          name: azwah-linked-browser-${{ github.job }}-${{ github.run_attempt }}
+          key: ${{ steps.runtime.outputs.key }}
           path: ${{ runner.temp }}/azwah-linked-browser
-          retention-days: 3
-          if-no-files-found: error
   resume:
     needs: build
     if: ${{ !cancelled() && needs.build.outputs.resume == 'true' && needs.build.outputs.checkpoint != '' }}
     runs-on: windows-2025
     timeout-minutes: 340
+    env:
+      PREVIOUS_CACHE: ${{ needs.build.outputs.checkpoint }}
+    outputs:
+      resume: ${{ steps.compile.outputs.resume }}
+      checkpoint: ${{ steps.save.outcome == 'success' && steps.upload.outputs.cache-key || '' }}
+    steps: *build_steps
+  final_slice:
+    needs: resume
+    if: ${{ !cancelled() && needs.resume.outputs.resume == 'true' && needs.resume.outputs.checkpoint != '' }}
+    runs-on: windows-2025
+    timeout-minutes: 340
+    env:
+      PREVIOUS_CACHE: ${{ needs.resume.outputs.checkpoint }}
     steps: *build_steps

@@ -388,7 +388,7 @@ symbol_level = 0
             $identityFile = Join-Path $CheckpointDirectory 'identity.json'
             $prior = Get-Content -LiteralPath $identityFile -Raw | ConvertFrom-Json
             foreach ($key in $identity.Keys) {
-                if ($env:GITHUB_JOB -eq 'build' -and $key -in @('commit', 'targets', 'commands')) { continue }
+                if ($env:GITHUB_JOB -eq 'build' -and $key -eq 'commit') { continue }
                 if ((ConvertTo-Json -InputObject $identity[$key] -Compress) -cne
                     (ConvertTo-Json -InputObject $prior.$key -Compress)) {
                     throw "Incompatible compiler checkpoint field: $key"
@@ -398,6 +398,41 @@ symbol_level = 0
             Copy-Item -LiteralPath $identityFile -Destination (Join-Path $env:RUNNER_TEMP 'azwah-full-identity.json')
             $plan = Invoke-BuildTool $autoninja @('-C', $out, '-n', 'chrome') | Select-Object -Last 1
             Write-Output "Full chrome graph dry-run: $plan"
+            $snapshot = $env:AZWAH_NINJA_CHECKPOINT
+            if ($snapshot -and (Test-Path -LiteralPath $snapshot -PathType Leaf)) {
+                if ($plan -notmatch '^\[\d+/(\d+)\]') { throw 'Unable to measure the clean Ninja graph.' }
+                $cleanTasks = [int]$Matches[1]
+                $fresh = "$out.fresh"
+                if (Test-Path -LiteralPath $fresh) { throw 'Fresh GN backup already exists.' }
+                Move-Item -LiteralPath $out -Destination $fresh
+                $accepted = $false
+                try {
+                    $snapshotTool = Join-Path $PSScriptRoot 'native-ninja-checkpoint.py'
+                    Invoke-BuildTool 'python.exe' @($snapshotTool, 'restore', $out, $snapshot, $identityFile)
+                    $restoredPlan = Invoke-BuildTool $autoninja @('-C', $out, '-n', 'chrome') | Select-Object -Last 1
+                    if ($restoredPlan -match '^\[\d+/(\d+)\]') {
+                        $remainingTasks = [int]$Matches[1]
+                    } elseif ($restoredPlan -match 'no work to do') {
+                        $remainingTasks = 0
+                    } else {
+                        throw "Unable to measure the restored Ninja graph: $restoredPlan"
+                    }
+                    $reusedTasks = $cleanTasks - $remainingTasks
+                    Write-Output "Ninja output reuse: skipped_tasks=$reusedTasks remaining_tasks=$remainingTasks clean_tasks=$cleanTasks"
+                    if ($reusedTasks -lt [Math]::Ceiling($cleanTasks * 0.05)) {
+                        throw 'The restored Ninja state saved less than 5% of the clean graph. Stopping before compilation.'
+                    }
+                    $accepted = $true
+                } finally {
+                    if ($accepted) {
+                        Remove-Item -LiteralPath $fresh -Recurse -Force
+                    } else {
+                        if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Recurse -Force }
+                        Move-Item -LiteralPath $fresh -Destination $out
+                    }
+                }
+            }
+
         }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
