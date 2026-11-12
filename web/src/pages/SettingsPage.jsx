@@ -9,11 +9,12 @@ function UpdatesSettings() {
   useEffect(() => {
     const refresh = () => window.pm?.updateStatus?.().then(setState).catch(() => {});
     refresh();
-    const timer = setInterval(refresh, 15000);
+    const timer = setInterval(refresh, 1000);
     return () => clearInterval(timer);
   }, []);
   if (!state) return null;
   const latest = state.latest;
+  const transfer = state.transfer;
   const status = { idle: 'Waiting for the first check', checking: 'Checking…', unavailable: 'Could not reach the release feed. Try again later.', current: 'You’re up to date', available: 'AZWAH Update Available' };
   async function check() {
     setBusy(true);
@@ -30,7 +31,21 @@ function UpdatesSettings() {
       <p>{new Date(latest.publishedAt).toLocaleDateString()} · {(latest.size / 1048576).toFixed(1)} MiB</p>
       {latest.notes && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{latest.notes}</p>}
       <p>Close AZWAH normally before running the installer. The official release page contains the download and release notes.</p>
+      <button disabled={transfer?.status === 'downloading' || (transfer?.status === 'verified' && transfer.version === latest.version)} onClick={() => void window.pm.downloadUpdate().catch(() => {})}>Download update</button>
       <button onClick={() => void window.pm.openUpdateRelease().catch(() => {})}>View release and download</button>
+    </div>}
+    {transfer?.status === 'downloading' && <div>
+      <label>Installer download <progress value={transfer.received} max={transfer.size} /></label>
+      <p>{transfer.received.toLocaleString()} of {transfer.size.toLocaleString()} bytes</p>
+      <button onClick={() => void window.pm.cancelUpdate().catch(() => {})}>Cancel download</button>
+    </div>}
+    {transfer?.status === 'cancelled' && <p>Download cancelled. You can restart it.</p>}
+    {transfer?.status === 'failed' && <p>Download failed or did not match the release checksum. Try again.</p>}
+    {transfer?.status === 'verified' && <div>
+      <p>Checksum verified · Version {transfer.version} · {transfer.size.toLocaleString()} bytes</p>
+      <p style={{ overflowWrap: 'anywhere' }}>SHA-256 {transfer.sha256}</p>
+      <p>Publisher signature has not been verified.</p>
+      <button onClick={() => void window.pm.revealUpdate().catch(() => {})}>Show verified installer</button>
     </div>}
     <button disabled={busy || state.status === 'checking'} onClick={() => void check().catch(() => {})}>Check for updates</button>
   </section>;

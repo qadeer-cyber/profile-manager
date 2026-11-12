@@ -11,6 +11,7 @@ import { applyPackagedFlag } from '../server/testflags.js';
 import { durableShutdown } from '../server/shutdown.js';
 import { classifyLaunch, writeSmokeRejection } from './smoke-gate.js';
 
+import { downloadUpdate } from './update-download.js';
 import { createUpdateChecker } from './release-updates.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -150,7 +151,43 @@ if (app.isPackaged && process.platform === 'win32' && packageMetadata.azwahChrom
       throw new Error('Unauthorized update request.');
     }
   }
-  ipcMain.handle('pm:update-status', event => { authorizeUpdateRequest(event); return checker.status(); });
+  let transfer = null;
+  let controller = null;
+  let verifiedFile = null;
+  ipcMain.handle('pm:update-status', event => {
+    authorizeUpdateRequest(event);
+    return { ...checker.status(), transfer };
+  });
+  ipcMain.handle('pm:update-download', async event => {
+    authorizeUpdateRequest(event);
+    const { latest, status } = checker.status();
+    if (quitStarted || controller || status !== 'available') return;
+    if (transfer?.status === 'verified' && transfer.version === latest.version) return;
+    controller = new AbortController();
+    verifiedFile = null;
+    transfer = { status: 'downloading', version: latest.version, size: latest.size, received: 0 };
+    try {
+      verifiedFile = await downloadUpdate(latest, { signal: controller.signal, progress: received => { transfer.received = received; } });
+      transfer = { ...transfer, status: 'verified', sha256: latest.sha256 };
+    } catch {
+      transfer = { ...transfer, status: controller.signal.aborted ? 'cancelled' : 'failed' };
+    } finally {
+      controller = null;
+    }
+  });
+  ipcMain.handle('pm:update-cancel', event => { authorizeUpdateRequest(event); controller?.abort(); });
+  ipcMain.handle('pm:update-reveal', async event => {
+    authorizeUpdateRequest(event);
+    if (!verifiedFile || transfer?.status !== 'verified') return;
+    const file = verifiedFile;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning', title: 'AZWAH update', message: 'Show the downloaded installer?',
+      detail: 'The file matched the official release checksum. Publisher signature has not been verified. Stop your profiles and quit AZWAH normally before running it. Windows installation prompts still apply.',
+      buttons: ['Cancel', 'Show in folder'], defaultId: 0, cancelId: 0,
+    });
+    if (response === 1 && file === verifiedFile) shell.showItemInFolder(file);
+  });
+  app.once('before-quit', () => controller?.abort());
   ipcMain.handle('pm:update-check', event => { authorizeUpdateRequest(event); return checker.check(); });
   ipcMain.handle('pm:update-open', event => {
     authorizeUpdateRequest(event);
