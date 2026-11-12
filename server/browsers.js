@@ -194,7 +194,9 @@ export function recoveryStatus() {
 
 export function launch(p, opts = {}) {
   assertProfileOperationAvailable(p.id);
-  if (live.has(p.id) || settling.has(p.id)) return Promise.resolve(runInfo(p.id));
+  if (live.has(p.id)) return Promise.resolve(runInfo(p.id));
+  const closing = settling.get(p.id);
+  if (closing?.done) return closing.done.then(() => launch(p, opts));
   if (launching.has(p.id)) return launching.get(p.id);
   const pr = runWithLaunchQueue(p.id, () => doLaunch(p, opts)).finally(() => {
     launching.delete(p.id);

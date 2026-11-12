@@ -230,6 +230,7 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     assert.equal(exit.stillAlive, false);
     await api('POST', endpoint + '/launch', { headless: false });
     const restarted = engine.liveContext(profile.id);
+    assert.ok(restarted, 'Restart must return a live Chrome context after exit cleanup');
     const restoreDeadline = Date.now() + 15000;
     while (Date.now() < restoreDeadline && restarted.pages().length < expectedUrls.length) await new Promise(resolve => setTimeout(resolve, 100));
     assert.deepEqual(restarted.pages().map(page => page.url()).sort(), expectedUrls);
