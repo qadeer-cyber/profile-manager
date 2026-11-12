@@ -9,7 +9,7 @@ import test from 'node:test';
 import { promisify } from 'node:util';
 import { resolveWindowsChromeStable } from '../server/browser-runtime/chrome-stable.js';
 
-test('visible signed Windows Chrome Stable applies manual location through the private pipe', { timeout: 180000 }, async () => {
+test('visible signed Windows Chrome Stable applies manual location through the private pipe', { timeout: 240000 }, async () => {
   assert.equal(process.platform, 'win32');
   const execute = promisify(execFile);
   const stable = await resolveWindowsChromeStable({ run: async (...args) => {
@@ -107,6 +107,7 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     const peerIdentity = await observeIdentity(peerPage, ['de-DE', 'de']);
     let priorIdentity;
     let sessionUrls;
+    let urlsBeforeLastStop;
     for (let run = 0; run < 2; run++) {
       await api('POST', endpoint + '/launch', { headless: false, ...(run === 0 ? { url: origin } : {}) });
       const current = await api('GET', endpoint);
@@ -195,13 +196,48 @@ test('visible signed Windows Chrome Stable applies manual location through the p
         const processSample = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
           `Get-Process -Id ${current.pid} | Select-Object Id,CPU,WorkingSet64 | ConvertTo-Json -Compress`],
         { encoding: 'utf8', timeout: 10000 }));
+        const treeSample = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          `$all = @(Get-CimInstance Win32_Process); $ids = [System.Collections.Generic.HashSet[int]]::new(); [void]$ids.Add(${current.pid}); do { $before = $ids.Count; foreach ($proc in $all) { if ($ids.Contains([int]$proc.ParentProcessId)) { [void]$ids.Add([int]$proc.ProcessId) } } } while ($ids.Count -gt $before); $live = @(Get-Process -Id ([int[]]$ids) -ErrorAction SilentlyContinue); @{count=$live.Count;workingSetBytes=($live | Measure-Object WorkingSet64 -Sum).Sum;cpuSeconds=($live | Measure-Object CPU -Sum).Sum} | ConvertTo-Json -Compress`],
+          { encoding: 'utf8', timeout: 20000 }));
+        assert.ok(treeSample.count > 1 && treeSample.workingSetBytes >= processSample.WorkingSet64);
         console.log('CHROME-WORKLOAD ' + JSON.stringify({ host: engine.resourceSnapshot().host,
-          browserRoot: processSample, tabs: context.pages().length, concurrentProfiles: 3 }));
+          browserRoot: processSample, browserTree: treeSample, tabs: context.pages().length, concurrentProfiles: 3 }));
         sessionUrls = context.pages().map(page => page.url());
         assert.ok(sessionUrls.length >= 26 && new Set(sessionUrls).size < sessionUrls.length);
       }
+      urlsBeforeLastStop = context.pages().map(page => page.url()).sort();
       await api('POST', endpoint + '/stop');
     }
+    await api('POST', endpoint + '/launch', { headless: false });
+    const beforeKill = await api('GET', endpoint);
+    assert.ok(Number.isInteger(beforeKill.pid) && beforeKill.pid > 0);
+    const crashContext = engine.liveContext(profile.id);
+    const recoveredUrls = () => crashContext.pages().map(page => page.url()).sort();
+    const expectedUrls = urlsBeforeLastStop;
+    const deadline = Date.now() + 15000;
+    while (Date.now() < deadline && recoveredUrls().length < expectedUrls.length) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.deepEqual(recoveredUrls(), expectedUrls);
+    execFileSync('taskkill.exe', ['/PID', String(beforeKill.pid), '/T', '/F'], { timeout: 10000 });
+    let exit;
+    const exitDeadline = Date.now() + 20000;
+    while (Date.now() < exitDeadline) {
+      exit = engine.lifecycleReport().events.find(event => event.kind === 'browser-exit' && event.browserPid === beforeKill.pid);
+      if (exit) break;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    assert.ok(exit, 'Forced browser termination must produce lifecycle evidence');
+    assert.notEqual(exit.chosen, 'stopped', 'Unexpected termination cannot be classified as a clean Stop');
+    assert.equal(exit.stillAlive, false);
+    await api('POST', endpoint + '/launch', { headless: false });
+    const restarted = engine.liveContext(profile.id);
+    const restoreDeadline = Date.now() + 15000;
+    while (Date.now() < restoreDeadline && restarted.pages().length < expectedUrls.length) await new Promise(resolve => setTimeout(resolve, 100));
+    assert.deepEqual(restarted.pages().map(page => page.url()).sort(), expectedUrls);
+    const restored = restarted.pages().find(page => page.url().startsWith(origin));
+    assert.ok(restored);
+    assert.equal(await restored.evaluate(() => localStorage.getItem('azwah')), 'profile-a');
+    await api('POST', endpoint + '/stop');
+    console.log('CONTROLLED-CHROME-RECOVERY ' + JSON.stringify({ exit, restoredTabs: expectedUrls.length }));
     console.log(JSON.stringify({ identity: 'stock Chrome', version: stable.version, profiles: 3, consistentAcrossTabsAndRelaunch: true,
       checked: ['UA header', 'UA client hints brand/version/platform', 'locale', 'ordered languages', 'canvas sample', 'hardware concurrency'] }));
     await api('POST', peerEndpoint + '/stop');
