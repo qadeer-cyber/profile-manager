@@ -110,7 +110,11 @@ export function App() {
           <Icon name={k === 'cookie-robot' ? 'bolt' : k} /><span>{label}</span>
         </button>)}
       </nav>
-        <details className="profile-scopes" open={page === 'profiles'}>
+        <div className="side-section">Manage</div>
+        <button data-nav="trash" className={'nav' + (page === 'trash' ? ' sel' : '')} onClick={() => setPage('trash')}><Icon name="trash" />Trash <span className="count">{meta.trashCount ?? 0}</span></button>
+        <button data-nav="backup" className={'nav' + (page === 'settings' ? ' sel' : '')} onClick={() => { setPage('settings'); setBackupRequest(value => value + 1); }}><Icon name="download" />Backup</button>
+        {MORE.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} onClick={() => setPage(k)}><Icon name={k} />{label}</button>)}
+        <details className="profile-scopes">
           <summary>Profile collections</summary>
         <button className={'nav' + (page === 'profiles' && scope === 'all' && folder === '__all' ? ' sel' : '')} onClick={() => { setScope('all'); showProfiles('__all'); }}><Icon name="profiles" />All profiles <span className="count">{meta.profileCount ?? ''}</span></button>
         <button className={'nav' + (page === 'profiles' && scope === 'running' ? ' sel' : '')} onClick={() => showProfiles('__all', 'running')}><Icon name="play" />Running profiles <span className="count">{meta.running.length}</span></button>
@@ -128,10 +132,6 @@ export function App() {
           {!named.length && <div className="side-empty">{folderQuery.trim() ? 'No matching folders.' : 'Create a folder to organize profiles.'}</div>}
         </div>
         </details>
-        <div className="side-section">Manage</div>
-        <button data-nav="trash" className={'nav' + (page === 'trash' ? ' sel' : '')} onClick={() => setPage('trash')}><Icon name="trash" />Trash <span className="count">{meta.trashCount ?? 0}</span></button>
-        <button data-nav="backup" className={'nav' + (page === 'settings' ? ' sel' : '')} onClick={() => { setPage('settings'); setBackupRequest(value => value + 1); }}><Icon name="download" />Backup</button>
-        {MORE.map(([k, label]) => <button key={k} data-nav={k} className={'nav' + (page === k ? ' sel' : '')} onClick={() => setPage(k)}><Icon name={k} />{label}</button>)}
         <div className="side-foot">
           <button className="ghost" onClick={() => setCompact(value => !value)}>{compact ? 'Comfortable rows' : 'Compact rows'}</button>
         </div>

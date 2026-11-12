@@ -227,13 +227,14 @@ async function captureInstalledVisuals() {
         }
         const content = document.querySelector('.content');
         const sidebar = document.querySelector('.side');
-        const launch = document.querySelector('.profiles .launch');
+        const launch = document.querySelector('.profiles .col-actions .primary');
         const table = document.querySelector('.profiles')?.closest('.table-wrap');
         const bounds = launch?.getBoundingClientRect();
         const tableBounds = table?.getBoundingClientRect();
         return {
           width: innerWidth, height: innerHeight, theme: document.documentElement.dataset.theme,
           sidebar: !!sidebar?.querySelector('[data-nav=profiles]'),
+          sidebarOverflow: sidebar ? sidebar.scrollWidth - sidebar.clientWidth : null,
           overflow: content ? content.scrollWidth - content.clientWidth : null,
           tableOverflow: table ? table.scrollWidth - table.clientWidth : null,
           launchVisible: !!bounds && !!tableBounds && bounds.width > 0 &&
@@ -244,7 +245,7 @@ async function captureInstalledVisuals() {
       const image = await win.webContents.capturePage();
       fs.writeFileSync(path.join(directory, `profiles-${width}x${height}-${theme}.png`), image.toPNG());
       if (result.width !== width || result.height !== height || result.theme !== theme ||
-          !result.sidebar || !result.launchVisible || result.overflow > 1 || result.tableOverflow > 1) {
+          !result.sidebar || result.sidebarOverflow > 1 || !result.launchVisible || result.overflow > 1 || result.tableOverflow > 1) {
         fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
         throw new Error('Installed layout acceptance failed: ' + JSON.stringify(result));
       }

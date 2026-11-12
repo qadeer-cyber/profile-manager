@@ -49,10 +49,10 @@ export function classifyProxyProbeError(error, type) {
   if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
     return fail('The proxy hostname could not be resolved. Check the saved proxy address and DNS.', 'PROXY_DNS_FAILED');
   }
-  if (['ABORT_ERR', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code) || error?.name === 'TimeoutError') {
+  if (['ABORT_ERR', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code) || error?.name === 'TimeoutError' || (type === 'socks5' && error?.message === 'Proxy connection timed out')) {
     return fail('The proxy exit check timed out. Check proxy connectivity and retry.', 'PROXY_PROBE_TIMEOUT');
   }
-  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].includes(code)) {
+  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].includes(code) || (type === 'socks5' && error?.message === 'Socket closed')) {
     return fail('The upstream proxy connection failed. Check whether the proxy is online.', 'PROXY_UPSTREAM_UNAVAILABLE');
   }
   if (type === 'socks5' && /authentication failed|authentication rejected|no acceptable authentication/i.test(error?.message || '')) {
