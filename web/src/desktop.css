@@ -143,7 +143,7 @@
 
 .app.shell .side { overflow-x: hidden; }
 .app.shell .side > *, .app.shell .side .nav, .app.shell .folder-tools input { min-width: 0; }
-.app.shell .side .nav { white-space: normal; }
+.app.shell .side .nav { box-sizing: border-box; white-space: normal; }
 .app.shell .side .nav .count { flex: none; }
 .app.shell .side .folder-name { white-space: nowrap; }
 .app.shell .side-primary .nav { padding-block: 5px; }
