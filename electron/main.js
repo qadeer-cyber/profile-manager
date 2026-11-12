@@ -216,38 +216,51 @@ async function captureInstalledVisuals() {
   for (const [width, height] of [[1366, 768], [1600, 900], [1920, 1080]]) {
     win.setContentSize(width, height);
     for (const theme of ['light', 'dark']) {
-      const result = await win.webContents.executeJavaScript(`(async () => {
-        const theme = ${JSON.stringify(theme)};
-        const button = document.querySelector('[aria-label="' + theme[0].toUpperCase() + theme.slice(1) + ' theme"]');
-        if (!button) throw new Error('Theme controls unavailable');
-        button.click();
-        for (let attempt = 0; attempt < 50; attempt++) {
-          if (document.querySelector('.profiles .launch') && document.documentElement.dataset.theme === theme) break;
-          await new Promise(resolve => setTimeout(resolve, 100));
+      for (const destination of ['profiles', 'proxies', 'extensions', 'workspaces', 'cookie-robot',
+        'license-admin', 'settings', 'diagnostics', 'dashboard', 'monitoring', 'templates', 'trash', 'backup']) {
+        const result = await win.webContents.executeJavaScript(`(async () => {
+          const theme = ${JSON.stringify(theme)};
+          const button = document.querySelector('[aria-label="' + theme[0].toUpperCase() + theme.slice(1) + ' theme"]');
+          if (!button) throw new Error('Theme controls unavailable');
+          if (document.documentElement.dataset.theme !== theme) button.click();
+          const destination = ${JSON.stringify(destination)};
+          const nav = document.querySelector('[data-nav="' + destination + '"]');
+          if (!nav) throw new Error('Missing navigation item: ' + destination);
+          nav.click();
+          const expectedPage = destination === 'backup' ? 'settings' : destination;
+          for (let attempt = 0; attempt < 50; attempt++) {
+            const page = document.querySelector('main[data-shot="' + expectedPage + '"]');
+            const ready = destination === 'profiles' ? page?.querySelector('.profiles .launch') :
+              destination === 'backup' ? page?.querySelector('#backup') : page?.querySelector('h1');
+            if (ready && document.documentElement.dataset.theme === theme) break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          const content = document.querySelector('.content');
+          const sidebar = document.querySelector('.side');
+          const launch = document.querySelector('.profiles .col-actions .primary');
+          const table = document.querySelector('.profiles')?.closest('.table-wrap');
+          const bounds = launch?.getBoundingClientRect();
+          const tableBounds = table?.getBoundingClientRect();
+          return {
+            destination, width: innerWidth, height: innerHeight, theme: document.documentElement.dataset.theme,
+            ready: content?.dataset.shot === expectedPage && !!content?.querySelector(destination === 'backup' ? '#backup' : 'h1'),
+            sidebar: !!sidebar?.querySelector('[data-nav=profiles]'),
+            sidebarOverflow: sidebar ? sidebar.scrollWidth - sidebar.clientWidth : null,
+            overflow: content ? content.scrollWidth - content.clientWidth : null,
+            tableOverflow: table ? table.scrollWidth - table.clientWidth : null,
+            launchVisible: !!bounds && !!tableBounds && bounds.width > 0 &&
+              bounds.left >= tableBounds.left && bounds.right <= tableBounds.right,
+          };
+        })()`);
+        results.push(result);
+        const image = await win.webContents.capturePage();
+        fs.writeFileSync(path.join(directory, `${destination}-${width}x${height}-${theme}.png`), image.toPNG());
+        if (result.width !== width || result.height !== height || result.theme !== theme ||
+            !result.ready || !result.sidebar || result.sidebarOverflow > 1 || result.overflow > 1 ||
+            (destination === 'profiles' && (!result.launchVisible || result.tableOverflow > 1))) {
+          fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
+          throw new Error('Installed layout acceptance failed: ' + JSON.stringify(result));
         }
-        const content = document.querySelector('.content');
-        const sidebar = document.querySelector('.side');
-        const launch = document.querySelector('.profiles .col-actions .primary');
-        const table = document.querySelector('.profiles')?.closest('.table-wrap');
-        const bounds = launch?.getBoundingClientRect();
-        const tableBounds = table?.getBoundingClientRect();
-        return {
-          width: innerWidth, height: innerHeight, theme: document.documentElement.dataset.theme,
-          sidebar: !!sidebar?.querySelector('[data-nav=profiles]'),
-          sidebarOverflow: sidebar ? sidebar.scrollWidth - sidebar.clientWidth : null,
-          overflow: content ? content.scrollWidth - content.clientWidth : null,
-          tableOverflow: table ? table.scrollWidth - table.clientWidth : null,
-          launchVisible: !!bounds && !!tableBounds && bounds.width > 0 &&
-            bounds.left >= tableBounds.left && bounds.right <= tableBounds.right,
-        };
-      })()`);
-      results.push(result);
-      const image = await win.webContents.capturePage();
-      fs.writeFileSync(path.join(directory, `profiles-${width}x${height}-${theme}.png`), image.toPNG());
-      if (result.width !== width || result.height !== height || result.theme !== theme ||
-          !result.sidebar || result.sidebarOverflow > 1 || !result.launchVisible || result.overflow > 1 || result.tableOverflow > 1) {
-        fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
-        throw new Error('Installed layout acceptance failed: ' + JSON.stringify(result));
       }
     }
   }

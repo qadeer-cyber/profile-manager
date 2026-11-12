@@ -91,7 +91,7 @@ jobs:
           $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-stable-smoke-data'
           $process = Start-Process -FilePath $app -PassThru
           try {
-            if (!$process.WaitForExit(120000)) { throw 'Installed app smoke timed out.' }
+            if (!$process.WaitForExit(240000)) { throw 'Installed app smoke timed out.' }
             $result = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
             if ($process.ExitCode -ne 0 -or !$result.chromeStable -or !$result.stopped) { throw ($result | ConvertTo-Json) }
             $result | ConvertTo-Json
