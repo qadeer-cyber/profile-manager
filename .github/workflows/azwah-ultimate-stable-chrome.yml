@@ -106,6 +106,9 @@ jobs:
         shell: pwsh
         run: |
           node --test --test-force-exit test/chrome-stable-windows-live.test.js test/chrome-stable-network-windows.test.js test/chrome-stable-dbip-windows.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:PM_TEST_SOCKS5 = '1'
+          node --test --test-force-exit test/chrome-stable-dbip-windows.test.js
           exit $LASTEXITCODE
       - uses: actions/download-artifact@v4
         with:

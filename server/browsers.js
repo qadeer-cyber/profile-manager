@@ -753,8 +753,8 @@ export function classifyPreferences(entry) {
   return 'unknown';
 }
 export function terminationOutcome(entry) {
-  if (entry.stopping) return 'stopped';
   if (entry.stillAlive) return 'error';
+  if (entry.stopping || entry.stopCause === 'REGIONAL_LOCALE_VERIFICATION_FAILED') return 'stopped';
   if (entry.exitTypeState === 'ok' && entry.exitTypeFresh !== false && entry.exitType === 'SessionEnded') return 'stopped';
   const byCode = classifyExitCode(entry);
   if (byCode !== 'unknown') return byCode;
