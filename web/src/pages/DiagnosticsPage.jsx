@@ -18,22 +18,23 @@ export function DiagnosticsPage({ eventsLog }) {
   useEffect(() => { load(); const t = setInterval(load, 2000); return () => clearInterval(t); }, [load]);
   if (!d || !b) return <p className="muted" aria-busy="true">Loading diagnostics…</p>;
   const install = async () => { try { await api('/api/browser/install', { method: 'POST' }); toast('Downloading Chromium…'); load(); } catch (e) { toast(e.message, 'error'); } };
-  const exportGoogleCompat = async () => {
+  const exportReport = async (url, label, options) => {
     try {
-      const report = await api('/api/google-compat/report', { method: 'POST', body: JSON.stringify({ probe: true }) });
+      const report = await api(url, options);
       const blob = new Blob([JSON.stringify(report, null, 2)], { type: 'application/json' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `profile-manager-google-compat-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+      a.download = `azwah-${label}-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
-      toast('Google compatibility report downloaded (local only).');
+      toast('Diagnostic report downloaded to this computer.');
     } catch (e) { toast(e.message, 'error'); }
   };
   const Row = ({ k, v }) => <tr><th>{k}</th><td>{v}</td></tr>;
   return <>
     <header className="page-head"><h1>Diagnostics</h1>
-      <button type="button" onClick={exportGoogleCompat} aria-label="Export Google compatibility diagnostic">Export Google compatibility (local JSON)</button>
+      <button className="primary" type="button" onClick={() => exportReport('/api/diagnostics/lifecycle-report', 'lifecycle')}>Export Diagnostic Report</button>
+      <button type="button" onClick={() => exportReport('/api/google-compat/report', 'google-compat', { method: 'POST', body: { probe: true } })} aria-label="Export Google compatibility diagnostic">Export Google compatibility (local JSON)</button>
       <button onClick={load} aria-label="Refresh app information">Refresh</button></header>
     <section className="panel"><p className="muted small">The Google compatibility export is saved on this PC only. It does not solve CAPTCHAs, does not send data to Azwah Multi Browser servers, and redacts proxy passwords. Use it to compare launch shape, DNS, and reCAPTCHA script reachability with ordinary Chrome.</p></section>
     <RecoveryPanel />

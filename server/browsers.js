@@ -521,10 +521,10 @@ async function doLaunch(p, opts = {}) {
       requestedArgs: [...args] };
     const trackRenderer = page => page.on('crash', () => {
       entry.rendererCrashes = (entry.rendererCrashes || 0) + 1;
-      console.warn('CHROME-RENDERER-CRASH ' + JSON.stringify({
-        profileId: p.id, launchId: entry.launchId, browserPid: entry.browserPid,
-        hostResources: hostResourceSample(),
-      }));
+      const event = { profileId: p.id, launchId: entry.launchId, browserPid: entry.browserPid,
+        hostResources: hostResourceSample() };
+      recordLifecycle({ kind: 'renderer-crash', ...event });
+      console.warn('CHROME-RENDERER-CRASH ' + JSON.stringify(event));
     });
     ctx.pages().forEach(trackRenderer);
     ctx.on('page', trackRenderer);
@@ -766,13 +766,22 @@ export function closeOutcome(entry) {
   const outcome = terminationOutcome(entry);
   return outcome === 'unknown' ? 'stopped' : outcome;
 }
+const lifecycleReports = [];
+function recordLifecycle(event) {
+  lifecycleReports.push({ at: new Date().toISOString(), ...event });
+  if (lifecycleReports.length > 100) lifecycleReports.shift();
+}
+export function lifecycleReport() {
+  return { generatedAt: new Date().toISOString(), hostResources: hostResourceSample(), events: lifecycleReports.slice() };
+}
+
 function logClassifierEvidence(id, entry, chosen) {
   let name = null;
   try { name = db.prepare('SELECT name FROM profiles WHERE id=?').get(id)?.name ?? null; } catch {}
   const byCode = classifyExitCode(entry);
   const byPrefs = classifyPreferences(entry);
-  console.log('CLASSIFIER-EVIDENCE ' + JSON.stringify({
-    id, name, launchId: entry.launchId ?? null,
+  const event = {
+    id, launchId: entry.launchId ?? null,
     childPid: entry.childPid ?? null, browserPid: entry.browserPid ?? null,
     processCorrelation: entry.processCorrelation ?? null,
     childExitCode: entry.childExitCode ?? null, childExitSignal: entry.childExitSignal ?? null,
@@ -792,7 +801,9 @@ function logClassifierEvidence(id, entry, chosen) {
     lastProxyHealthyAt: entry.lastProxyHealthyAt ?? null,
     rendererCrashes: entry.rendererCrashes ?? 0,
     hostResources: hostResourceSample(),
-  }));
+  };
+  recordLifecycle({ kind: 'browser-exit', ...event });
+  console.log('CLASSIFIER-EVIDENCE ' + JSON.stringify({ ...event, name }));
   if (!entry.stopping && !entry.stillAlive && byCode === 'unknown' && byPrefs === 'unknown') {
     console.warn('CLASSIFIER-UNKNOWN exit code and exit_type are both unknown; not marking a crash');
   }

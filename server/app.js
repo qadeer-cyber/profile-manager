@@ -1681,6 +1681,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     res.json(recoverOperation(req.params.id, { cleanup: req.body?.cleanup === true }));
   }));
   ui.get('/diagnostics', (req, res) => res.json(diagnostics()));
+  ui.get('/diagnostics/lifecycle-report', (req, res) => res.json(engine.lifecycleReport()));
   ui.get('/browser', wrap(async (req, res) => {
     const status = browserStatus();
     if (process.env.AZWAH_STABLE_CHROME_EDITION !== '1') return res.json(status);
