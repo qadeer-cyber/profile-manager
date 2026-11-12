@@ -32,6 +32,13 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     } else if (req.url === '/sw.js') {
       res.setHeader('Content-Type', 'application/javascript');
       res.end('self.addEventListener("install", () => self.skipWaiting());');
+    } else if (req.url.startsWith('/stress-image.svg')) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#315bc7"/></svg>');
+    } else if (req.url.startsWith('/restored?')) {
+      res.end('<title>Workload</title>' +
+        Array.from({ length: 12 }, (_, i) => '<img src="/stress-image.svg?asset=' + i + '">').join('') +
+        '<script>let n=0;for(let i=0;i<4000000;i++) n+=Math.sqrt(i);window.completed=n;</script>');
     } else res.end('<title>Visible Chrome location fixture</title>');
   });
   const rejectedProxy = createServer();
@@ -176,10 +183,20 @@ test('visible signed Windows Chrome Stable applies manual location through the p
         console.log(JSON.stringify(result));
       }
       if (run === 0) {
-        for (let index = 0; index < 24; index++) {
-          const tab = await context.newPage();
-          await tab.goto(origin + '/restored?tab=' + (index % 12));
+        for (let offset = 0; offset < 24; offset += 4) {
+          const tabs = [];
+          for (let index = 0; index < 4; index++) tabs.push(await context.newPage());
+          await Promise.all(tabs.map(async (tab, index) => {
+            await tab.goto(origin + '/restored?tab=' + ((offset + index) % 12));
+            assert.equal(await tab.evaluate(() => Number.isFinite(window.completed) &&
+              [...document.images].every(img => img.complete && img.naturalWidth === 1200)), true);
+          }));
         }
+        const processSample = JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+          `Get-Process -Id ${current.pid} | Select-Object Id,CPU,WorkingSet64 | ConvertTo-Json -Compress`],
+        { encoding: 'utf8', timeout: 10000 }));
+        console.log('CHROME-WORKLOAD ' + JSON.stringify({ host: engine.resourceSnapshot().host,
+          browserRoot: processSample, tabs: context.pages().length, concurrentProfiles: 3 }));
         sessionUrls = context.pages().map(page => page.url());
         assert.ok(sessionUrls.length >= 26 && new Set(sessionUrls).size < sessionUrls.length);
       }

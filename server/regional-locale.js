@@ -4,7 +4,7 @@
 // this does not enable a CDP TCP port or replace any JavaScript navigator values.
 // Bound for confirming Target.closeTarget of a failed diagnostic tab (addendum A1).
 export const CLOSE_CONFIRM_MS = 1000;
-export async function installRegionalLocale(context, locale, { onFailure = () => {} } = {}) {
+export async function installRegionalLocale(context, locale, { onFailure = () => {}, onClosing = () => {} } = {}) {
   const root = await context.browser().newBrowserCDPSession();
   // Pinned playwright-core 1.64.1 bridge, like browsers.js browserProcess().
   // Public CDPSession cannot address flattened child sessions. Validate the narrow
@@ -85,6 +85,7 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
         }
         failure ||= cause;
         if (!startup) {
+          onClosing();
           await context.close().catch(() => {});
           await onFailure(failure);
         }
@@ -105,6 +106,7 @@ export async function installRegionalLocale(context, locale, { onFailure = () =>
       const work = applyLocale(live.child).catch(async error => {
         if (closed || !children.has(id)) return;
         failure ||= new Error('Failed to retain native browser regional locale', { cause: error });
+        onClosing();
         await context.close().catch(() => {});
         await onFailure(failure);
       });

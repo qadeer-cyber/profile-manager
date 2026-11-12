@@ -1,14 +1,14 @@
 name: AZWAH Windows installer acceptance
 on:
   push:
-    branches: [release/azwah-windows]
+    branches: [release/azwah-windows, hardening/azwah-windows-reliability]
   workflow_dispatch:
 permissions:
   contents: read
   actions: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/release/azwah-windows'
+    if: github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability'
     runs-on: windows-2022
     timeout-minutes: 65
     env:
@@ -157,6 +157,7 @@ jobs:
           if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
           Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'
       - uses: actions/upload-artifact@v4
+        if: github.ref == 'refs/heads/release/azwah-windows'
         with:
           name: azwah-windows-x64-${{ github.sha }}
           path: |

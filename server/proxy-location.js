@@ -44,13 +44,34 @@ export function validateProxyLocation(payload, ip) {
   };
 }
 
+export function classifyProxyProbeError(error, type) {
+  const code = error?.code;
+  if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+    return fail('The proxy hostname could not be resolved. Check the saved proxy address and DNS.', 'PROXY_DNS_FAILED');
+  }
+  if (['ABORT_ERR', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code) || error?.name === 'TimeoutError') {
+    return fail('The proxy exit check timed out. Check proxy connectivity and retry.', 'PROXY_PROBE_TIMEOUT');
+  }
+  if (['ECONNREFUSED', 'ECONNRESET', 'EHOSTUNREACH', 'ENETUNREACH', 'EPIPE'].includes(code)) {
+    return fail('The upstream proxy connection failed. Check whether the proxy is online.', 'PROXY_UPSTREAM_UNAVAILABLE');
+  }
+  if (type === 'socks5' && /authentication failed|authentication rejected|no acceptable authentication/i.test(error?.message || '')) {
+    return fail('The SOCKS5 proxy rejected authentication. Check its saved credentials.', 'PROXY_AUTH_REQUIRED');
+  }
+  return error;
+}
+
+export function isTransientProxyProbeError(error) {
+  return ['PROXY_PROBE_TIMEOUT', 'PROXY_UPSTREAM_UNAVAILABLE', 'PROXY_EXIT_SERVICE_UNAVAILABLE'].includes(error?.code);
+}
+
 function requestJson(url, agent, headers) {
   return new Promise((resolve, reject) => {
     const req = https.get(url, { agent, headers, signal: AbortSignal.timeout(10000) }, response => {
       if (response.statusCode !== 200) {
         response.resume();
         reject(response.statusCode === 407 ? fail('The proxy rejected authentication.', 'PROXY_AUTH_REQUIRED') :
-          fail('The proxy or location service returned an unsuccessful response.'));
+          fail('The proxy or location service returned an unsuccessful response.', response.statusCode >= 500 ? 'PROXY_EXIT_SERVICE_UNAVAILABLE' : 'PROXY_LOCATION_UNAVAILABLE'));
         return;
       }
       let bytes = 0;
@@ -126,12 +147,14 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
       location = await offlineLookup(ip);
       if (location?.ip !== ip) throw fail('The offline lookup did not confirm the proxy exit IP.');
     }
-    if (await observe() !== ip) throw fail('The proxy exit IP changed during location detection. Retry with a consistent proxy exit.');
+    if (await observe() !== ip) throw fail('The proxy exit IP changed during location detection. Retry with a consistent proxy exit.', 'PROXY_EXIT_ROTATED');
     const result = { ...location, source, proxyId: proxy.id, proxyRevision: proxy.revision ?? null, expiresAt: now() + 24 * 60 * 60 * 1000 };
     save?.(result);
     return result;
   } catch (error) {
-    if (['PROXY_LOCATION_UNAVAILABLE', 'GEOIP_CREDENTIALS_UNAVAILABLE', 'PROXY_AUTH_REQUIRED'].includes(error.code)) throw error;
+    const classified = classifyProxyProbeError(error, proxy?.type);
+    if (classified !== error || ['PROXY_LOCATION_UNAVAILABLE', 'GEOIP_CREDENTIALS_UNAVAILABLE', 'PROXY_AUTH_REQUIRED',
+      'PROXY_EXIT_ROTATED', 'PROXY_EXIT_SERVICE_UNAVAILABLE'].includes(error.code)) throw classified;
     throw fail('Proxy location could not be verified. Check proxy connectivity and the location provider in Settings → Proxy location.');
   } finally { agent?.destroy(); }
 }

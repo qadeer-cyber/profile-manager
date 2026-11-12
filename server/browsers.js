@@ -33,7 +33,7 @@ import { EventEmitter } from 'events';
 import { chromium } from 'playwright';
 import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
 import { geoIpCredentials } from './geoip-settings.js';
-import { resolveProxyLocation } from './proxy-location.js';
+import { isTransientProxyProbeError, resolveProxyLocation } from './proxy-location.js';
 import { db, userDataDir, getSetting, setSetting } from './db.js';
 import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
@@ -285,6 +285,7 @@ function stableProxyAssignment(p) {
 
 function monitorStableProxy(p, opts, entry, location) {
   const key = 'proxy-location:' + p.id;
+  entry.lastProxyHealthyAt = Date.now();
   const active = () => !shuttingDown && live.get(p.id) === entry && !entry.stopping;
   const schedule = () => {
     entry.stableProxyTimer = setTimeout(recheck, 60000);
@@ -293,13 +294,26 @@ function monitorStableProxy(p, opts, entry, location) {
   async function recheck() {
     if (!active()) return;
     let rotation = false;
+    let code = 'PROXY_ASSIGNMENT_CHANGED';
     let message = 'Chrome stopped because the proxy could no longer be verified.';
     try {
       if (!stableProxyAssignment(p)) {
         message = 'The assigned proxy changed. Relaunch to apply the new proxy.';
         throw new Error(message);
       }
-      const observed = await resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), credentials: geoIpCredentials });
+      const probe = () => resolveProxyLocation(p.proxy, { read: () => getSetting(key, null), credentials: geoIpCredentials });
+      let observed;
+      try { observed = await probe(); }
+      catch (error) {
+        if (!isTransientProxyProbeError(error)) throw error;
+        await sleep(1500);
+        if (!active()) return;
+        if (!stableProxyAssignment(p)) {
+          message = 'The assigned proxy changed. Relaunch to apply the new proxy.';
+          throw new Error(message);
+        }
+        observed = await probe();
+      }
       if (!active()) return;
       if (!stableProxyAssignment(p)) {
         message = 'The assigned proxy changed. Relaunch to apply the new proxy.';
@@ -307,6 +321,7 @@ function monitorStableProxy(p, opts, entry, location) {
       }
       rotation = ['ip', 'timezone', 'latitude', 'longitude', 'accuracy'].some(field => observed[field] !== location[field]);
       if (rotation) {
+        code = 'PROXY_EXIT_ROTATED';
         message = 'The proxy exit identity changed. Relaunch to verify the new identity.';
         throw new Error(message);
       }
@@ -314,9 +329,15 @@ function monitorStableProxy(p, opts, entry, location) {
         location = { ...location, expiresAt: observed.expiresAt };
         setSetting(key, location);
       }
+      entry.lastProxyHealthyAt = Date.now();
       schedule();
-    } catch {
+    } catch (error) {
       if (!active()) return;
+      if (error.status === 503 || error.code === 'GEOIP_CREDENTIALS_UNAVAILABLE') {
+        code = error.code;
+        message = error.message;
+      }
+      entry.stopCause = code;
       setSetting(key, null);
       // Revoke the authenticated browser's route before attempting shutdown.
       // An unresponsive Chrome process must not keep using a stale relay.
@@ -333,7 +354,7 @@ function monitorStableProxy(p, opts, entry, location) {
         }
       }
       setStatus(p.id, { last_error: message });
-      emit('profile:launch-failed', p.id, { error: message, code: 'PROXY_BROWSER_IDENTITY_FAILED' });
+      emit('profile:launch-failed', p.id, { error: message, code });
     }
   }
   schedule();
@@ -498,9 +519,19 @@ async function doLaunch(p, opts = {}) {
       // Sanitized launch-time proxy only. The classifier never reads this field.
       launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null,
       requestedArgs: [...args] };
+    const trackRenderer = page => page.on('crash', () => {
+      entry.rendererCrashes = (entry.rendererCrashes || 0) + 1;
+      console.warn('CHROME-RENDERER-CRASH ' + JSON.stringify({
+        profileId: p.id, launchId: entry.launchId, browserPid: entry.browserPid,
+        hostResources: hostResourceSample(),
+      }));
+    });
+    ctx.pages().forEach(trackRenderer);
+    ctx.on('page', trackRenderer);
     trackExit(entry); // Capture before waitWs / pipe PID discovery can yield.
     const diagnosticStart = diagnosticProcessStart(Number(entry.childPid));
     if (regional.languages.length) entry.regional = await installRegionalLocale(ctx, regional.locale || regional.languages[0], {
+      onClosing: () => { entry.stopCause = 'REGIONAL_LOCALE_VERIFICATION_FAILED'; },
       onFailure: async error => {
         // Let normal close bookkeeping finish before recording the regional
         // failure; otherwise a clean process exit can clear its error message.
@@ -757,6 +788,10 @@ function logClassifierEvidence(id, entry, chosen) {
     exitCodeApproach: byCode,
     prefsApproach: byPrefs,
     chosen,
+    stopCause: entry.stopCause ?? (entry.stopping ? 'REQUESTED_STOP' : null),
+    lastProxyHealthyAt: entry.lastProxyHealthyAt ?? null,
+    rendererCrashes: entry.rendererCrashes ?? 0,
+    hostResources: hostResourceSample(),
   }));
   if (!entry.stopping && !entry.stillAlive && byCode === 'unknown' && byPrefs === 'unknown') {
     console.warn('CLASSIFIER-UNKNOWN exit code and exit_type are both unknown; not marking a crash');

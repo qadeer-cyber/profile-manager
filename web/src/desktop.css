@@ -116,3 +116,16 @@
 .app.shell .settings-nav a { border-radius: 8px; padding: 8px 10px; }
 .app.shell :is(input:not([type=checkbox],[type=radio],[type=file]),select,textarea) { border-radius: var(--r); }
 .app.shell .profile-heading { background: linear-gradient(110deg,var(--surface),var(--accent-soft)); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px 20px; box-shadow: var(--shadow); }
+
+/* Keep profile controls reachable inside the desktop content area. */
+.app.shell table.grid.profiles { min-width: 0; width: 100%; }
+.app.shell .profiles :is(td,th) { overflow-wrap: anywhere; }
+.app.shell .profiles .col-name .name { white-space: normal; }
+.app.shell .profiles .col-actions { white-space: normal; }
+.app.shell .profiles .col-actions button { margin: 2px; }
+.app.shell .profiles .profile-error { line-height: 1.45; max-width: 38ch; overflow-wrap: anywhere; }
+@media (max-width: 1450px) {
+  .app.shell .profiles .col-actions { min-width: 96px; }
+  .app.shell .profiles .col-proxy .mono-sm { white-space: normal; }
+  .app.shell .profiles .col-name { min-width: 120px; }
+}

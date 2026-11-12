@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { publicIp, probeProxyExit, resolveProxyLocation, validateProxyLocation } from '../server/proxy-location.js';
+import { classifyProxyProbeError, isTransientProxyProbeError, publicIp, probeProxyExit, resolveProxyLocation, validateProxyLocation } from '../server/proxy-location.js';
 
 const ip = '8.8.8.8';
 const fixture = {
@@ -123,4 +123,18 @@ test('inventory probe verifies an exit without a GeoIP lookup and GeoLite uses i
   });
   assert.equal(result.source, 'MaxMind GeoLite City');
   assert.deepEqual(calls, [['api64.ipify.org', false], ['api64.ipify.org', false], ['geolite.info', true], ['api64.ipify.org', false]]);
+});
+
+test('proxy transport diagnostics are distinct, bounded-retry eligible only for transient failures and sanitized', () => {
+  for (const [raw, type, code, retry] of [
+    [{ code: 'ENOTFOUND' }, 'http', 'PROXY_DNS_FAILED', false],
+    [{ code: 'ABORT_ERR' }, 'http', 'PROXY_PROBE_TIMEOUT', true],
+    [{ code: 'ECONNREFUSED' }, 'http', 'PROXY_UPSTREAM_UNAVAILABLE', true],
+    [{ message: 'Socks5 Authentication failed: secret-marker' }, 'socks5', 'PROXY_AUTH_REQUIRED', false],
+  ]) {
+    const error = classifyProxyProbeError(raw, type);
+    assert.equal(error.code, code);
+    assert.equal(isTransientProxyProbeError(error), retry);
+    assert.ok(!error.message.includes('secret-marker'));
+  }
 });
