@@ -87,6 +87,7 @@ jobs:
           $app = Join-Path $dir 'AZWAH.exe'
           $env:PM_SMOKE = '1'
           $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP 'azwah-stable-smoke.json'
+          $env:PM_SMOKE_VISUAL_DIR = Join-Path $env:RUNNER_TEMP 'azwah-installed-visuals'
           $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-stable-smoke-data'
           $process = Start-Process -FilePath $app -PassThru
           try {
@@ -156,6 +157,14 @@ jobs:
           $after = @(ProfileIds)
           if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
           Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'
+      - name: Upload installed layout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-installed-layout-${{ github.sha }}
+          path: ${{ runner.temp }}/azwah-installed-visuals
+          if-no-files-found: ignore
+          retention-days: 3
       - uses: actions/upload-artifact@v4
         if: github.ref == 'refs/heads/release/azwah-windows'
         with:

@@ -209,6 +209,50 @@ app.whenReady().then(async () => {
 });
 
 // ---- smoke-test mode (used by test/electron-smoke.js under xvfb) ----
+async function captureInstalledVisuals() {
+  const directory = process.env.PM_SMOKE_VISUAL_DIR;
+  fs.mkdirSync(directory, { recursive: true });
+  const results = [];
+  for (const [width, height] of [[1366, 768], [1600, 900], [1920, 1080]]) {
+    win.setContentSize(width, height);
+    for (const theme of ['light', 'dark']) {
+      const result = await win.webContents.executeJavaScript(`(async () => {
+        const theme = ${JSON.stringify(theme)};
+        const button = document.querySelector('[aria-label="' + theme[0].toUpperCase() + theme.slice(1) + ' theme"]');
+        if (!button) throw new Error('Theme controls unavailable');
+        button.click();
+        for (let attempt = 0; attempt < 50; attempt++) {
+          if (document.querySelector('.profiles .launch') && document.documentElement.dataset.theme === theme) break;
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        const content = document.querySelector('.content');
+        const sidebar = document.querySelector('.side');
+        const launch = document.querySelector('.profiles .launch');
+        const table = document.querySelector('.profiles')?.closest('.table-wrap');
+        const bounds = launch?.getBoundingClientRect();
+        const tableBounds = table?.getBoundingClientRect();
+        return {
+          width: innerWidth, height: innerHeight, theme: document.documentElement.dataset.theme,
+          sidebar: !!sidebar?.querySelector('[data-nav=profiles]'),
+          overflow: content ? content.scrollWidth - content.clientWidth : null,
+          tableOverflow: table ? table.scrollWidth - table.clientWidth : null,
+          launchVisible: !!bounds && !!tableBounds && bounds.width > 0 &&
+            bounds.left >= tableBounds.left && bounds.right <= tableBounds.right,
+        };
+      })()`);
+      results.push(result);
+      const image = await win.webContents.capturePage();
+      fs.writeFileSync(path.join(directory, `profiles-${width}x${height}-${theme}.png`), image.toPNG());
+      if (result.width !== width || result.height !== height || result.theme !== theme ||
+          !result.sidebar || !result.launchVisible || result.overflow > 1 || result.tableOverflow > 1) {
+        fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
+        throw new Error('Installed layout acceptance failed: ' + JSON.stringify(result));
+      }
+    }
+  }
+  fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
+}
+
 async function runSmoke() {
   // Literal in-app import. Both flags are required; a path is never taken from the environment.
   if (process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1') {
@@ -228,6 +272,7 @@ async function runSmoke() {
     if (launch.s !== 200 || !launch.d?.pid || launch.d?.cdp) throw new Error('Installed Chrome launch failed: ' + JSON.stringify(launch));
     const stopped = await call('POST', endpoint + '/stop');
     if (stopped.s !== 200) throw new Error('Installed Chrome stop failed: ' + JSON.stringify(stopped));
+    if (process.env.PM_SMOKE_VISUAL_DIR) await captureInstalledVisuals();
     fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, userData }));
     app.quit();
     return;

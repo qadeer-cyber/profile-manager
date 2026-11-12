@@ -129,3 +129,14 @@
   .app.shell .profiles .col-proxy .mono-sm { white-space: normal; }
   .app.shell .profiles .col-name { min-width: 120px; }
 }
+
+@media (max-width: 1450px) {
+  .app.shell table.grid.profiles { table-layout: fixed; }
+  .app.shell .profiles th.cb { width: 29px; }
+  .app.shell .profiles th.fav { width: 68px; }
+  .app.shell .profiles th.col-name { width: 23%; }
+  .app.shell .profiles th.col-status { width: 91px; }
+  .app.shell .profiles th.col-actions { width: 134px; }
+  .app.shell .profiles :is(td,th) { padding-inline: 5px; }
+  .app.shell .profiles .col-lastused { white-space: normal; }
+}
