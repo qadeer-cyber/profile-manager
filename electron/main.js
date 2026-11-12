@@ -11,6 +11,8 @@ import { applyPackagedFlag } from '../server/testflags.js';
 import { durableShutdown } from '../server/shutdown.js';
 import { classifyLaunch, writeSmokeRejection } from './smoke-gate.js';
 
+import { createUpdateChecker } from './release-updates.js';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
 // Overwrite any inherited value before the backend is loaded (dynamic import in startBackend).
@@ -138,6 +140,30 @@ ipcMain.handle('pm:copy-device-code', async event => {
 ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isUltimateEdition ? 'Ultimate' : isOwnerEdition ? 'Owner / Personal' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
+if (app.isPackaged && process.platform === 'win32' && packageMetadata.azwahChromiumRuntime === 'stable-chrome') {
+  const version = app.getVersion();
+  const checker = createUpdateChecker({ version, channel: version.includes('-beta.') ? 'beta' : 'stable' });
+  function authorizeUpdateRequest(event) {
+    if (!win || !backend || event.sender !== win.webContents ||
+        event.senderFrame !== win.webContents.mainFrame ||
+        new URL(event.senderFrame.url).origin !== new URL(backend.url).origin) {
+      throw new Error('Unauthorized update request.');
+    }
+  }
+  ipcMain.handle('pm:update-status', event => { authorizeUpdateRequest(event); return checker.status(); });
+  ipcMain.handle('pm:update-check', event => { authorizeUpdateRequest(event); return checker.check(); });
+  ipcMain.handle('pm:update-open', event => {
+    authorizeUpdateRequest(event);
+    const state = checker.status();
+    if (state.status === 'available') return shell.openExternal(state.latest.url);
+  });
+  if (!SMOKE) {
+    const startupCheck = setTimeout(() => void checker.check(), 15000);
+    const periodicCheck = setInterval(() => void checker.check(), 6 * 60 * 60 * 1000);
+    app.once('before-quit', () => { clearTimeout(startupCheck); clearInterval(periodicCheck); });
+  }
+}
+
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 // First before-quit is one-shot: guard, cancel the default quit, then browser close,
 // WAL checkpoint, and db.close. app.exit(0) only if every step succeeds.

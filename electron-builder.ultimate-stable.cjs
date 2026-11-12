@@ -3,7 +3,7 @@ module.exports = {
   ...base,
   productName: 'AZWAH',
   win: { ...base.win, icon: 'assets/azwah.ico', signAndEditExecutable: true },
-  extraMetadata: { ...base.extraMetadata, azwahChromiumRuntime: 'stable-chrome', azwahProductName: 'AZWAH' },
+  extraMetadata: { ...base.extraMetadata, azwahChromiumRuntime: 'stable-chrome', azwahProductName: 'AZWAH', version: '0.5.0-beta.1' },
   extraResources: [
     ...base.extraResources.filter(({ to }) => !['browsers', 'privacy-engine', 'native-chromium'].includes(to)),
     { from: 'build/geoip-dbip', to: 'geoip-dbip' },

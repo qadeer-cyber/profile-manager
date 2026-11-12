@@ -24,6 +24,14 @@ const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'E
 const MORE = [['dashboard', 'Dashboard'], ['templates', 'Templates'], ['monitoring', 'Monitoring'], ['activation', 'Edition']];
 export function App() {
   const toast = useToast();
+  const [update, setUpdate] = useState(null);
+  const [remindedVersion, setRemindedVersion] = useState(null);
+  useEffect(() => {
+    const refresh = () => window.pm?.updateStatus?.().then(setUpdate).catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 30000);
+    return () => clearInterval(timer);
+  }, []);
   const [page, setPage] = useState('profiles');
   const [backupRequest, setBackupRequest] = useState(0);
   const [edition, setEdition] = useState(null);
@@ -143,6 +151,11 @@ export function App() {
             <div><strong>{meta.profileCount ?? '—'}</strong><span>Profiles</span></div>
             <div><strong>{meta.running.length}</strong><span><i /> Running</span></div>
           </div>
+        </div>}
+        {update?.status === 'available' && update.latest.version !== remindedVersion && <div className="notice" role="status">
+          AZWAH update {update.latest.version} is available.{' '}
+          <button onClick={() => setPage('settings')}>View update</button>{' '}
+          <button onClick={() => setRemindedVersion(update.latest.version)}>Remind me later</button>
         </div>}
         {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
         {page === 'dashboard' && <DashboardPage onOpenProfiles={() => showProfiles('__all')} />}

@@ -3,6 +3,39 @@ import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { useTheme } from '../hooks/useTheme.js';
 
+function UpdatesSettings() {
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const refresh = () => window.pm?.updateStatus?.().then(setState).catch(() => {});
+    refresh();
+    const timer = setInterval(refresh, 15000);
+    return () => clearInterval(timer);
+  }, []);
+  if (!state) return null;
+  const latest = state.latest;
+  const status = { idle: 'Waiting for the first check', checking: 'Checking…', unavailable: 'Could not reach the release feed. Try again later.', current: 'You’re up to date', available: 'AZWAH Update Available' };
+  async function check() {
+    setBusy(true);
+    try { setState(await window.pm.checkUpdate()); }
+    finally { setBusy(false); }
+  }
+  return <section className="panel" id="updates">
+    <h2>Updates</h2>
+    <p>Installed version {state.version} · {state.channel === 'beta' ? 'Beta' : 'Stable'} channel</p>
+    <p aria-live="polite">{status[state.status]}</p>
+    {state.checkedAt && <p>Last successful check {new Date(state.checkedAt).toLocaleString()}</p>}
+    {state.status === 'available' && <div>
+      <h3>Version {latest.version}</h3>
+      <p>{new Date(latest.publishedAt).toLocaleDateString()} · {(latest.size / 1048576).toFixed(1)} MiB</p>
+      {latest.notes && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{latest.notes}</p>}
+      <p>Close AZWAH normally before running the installer. The official release page contains the download and release notes.</p>
+      <button onClick={() => void window.pm.openUpdateRelease().catch(() => {})}>View release and download</button>
+    </div>}
+    <button disabled={busy || state.status === 'checking'} onClick={() => void check().catch(() => {})}>Check for updates</button>
+  </section>;
+}
+
 function GeoIpSettings() {
   const toast = useToast();
   const [state, setState] = useState(null);
@@ -78,6 +111,7 @@ export function SettingsPage({ backupRequest = 0 }) {
         <div className="row"><input readOnly className="mono-input" value={show ? token : '•'.repeat(24)} /><button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button><button onClick={() => { navigator.clipboard.writeText(token); toast('Token copied', 'success'); }}>Copy</button></div></>
         : <p className="muted">In web mode the token is in <code>data/api-token</code> or <code>PM_API_TOKEN</code>.</p>}
     </section>
+    <UpdatesSettings />
     <GeoIpSettings />
     <section className="panel" id="data"><h2>Data and security</h2>
       <p>Data folder: <code>{diag?.dataDir || 'Unavailable'}</code></p>
