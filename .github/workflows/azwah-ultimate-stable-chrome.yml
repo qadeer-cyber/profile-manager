@@ -170,7 +170,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - uses: actions/upload-artifact@v4
-        if: success() && github.ref == 'refs/heads/release/azwah-windows'
+        if: success() && (github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability')
         with:
           name: ${{ github.ref == 'refs/heads/hardening/azwah-windows-reliability' && 'azwah-windows-beta-reliability-x64' || 'azwah-windows-x64' }}-${{ github.sha }}
           path: |
