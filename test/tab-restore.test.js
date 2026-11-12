@@ -82,3 +82,30 @@ test('Chrome checkpoints keep duplicate ordered tabs beyond twenty and reject em
     assert.deepEqual(chooseStableLaunchUrls({ savedUrls: urls, nativeSession: true }), []);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('session restore rejects alternate loopback spellings and preserves public IPv6', () => {
+  for (const host of ['localhost.', 'worker.localhost.', '127.1', '[::ffff:127.0.0.1]', '[::ffff:0.0.0.0]', '[::]']) {
+    assert.equal(eligibleTabUrl('http://' + host + '/admin'), null, host);
+  }
+  for (let value = 1; value < 64; value++) {
+    assert.equal(eligibleTabUrl('http://127.0.' + value + '.1/'), null);
+    assert.equal(eligibleTabUrl('http://[::ffff:127.0.' + value + '.1]/'), null);
+  }
+  assert.equal(eligibleTabUrl('https://[2606:4700:4700::1111]/'), 'https://[2606:4700:4700::1111]/');
+});
+
+test('oversized session files fail closed and oversized writes preserve the previous checkpoint', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-oversized-tabs-'));
+  const options = { preserveDuplicates: true };
+  const urls = Array(60).fill('https://example.org/');
+  try {
+    writeSavedTabs(dir, urls, options);
+    assert.throws(() => writeSavedTabs(dir, Array(1001).fill(urls[0]), options), /storage limit/);
+    assert.deepEqual(readSavedTabs(dir, options).urls, urls);
+    const file = path.join(dir, TAB_STATE_NAME);
+    fs.writeFileSync(file, JSON.stringify({ version: 1, urls: Array(1001).fill(urls[0]) }));
+    assert.deepEqual(readSavedTabs(dir, options), { urls: [], corrupt: true });
+    fs.writeFileSync(file, JSON.stringify({ version: 1, urls: [] }) + ' '.repeat(4 * 1024 * 1024));
+    assert.deepEqual(readSavedTabs(dir, options), { urls: [], corrupt: true });
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});

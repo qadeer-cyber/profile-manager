@@ -42,7 +42,7 @@ jobs:
       - name: Stable Chrome and migration tests
         shell: pwsh
         run: |
-          node --test test/tab-restore.test.js test/dbip-location.test.js test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js test/termination-evidence.test.js test/m17-crash-recovery.test.js test/backup.test.js test/backup-encrypted.test.js
+          node --test test/tab-restore.test.js test/launch-memory-threshold.test.js test/dbip-location.test.js test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js test/termination-evidence.test.js test/m17-crash-recovery.test.js test/backup.test.js test/backup-encrypted.test.js
           exit $LASTEXITCODE
       - name: Build Office payload and Ultimate NSIS without a Chrome binary
         shell: pwsh
@@ -170,7 +170,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - uses: actions/upload-artifact@v4
-        if: success()
+        if: success() && github.ref == 'refs/heads/release/azwah-windows'
         with:
           name: ${{ github.ref == 'refs/heads/hardening/azwah-windows-reliability' && 'azwah-windows-beta-reliability-x64' || 'azwah-windows-x64' }}-${{ github.sha }}
           path: |

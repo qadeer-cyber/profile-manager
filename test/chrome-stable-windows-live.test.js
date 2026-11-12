@@ -238,6 +238,26 @@ test('visible signed Windows Chrome Stable applies manual location through the p
     assert.ok(restored);
     assert.equal(await restored.evaluate(() => localStorage.getItem('azwah')), 'profile-a');
     await api('POST', endpoint + '/stop');
+    const restartSamples = [];
+    for (let cycle = 0; cycle < 3; cycle++) {
+      const started = performance.now();
+      const [firstLaunch, secondLaunch] = await Promise.all([
+        api('POST', endpoint + '/launch', { headless: false }),
+        api('POST', endpoint + '/launch', { headless: false }),
+      ]);
+      assert.ok(Number.isInteger(firstLaunch.pid) && firstLaunch.pid > 0);
+      assert.equal(firstLaunch.pid, secondLaunch.pid, 'Concurrent starts must share one owned process');
+      const launchMs = Math.round(performance.now() - started);
+      const stopping = performance.now();
+      await api('POST', endpoint + '/stop');
+      const stopMs = Math.round(performance.now() - stopping);
+      const alive = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
+        `[bool](Get-Process -Id ${firstLaunch.pid} -ErrorAction SilentlyContinue)`],
+        { encoding: 'utf8', timeout: 10000 }).trim();
+      assert.equal(alive, 'False', 'Stop must terminate the owned root process');
+      restartSamples.push({ cycle: cycle + 1, launchMs, stopMs });
+    }
+    console.log('CHROME-RESTART-SAMPLES ' + JSON.stringify(restartSamples));
     console.log('CONTROLLED-CHROME-RECOVERY ' + JSON.stringify({ exit, restoredTabs: expectedUrls.length }));
     console.log(JSON.stringify({ identity: 'stock Chrome', version: stable.version, profiles: 3, consistentAcrossTabsAndRelaunch: true,
       checked: ['UA header', 'UA client hints brand/version/platform', 'locale', 'ordered languages', 'canvas sample', 'hardware concurrency'] }));

@@ -19,13 +19,14 @@ export function launchLimits({ runningCount = 0, totalMemBytes = os.totalmem(), 
   };
 }
 
-export function assertLaunchResources(runningCount) {
-  const limits = launchLimits({ runningCount, freeMemBytes: os.freemem(), totalMemBytes: os.totalmem() });
+export function assertLaunchResources(runningCount, { freeMemBytes = os.freemem() } = {}) {
+  const limits = launchLimits({ runningCount, freeMemBytes });
   if (runningCount >= limits.maxRunningProfiles) {
     throw httpErr(429, `This computer already has ${runningCount} profiles running. Stop one first or raise maxRunningProfiles in Settings.`, 'TOO_MANY_PROFILES');
   }
-  if (limits.hostFreeGiB < limits.minFreeMemoryGiB) {
-    throw httpErr(503, `Free memory is about ${limits.hostFreeGiB} GiB, below the ${limits.minFreeMemoryGiB} GiB guard. Stop a profile or close other apps, then try again.`, 'LOW_MEMORY');
+  const freeGiB = freeMemBytes / 1024 ** 3;
+  if (freeGiB < limits.minFreeMemoryGiB) {
+    throw httpErr(503, `Free memory is about ${freeGiB.toFixed(2)} GiB, below the ${limits.minFreeMemoryGiB} GiB guard. Stop a profile or close other apps, then try again.`, 'LOW_MEMORY');
   }
   return limits;
 }
