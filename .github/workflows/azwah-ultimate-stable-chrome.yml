@@ -1,14 +1,14 @@
 name: AZWAH Windows installer acceptance
 on:
   push:
-    branches: [release/azwah-windows, hardening/azwah-windows-reliability]
+    branches: [main, release/azwah-windows, hardening/azwah-windows-reliability]
   workflow_dispatch:
 permissions:
   contents: read
   actions: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability'
     runs-on: windows-2022
     timeout-minutes: 65
     env:
@@ -17,6 +17,16 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Check tracked release source for common credential formats
+        shell: bash
+        run: |
+          set +e
+          git grep -I -l -E -e '-----BEGIN (RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|AKIA[A-Z0-9]{16}' -- .
+          status=$?
+          if [ "$status" -ne 1 ]; then
+            echo "Credential pattern matched or scan failed. Review matching filenames before merging."
+            exit 1
+          fi
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

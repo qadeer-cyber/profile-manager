@@ -1,3 +1,26 @@
+# AZWAH — Windows Multi-Profile Browser Manager
+
+`main` is the canonical source after consolidation. Start new work from main and use short-lived branches and pull requests. The historical branches and PRs are retained for provenance. The consolidation uses the complete hardening branch ancestry; use Git ancestry to check whether a historical branch tip is already included before proposing another merge.
+
+## Windows Beta
+
+The canonical [Windows acceptance workflow](.github/workflows/azwah-ultimate-stable-chrome.yml) builds and verifies `AZWAH.exe` and the x64 NSIS installer `Azwah-Setup-x64.exe`. AZWAH uses Google-signed Chrome Stable installed on the machine, with separate profile directories. The canonical builder configuration is [electron-builder.ultimate-stable.cjs](electron-builder.ultimate-stable.cjs).
+
+The installer identity remains `local.azwahmultibrowser.ultimate`. The application continues to use `%APPDATA%\azwah-multi-browser-ultimate`. Install over the existing installation to retain its data. The Windows CI environment is Windows Server, so passing CI does not qualify physical Windows 10 or 11 systems.
+
+The previous [Windows Beta artifact](https://github.com/qadeer-cyber/profile-manager/actions/runs/43248309877/artifacts/13959058258) is the rollback reference, subject to GitHub Actions retention.
+
+## Release and updates
+
+Main push CI verifies packaging and does not publish a release. Public distribution uses GitHub Releases through a separately approved release action. Keep AZWAH labeled Beta while production gates remain open.
+
+Settings checks the official GitHub release feed and can stage a checksum-matched installer for manual installation. Beta tags use `azwah-vX.Y.Z-beta.N`; stable tags use `azwah-vX.Y.Z`. A checksum does not establish publisher identity. Users stop their profiles, quit AZWAH normally, then run the staged installer through Windows. Installed A-to-B acceptance and the dedicated publishing workflow remain open.
+
+
+## Historical documentation
+
+The following describes older packaging tracks.
+
 # Azwah Multi Browser — Office Edition
 
 This office-edition branch preserves Ultimate 3.0 data and identifiers. See [office activation, upgrade and extension documentation](docs/AZWAH_OFFICE.md) for implementation scope and pending qualification. Historical product documentation follows.
