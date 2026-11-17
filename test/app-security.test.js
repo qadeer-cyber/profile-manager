@@ -54,7 +54,7 @@ after(async () => {
     fs.rmSync(tmp, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
-const req = (m, u, b, h = {}) => fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', ...h }, body: b && JSON.stringify(b) }).then(async r => ({ s: r.status, d: r.status === 204 ? null : await r.json() }));
+const req = (m, u, b, h = {}) => fetch(B + u, { method: m, headers: { 'Content-Type': 'application/json', Connection: 'close', ...h }, body: b && JSON.stringify(b) }).then(async r => ({ s: r.status, d: r.status === 204 ? null : await r.json() }));
 const ui = (m, u, b) => req(m, u, b, { 'X-UI-Token': 'ui-tok' });
 const v1 = (m, u, b) => req(m, '/api/v1' + u, b, { Authorization: 'Bearer api-tok' });
 

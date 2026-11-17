@@ -2,7 +2,7 @@
 // CDP off by default, opt-in automation, pid tracking without CDP, cmdline-verified orphan recovery,
 // CHROMIUM_MISSING structured error. Linux run only; Windows equivalents are in docs/WINDOWS_BUILD.md.
 import fs from 'fs'; import os from 'os'; import path from 'path'; import net from 'net';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { armWatchdog, trackProcess, killTracked } from './_ports.mjs';
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-deske2e-'));
 process.env.PM_DATA_DIR = path.join(tmp, 'data'); delete process.env.PM_AUTOMATION_DEFAULT;
@@ -17,6 +17,12 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const mk = name => { const id = crypto.randomUUID(), t = new Date().toISOString(); db.prepare('INSERT INTO profiles (id,name,created_at,updated_at) VALUES (?,?,?,?)').run(id, name, t, t); return { id, proxy: null }; };
 const portOpen = port => new Promise(r => { const s = net.connect(port, '127.0.0.1', () => { s.destroy(); r(true); }).on('error', () => r(false)); });
 try {
+  if (process.argv.includes('--missing-browser-fixture')) {
+    // 4) no Chromium installed -> CHROMIUM_MISSING
+    const E = mk('E'); let e1 = null; try { await eng.launch(E, { headless: false }); } catch (e) { e1 = e; }
+    ok(e1?.code === 'CHROMIUM_MISSING' && e1.status === 503 && /Download Chromium/.test(e1.message), `no Chromium -> structured CHROMIUM_MISSING (${e1?.code}: ${e1?.message?.slice(0, 60)})`);
+    ok(!fs.existsSync(path.join(userDataDir(E.id), '.pm-lock')) && !eng.isRunning(E.id), 'failed launch released the lock');
+  } else {
   // 1) default: no debugging port
   const A = mk('A'); let ri = await eng.launch(A, { headless: true });
   const cl = await processCommandLine(ri.pid) || '';
@@ -48,12 +54,12 @@ try {
   ok(isAlive(decoy.pid), 'recovery did NOT kill an unrelated process holding a recorded pid');
   ok(db.prepare('SELECT COUNT(*) n FROM running').get().n === 0 && !fs.existsSync(path.join(cDir, '.pm-lock')), 'running rows and stale locks cleared');
   process.kill(decoy.pid);
-  // 4) no Chromium installed -> CHROMIUM_MISSING
-  const saved = process.env.PLAYWRIGHT_BROWSERS_PATH; process.env.PLAYWRIGHT_BROWSERS_PATH = path.join(tmp, 'no-browsers');
-  const E = mk('E'); let e1 = null; try { await eng.launch(E, { headless: false }); } catch (e) { e1 = e; }
-  ok(e1?.code === 'CHROMIUM_MISSING' && e1.status === 503 && /Download Chromium/.test(e1.message), `no Chromium -> structured CHROMIUM_MISSING (${e1?.code}: ${e1?.message?.slice(0, 60)})`);
-  ok(!fs.existsSync(path.join(userDataDir(E.id), '.pm-lock')) && !eng.isRunning(E.id), 'failed launch released the lock');
-  if (saved === undefined) delete process.env.PLAYWRIGHT_BROWSERS_PATH; else process.env.PLAYWRIGHT_BROWSERS_PATH = saved;
+  const missing = spawnSync(process.execPath, [process.argv[1], '--missing-browser-fixture'], {
+    env: { ...process.env, PLAYWRIGHT_BROWSERS_PATH: path.join(tmp, 'no-browsers') },
+    stdio: 'inherit', timeout: 30000,
+  });
+  ok(missing.status === 0, 'fresh process verifies missing Chromium and lock cleanup');
+  }
 } catch (e) { fail++; console.log('FAIL - exception', e); }
 finally {
   await eng.shutdown();
