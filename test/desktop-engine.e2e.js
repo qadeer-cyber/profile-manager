@@ -19,7 +19,7 @@ const portOpen = port => new Promise(r => { const s = net.connect(port, '127.0.0
 try {
   if (process.argv.includes('--missing-browser-fixture')) {
     // 4) no Chromium installed -> CHROMIUM_MISSING
-    const E = mk('E'); let e1 = null; try { await eng.launch(E, { headless: false }); } catch (e) { e1 = e; }
+    const E = mk('E'); let e1 = null; try { await eng.launch(E, { headless: true }); } catch (e) { e1 = e; }
     ok(e1?.code === 'CHROMIUM_MISSING' && e1.status === 503 && /Download Chromium/.test(e1.message), `no Chromium -> structured CHROMIUM_MISSING (${e1?.code}: ${e1?.message?.slice(0, 60)})`);
     ok(!fs.existsSync(path.join(userDataDir(E.id), '.pm-lock')) && !eng.isRunning(E.id), 'failed launch released the lock');
   } else {
