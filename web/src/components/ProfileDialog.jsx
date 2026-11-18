@@ -16,21 +16,11 @@ import { HardwarePanel } from './HardwarePanel.jsx';
 
 export const emptyForm = { name: '', tags: '', folder: '', notes: '', workspaceId: '', automationEnabled: false, browserEngine: 'chromium', browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
 
-const UNAVAILABLE = [
-  ['WebRTC Masked, Custom, or Disabled', 'The saved value is a Chromium IP-handling policy, or the same mode mapped to Firefox user.js. WebRTC is not turned off and no address is written in.'],
-  ['Timezone masked from the proxy IP', 'Empty uses this computer’s zone. A filled IANA name is applied on the next launch. The zone is not calculated from the proxy.'],
-  ['Geolocation data Masked', 'Coordinates are stored only when access is Allow. They are not derived from the proxy address.'],
-  ['Navigator Masked or Custom', 'hardwareConcurrency, deviceMemory, platform, and OSCPU stay whatever this browser reports.'],
-  ['WebGL metadata Masked or Custom', 'Vendor and renderer strings are not replaced. Restricted turns WebGL off. Noise is not available.'],
-  ['Canvas Noise or Disabled', 'The readback stays the browser’s own image. The optional page hook is labeled separately and is not canvas noise.'],
-  ['AudioContext Noise', 'Audio stays on the browser’s own render path.'],
-  ['Port scan Masked or Custom', 'Local probes keep the browser’s own result. No port list is hidden.'],
-];
-
 export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [f, setF] = useState(initial);
   const [tab, setTab] = useState('general');
   const [test, setTest] = useState(null);
+  const [verification, setVerification] = useState(0);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [languageText, setLanguageText] = useState((initial.browserSettings?.languages || []).join(', '));
@@ -56,7 +46,13 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   useEffect(() => { api('/api/workspaces').then(setWorkspaces).catch(() => setWorkspaces([])); }, []);
   useEffect(() => {
     const body = { browserEngine: f.browserEngine || 'chromium', browserSettings: f.browserSettings, webrtcSettings: f.webrtcSettings, advancedSettings: f.advancedSettings };
-    api('/api/profile-config/validate', { method: 'POST', body }).then(r => setConfigWarnings(r.warnings || [])).catch(() => setConfigWarnings([]));
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      api('/api/profile-config/validate', { method: 'POST', body, signal: controller.signal })
+        .then(result => { if (!controller.signal.aborted) setConfigWarnings(result.warnings || []); })
+        .catch(() => { if (!controller.signal.aborted) setConfigWarnings([]); });
+    }, 200);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [f.browserEngine, f.browserSettings, f.webrtcSettings, f.advancedSettings]);
   const lib = useProxyLibrary();
   const toast = useToast();
@@ -67,7 +63,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const runTest = async () => {
     setTest({ busy: true });
     try {
-      const r = f.proxyMode === 'library' ? await api(`/api/proxies/${f.proxyId}/test`, { method: 'POST' })
+      const r = f.proxyMode === 'library' ? await api(`/api/proxies/${f.proxyId}/test?location=1`, { method: 'POST' })
         : initial.id && f.proxy.password === '••••' ? await api(`/api/profiles/${initial.id}/test-proxy`, { method: 'POST' })
         : await api('/api/proxy/test', { method: 'POST', body: { proxy: { ...f.proxy, port: Number(f.proxy.port) } } });
       setTest(r);
@@ -182,15 +178,17 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {f.proxyMode !== 'none' && f.proxyMode !== 'template' && <div className="row center">
             <button type="button" onClick={runTest} disabled={test?.busy || !proxyReady}>Test Proxy</button>
             <ProxyTestResult r={test} />
+            {test?.location && <span className="muted">Approximate location: {[test.location.city, test.location.region, test.location.country, test.location.timezone].filter(Boolean).join(' · ')} · {test.location.latitude}, {test.location.longitude}</span>}
+            {test?.locationError && <span className="muted">{test.locationError}</span>}
           </div>}
           {test && !test.busy && <p className="muted hint">Test Proxy sends one request with this same proxy configuration and reports the observed egress address, latency, and status when the service returns them. A successful transport check is not a statement about every browser API, and it is not an anonymity claim.</p>}
           {initial.running && f.proxyMode !== 'none' && <p className="notice">This profile is running. The open browser keeps its current route until you stop it and launch again.</p>}
         </div>}
         {tab === 'fingerprint' && <div className="form">
           {initial.firefoxSession?.state === 'disconnected' && <p className="notice warn" role="alert">Firefox remote session disconnected. The requested timezone is unverified. Stop and relaunch this profile to recover.</p>}
-          <h3 className="h3">Region and language</h3>
+          <h3 className="h3">Timezone and browser languages</h3>
           <label>Locale<input value={regional.locale} onChange={e => setRegional('locale', e.target.value)} placeholder="Host default (e.g. en-US)" /></label>
-          <label>Timezone<input value={regional.timezoneId} onChange={e => setRegional('timezoneId', e.target.value)} placeholder="Host default (e.g. Asia/Karachi)" /></label>
+          <label>Custom IANA timezone<input value={regional.timezoneId} onChange={e => setRegional('timezoneId', e.target.value)} placeholder="Host default (e.g. Asia/Karachi)" /></label>
           {f.browserEngine === 'firefox' && <label>Firefox session mode<select value={regional.firefoxSessionMode || 'marionette'} onChange={e => setRegional('firefoxSessionMode', e.target.value)}><option value="marionette">Marionette / geckodriver (Windows host timezone)</option><option value="bidi">Managed BiDi timezone (independent geckodriver unavailable)</option></select></label>}
           <label>Preferred languages, in order<input value={languageText} onChange={e => setLanguageText(e.target.value)} placeholder="e.g. en-US, ur-PK" /></label>
           <p className="muted hint">Empty fields keep the host values. The first preferred language must match an explicit locale. These values do not change the proxy address.</p>
@@ -200,15 +198,20 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             {WEBRTC_CHOICES.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
           </select></label>
           {(f.browserEngine || 'chromium') === 'firefox' && <p className="muted hint">On Firefox the same mode is written to stock Gecko ICE prefs in user.js.</p>}
-          <h3 className="h3">Identity and window</h3>
+          <h3 className="h3">Navigator identity</h3>
           <IdentityFields settings={advanced} onChange={setAdvanced} />
+          <h3 className="h3">Screen resolution and window</h3>
           <WindowFields settings={advanced} onChange={setAdvanced} profileId={initial.id} />
-          <h3 className="h3">Geolocation</h3>
+          <h3 className="h3">Geolocation access and data</h3>
           <LocationFields settings={advanced} onChange={setAdvanced} />
           <h3 className="h3">Graphics, canvas, and audio</h3>
           <FingerprintFields settings={advanced} onChange={setAdvanced} />
-          <h3 className="h3">Not available on this build</h3>
-          {UNAVAILABLE.map(([label, reason]) => <p key={label} className="unavailable-choice"><span className="label">{label}</span><br />{reason}</p>)}
+          <h3 className="h3">Port scan protection</h3>
+          <p className="muted">Browser private-network security checks remain enabled. Per-profile port scan masking is unavailable.</p>
+          <h3 className="h3">Fingerprint verification</h3>
+          <p className="muted">Verification reads the saved configuration and available live browser observations. Save changes and relaunch to verify settings that apply at startup.</p>
+          <button type="button" disabled={!initial.id || dirty} onClick={() => setVerification(value => value + 1)}>Verify Profile Settings</button>
+          {verification > 0 && initial.id && !dirty && <HardwarePanel key={verification} profileId={initial.id} allowExport />}
         </div>}
         {tab === 'extra' && <div className="form">
           <h3 className="h3">Startup</h3>
@@ -238,7 +241,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           <p className="muted hint">Bookmarks are whatever the browser saved in this profile. There is no separate bookmark editor. Encrypted portable backup is on the profile row. Cookie-Editor setup is on the Extensions page.</p>
         </div>}
       </div>
-      <ProfileOverview form={f} languageText={languageText} />
+      <ProfileOverview form={f} languageText={languageText} warnings={configWarnings} />
     </div>
   </Drawer>;
 }

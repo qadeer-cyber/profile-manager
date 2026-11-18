@@ -3,16 +3,20 @@ import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { useTheme } from '../hooks/useTheme.js';
 
-function UpdatesSettings() {
+function UpdatesSettings({ request }) {
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
+  const panel = useRef(null);
+  useEffect(() => { if (request) panel.current?.scrollIntoView({ block: 'start' }); }, [request]);
   useEffect(() => {
     const refresh = () => window.pm?.updateStatus?.().then(setState).catch(() => {});
     refresh();
     const timer = setInterval(refresh, 1000);
     return () => clearInterval(timer);
   }, []);
-  if (!state) return null;
+  if (!state) return <section ref={panel} className="panel" id="updates">
+    <h2>Updates</h2><p className="muted">Release checks are available in the installed AZWAH Windows application.</p>
+  </section>;
   const latest = state.latest;
   const transfer = state.transfer;
   const status = { idle: 'Waiting for the first check', checking: 'Checking…', unavailable: 'Could not reach the release feed. Try again later.', current: 'You’re up to date', available: 'AZWAH Update Available' };
@@ -21,7 +25,7 @@ function UpdatesSettings() {
     try { setState(await window.pm.checkUpdate()); }
     finally { setBusy(false); }
   }
-  return <section className="panel" id="updates">
+  return <section ref={panel} className="panel update-panel" id="updates">
     <h2>Updates</h2>
     <p>Installed version {state.version} · {state.channel === 'beta' ? 'Beta' : 'Stable'} channel</p>
     <p aria-live="polite">{status[state.status]}</p>
@@ -29,7 +33,7 @@ function UpdatesSettings() {
     {state.status === 'available' && <div>
       <h3>Version {latest.version}</h3>
       <p>{new Date(latest.publishedAt).toLocaleDateString()} · {(latest.size / 1048576).toFixed(1)} MiB</p>
-      {latest.notes && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{latest.notes}</p>}
+      {latest.notes && <p className="update-notes">{latest.notes}</p>}
       <p>Close AZWAH normally before running the installer. The official release page contains the download and release notes.</p>
       <button disabled={transfer?.status === 'downloading' || (transfer?.status === 'verified' && transfer.version === latest.version)} onClick={() => void window.pm.downloadUpdate().catch(() => {})}>Download update</button>
       <button onClick={() => void window.pm.openUpdateRelease().catch(() => {})}>View release and download</button>
@@ -43,8 +47,8 @@ function UpdatesSettings() {
     {transfer?.status === 'failed' && <p>Download failed or did not match the release checksum. Try again.</p>}
     {transfer?.status === 'verified' && <div>
       <p>Checksum verified · Version {transfer.version} · {transfer.size.toLocaleString()} bytes</p>
-      <p style={{ overflowWrap: 'anywhere' }}>SHA-256 {transfer.sha256}</p>
-      <p>Publisher signature has not been verified.</p>
+      <p className="update-checksum">SHA-256 {transfer.sha256}</p>
+      <p>The current installer is unsigned. Windows trust prompts apply.</p>
       <button onClick={() => void window.pm.revealUpdate().catch(() => {})}>Show verified installer</button>
     </div>}
     <button disabled={busy || state.status === 'checking'} onClick={() => void check().catch(() => {})}>Check for updates</button>
@@ -81,7 +85,7 @@ function GeoIpSettings() {
   </section>;
 }
 
-export function SettingsPage({ backupRequest = 0 }) {
+export function SettingsPage({ updateRequest, backupRequest = 0 }) {
   const toast = useToast();
   const [theme, setTheme] = useTheme();
   const [edition, setEdition] = useState(null);
@@ -126,7 +130,7 @@ export function SettingsPage({ backupRequest = 0 }) {
         <div className="row"><input readOnly className="mono-input" value={show ? token : '•'.repeat(24)} /><button onClick={() => setShow(!show)}>{show ? 'Hide' : 'Show'}</button><button onClick={() => { navigator.clipboard.writeText(token); toast('Token copied', 'success'); }}>Copy</button></div></>
         : <p className="muted">In web mode the token is in <code>data/api-token</code> or <code>PM_API_TOKEN</code>.</p>}
     </section>
-    <UpdatesSettings />
+    <UpdatesSettings request={updateRequest} />
     <GeoIpSettings />
     <section className="panel" id="data"><h2>Data and security</h2>
       <p>Data folder: <code>{diag?.dataDir || 'Unavailable'}</code></p>

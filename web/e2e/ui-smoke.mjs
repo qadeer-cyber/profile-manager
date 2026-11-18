@@ -27,6 +27,23 @@ for (const [name, folder, tags] of [['Alpha', 'Work', 'a, shop'], ['Bravo', 'Wor
     await editor.getByRole('button', { name: 'Create profile', exact: true }).click();
     await pg.waitForSelector(`td.col-name >> text=${name}`);
   });
+if (process.env.OUT_DIR) {
+  for (const [width, height] of [[1280, 720], [1366, 768], [1920, 1080]]) {
+    await step(`profile workspace at ${width}×${height}`, async () => {
+      await pg.setViewportSize({ width, height });
+      await pg.screenshot({ path: OUT + `profiles-${width}.png` });
+      await pg.getByRole('button', { name: 'Edit Alpha', exact: true }).click();
+      for (const tab of ['General', 'Proxy', 'Fingerprint', 'Extra']) {
+        await editor.getByRole('tab', { name: tab, exact: true }).click();
+        await editor.getByRole('button', { name: 'Save changes' }).waitFor();
+        await pg.screenshot({ path: OUT + `profile-${tab.toLowerCase()}-${width}.png` });
+      }
+      await pg.keyboard.press('Escape');
+      await editor.waitFor({ state: 'hidden' });
+    });
+  }
+  await pg.setViewportSize({ width: 1360, height: 820 });
+}
 await step('sidebar lists folders', async () => {
   await pg.locator('.profile-scopes summary').click();
   await pg.waitForSelector('.folders >> text=Work');

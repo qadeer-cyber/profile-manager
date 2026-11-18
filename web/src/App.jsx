@@ -24,6 +24,8 @@ const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'E
 const MORE = [['dashboard', 'Dashboard'], ['templates', 'Templates'], ['monitoring', 'Monitoring'], ['activation', 'Edition']];
 export function App() {
   const toast = useToast();
+  const [updateRequest, setUpdateRequest] = useState(0);
+  const openUpdates = () => { setPage('settings'); setUpdateRequest(count => count + 1); };
   const [update, setUpdate] = useState(null);
   const [remindedVersion, setRemindedVersion] = useState(null);
   useEffect(() => {
@@ -99,11 +101,14 @@ export function App() {
       onSaved={path => { setFolderDialog(null); showProfiles(path); reloadMeta(); }} />}
     <header className="topbar">
       <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="22" height="22" /></span><span>AZWAH</span></div>
-      <form className="command-search" role="search" onSubmit={event => { event.preventDefault(); const query = new FormData(event.currentTarget).get('destination').trim().toLowerCase(); const match = query && [...NAV, ...MORE, ['trash', 'Trash']].find(([,label]) => label.toLowerCase().includes(query)); if (match) { setPage(match[0]); event.currentTarget.reset(); } }}>
-        <Icon name="search" /><input name="destination" aria-label="Find a page" placeholder="Find a page…" list="azwah-destinations" />
-        <datalist id="azwah-destinations">{[...NAV, ...MORE, ['trash', 'Trash']].map(([key,label]) => <option key={key} value={label} />)}</datalist>
-      </form>
-      {page === 'profiles' && <button className="primary top-create" onClick={() => document.querySelector('[data-action=new-profile]')?.click()}>＋ New profile</button>}
+      <nav className="top-destinations" aria-label="Primary navigation">
+        {[...NAV.filter(([key]) => ['profiles', 'proxies', 'extensions', 'workspaces', 'settings', 'diagnostics'].includes(key)), ['templates', 'Templates']].map(([key, label]) =>
+          <button key={key} type="button" aria-current={page === key ? 'page' : undefined}
+            onClick={() => { setPage(key); if (key === 'profiles') { setScope('all'); setFolder('__all'); } }}>
+            {key === 'diagnostics' ? 'Diagnostics' : label}
+          </button>)}
+      </nav>
+      <button className="top-updates" type="button" onClick={openUpdates}>Updates{update?.status === 'available' && <span className="update-dot" aria-label="New version available" />}</button>
       <div className="top-meta">
         <span className="edition-pill">{edition?.edition === 'owner-personal' ? 'Owner' : edition?.active ? 'Office' : edition?.enforced ? 'Office · not activated' : 'Local'}</span>
         <div className="seg sm" role="radiogroup" aria-label="Theme">{[['light', 'Light theme', 'sun'], ['system', 'System theme', 'diagnostics'], ['dark', 'Dark theme', 'moon']].map(([k, label, ic]) =>
@@ -154,7 +159,7 @@ export function App() {
         </div>}
         {update?.status === 'available' && update.latest.version !== remindedVersion && <div className="notice" role="status">
           AZWAH update {update.latest.version} is available.{' '}
-          <button onClick={() => setPage('settings')}>View update</button>{' '}
+          <button onClick={openUpdates}>View update</button>{' '}
           <button onClick={() => setRemindedVersion(update.latest.version)}>Remind me later</button>
         </div>}
         {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
@@ -169,7 +174,7 @@ export function App() {
         {page === 'monitoring' && <MonitoringPage />}
         {page === 'activation' && <OfficeActivation />}
         {SHOW_ADMIN && page === 'license-admin' && <LicenseAdminPage />}
-        {page === 'settings' && <SettingsPage backupRequest={backupRequest} />}
+        {page === 'settings' && <SettingsPage backupRequest={backupRequest} updateRequest={updateRequest} />}
         {page === 'diagnostics' && <DiagnosticsPage eventsLog={eventsLog} />}
       </main>
     </div>

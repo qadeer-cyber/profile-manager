@@ -183,9 +183,11 @@ jobs:
         shell: bash
         env:
           PM_UI_TIMEOUT_MS: "300000"
+          OUT_DIR: "test-logs/screenshots"
         run: |
           set -o pipefail
           mkdir -p test-logs
+          mkdir -p "$OUT_DIR"
           npm run test:ui 2>&1 | tee test-logs/ui.log
       - name: Windows diagnostics
         if: always()
@@ -231,8 +233,8 @@ jobs:
             }
           }
           EOF
-      - name: Upload test logs
-        if: false
+      - name: Upload UI screenshots and test logs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-test-logs

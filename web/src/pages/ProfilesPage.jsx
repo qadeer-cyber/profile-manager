@@ -170,6 +170,9 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     {dialog?.kind === 'portable' && <PortableExportDialog profile={dialog.data} busy={!!busy[dialog.data.id]} onClose={() => setDialog(null)} onExport={options => exportPortable(dialog.data, options)} />}
     <div className="toolbar profile-toolbar">
       <button className="primary" data-action="new-profile" aria-label="New profile" onClick={() => setDialog({ kind: 'edit', data: { ...emptyForm, folder: folder === '__all' ? '' : folder } })}><Icon name="plus" /> Create</button>
+      <button type="button" aria-label="Refresh profiles" onClick={() => { load(); reloadMeta(); }}>
+        Refresh
+      </button>
       <button onClick={async () => { try { await api('/api/profiles/quick', { method: 'POST', body: { folder: folder === '__all' ? '' : folder } }); toast('Quick profile created', 'success'); load(); reloadMeta(); } catch (e) { toast(e.message, 'error'); } }}>Quick</button>
       <button aria-label="Start selected" disabled={!selected.some(p => !p.running) || bulkBusy} onClick={() => serverBulk('Launched', { action: 'launch', ids: selected.filter(p => !p.running).map(p => p.id), concurrency: 2 })}><Icon name="play" /></button>
       <button aria-label="Stop selected" disabled={!selected.some(p => p.running) || bulkBusy} onClick={() => serverBulk('Stopped', { action: 'stop', ids: selected.filter(p => p.running).map(p => p.id), concurrency: 4 })}><Icon name="stop" /></button>
