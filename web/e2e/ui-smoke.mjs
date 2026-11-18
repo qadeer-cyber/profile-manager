@@ -77,8 +77,15 @@ await pg.screenshot({ path: OUT + 'dark-bulk.png' });
 await pg.click('.bulkbar >> text=Clear');
 await pg.click('[aria-label="Edit Bravo"]'); await pg.click('.drawer [role=tab]:has-text("Proxy")'); await pg.screenshot({ path: OUT + 'drawer.png' }); await pg.keyboard.press('Escape');
 await pg.click('[data-nav=proxies]');
-await step('delete in-use proxy asks to force', async () => { await pg.click('[aria-label="Delete Local dead"]'); await pg.waitForSelector('.card >> text=Proxy is in use'); await pg.click('text=Unassign and delete'); await pg.waitForFunction(() => document.querySelectorAll('tbody td.name').length === 2); });
-await pg.click('[data-nav=profiles]'); await rows(3);
+await step('delete in-use proxy asks to force', async () => {
+  await pg.click('[aria-label="Delete Local dead"]');
+  const confirm = pg.getByRole('dialog', { name: 'Proxy is in use' });
+  await confirm.getByRole('button', { name: 'Unassign and delete' }).click();
+  await pg.locator('td.name').getByText('Local dead', { exact: true }).waitFor({ state: 'detached' });
+  await pg.click('[data-nav=profiles]');
+  await rows(3);
+  await pg.waitForSelector('tr:has-text("Alpha") td.col-proxy >> text=Direct');
+});
 await step('bulk delete 2 profiles', async () => {
   if (await pg.locator('.bulkbar').count()) await pg.click('.bulkbar >> text=Clear');
   await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input');
