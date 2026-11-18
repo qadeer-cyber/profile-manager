@@ -9,6 +9,10 @@
       "win64": { "path": "win64/chrome-win64.zip", "sha256": "220021ecfdad08c116fc71a153e65e3861ba841c531afc4f7acc7bd5d44b41db", "size": 207073013 },
       "linux64": { "path": "linux64/chrome-linux64.zip", "sha256": "43fd31766c7533a02dda2ded5ad50c2f861cd5400be7509c0abad71129f79d79", "size": 200345244 }
     },
+    "chromedriver": {
+      "win64": { "path": "win64/chromedriver-win64.zip", "sha256": "1aa7e603373f907850f28ef58a5c37eeaa1a1954888a056c195a7889563e4a31", "size": 11712248 },
+      "linux64": { "path": "linux64/chromedriver-linux64.zip", "sha256": "ae36d1b2391e6852594d7dd1be963f818ca05f117cfc5fdcb41c33f3074afa8b", "size": 11893463 }
+    },
     "chromium-headless-shell": {
       "win64": { "path": "win64/chrome-headless-shell-win64.zip", "sha256": "5af4c82cf4b351ec4bad4c71dcf938af14fccea8a0eb0d5c2a7b49ccc922698c", "size": 123826519 },
       "linux64": { "path": "linux64/chrome-headless-shell-linux64.zip", "sha256": "c3e50596aef52c58f8fda3c6b3411c33d34c88b177b3ed1c2243359fd3b8ba20", "size": 125797539 }

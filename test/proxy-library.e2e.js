@@ -14,8 +14,9 @@ import { chromium } from 'playwright';
 let B; const TOKEN = 'lib-token';
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-proxylib-'));
 
-// IP echo target
-const echo = http.createServer((q, s) => q.url === '/ip' ? s.end('{"ip":"203.0.113.9"}') : s.end('<title>via-proxy</title>'));
+// The reported address is a fixture value. All traffic goes to the local server.
+const EXIT_IP = '8.8.4.4';
+const echo = http.createServer((q, s) => q.url === '/ip' ? s.end(JSON.stringify({ ip: EXIT_IP })) : s.end('<title>via-proxy</title>'));
 // HTTP CONNECT proxy, optional Basic auth
 function connectProxy(port, cred) {
   return http.createServer((q, s) => s.end()).on('connect', (req, sock) => {
@@ -76,9 +77,9 @@ try {
 
   // ---- tests with classified errors ----
   r = watch(await ui('POST', `/proxies/${sock.id}/test`));
-  ok(r.d.ok && r.d.ip === '203.0.113.9' && r.d.latencyMs >= 0 && r.d.error === null && socksAuthed > 0, 'test socks5+auth: ok, external IP parsed');
-  ok(r.d.proxy.lastTest.status === 'ok' && r.d.proxy.lastTest.ip === '203.0.113.9' && r.d.proxy.lastTest.testedAt, 'test result persisted to last_test_*');
-  r = await ui('POST', `/proxies/${openP.id}/test`); ok(r.d.ok && r.d.ip === '203.0.113.9', 'test http proxy: ok');
+  ok(r.d.ok && r.d.ip === EXIT_IP && r.d.latencyMs >= 0 && r.d.error === null && socksAuthed > 0, 'test socks5+auth: ok, external IP parsed');
+  ok(r.d.proxy.lastTest.status === 'ok' && r.d.proxy.lastTest.ip === EXIT_IP && r.d.proxy.lastTest.testedAt, 'test result persisted to last_test_*');
+  r = await ui('POST', `/proxies/${openP.id}/test`); ok(r.d.ok && r.d.ip === EXIT_IP, 'test http proxy: ok');
   const mk = async b => (await ui('POST', '/proxies', b)).d.id;
   const cases = [
     ['auth_failed', { type: 'socks5', host: '127.0.0.1', port: SOCKS, username: 'alice', password: 'wrong-pw' }, 'socks5 wrong password'],

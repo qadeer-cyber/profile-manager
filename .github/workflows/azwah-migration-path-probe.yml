@@ -1,0 +1,52 @@
+name: Azwah migration path probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [integration/azwah-ultimate-ui-release]
+    paths:
+      - scripts/owner-data-path-probe.mjs
+      - electron/ultimate-migrate.js
+      - .github/workflows/azwah-migration-path-probe.yml
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install test libraries without browser payloads
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
+          npm ci
+          exit $LASTEXITCODE
+      - name: Download the published Owner and Admin installers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force prior-installers | Out-Null
+          gh release download azwah-multi-browser-owner-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-Multi-Browser-Full-Setup-x64.exe' --dir prior-installers
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          gh release download azwah-license-admin-experimental.1 --repo $env:GITHUB_REPOSITORY --pattern 'Azwah-License-Admin-Setup-x64.exe' --dir prior-installers
+          exit $LASTEXITCODE
+      - name: Record the installed data paths and run migration against them
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/migration-path | Out-Null
+          node scripts/owner-data-path-probe.mjs 2>&1 | Tee-Object build-evidence/migration-path/transcript.log
+          exit $LASTEXITCODE
+      - name: Preserve path evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-path-${{ github.sha }}
+          path: build-evidence/migration-path
+          retention-days: 14

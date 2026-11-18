@@ -154,7 +154,11 @@ try {
   r = await api('POST', `/api/profiles/${D.id}/launch`);
   ok(r.s === 500 && r.d.code === 'CORRUPT_DIR' && /damaged/.test(r.d.error), 'corrupt data dir -> clear CORRUPT_DIR error');
   ok(!(await api('GET', `/api/profiles/${D.id}`)).d.running, 'corrupt dir: state not stuck');
-  ok((await api('DELETE', `/api/profiles/${D.id}`)).s === 204 && !fs.existsSync(dDir), 'corrupt profile can still be deleted');
+  r = await api('DELETE', `/api/profiles/${D.id}`);
+  ok(r.s === 204 && fs.existsSync(dDir), 'corrupt profile can move to Trash with its data retained');
+  r = await api('GET', '/api/trash');
+  ok(r.s === 200 && r.d.some(profile => profile.id === D.id && profile.deletedAt), 'corrupt profile is listed in Trash');
+  ok((await api('GET', `/api/profiles/${D.id}`)).s === 404, 'trashed corrupt profile is hidden from active profiles');
   // concurrent double launch of the same profile -> one browser
   const [l1, l2] = await Promise.all([api('POST', `/api/profiles/${Bp.id}/launch`), api('POST', `/api/profiles/${Bp.id}/launch`)]);
   ok(l1.d.running && l2.d.running && l1.d.cdp.pid === l2.d.cdp.pid, 'concurrent launch requests for one profile start a single browser');

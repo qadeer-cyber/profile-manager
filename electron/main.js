@@ -1,6 +1,8 @@
 // Electron main process: runs the backend in-process on a random loopback port (protected by a
 // per-session UI token) and opens the window. Users never deal with localhost, ports or npm.
-import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog } from 'electron';
+import { isOwnerEdition, isUltimateEdition, isProvisionedOffice, productName } from '../server/office/edition.js';
+import { officeUserDataPath, adoptLegacyData } from './office-upgrade.js';
+import { app, BrowserWindow, safeStorage, ipcMain, shell, session, Menu, dialog, clipboard } from 'electron';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -9,17 +11,28 @@ import { applyPackagedFlag } from '../server/testflags.js';
 import { durableShutdown } from '../server/shutdown.js';
 import { classifyLaunch, writeSmokeRejection } from './smoke-gate.js';
 
+import { downloadUpdate } from './update-download.js';
+import { createUpdateChecker } from './release-updates.js';
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
 // Overwrite any inherited value before the backend is loaded (dynamic import in startBackend).
 applyPackagedFlag(process.env, app.isPackaged);
+const packageMetadata = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
+if (app.isPackaged && packageMetadata.azwahChromiumRuntime === 'stable-chrome') process.env.AZWAH_STABLE_CHROME_EDITION = '1';
 
 if (!SMOKE && !app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
 
 // User data follows the package name: %APPDATA%\profile-manager on Windows.
 // Do not point this at "Profile Manager"; v0.4.0 already stores profiles under profile-manager.
+app.setPath('userData', isUltimateEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-ultimate') : isOwnerEdition ? path.join(app.getPath('appData'),'azwah-multi-browser-owner') : isProvisionedOffice ? path.join(app.getPath('appData'),'azwah-multi-browser-office') : officeUserDataPath(app.getPath('appData')));
 if (process.env.PM_USER_DATA) app.setPath('userData', process.env.PM_USER_DATA);
-const userData = app.getPath('userData');
+if (!isOwnerEdition && !isUltimateEdition && !isProvisionedOffice) adoptLegacyData(app.getPath('userData'));
+app.setName(productName);
+if (isProvisionedOffice) process.env.AZWAH_OFFICE_ENFORCE = '1';
+else delete process.env.AZWAH_OFFICE_ENFORCE;
+process.env.AZWAH_OFFICE_PACKAGED = app.isPackaged ? '1' : '0';
+let userData = app.getPath('userData');
 process.env.PM_DATA_DIR = path.join(userData, 'data');
 // Browser location, in priority order:
 //  1. PM_BROWSERS_PATH (tests/overrides)
@@ -62,6 +75,16 @@ function configureSecrets(secrets) {
 }
 
 async function startBackend() {
+  if (isUltimateEdition) {
+    const { setDesktopBridge } = await import('../server/ultimate-admin.js');
+    setDesktopBridge({
+      resourcesPath: process.resourcesPath,
+      chooseDirectory: async () => { const result = await dialog.showOpenDialog(win, {properties: ['openDirectory']}); return result.canceled ? null : result.filePaths[0]; },
+      chooseSaveFile: async defaultPath => { const result = await dialog.showSaveDialog(win, {defaultPath}); return result.canceled ? null : result.filePath; },
+      chooseRestoreFile: async () => { const result = await dialog.showOpenDialog(win, {properties: ['openFile'], filters: [{name: 'Encrypted vault', extensions: ['vault']}]}); return result.canceled ? null : result.filePaths[0]; },
+    });
+    process.env.AZWAH_ADMIN_VAULT = path.join(userData, 'organization.vault');
+  }
   const secrets = await import('../server/secrets.js');
   configureSecrets(secrets);
   const { startServer } = await import('../server/app.js');
@@ -85,7 +108,7 @@ async function restartBackend(reason) {
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 800, minWidth: 960, minHeight: 600, show: !SMOKE || process.env.PM_SMOKE_SHOW === '1',
-    title: 'Profile Manager', backgroundColor: '#f5f6f8',
+    title: productName, backgroundColor: '#f5f6f8',
     webPreferences: { preload: path.join(here, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webSecurity: true },
   });
   const origin = new URL(backend.url).origin;
@@ -98,7 +121,7 @@ function createWindow() {
     if (quitStarted || d.reason === 'clean-exit') return;
     crashes = crashes.filter(t => Date.now() - t < 60000).concat(Date.now());
     if (crashes.length <= 3 && backend) win.loadURL(backend.url);
-    else dialog.showErrorBox('Profile Manager', `The window crashed repeatedly (${d.reason}). Details: ${logFile}`);
+    else dialog.showErrorBox('Azwah Multi Browser', `The window crashed repeatedly (${d.reason}). Details: ${logFile}`);
   });
   win.webContents.on('unresponsive', () => logErr('renderer unresponsive'));
   win.loadURL(backend.url);
@@ -107,9 +130,77 @@ function createWindow() {
 
 ipcMain.on('pm:get-ui-token', e => { e.returnValue = uiToken; });
 ipcMain.handle('pm:open-data-dir', () => shell.openPath(process.env.PM_DATA_DIR));
-ipcMain.handle('pm:app-info', () => ({ version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
+// Copy only this device's identity. Renderer callers cannot supply clipboard contents.
+ipcMain.handle('pm:copy-device-code', async event => {
+  if (isOwnerEdition || !win || event.sender !== win.webContents || event.senderFrame !== win.webContents.mainFrame || !backend || new URL(event.senderFrame.url).origin !== new URL(backend.url).origin) {
+    throw Error('Device identity clipboard access denied');
+  }
+  const { deviceIdentity } = await import('../server/office/device.js');
+  clipboard.writeText(deviceIdentity());
+});
+ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isUltimateEdition ? 'Ultimate' : isOwnerEdition ? 'Owner / Personal' : 'Office', version: app.getVersion(), userData, packaged: app.isPackaged, bundledBrowsers: hasBundled, logFile }));
 
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
+if (app.isPackaged && process.platform === 'win32' && packageMetadata.azwahChromiumRuntime === 'stable-chrome') {
+  const version = app.getVersion();
+  const checker = createUpdateChecker({ version, channel: version.includes('-beta.') ? 'beta' : 'stable' });
+  function authorizeUpdateRequest(event) {
+    if (!win || !backend || event.sender !== win.webContents ||
+        event.senderFrame !== win.webContents.mainFrame ||
+        new URL(event.senderFrame.url).origin !== new URL(backend.url).origin) {
+      throw new Error('Unauthorized update request.');
+    }
+  }
+  let transfer = null;
+  let controller = null;
+  let verifiedFile = null;
+  ipcMain.handle('pm:update-status', event => {
+    authorizeUpdateRequest(event);
+    return { ...checker.status(), transfer };
+  });
+  ipcMain.handle('pm:update-download', async event => {
+    authorizeUpdateRequest(event);
+    const { latest, status } = checker.status();
+    if (quitStarted || controller || status !== 'available') return;
+    if (transfer?.status === 'verified' && transfer.version === latest.version) return;
+    controller = new AbortController();
+    verifiedFile = null;
+    transfer = { status: 'downloading', version: latest.version, size: latest.size, received: 0 };
+    try {
+      verifiedFile = await downloadUpdate(latest, { signal: controller.signal, progress: received => { transfer.received = received; } });
+      transfer = { ...transfer, status: 'verified', sha256: latest.sha256 };
+    } catch {
+      transfer = { ...transfer, status: controller.signal.aborted ? 'cancelled' : 'failed' };
+    } finally {
+      controller = null;
+    }
+  });
+  ipcMain.handle('pm:update-cancel', event => { authorizeUpdateRequest(event); controller?.abort(); });
+  ipcMain.handle('pm:update-reveal', async event => {
+    authorizeUpdateRequest(event);
+    if (!verifiedFile || transfer?.status !== 'verified') return;
+    const file = verifiedFile;
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning', title: 'AZWAH update', message: 'Show the downloaded installer?',
+      detail: 'The file matched the official release checksum. Publisher signature has not been verified. Stop your profiles and quit AZWAH normally before running it. Windows installation prompts still apply.',
+      buttons: ['Cancel', 'Show in folder'], defaultId: 0, cancelId: 0,
+    });
+    if (response === 1 && file === verifiedFile) shell.showItemInFolder(file);
+  });
+  app.once('before-quit', () => controller?.abort());
+  ipcMain.handle('pm:update-check', event => { authorizeUpdateRequest(event); return checker.check(); });
+  ipcMain.handle('pm:update-open', event => {
+    authorizeUpdateRequest(event);
+    const state = checker.status();
+    if (state.status === 'available') return shell.openExternal(state.latest.url);
+  });
+  if (!SMOKE) {
+    const startupCheck = setTimeout(() => void checker.check(), 15000);
+    const periodicCheck = setInterval(() => void checker.check(), 6 * 60 * 60 * 1000);
+    app.once('before-quit', () => { clearTimeout(startupCheck); clearInterval(periodicCheck); });
+  }
+}
+
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 // First before-quit is one-shot: guard, cancel the default quit, then browser close,
 // WAL checkpoint, and db.close. app.exit(0) only if every step succeeds.
@@ -151,13 +242,94 @@ app.whenReady().then(async () => {
   }
   session.defaultSession.setPermissionRequestHandler((wc, perm, cb) => cb(false));
   if (!SMOKE) Menu.setApplicationMenu(null);
-  try { await startBackend(); }
-  catch (e) { logErr('backend failed to start', e); dialog.showErrorBox('Profile Manager could not start', `${e.message}\n\nLog: ${logFile}`); app.exit(1); return; }
+  try {
+    if (isUltimateEdition && !process.env.PM_USER_DATA) {
+      const {prepareUltimateStartup} = await import('./ultimate-migration-startup.js');
+      const selected = await prepareUltimateStartup({
+        appData: app.getPath('appData'), ultimateDir:userData, platform:process.platform,
+        encrypt:value=>safeStorage.encryptString(value),
+        log:error=>logErr('legacy migration paused',error),
+        showLogs:()=>shell.openPath(logDir),
+        prompt:async detail=>{
+          const {response}=await dialog.showMessageBox({
+            type:'warning', title:'Legacy Owner migration paused',
+            message:'Azwah Ultimate could not safely import legacy data.',
+            detail:detail + '\\n\\nRetry after closing legacy Owner and its browsers, or start with a separate empty store. Legacy data, vaults, and any existing Ultimate store will be preserved.',
+            buttons:['Retry migration','Start Fresh','Open diagnostics','Exit'],defaultId:0,cancelId:3,noLink:true,
+          });
+          return ['retry','fresh','logs','exit'][response];
+        },
+      });
+      if (!selected) { app.quit(); return; }
+      userData=selected;
+      process.env.PM_DATA_DIR=path.join(userData,'data');
+    }
+    await startBackend();
+  }
+  catch (e) { logErr('backend failed to start', e); dialog.showErrorBox('Azwah Multi Browser could not start', `${e.message}\n\nLog: ${logFile}`); app.exit(1); return; }
   createWindow();
   if (SMOKE) runSmoke().catch(err => { console.error(err); fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ error: String(err.stack || err) })); app.quit(); });
 });
 
 // ---- smoke-test mode (used by test/electron-smoke.js under xvfb) ----
+async function captureInstalledVisuals() {
+  const directory = process.env.PM_SMOKE_VISUAL_DIR;
+  fs.mkdirSync(directory, { recursive: true });
+  const results = [];
+  for (const [width, height] of [[1366, 768], [1600, 900], [1920, 1080]]) {
+    win.setContentSize(width, height);
+    for (const theme of ['light', 'dark']) {
+      for (const destination of ['profiles', 'proxies', 'extensions', 'workspaces', 'cookie-robot',
+        'license-admin', 'settings', 'diagnostics', 'dashboard', 'monitoring', 'templates', 'trash', 'backup']) {
+        const result = await win.webContents.executeJavaScript(`(async () => {
+          const theme = ${JSON.stringify(theme)};
+          const button = document.querySelector('[aria-label="' + theme[0].toUpperCase() + theme.slice(1) + ' theme"]');
+          if (!button) throw new Error('Theme controls unavailable');
+          if (document.documentElement.dataset.theme !== theme) button.click();
+          const destination = ${JSON.stringify(destination)};
+          const nav = document.querySelector('[data-nav="' + destination + '"]');
+          if (!nav) throw new Error('Missing navigation item: ' + destination);
+          nav.click();
+          const expectedPage = destination === 'backup' ? 'settings' : destination;
+          for (let attempt = 0; attempt < 50; attempt++) {
+            const page = document.querySelector('main[data-shot="' + expectedPage + '"]');
+            const ready = destination === 'profiles' ? page?.querySelector('.profiles .launch') :
+              destination === 'backup' ? page?.querySelector('#backup') : page?.querySelector('h1');
+            if (ready && document.documentElement.dataset.theme === theme) break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          const content = document.querySelector('.content');
+          const sidebar = document.querySelector('.side');
+          const launch = document.querySelector('.profiles .col-actions .primary');
+          const table = document.querySelector('.profiles')?.closest('.table-wrap');
+          const bounds = launch?.getBoundingClientRect();
+          const tableBounds = table?.getBoundingClientRect();
+          return {
+            destination, width: innerWidth, height: innerHeight, theme: document.documentElement.dataset.theme,
+            ready: content?.dataset.shot === expectedPage && !!content?.querySelector(destination === 'backup' ? '#backup' : 'h1'),
+            sidebar: !!sidebar?.querySelector('[data-nav=profiles]'),
+            sidebarOverflow: sidebar ? sidebar.scrollWidth - sidebar.clientWidth : null,
+            overflow: content ? content.scrollWidth - content.clientWidth : null,
+            tableOverflow: table ? table.scrollWidth - table.clientWidth : null,
+            launchVisible: !!bounds && !!tableBounds && bounds.width > 0 &&
+              bounds.left >= tableBounds.left && bounds.right <= tableBounds.right,
+          };
+        })()`);
+        results.push(result);
+        const image = await win.webContents.capturePage();
+        fs.writeFileSync(path.join(directory, `${destination}-${width}x${height}-${theme}.png`), image.toPNG());
+        if (result.width !== width || result.height !== height || result.theme !== theme ||
+            !result.ready || !result.sidebar || result.sidebarOverflow > 1 || result.overflow > 1 ||
+            (destination === 'profiles' && (!result.launchVisible || result.tableOverflow > 1))) {
+          fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
+          throw new Error('Installed layout acceptance failed: ' + JSON.stringify(result));
+        }
+      }
+    }
+  }
+  fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
+}
+
 async function runSmoke() {
   // Literal in-app import. Both flags are required; a path is never taken from the environment.
   if (process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1') {
@@ -169,6 +341,19 @@ async function runSmoke() {
   const call = (m, u, b) => fetch(backend.url + u, { method: m, headers: H, body: b && JSON.stringify(b) }).then(r => r.json().catch(() => null).then(d => ({ s: r.status, d })));
   const r = {};
   r.unauthorized = (await fetch(backend.url + '/api/profiles')).status;
+  if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
+    const profile = await call('POST', '/api/profiles', { name: 'Stable installer smoke', advancedSettings: { runtime: 'stable-chrome' } });
+    if (profile.s !== 201) throw new Error('Installed smoke profile creation failed: ' + JSON.stringify(profile));
+    const endpoint = '/api/profiles/' + profile.d.id;
+    const launch = await call('POST', endpoint + '/launch', { headless: false, url: 'about:blank' });
+    if (launch.s !== 200 || !launch.d?.pid || launch.d?.cdp) throw new Error('Installed Chrome launch failed: ' + JSON.stringify(launch));
+    const stopped = await call('POST', endpoint + '/stop');
+    if (stopped.s !== 200) throw new Error('Installed Chrome stop failed: ' + JSON.stringify(stopped));
+    if (process.env.PM_SMOKE_VISUAL_DIR) await captureInstalledVisuals();
+    fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, userData }));
+    app.quit();
+    return;
+  }
   // First-run browser download (packaged builds start without Chromium)
   r.browserBefore = (await call('GET', '/api/browser')).d;
   if (!r.browserBefore.installed) {

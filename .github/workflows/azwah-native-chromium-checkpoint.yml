@@ -1,0 +1,123 @@
+name: Azwah native Chromium checkpoint probe
+on:
+  push:
+    branches: [feature/azwah-privacy-engine-integration]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  seed:
+    if: >-
+      ${{ !github.event.repository.private &&
+          github.ref == 'refs/heads/feature/azwah-privacy-engine-integration' &&
+          (github.event_name == 'workflow_dispatch' ||
+           contains(github.event.head_commit.message, '[native-checkpoint]')) }}
+    runs-on: windows-2025
+    timeout-minutes: 120
+    outputs:
+      checkpoint: ${{ steps.transfer.outputs.checkpoint }}
+      object_sha256: ${{ steps.compile.outputs.object_sha256 }}
+    steps: &probe_steps
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare and verify the pinned Windows toolchain
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+      - name: Checkout pinned depot_tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ("azwah-native-" + $env:GITHUB_RUN_ID + "-" + $env:GITHUB_RUN_ATTEMPT)
+          $tools = Join-Path $root 'depot_tools'
+          $workspace = Join-Path $root 'chromium'
+          $pin = '96a7c1418eedaa6bea333a8941e8a0078681b4d0'
+          New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git -C $tools init --quiet
+          git -C $tools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          git -C $tools fetch --no-tags --depth=1 origin $pin
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
+          git -C $tools checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $pin) { throw 'depot_tools pin did not verify.' }
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_DEPOT_TOOLS_SHA=$pin") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Initialize and qualify pinned depot_tools Python before Chromium sync
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:AZWAH_DEPOT_TOOLS_SHA
+      - name: Verify pinned Mozilla sccache
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+          Invoke-WebRequest 'https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive).Hash -ine '28be8c61f6b2c89b9eb2869f6af7f78e6f992e78a8abae0ce855fcc129cbeac1') {
+            throw 'sccache release checksum mismatch.'
+          }
+          $directory = Join-Path $env:RUNNER_TEMP 'sccache'
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          $exe = @(Get-ChildItem -LiteralPath $directory -Recurse -Filter 'sccache.exe' -File)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one sccache executable.' }
+          $exe[0].DirectoryName | Add-Content -LiteralPath $env:GITHUB_PATH
+          "SCCACHE_DIR=$(Join-Path $env:RUNNER_TEMP 'sccache-checkpoint')" | Add-Content -LiteralPath $env:GITHUB_ENV
+          'SCCACHE_CACHE_SIZE=32M' | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Restore small checkpoint on a fresh runner
+        if: github.job == 'replay'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $payload = @'
+          ${{ needs.seed.outputs.checkpoint }}
+          '@
+          if ($payload.Length -gt 409600 -or $payload -cnotmatch '^[a-zA-Z0-9+/]+={0,2}$') {
+            throw 'Missing or invalid checkpoint payload.'
+          }
+          $archive = Join-Path $env:RUNNER_TEMP 'checkpoint.zip'
+          [IO.File]::WriteAllBytes($archive, [Convert]::FromBase64String($payload))
+          Expand-Archive -LiteralPath $archive -DestinationPath $env:SCCACHE_DIR
+      - name: Generate GN and build the patched ICU object
+        id: compile
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -CheckpointProbe -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision -DepotToolsCommit $env:AZWAH_DEPOT_TOOLS_SHA -Jobs 3 -ReserveGiB 10
+      - name: Verify compiler cache behavior and measure the checkpoint
+        id: transfer
+        shell: pwsh
+        env:
+          EXPECTED_OBJECT_SHA: ${{ needs.seed.outputs.object_sha256 }}
+          ACTUAL_OBJECT_SHA: ${{ steps.compile.outputs.object_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stats = (& sccache.exe --show-stats | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read sccache statistics.' }
+          Write-Output $stats
+          & sccache.exe --stop-server
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot stop sccache before checkpoint measurement.' }
+          if ($env:GITHUB_JOB -eq 'replay') {
+            if ($env:ACTUAL_OBJECT_SHA -cne $env:EXPECTED_OBJECT_SHA -or
+                $stats -notmatch '(?m)^Cache hits\s+[1-9]\d*\s*$' -or
+                $stats -notmatch '(?m)^Cache misses\s+0\s*$' -or
+                $stats -notmatch '(?m)^Non-cacheable calls\s+0\s*$') {
+              throw 'Fresh-runner replay did not prove a cache hit without a compiler miss.'
+            }
+            Write-Output 'PASS fresh runner reproduced the patched object from the compiler cache.'
+            exit 0
+          }
+          if ($stats -notmatch '(?m)^Cache misses\s+[1-9]\d*\s*$') { throw 'No cacheable compiler work was observed.' }
+          $archive = Join-Path $env:RUNNER_TEMP 'checkpoint.zip'
+          [IO.Compression.ZipFile]::CreateFromDirectory($env:SCCACHE_DIR, $archive)
+          $size = (Get-Item -LiteralPath $archive).Length
+          Write-Output "Compressed compiler cache checkpoint bytes=$size"
+          # Keep the transfer below GitHub's 1 MB UTF-16 job output limit.
+          # No repository cache, artifact storage, source checkout or SDK upload.
+          if ($size -gt 300KB) { throw 'Checkpoint exceeds the bounded inline transfer budget.' }
+          "checkpoint=$([Convert]::ToBase64String([IO.File]::ReadAllBytes($archive)))" | Add-Content -LiteralPath $env:GITHUB_OUTPUT
+  replay:
+    needs: seed
+    runs-on: windows-2025
+    timeout-minutes: 120
+    steps: *probe_steps

@@ -1,0 +1,31 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { spawnServer, stopServer } from './_ports.mjs';
+import { run } from './_portable-recovery-helpers.mjs';
+import { hashFileSync } from '../server/file-integrity.js';
+
+test('96 MiB API stream crosses fresh installations without request/response buffering', { timeout: 30000 }, async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-stream-api-')), aDir = path.join(root, 'A'), bDir = path.join(root, 'B');
+  const ids = run(aDir, { mode: 'seed' }).value, payload = path.join(aDir, 'profiles', ids.chromium, 'Default', 'large.bin');
+  fs.writeFileSync(payload, 'fixture'); fs.truncateSync(payload, 96 * 1024 * 1024); const expected = hashFileSync(payload);
+  const token = 'disposable-stream-token', passphrase = 'disposable stream passphrase', headers = { Authorization: `Bearer ${token}` };
+  const env = dir => { const e = { ...process.env, PM_DATA_DIR: dir, PM_API_TOKEN: token }; delete e.PM_SECRET; return e; };
+  let a, b;
+  t.after(async () => { if (a) assert.equal(await stopServer(a), true); if (b) assert.equal(await stopServer(b), true); fs.rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });
+  a = await spawnServer(env(aDir));
+  const exported = await fetch(a.url + `/api/v1/profiles/${ids.chromium}/backup/export-stream`, { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmSensitive: true, passphrase }) });
+  assert.equal(exported.status, 200); assert.ok(Number(exported.headers.get('content-length')) > 96 * 1024 * 1024);
+  const archive = path.join(root, 'large.pmp'); await pipeline(Readable.fromWeb(exported.body), fs.createWriteStream(archive, { flags: 'wx' }));
+  assert.equal(await stopServer(a), true); a = null;
+  b = await spawnServer(env(bDir));
+  assert.equal((await fetch(b.url + '/api/v1/backup/restore-stream', { method: 'POST' })).status, 401);
+  const response = await fetch(b.url + '/api/v1/backup/restore-stream', { method: 'POST', headers: { ...headers, 'Content-Type': 'application/octet-stream', 'X-Backup-Passphrase': passphrase }, body: fs.createReadStream(archive), duplex: 'half' });
+  const result = await response.json(); assert.equal(response.status, 200, JSON.stringify(result)); assert.equal(result.added[0].id, ids.chromium);
+  assert.equal(hashFileSync(path.join(bDir, 'profiles', ids.chromium, 'Default', 'large.bin')), expected);
+  assert.deepEqual(fs.readdirSync(path.join(bDir, 'backup-transfers')), []);
+});

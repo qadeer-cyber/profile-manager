@@ -1,0 +1,74 @@
+name: Azwah installed Windows upgrade verification
+on:
+  push:
+    branches: [hardening/azwah-ultimate-stable-chrome]
+    paths: [.github/workflows/azwah-installed-upgrade.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  upgrade:
+    if: github.ref == 'refs/heads/hardening/azwah-ultimate-stable-chrome'
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42787709636
+          name: azwah-ultimate-stable-chrome-x64-62e0a4334dcec70480d385f7bc509b0d1d0eaea7
+          path: prior
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 42790260276
+          name: azwah-ultimate-stable-chrome-x64-4a45831209cbf603ff9328a086f8f5f7ad5dd118
+          path: next
+      - name: Verify historical EXEs and upgrade without deleting the profile store
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PM_SMOKE = '1'
+          $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-upgrade-data'
+          $dir = Join-Path $env:RUNNER_TEMP 'azwah-upgrade-install'
+          $app = Join-Path $dir 'Azwah Multi Browser Ultimate.exe'
+          $name = 'Azwah-Ultimate-Stable-Chrome-Setup-x64.exe'
+          $db = Join-Path $env:PM_USER_DATA 'data/profiles.db'
+          function ProfileIds {
+            node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.argv[1],{readOnly:true}); for(const r of db.prepare('SELECT id FROM profiles ORDER BY id').all()) console.log(r.id)" $db
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect installed profile database.' }
+          }
+          function InstallAndSmoke($folder, $expectedHash) {
+            $exe = Resolve-Path (Join-Path $folder $name)
+            $actual = (Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant()
+            if ($actual -ne $expectedHash) { throw 'Historical installer SHA-256 mismatch.' }
+            Write-Output "$folder EXE SHA256=$actual"
+            $setup = Start-Process -FilePath $exe -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
+            if ($setup.ExitCode -ne 0) { throw 'Install or upgrade failed.' }
+            $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP "$folder-smoke.json"
+            $proc = Start-Process -FilePath $app -PassThru
+            try {
+              if (!$proc.WaitForExit(120000)) { throw 'Installed Chrome smoke timed out.' }
+              $smoke = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
+              if ($proc.ExitCode -ne 0 -or !$smoke.chromeStable -or !$smoke.stopped) { throw 'Installed Chrome smoke failed.' }
+            } finally { if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
+          }
+          InstallAndSmoke prior '923865704d6ce24f162c01143a023f5878d344bf2d172532dccb4d33c09ec297'
+          $priorIds = @(ProfileIds)
+          if ($priorIds.Count -lt 1) { throw 'Prior installation did not create a profile.' }
+          InstallAndSmoke next '5e21b46f79dc471fbfb144c1d4eaddb6d89b53549988ffa734a1b9196c0019f9'
+          $nextIds = @(ProfileIds)
+          if ($nextIds.Count -le $priorIds.Count -or @($priorIds | Where-Object { $_ -notin $nextIds }).Count) {
+            throw 'Existing profile IDs were lost during upgrade.'
+          }
+          $uninstaller = Get-ChildItem -LiteralPath $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          if (!$uninstaller) { throw 'Missing uninstaller.' }
+          $removed = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($removed.ExitCode -ne 0 -or (Test-Path $app) -or !(Test-Path $db)) { throw 'Uninstall retention failed.' }
+          $after = @(ProfileIds)
+          if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
+          Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'

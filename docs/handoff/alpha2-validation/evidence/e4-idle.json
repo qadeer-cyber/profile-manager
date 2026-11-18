@@ -1,0 +1,21 @@
+{
+  "test": "idle-60s",
+  "chrome": "/usr/bin/google-chrome-stable",
+  "idleMsRequested": 60000,
+  "host": {
+    "platform": "linux",
+    "release": "6.12.94+",
+    "node": "v22.23.4"
+  },
+  "note": "GET /api/diagnostics is app-health polling on the Diagnostics page. It is not a profile observation.",
+  "result": "pass",
+  "elapsedMs": 60000,
+  "profileDiagnosticsRequests": 0,
+  "appHealthPollsDuringIdle": 30,
+  "requestsDuringIdle": {
+    "GET /api/diagnostics": 30,
+    "GET /api/browser": 30,
+    "GET /api/meta": 12
+  },
+  "finishedAt": "2026-10-28T09:16:00.584Z"
+}

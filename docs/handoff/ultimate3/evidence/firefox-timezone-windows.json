@@ -1,0 +1,101 @@
+{
+  "sourceCommit": "8040988d3a7eb72575272d4d8a86c626f730cb45",
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/42025892891",
+  "artifactId": 13414435929,
+  "artifactSHA256": "27de3b709fbeb044dc23a9b1fd455c7008567040011f7f005e5182188ec2af31",
+  "pass": 0,
+  "fail": 1,
+  "skip": 0,
+  "observations": [
+    {
+      "restart": 0,
+      "zone": "Europe/Berlin",
+      "timezone": "Europe/Berlin",
+      "jan": -60,
+      "jul": -120,
+      "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+    },
+    {
+      "restart": 0,
+      "zone": "Europe/Berlin",
+      "iframeCount": 2,
+      "worker": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      }
+    },
+    {
+      "restart": 0,
+      "zone": "Europe/Berlin",
+      "error": "Maximum number of active sessions"
+    },
+    {
+      "restart": 0,
+      "zone": "Asia/Tokyo",
+      "timezone": "Asia/Tokyo",
+      "jan": -540,
+      "jul": -540,
+      "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+    },
+    {
+      "restart": 0,
+      "zone": "Asia/Tokyo",
+      "iframeCount": 2,
+      "worker": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      }
+    },
+    {
+      "restart": 0,
+      "zone": "Asia/Tokyo",
+      "error": "Maximum number of active sessions"
+    },
+    {
+      "restart": 0,
+      "zone": "UTC",
+      "timezone": "UTC",
+      "jan": 0,
+      "jul": 0,
+      "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+    },
+    {
+      "restart": 0,
+      "zone": "UTC",
+      "iframeCount": 2,
+      "worker": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      }
+    },
+    {
+      "restart": 0,
+      "zone": "UTC",
+      "error": "Maximum number of active sessions"
+    }
+  ],
+  "remaining": "Concurrent Marionette NewSession rejected in all three profiles. BiDi connection subsequently unavailable; restart checks not reached. Headed/manual launch qualification not performed.",
+  "qualificationSource": "4c9ee5464a1c64242c8f6adcf35feb398fcfd9c1",
+  "qualificationRun": 42021596854,
+  "qualificationArtifact": 13411329458,
+  "qualificationArtifactSHA256": "7ba83f1f82d06fe5aadeeedc7b380744bad99410991d75eb7234145b9f2ab672",
+  "qualifiedPromotions": [
+    "M22",
+    "M35",
+    "M36"
+  ],
+  "strict": {
+    "verified": 21,
+    "partial": 17,
+    "unsupported": 5,
+    "na": 2,
+    "denominator": 43,
+    "weightedPercentage": 68.6
+  }
+}

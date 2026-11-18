@@ -1,0 +1,87 @@
+name: Azwah hosted proxy TCP preflight
+on:
+  push:
+    branches: [hardening/azwah-ultimate-stable-chrome]
+    paths: [.github/workflows/azwah-proxy-preflight.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reachability:
+    if: github.ref == 'refs/heads/hardening/azwah-ultimate-stable-chrome'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 5
+    steps:
+      - name: Check credential availability and TCP reachability
+        shell: pwsh
+        env:
+          HAS_PROXY_USERNAME: ${{ secrets.AZWAH_PROXY_USERNAME != '' }}
+          HAS_PROXY_PASSWORD: ${{ secrets.AZWAH_PROXY_PASSWORD != '' }}
+          HAS_GEOIP_ACCOUNT: ${{ secrets.AZWAH_MAXMIND_ACCOUNT_ID != '' }}
+          HAS_GEOIP_KEY: ${{ secrets.AZWAH_MAXMIND_LICENSE_KEY != '' }}
+        run: |
+          @'
+          import concurrent.futures
+          import json
+          import os
+          import socket
+          import ssl
+
+          endpoints = ["161.123.129.203:5536","154.6.80.158:8129","45.38.87.226:7148","166.88.245.149:5494","23.229.109.14:5783","192.3.5.4:5389","142.111.36.200:7278","107.172.210.155:6610","146.19.93.129:7414","184.174.57.52:5338","45.39.3.130:7555","142.147.133.108:5448"]
+
+          def check(endpoint):
+              host, port = endpoint.split(':')
+              try:
+                  with socket.create_connection((host, int(port)), timeout=4):
+                      return 'connected'
+              except TimeoutError:
+                  return 'timeout'
+              except OSError as exc:
+                  return 'socket-error-' + str(exc.winerror if getattr(exc, 'winerror', None) else exc.errno)
+
+          print(json.dumps({key: os.environ.get(key) == 'true' for key in
+              ('HAS_PROXY_USERNAME', 'HAS_PROXY_PASSWORD', 'HAS_GEOIP_ACCOUNT', 'HAS_GEOIP_KEY')}))
+          with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
+              results = list(pool.map(check, endpoints))
+          print(json.dumps({'connected': results.count('connected'),
+                            'results': dict(enumerate(results, start=1))}))
+
+          def protocol(endpoint):
+              host, port = endpoint.split(':')
+              result = {}
+              for name in ('http-connect', 'https-connect', 'socks5'):
+                  try:
+                      with socket.create_connection((host, int(port)), timeout=3) as raw:
+                          if name == 'socks5':
+                              raw.sendall(b'\x05\x02\x00\x02')
+                              data = raw.makefile('rb').read(2)
+                              result[name] = {b'\x05\x02': 'username-password-selected',
+                                              b'\x05\x00': 'no-auth-selected',
+                                              b'\x05\xff': 'methods-rejected'}.get(data, 'unrecognized')
+                              continue
+                          stream = raw
+                          if name == 'https-connect':
+                              stream = ssl.create_default_context().wrap_socket(raw, server_hostname=host)
+                          with stream:
+                              stream.sendall(b'CONNECT api64.ipify.org:443 HTTP/1.1\r\nHost: api64.ipify.org:443\r\n\r\n')
+                              fields = stream.makefile('rb').readline(256).split()
+                              result[name] = ('HTTP-' + fields[1].decode('ascii') if len(fields) >= 2
+                                              and fields[0].startswith(b'HTTP/') and len(fields[1]) == 3
+                                              and fields[1].isdigit() else 'unrecognized')
+                  except ssl.SSLCertVerificationError:
+                      result[name] = 'certificate-verification-failed'
+                  except TimeoutError:
+                      result[name] = 'timeout'
+                  except OSError:
+                      result[name] = 'connection-or-negotiation-failed'
+              return result
+
+          if os.environ.get('RUNNER_OS') == 'Windows':
+              with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+                  print(json.dumps({'protocols_without_credentials': dict(enumerate(pool.map(protocol, endpoints), start=1))}))
+          '@ | python -
+          exit $LASTEXITCODE

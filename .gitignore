@@ -2,6 +2,7 @@ data/
 dist/
 node_modules/
 release/
+build-evidence/
 web/dist/
 build/bundled-browsers/
 
@@ -16,3 +17,13 @@ build/bundled-browsers/
 *.cer
 id_rsa*
 *.keystore
+
+# Office administrator secrets never belong in an employee source/build artifact.
+*admin.vault*
+azwah-license-vault*
+
+release-license-admin/
+release-office-payload/
+build/admin-nsis/
+*.vault
+*.azwah

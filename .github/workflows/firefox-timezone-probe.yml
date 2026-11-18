@@ -1,0 +1,40 @@
+name: Firefox supported timezone mechanism probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  firefox-timezone:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Native dependencies and stock Firefox
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $xpi = Join-Path $env:RUNNER_TEMP 'signed-ublock.xpi'
+          Invoke-WebRequest 'https://github.com/gorhill/uBlock/releases/download/1.75.0/uBlock0_1.75.0.firefox.signed.xpi' -OutFile $xpi
+          $expected = '5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287'
+          if ((Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Signed XPI fixture checksum mismatch' }
+          "PM_SIGNED_XPI=$xpi" >> $env:GITHUB_ENV
+          "PM_SIGNED_XPI_SHA256=$expected" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force build-evidence/timezone | Out-Null
+      - name: Observe supported timezone emulation and concurrent Marionette ownership
+        shell: pwsh
+        run: |
+          node --test --test-concurrency=1 test/firefox-session-acceptance.test.js 2>&1 | Tee-Object build-evidence/timezone/firefox-timezone.log
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: firefox-timezone-${{ github.sha }}
+          path: build-evidence/timezone
+          retention-days: 14

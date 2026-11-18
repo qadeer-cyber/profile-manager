@@ -6,6 +6,13 @@ contextBridge.exposeInMainWorld('pm', {
   uiToken,
   platform: process.platform,
   openDataDir: () => ipcRenderer.invoke('pm:open-data-dir'),
+  downloadUpdate: () => ipcRenderer.invoke('pm:update-download'),
+  cancelUpdate: () => ipcRenderer.invoke('pm:update-cancel'),
+  revealUpdate: () => ipcRenderer.invoke('pm:update-reveal'),
+  updateStatus: () => ipcRenderer.invoke('pm:update-status'),
+  checkUpdate: () => ipcRenderer.invoke('pm:update-check'),
+  openUpdateRelease: () => ipcRenderer.invoke('pm:update-open'),
   appInfo: () => ipcRenderer.invoke('pm:app-info'),
+  copyDeviceCode: () => ipcRenderer.invoke('pm:copy-device-code'),
   onEvent: cb => { const h = (_e, ev) => cb(ev); ipcRenderer.on('pm:event', h); return () => ipcRenderer.off('pm:event', h); },
 });

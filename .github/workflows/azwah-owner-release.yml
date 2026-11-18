@@ -1,0 +1,78 @@
+name: Azwah full Owner Edition Windows release
+on:
+  push:
+    branches: [feature/azwah-office-edition]
+    paths:
+      - '.github/workflows/azwah-owner-release.yml'
+      - 'scripts/build-owner.mjs'
+      - 'scripts/owner-before-pack.cjs'
+      - 'electron-builder.owner.cjs'
+permissions:
+  contents: read
+jobs:
+  owner:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      AZWAH_OWNER_BUILD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install native dependencies and system Firefox
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $metadata = Invoke-RestMethod 'https://addons.mozilla.org/api/v5/addons/addon/cookie-editor/' -TimeoutSec 60
+          if ($metadata.guid -ne '{c3c10168-4186-445c-9c5b-63f12b8e2c87}') { throw 'Official Cookie-Editor identity mismatch' }
+          $file = $metadata.current_version.file
+          if ($file.url -notmatch '^https://addons.mozilla.org/' -or $file.hash -notmatch '^sha256:[a-f0-9]{64}$') { throw 'Unexpected official artifact metadata' }
+          $xpi = Join-Path $env:RUNNER_TEMP 'owner-cookie-editor.signed.xpi'
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            if (Test-Path $xpi) { Remove-Item $xpi -Force }
+            try { Invoke-WebRequest $file.url -OutFile $xpi -TimeoutSec 60 -ErrorAction Stop; break }
+            catch { if ($attempt -eq 3) { throw 'INFRASTRUCTURE_DOWNLOAD_FAILURE: official Cookie-Editor unavailable' }; Start-Sleep -Seconds ([int][Math]::Pow(2,$attempt)) }
+          }
+          if ('sha256:'+(Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.hash) { Remove-Item $xpi -Force; throw 'Official Cookie-Editor checksum mismatch' }
+          "PM_COOKIE_EDITOR_XPI=$xpi" >> $env:GITHUB_ENV
+      - name: Build, install and verify actual functional Owner application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/owner | Out-Null
+          node scripts/build-owner.mjs 2>&1 | Tee-Object build-evidence/owner/transcript.log
+          exit $LASTEXITCODE
+      - name: Publish new prerelease after uploaded installer byte verification
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = 'azwah-multi-browser-owner-experimental.1'
+          $exe = 'Azwah-Multi-Browser-Full-Setup-x64.exe'
+          gh release create $tag "release-owner/$exe" release-owner/SHA256SUMS.txt release-owner/BUILD-MANIFEST.txt release-owner/RELEASE-NOTES.md --repo $env:GITHUB_REPOSITORY --target $env:GITHUB_SHA --draft --prerelease --title 'Azwah Multi Browser — Full Owner / Personal Experimental' --notes-file release-owner/RELEASE-NOTES.md
+          if ($LASTEXITCODE -ne 0) { throw 'New release creation failed; existing releases will not be changed.' }
+          $verify = Join-Path $env:RUNNER_TEMP 'owner-release-download-verification'
+          New-Item -ItemType Directory -Force $verify | Out-Null
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern $exe --dir $verify
+          if ($LASTEXITCODE -ne 0) { throw 'Draft download verification failed; release remains draft.' }
+          if ((Get-FileHash "release-owner/$exe" -Algorithm SHA256).Hash -ne (Get-FileHash (Join-Path $verify $exe) -Algorithm SHA256).Hash) { throw 'Uploaded EXE checksum mismatch; release remains draft.' }
+          gh release edit $tag --repo $env:GITHUB_REPOSITORY --draft=false --prerelease
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+          gh release view $tag --repo $env:GITHUB_REPOSITORY --json url,isPrerelease,assets | Out-File build-evidence/owner/published.json -Encoding utf8
+          if ($LASTEXITCODE -ne 0) { throw 'Published metadata verification failed.' }
+      - name: Preserve installer acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-owner-${{ github.sha }}
+          path: build-evidence/owner
+          retention-days: 30

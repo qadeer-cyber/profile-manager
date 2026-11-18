@@ -1,0 +1,16 @@
+{
+  "count": 1,
+  "next": null,
+  "results": [
+    {
+      "id": "fixture-d-1",
+      "username": "fixture-user",
+      "password": "fixture-webshare-password-must-not-leak",
+      "proxy_address": "203.0.113.50",
+      "port": 8001,
+      "valid": true,
+      "last_verification": "2026-01-01T00:00:00Z",
+      "country_code": "US"
+    }
+  ]
+}

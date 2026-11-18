@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { migrate, migrations } from '../server/migrations.js';
+import { DEFAULT_ADVANCED_SETTINGS } from '../server/advanced-settings.js';
 import { spawnServer, stopServer } from './_ports.mjs';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m3-'));
@@ -61,10 +62,14 @@ test('M1 database upgrade is additive, backed up, idempotent and preserves profi
     migrate(db, migrations.filter(m => m.version <= 7));
     db.prepare("INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES ('legacy','Legacy','[]','Folder','Notes','t','t')").run();
     const previous = db.prepare('SELECT * FROM profiles').get();
-    const m = migrate(db); assert.deepEqual(m.applied, [8]); assert.ok(fs.existsSync(m.backup));
+    const m = migrate(db); assert.deepEqual(m.applied, [8, 9, 10, 11, 12]); assert.ok(fs.existsSync(m.backup));
     const row = db.prepare('SELECT * FROM profiles').get();
-    const { browser_settings, ...original } = row;
-    assert.deepEqual(original, previous); assert.deepEqual(JSON.parse(browser_settings), { locale: '', timezoneId: '', languages: [] });
+    const { browser_settings, webrtc_settings, advanced_settings, ...original } = row;
+    assert.deepEqual(original, previous);
+    assert.deepEqual(JSON.parse(browser_settings), { locale: '', timezoneId: '', languages: [] });
+    assert.deepEqual(JSON.parse(webrtc_settings), { mode: 'browser_default' });
+    assert.deepEqual(JSON.parse(advanced_settings), DEFAULT_ADVANCED_SETTINGS);
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM extensions").get().n, 0);
     assert.deepEqual(migrate(db).applied, []);
     const old = new Database(m.backup, { readonly: true });
     try { assert.deepEqual(old.prepare('SELECT * FROM profiles').get(), previous); } finally { old.close(); }

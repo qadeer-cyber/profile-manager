@@ -10,17 +10,33 @@ process.on('uncaughtException', async e => { console.log('FAIL uncaught:', e.mes
 process.on('unhandledRejection', async e => { console.log('FAIL unhandled:', e?.message || e); await closeAll(); process.exit(1); }); const pg = await b.newPage({ viewport: { width: 1360, height: 820 } });
 pg.setDefaultTimeout(8000);
 pg.on('pageerror', e => errs.push('pageerror: ' + e.message)); pg.on('console', m => m.type() === 'error' && errs.push('console: ' + m.text()));
-const step = async (n, fn) => { try { await fn(); pass++; console.log('PASS', n); } catch (e) { fail++; console.log('FAIL', n, '-', e.message.split('\n')[0]); } };
+const step = async (n, fn) => { try { await fn(); pass++; console.log('PASS', n); } catch (e) { fail++; console.log('FAIL', n, '-', e.message); } };
 const rows = n => pg.waitForFunction(n => document.querySelectorAll('tbody td.col-name').length === n, n);
+const newProfile = () => pg.locator('[data-action="new-profile"]').click();
+const editor = pg.locator('.drawer[role="dialog"]');
+const saveProfile = () => editor.getByRole('button', { name: 'Save changes', exact: true }).click();
+const waitForOrder = names => pg.waitForFunction(expected =>
+  [...document.querySelectorAll('tbody .name')].map(cell => cell.textContent).join() === expected, names.join());
 await pg.goto(B); await pg.waitForSelector('.side');
 for (const [name, folder, tags] of [['Alpha', 'Work', 'a, shop'], ['Bravo', 'Work', 'b'], ['Charlie', 'Personal', 'shop']])
   await step('create profile ' + name, async () => {
-    await pg.click('.page-head >> text=New profile'); await pg.fill('.drawer .form label:nth-child(1) input', name); await pg.fill('.drawer .form label:nth-child(2) input', folder); await pg.fill('.drawer .form label:nth-child(3) input', tags);
-    await pg.click('.drawer >> text=Create profile'); await pg.waitForSelector(`td.col-name >> text=${name}`); });
-await step('sidebar lists folders', async () => { await pg.waitForSelector('.folders >> text=Work'); await pg.waitForSelector('.folders >> text=Personal'); });
+    await newProfile();
+    await editor.getByLabel('Name', { exact: true }).fill(name);
+    await editor.getByLabel('Folder', { exact: true }).fill(folder);
+    await editor.getByLabel('Tags', { exact: true }).fill(tags);
+    await editor.getByRole('button', { name: 'Create profile', exact: true }).click();
+    await pg.waitForSelector(`td.col-name >> text=${name}`);
+  });
+await step('sidebar lists folders', async () => {
+  await pg.locator('.profile-scopes summary').click();
+  await pg.waitForSelector('.folders >> text=Work');
+  await pg.waitForSelector('.folders >> text=Personal');
+});
 await step('sidebar folder filters list', async () => { await pg.click('.folders >> text=Personal'); await rows(1); await pg.click('[data-nav=profiles]'); await rows(3); });
-await step('sort by name both directions', async () => { await pg.click('th.col-name'); let n = await pg.$$eval('tbody .name', e => e.map(x => x.textContent)); if (n.join() !== 'Alpha,Bravo,Charlie') throw new Error(n.join());
-  await pg.click('th.col-name'); n = await pg.$$eval('tbody .name', e => e.map(x => x.textContent)); if (n.join() !== 'Charlie,Bravo,Alpha') throw new Error(n.join()); });
+await step('sort by name both directions', async () => {
+  await pg.click('th.col-name'); await waitForOrder(['Alpha', 'Bravo', 'Charlie']);
+  await pg.click('th.col-name'); await waitForOrder(['Charlie', 'Bravo', 'Alpha']);
+});
 await step('search filters', async () => { await pg.fill('.search input', 'brav'); await rows(1); await pg.fill('.search input', ''); await rows(3); });
 await step('tag filter via tag chip', async () => { await pg.click('tbody .tag >> text=shop >> nth=0'); await rows(2); await pg.click('text=Clear filters'); await rows(3); });
 await step('bulk add tag to 3', async () => { await pg.check('th.cb input'); await pg.waitForSelector('.bulkbar >> text=3 selected');
@@ -41,27 +57,43 @@ await step('proxy status filter', async () => { await pg.selectOption('[aria-lab
 await pg.screenshot({ path: OUT + 'proxies.png' });
 await pg.click('[data-nav=profiles]'); await rows(3);
 await step('assign library proxy in profile editor', async () => { await pg.click('[aria-label="Edit Alpha"]'); await pg.click('.drawer [role=tab]:has-text("Proxy")');
-  await pg.click('.drawer .seg >> text=From library'); const v = await pg.$eval('.drawer select', s => [...s.options].find(o => o.text.startsWith('Local dead')).value); await pg.selectOption('.drawer select', v); await pg.click('.drawer >> text=Save changes');
+  await pg.click('.drawer .seg >> text=Saved'); const v = await pg.$eval('.drawer select', s => [...s.options].find(o => o.text.startsWith('Local dead')).value); await pg.selectOption('.drawer select', v); await saveProfile();
   await pg.waitForSelector('tr:has-text("Alpha") td.col-proxy >> text=Local dead'); });
 await step('custom proxy in profile editor', async () => { await pg.click('[aria-label="Edit Bravo"]'); await pg.click('.drawer [role=tab]:has-text("Proxy")'); await pg.click('.drawer .seg >> text=Custom');
-  await pg.fill('.drawer input[placeholder="proxy.example.com"]', '10.9.9.9'); await pg.fill('.drawer input[placeholder="8080"]', '3128'); await pg.click('.drawer >> text=Save changes');
+  await editor.getByPlaceholder('host:port:username:password').fill('10.9.9.9:3128');
+  await saveProfile();
   await pg.waitForSelector('tr:has-text("Bravo") td.col-proxy >> text=/10.9.9.9/'); });
-await step('automationEnabled toggle saves', async () => { await pg.click('[aria-label="Edit Charlie"]'); await pg.check('.drawer [role=switch]'); await pg.click('.drawer >> text=Save changes');
+await step('automationEnabled toggle saves', async () => { await pg.click('[aria-label="Edit Charlie"]'); await pg.check('.drawer [role=switch]'); await saveProfile();
   await pg.waitForSelector('tr:has-text("Charlie") >> text=Automation enabled');
   const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Charlie'));
   if (p.automationEnabled !== true) throw new Error('server has ' + p.automationEnabled);
-  await pg.click('[aria-label="Edit Charlie"]'); if (!(await pg.isChecked('.drawer [role=switch]'))) throw new Error('not reloaded as checked'); await pg.uncheck('.drawer [role=switch]'); await pg.click('.drawer >> text=Save changes');
+  await pg.click('[aria-label="Edit Charlie"]'); if (!(await pg.isChecked('.drawer [role=switch]'))) throw new Error('not reloaded as checked'); await pg.uncheck('.drawer [role=switch]'); await saveProfile();
   await pg.waitForFunction(() => !document.body.innerText.includes('Automation enabled')); });
-await step('editor validates empty name', async () => { await pg.click('.page-head >> text=New profile'); await pg.click('.drawer >> text=Create profile'); await pg.waitForSelector('.toast >> text=Name is required'); await pg.keyboard.press('Escape'); });
+await step('editor validates empty name', async () => { await newProfile(); await editor.getByRole('button', { name: 'Create profile', exact: true }).click(); await pg.waitForSelector('.toast >> text=Name is required'); await pg.keyboard.press('Escape'); });
 await pg.screenshot({ path: OUT + 'light.png' });
 await step('dark theme persists', async () => { await pg.click('[title="Dark theme"]'); await pg.reload(); await pg.waitForSelector('.side'); if (await pg.evaluate(() => document.documentElement.dataset.theme) !== 'dark') throw new Error('not dark'); });
 await rows(3); await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input');
 await pg.screenshot({ path: OUT + 'dark-bulk.png' });
+await pg.click('.bulkbar >> text=Clear');
 await pg.click('[aria-label="Edit Bravo"]'); await pg.click('.drawer [role=tab]:has-text("Proxy")'); await pg.screenshot({ path: OUT + 'drawer.png' }); await pg.keyboard.press('Escape');
 await pg.click('[data-nav=proxies]');
-await step('delete in-use proxy asks to force', async () => { await pg.click('[aria-label="Delete Local dead"]'); await pg.waitForSelector('.card >> text=Proxy is in use'); await pg.click('text=Unassign and delete'); await pg.waitForFunction(() => document.querySelectorAll('tbody td.name').length === 3); });
-await pg.click('[data-nav=profiles]'); await rows(3);
-await step('bulk delete 2 profiles', async () => { await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input'); await pg.click('.bulkbar >> text=Delete'); await pg.click('.card >> text=Delete all'); await rows(1); });
+await step('delete in-use proxy asks to force', async () => {
+  await pg.click('[aria-label="Delete Local dead"]');
+  const confirm = pg.getByRole('dialog', { name: 'Proxy is in use' });
+  await confirm.getByRole('button', { name: 'Unassign and delete' }).click();
+  await pg.locator('td.name').getByText('Local dead', { exact: true }).waitFor({ state: 'detached' });
+  await pg.click('[data-nav=profiles]');
+  await rows(3);
+  await pg.waitForSelector('tr:has-text("Alpha") td.col-proxy >> text=Direct');
+});
+await step('bulk delete 2 profiles', async () => {
+  if (await pg.locator('.bulkbar').count()) await pg.click('.bulkbar >> text=Clear');
+  await pg.check('tbody tr:nth-child(1) .cb input'); await pg.check('tbody tr:nth-child(2) .cb input');
+  await pg.waitForSelector('.bulkbar >> text=2 selected');
+  await pg.locator('.bulkbar').getByRole('button', { name: 'Delete' }).click();
+  await pg.locator('.card').getByRole('button', { name: 'Move to trash' }).click();
+  await rows(1);
+});
 await pg.setViewportSize({ width: 820, height: 700 }); await pg.screenshot({ path: OUT + 'narrow.png' });
 await step('settings and diagnostics render', async () => { await pg.click('[data-nav=settings]'); await pg.waitForSelector('h1:has-text("Settings")'); await pg.click('[data-nav=diagnostics]'); await pg.waitForSelector('h1:has-text("Diagnostics")'); });
 await step('lifecycle events update status once', async () => {
@@ -115,9 +147,9 @@ else await step('CHROMIUM_MISSING 503 on launch shows the Download Chromium bann
   await pg.goto(NOCHROME); await pg.waitForSelector('tbody td.col-name >> text=NoChrome');
   if (await pg.locator('.notice.warn >> text=Download Chromium').count()) throw new Error('banner shown before any launch');
   const resp = pg.waitForResponse(x => /\/api\/profiles\/[^/]+\/launch$/.test(x.url()));
-  await pg.click('tbody tr:has(td.col-name:has-text("NoChrome")) button:has-text("Launch")');
+  await pg.click('tbody tr:has(td.col-name:has-text("NoChrome")) .col-actions button:has-text("Launch")');
   const lr = await resp; const body = await lr.json();
-  if (lr.status() !== 503 || body.error !== 'CHROMIUM_MISSING') throw new Error(`expected 503 CHROMIUM_MISSING, got ${lr.status()} ${JSON.stringify(body)}`);
+  if (lr.status() !== 503 || (body.code || body.error) !== 'CHROMIUM_MISSING') throw new Error(`expected 503 CHROMIUM_MISSING, got ${lr.status()} ${JSON.stringify(body)}`);
   await pg.waitForSelector('.notice.warn button:has-text("Download Chromium")', { timeout: 5000 });
   await pg.click('.notice.warn button:has-text("Download Chromium")'); await pg.waitForSelector('h1:has-text("Diagnostics")');
 });

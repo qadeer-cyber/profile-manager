@@ -1,0 +1,22 @@
+{
+  "name": "create-and-show",
+  "steps": [
+    {
+      "id": "create",
+      "method": "POST",
+      "path": "/profiles",
+      "body": { "name": "Scripted profile" },
+      "save": "profile"
+    },
+    {
+      "id": "show",
+      "method": "GET",
+      "path": "/profiles/{{profile.id}}"
+    },
+    {
+      "id": "delete",
+      "method": "DELETE",
+      "path": "/profiles/{{profile.id}}"
+    }
+  ]
+}

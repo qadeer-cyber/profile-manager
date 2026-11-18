@@ -1,0 +1,178 @@
+{
+  "sourceCommit": "2549682877f484d17f1e65fc2218dd314240565b",
+  "platform": "win32",
+  "node": "v22.23.4",
+  "results": [
+    {
+      "suite": "test:unit",
+      "start": "2026-10-31T11:06:27.250Z",
+      "finished": "2026-10-31T11:07:00.700Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 134,
+        "pass": 134,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unit.log",
+      "logSHA256": "ce9e61cf316e36b914a6cae872362cc8ecb4f337f44c5d29bbb03c9be3307c16"
+    },
+    {
+      "suite": "test:stabilization",
+      "start": "2026-10-31T11:07:00.702Z",
+      "finished": "2026-10-31T11:07:10.113Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 91,
+        "pass": 89,
+        "fail": 1,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-stabilization.log",
+      "logSHA256": "5d85fa58dad2bb31c511df9d88b94c877fa0d1044c939cf2e48761ec4e7f2c7b"
+    },
+    {
+      "suite": "test:data-recovery",
+      "start": "2026-10-31T11:07:10.114Z",
+      "finished": "2026-10-31T11:08:46.252Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 63,
+        "pass": 62,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-data-recovery.log",
+      "logSHA256": "78f3637d15e02aef78cd2d234121af4df391c37c5a20e8a5ae4cd1377b5936bd"
+    },
+    {
+      "suite": "test:browser-runtime",
+      "start": "2026-10-31T11:08:46.252Z",
+      "finished": "2026-10-31T11:09:48.205Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 187,
+        "pass": 185,
+        "fail": 1,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-browser-runtime.log",
+      "logSHA256": "8380960f59434d5884225e7fdaa51424d85cd915327318f6a0679694e4c4d4e6"
+    },
+    {
+      "suite": "test:m4",
+      "start": "2026-10-31T11:09:48.206Z",
+      "finished": "2026-10-31T11:09:52.832Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-m4.log",
+      "logSHA256": "7bd9d1b971387ae821625c1164d2c77ded3a93f884ee0c5ebb243907884c6e4a"
+    },
+    {
+      "suite": "test:trackc",
+      "start": "2026-10-31T11:09:52.833Z",
+      "finished": "2026-10-31T11:09:57.607Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 14,
+        "pass": 13,
+        "fail": 1,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc.log",
+      "logSHA256": "1dfd734ccc193f97e132a0f838d5811fa3396f5e7b8cf4ecd1af7f8550e5e9c8"
+    },
+    {
+      "suite": "test:api",
+      "start": "2026-10-31T11:09:57.608Z",
+      "finished": "2026-10-31T11:10:28.110Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 45,
+        "fail": 0
+      },
+      "log": "test-api.log",
+      "logSHA256": "181c64495e4826d1a087551a5e19203444b64930f95e3585375042a2e799491f"
+    },
+    {
+      "suite": "test:security",
+      "start": "2026-10-31T11:10:28.111Z",
+      "finished": "2026-10-31T11:10:52.512Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 41,
+        "fail": 0
+      },
+      "log": "test-security.log",
+      "logSHA256": "e06578db5c600a1654f29b921250709ac99d2b723e4171552bcda7a152cb22e0"
+    },
+    {
+      "suite": "test:ui",
+      "start": "2026-10-31T11:10:52.513Z",
+      "finished": "2026-10-31T11:11:39.821Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 25,
+        "fail": 0
+      },
+      "log": "test-ui.log",
+      "logSHA256": "5c552582e8d16ad5de677fe4f6ee3f2e5de7e492b509fc2cb9a54a02c7fc5913"
+    },
+    {
+      "suite": "test:trackc:acceptance",
+      "start": "2026-10-31T11:11:39.822Z",
+      "finished": "2026-10-31T11:13:38.555Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 6,
+        "pass": 4,
+        "fail": 2,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc-acceptance.log",
+      "logSHA256": "86c3810a246830cdcb29c9eeee898347d427bae8cf3d834de9caef5f8091f8cc"
+    }
+  ],
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/41195278893",
+  "conclusion": "failure",
+  "artifactId": 13040457477,
+  "artifactSHA256": "db57159997663f7fc16505becebcd8627cb67853136162f20e96f3ab42a1060f",
+  "scope": "Windows Server 2022 x64 hosted runner; source qualification, not an installed Windows 10 application. Suites overlap.",
+  "acceptance": {
+    "M8Chromium": "PASS",
+    "M8Firefox": "PASS",
+    "M12Chromium": "PASS",
+    "M12Firefox": "FAIL: actual browser window not found for recorded PID",
+    "M14Firefox": "FAIL: GECKO_SESSION_MISMATCH",
+    "M38WorkspaceUI": "PASS"
+  },
+  "failures": [
+    "Encrypted-backup fixture after-hook EBUSY removing unclosed SQLite database",
+    "Human-input first page goto net::ERR_ABORTED",
+    "Workspace TLS sync HTTP 500; Windows fsync opened file read-only",
+    "Firefox native HWND not found: waiting launcher PID recorded",
+    "Firefox signed-addon session PID differs from recorded launcher PID"
+  ]
+}

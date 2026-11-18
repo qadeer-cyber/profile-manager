@@ -1,0 +1,550 @@
+{
+  "sourceCommit": "989dd0428ed6d822c2ea4a7c8aa80f4eaf4b21bb",
+  "platform": "win32",
+  "node": "v22.23.4",
+  "results": [
+    {
+      "suite": "test:unit",
+      "start": "2026-11-05T13:44:01.796Z",
+      "finished": "2026-11-05T13:44:33.770Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 145,
+        "pass": 145,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unit.log",
+      "logSHA256": "1673f364a0556e6c4202fa2644ef1f7c587747fa03b15a7ce2d37ce05ea67ff1"
+    },
+    {
+      "suite": "test:stabilization",
+      "start": "2026-11-05T13:44:33.773Z",
+      "finished": "2026-11-05T13:44:40.810Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 90,
+        "pass": 89,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-stabilization.log",
+      "logSHA256": "67f536d599194815c1d391487e2244e3d9135b79eb204d1b168d35b6bbc130a8"
+    },
+    {
+      "suite": "test:data-recovery",
+      "start": "2026-11-05T13:44:40.810Z",
+      "finished": "2026-11-05T13:46:13.720Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 63,
+        "pass": 62,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-data-recovery.log",
+      "logSHA256": "27dc3e09f28aabb8a6b5c9a0f97719cec7c2c15ad4bb18e2634b5359b2a417f0"
+    },
+    {
+      "suite": "test:browser-runtime",
+      "start": "2026-11-05T13:46:13.721Z",
+      "finished": "2026-11-05T13:47:41.121Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 206,
+        "pass": 204,
+        "fail": 0,
+        "skipped": 2,
+        "cancelled": 0
+      },
+      "log": "test-browser-runtime.log",
+      "logSHA256": "0f9175f469d05e8780db41e52b9538fe3534d19607335a75d5efbea3ae3442f6"
+    },
+    {
+      "suite": "test:m4",
+      "start": "2026-11-05T13:47:41.122Z",
+      "finished": "2026-11-05T13:47:45.160Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-m4.log",
+      "logSHA256": "396ef0a67ccc36b30f39490fe48518afec9e20ce55c325d0986b6aedef3207bb"
+    },
+    {
+      "suite": "test:trackc",
+      "start": "2026-11-05T13:47:45.161Z",
+      "finished": "2026-11-05T13:47:51.847Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc.log",
+      "logSHA256": "d8b4da572db1e8ca11c7e0e4bdabf69ca486fb91077c6c8dfbd96ec0f7c193bd"
+    },
+    {
+      "suite": "test:unified",
+      "start": "2026-11-05T13:47:51.847Z",
+      "finished": "2026-11-05T13:47:52.884Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unified.log",
+      "logSHA256": "78e170a9f2b1bea97f22af037e579a633147985677b458ec49ed4c08375d75fc"
+    },
+    {
+      "suite": "test:api",
+      "start": "2026-11-05T13:47:52.884Z",
+      "finished": "2026-11-05T13:48:21.463Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 45,
+        "fail": 0,
+        "tests": 45
+      },
+      "log": "test-api.log",
+      "logSHA256": "e2452872fd64a8cb757960ce480142e02088932ef599bd671b1008a0b0786d67"
+    },
+    {
+      "suite": "test:security",
+      "start": "2026-11-05T13:48:21.464Z",
+      "finished": "2026-11-05T13:48:44.364Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 41,
+        "fail": 0,
+        "tests": 41
+      },
+      "log": "test-security.log",
+      "logSHA256": "3acc66fd21320950211b4ac322383b541406c7f7939df97803994d1a69874251"
+    },
+    {
+      "suite": "test:ui",
+      "start": "2026-11-05T13:48:44.365Z",
+      "finished": "2026-11-05T13:49:30.562Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 25,
+        "fail": 0,
+        "tests": 25
+      },
+      "log": "test-ui.log",
+      "logSHA256": "5c552582e8d16ad5de677fe4f6ee3f2e5de7e492b509fc2cb9a54a02c7fc5913"
+    },
+    {
+      "suite": "test:trackc:acceptance",
+      "start": "2026-11-05T13:49:30.562Z",
+      "finished": "2026-11-05T13:52:06.506Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc-acceptance.log",
+      "logSHA256": "b9ab7059b88936b4752382ee66bcd5d957bb4fa84e583764e7879a3381ef6758"
+    }
+  ],
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/42037368611",
+  "conclusion": "success",
+  "artifactId": 13419942777,
+  "artifactSHA256": "b09a7f854596d0d98fe08337480961f2f70d733c6b27c0dbf9b7344e6f998c67",
+  "targeted": [
+    {
+      "log": "cdp-readiness.log",
+      "totals": {
+        "pass": 4,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "38fb0ba2f0faf79318ca06d3d8e0d7b2a8a3f92a8f25f3484d0674c391fd5806"
+    },
+    {
+      "log": "firefox-owner.log",
+      "totals": {
+        "pass": 4,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "a9bb41a3118dcd8119e1486ffa96ddbe8ebaad52644c20337dd198fa4dbb55f9"
+    },
+    {
+      "log": "fingerprint-targeted.log",
+      "totals": {
+        "pass": 1,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "b43bb93c5323fc91e0ace67debdf1206b628ffd0ecc02626c8d51e895591e153"
+    },
+    {
+      "log": "firefox-addon-targeted.log",
+      "totals": {
+        "pass": 1,
+        "fail": 0,
+        "skipped": 0
+      },
+      "logSHA256": "a07f5394f6e4653079e331e2b6ece273329f51b950f231037b650e4cbd1629d7"
+    }
+  ],
+  "observations": [
+    {
+      "manual": false,
+      "restart": 0,
+      "zone": "Europe/Berlin",
+      "timezone": "Europe/Berlin",
+      "jan": -60,
+      "jul": -120,
+      "before": -60,
+      "after": -120,
+      "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ",
+      "worker": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      },
+      "shared": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      }
+    },
+    {
+      "manual": false,
+      "restart": 0,
+      "zone": "Asia/Tokyo",
+      "timezone": "Asia/Tokyo",
+      "jan": -540,
+      "jul": -540,
+      "before": -540,
+      "after": -540,
+      "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9",
+      "worker": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      },
+      "shared": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      }
+    },
+    {
+      "manual": false,
+      "restart": 0,
+      "zone": "UTC",
+      "timezone": "UTC",
+      "jan": 0,
+      "jul": 0,
+      "before": 0,
+      "after": 0,
+      "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC",
+      "worker": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      },
+      "shared": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      }
+    },
+    {
+      "manual": false,
+      "restart": 1,
+      "zone": "Europe/Berlin",
+      "timezone": "Europe/Berlin",
+      "jan": -60,
+      "jul": -120,
+      "before": -60,
+      "after": -120,
+      "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ",
+      "worker": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      },
+      "shared": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      }
+    },
+    {
+      "manual": false,
+      "restart": 1,
+      "zone": "Asia/Tokyo",
+      "timezone": "Asia/Tokyo",
+      "jan": -540,
+      "jul": -540,
+      "before": -540,
+      "after": -540,
+      "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9",
+      "worker": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      },
+      "shared": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      }
+    },
+    {
+      "manual": false,
+      "restart": 1,
+      "zone": "UTC",
+      "timezone": "UTC",
+      "jan": 0,
+      "jul": 0,
+      "before": 0,
+      "after": 0,
+      "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC",
+      "worker": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      },
+      "shared": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      }
+    },
+    {
+      "manual": true,
+      "restart": 0,
+      "zone": "Europe/Berlin",
+      "timezone": "Europe/Berlin",
+      "jan": -60,
+      "jul": -120,
+      "before": -60,
+      "after": -120,
+      "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ",
+      "worker": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      },
+      "shared": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      }
+    },
+    {
+      "manual": true,
+      "restart": 0,
+      "zone": "Asia/Tokyo",
+      "timezone": "Asia/Tokyo",
+      "jan": -540,
+      "jul": -540,
+      "before": -540,
+      "after": -540,
+      "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9",
+      "worker": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      },
+      "shared": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      }
+    },
+    {
+      "manual": true,
+      "restart": 0,
+      "zone": "UTC",
+      "timezone": "UTC",
+      "jan": 0,
+      "jul": 0,
+      "before": 0,
+      "after": 0,
+      "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC",
+      "worker": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      },
+      "shared": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      }
+    },
+    {
+      "manual": true,
+      "restart": 1,
+      "zone": "Europe/Berlin",
+      "timezone": "Europe/Berlin",
+      "jan": -60,
+      "jul": -120,
+      "before": -60,
+      "after": -120,
+      "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ",
+      "worker": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      },
+      "shared": {
+        "timezone": "Europe/Berlin",
+        "jan": -60,
+        "jul": -120,
+        "before": -60,
+        "after": -120,
+        "formatted": "Donnerstag, 15. Januar 2026 um 13:00:00 MEZ"
+      }
+    },
+    {
+      "manual": true,
+      "restart": 1,
+      "zone": "Asia/Tokyo",
+      "timezone": "Asia/Tokyo",
+      "jan": -540,
+      "jul": -540,
+      "before": -540,
+      "after": -540,
+      "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9",
+      "worker": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      },
+      "shared": {
+        "timezone": "Asia/Tokyo",
+        "jan": -540,
+        "jul": -540,
+        "before": -540,
+        "after": -540,
+        "formatted": "Donnerstag, 15. Januar 2026 um 21:00:00 GMT+9"
+      }
+    },
+    {
+      "manual": true,
+      "restart": 1,
+      "zone": "UTC",
+      "timezone": "UTC",
+      "jan": 0,
+      "jul": 0,
+      "before": 0,
+      "after": 0,
+      "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC",
+      "worker": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      },
+      "shared": {
+        "timezone": "UTC",
+        "jan": 0,
+        "jul": 0,
+        "before": 0,
+        "after": 0,
+        "formatted": "Donnerstag, 15. Januar 2026 um 12:00:00 UTC"
+      }
+    }
+  ],
+  "limits": [
+    "Managed BiDi is explicitly selected per profile. Independent geckodriver uses legacy Marionette mode and cannot attach to the same managed session.",
+    "Windows Server 2022 source acceptance; installed Windows 10 and installer upgrade remain unqualified.",
+    "Earlier run 42034502522 had one legacy add-on persisted-removal failure. Latest targeted and broad legacy lifecycle pass; the earlier failure remains recorded and diagnostic coverage was added."
+  ]
+}

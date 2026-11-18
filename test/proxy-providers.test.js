@@ -1,0 +1,91 @@
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-m9-provider-'));
+process.env.PM_DATA_DIR = dir;
+process.env.PM_API_TOKEN = 'm9-provider';
+const { startServer } = await import('../server/app.js');
+const { setProviderFetch } = await import('../server/proxy-providers.js');
+let server;
+const calls = [];
+const call = async (method, url, payload) => {
+  const response = await fetch(server.url + url, { method, headers: { Authorization: 'Bearer m9-provider', 'Content-Type': 'application/json' }, body: payload == null ? undefined : JSON.stringify(payload) });
+  const text = await response.text();
+  return { status: response.status, text, body: text ? JSON.parse(text) : null };
+};
+before(async () => { server = await startServer({ port: 0, staticDir: null }); });
+after(async () => {
+  setProviderFetch(null);
+  await server.close();
+  try { const { db } = await import('../server/db.js'); db.close(); } catch {}
+  fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 250 });
+  delete process.env.PM_DATA_DIR;
+  delete process.env.PM_API_TOKEN;
+});
+
+test('documented provider adapters build endpoints, import lists, and do not return secrets', async () => {
+  const catalog = await call('GET', '/api/v1/proxy-providers');
+  assert.deepEqual(catalog.body.map(item => item.id), ['brightdata', 'oxylabs', 'webshare']);
+  const zonePassword = 'zone-password-should-not-leak';
+  const apiKey = 'bright-api-key-should-not-leak';
+  const account = await call('POST', '/api/v1/proxy-providers/accounts', { provider: 'brightdata', label: 'BD', secret: zonePassword, apiToken: apiKey, config: { customerId: 'cust1', zone: 'residential' } });
+  assert.equal(account.status, 201);
+  assert.equal(account.text.includes(zonePassword), false);
+  assert.equal(account.text.includes(apiKey), false);
+  assert.equal(account.body.hasSecret, true);
+  assert.equal(account.body.hasApiToken, true);
+  const blocked = await call('POST', `/api/v1/proxy-providers/accounts/${account.body.id}/materialize`, { constSession: true });
+  assert.equal(blocked.status, 400);
+  const made = await call('POST', `/api/v1/proxy-providers/accounts/${account.body.id}/materialize`, { country: 'us', session: 'sess1', constSession: true });
+  assert.equal(made.status, 201);
+  assert.equal(made.body.host, 'brd.superproxy.io');
+  assert.equal(made.body.port, 44445);
+  assert.equal(made.body.username, 'brd-customer-cust1-zone-residential-country-us-session-sess1-const');
+  assert.equal('password' in made.body, false);
+  assert.equal(made.text.includes(zonePassword), false);
+  const rotated = await call('POST', `/api/v1/proxy-providers/accounts/${account.body.id}/rotate`, { proxyId: made.body.id, session: 'sess2', country: 'us' });
+  assert.equal(rotated.body.username, 'brd-customer-cust1-zone-residential-country-us-session-sess2');
+  setProviderFetch(async (url, options) => {
+    calls.push({ url, authorization: options.headers.Authorization });
+    assert.equal(url, 'https://api.brightdata.com/customer/balance');
+    return { ok: true, async text() { return JSON.stringify({ balance: 12.5, credit: 1, prepayment: 0, pending_costs: 2, password: zonePassword }); } };
+  });
+  const usage = await call('POST', `/api/v1/proxy-providers/accounts/${account.body.id}/usage`, {});
+  assert.equal(usage.body.usage.balance, 12.5);
+  assert.equal(usage.text.includes(zonePassword), false);
+  assert.equal(usage.text.includes(apiKey), false);
+  const oxy = await call('POST', '/api/v1/proxy-providers/accounts', { provider: 'oxylabs', label: 'Oxy', secret: 'oxy-password-hidden', config: { username: 'alice' } });
+  calls.length = 0;
+  setProviderFetch(() => { throw new Error('oxylabs usage must not call the network'); });
+  const oxyUsage = await call('POST', `/api/v1/proxy-providers/accounts/${oxy.body.id}/usage`, {});
+  assert.equal(oxyUsage.body.supported, true);
+  assert.equal(oxyUsage.body.available, false);
+  const oxyProxy = await call('POST', `/api/v1/proxy-providers/accounts/${oxy.body.id}/materialize`, { country: 'de', session: 'abc', sesstime: 30, oneIp: true, type: 'socks5' });
+  assert.equal(oxyProxy.body.username, 'customer-alice-cc-de-sessid_oneip-abc-sesstime-30');
+  assert.equal(oxyProxy.body.host, 'pr.oxylabs.io');
+  assert.equal(oxyProxy.body.port, 7777);
+  assert.equal(oxyProxy.body.type, 'socks5');
+  assert.equal(oxyProxy.text.includes('oxy-password-hidden'), false);
+  const webPassword = 'webshare-password-hidden';
+  const web = await call('POST', '/api/v1/proxy-providers/accounts', { provider: 'webshare', label: 'WS', secret: 'web-token-hidden', config: {} });
+  setProviderFetch(async (url, options) => {
+    assert.equal(url, 'https://proxy.webshare.io/api/v2/proxy/list/?mode=direct&page=1&page_size=100');
+    assert.equal(options.headers.Authorization, 'Token web-token-hidden');
+    return { ok: true, async text() { return JSON.stringify({ count: 1, next: 'https://evil.example/next', results: [{ id: 'd-1', username: 'user', password: webPassword, proxy_address: '203.0.113.10', port: 8000, valid: true, last_verification: '2026-01-01T00:00:00Z', country_code: 'US' }] }); } };
+  });
+  const imported = await call('POST', `/api/v1/proxy-providers/accounts/${web.body.id}/import`, { mode: 'direct' });
+  assert.equal(imported.body.created, 1);
+  assert.equal(imported.text.includes(webPassword), false);
+  assert.equal(imported.text.includes('web-token-hidden'), false);
+  const listed = await call('GET', '/api/v1/proxies?q=203.0.113.10');
+  assert.equal(listed.body[0].hasPassword, true);
+  assert.equal('password' in listed.body[0], false);
+  assert.equal(listed.body[0].providerMeta.valid, true);
+  assert.equal(listed.text.includes(webPassword), false);
+  const denied = await call('POST', `/api/v1/proxy-providers/accounts/${web.body.id}/rotate`, { proxyId: listed.body[0].id, session: 'nope' });
+  assert.equal(denied.status, 400);
+  assert.equal(denied.body.code, 'UNSUPPORTED_PROVIDER_CONTROL');
+});

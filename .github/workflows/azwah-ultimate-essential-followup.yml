@@ -1,0 +1,71 @@
+name: Azwah Ultimate essential follow-up
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  essential:
+    runs-on: windows-2022
+    timeout-minutes: 80
+    permissions:
+      actions: read
+      contents: read
+    env:
+      AZWAH_INSTALLER_SOURCE_SHA: 8baf1ffe13387bf3fba056d756a448da8b0e1e29
+      AZWAH_UNIFIED_INSTALLER_SHA256: c007a4a9f08ffd29cffef74aae782b54400b0c44d35eb840732af9be95f7e142
+      AZWAH_UNIFIED_INSTALLER: release-ultimate/Azwah-Multi-Browser-Ultimate-Setup-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install test libraries without browser payloads
+        shell: pwsh
+        run: |
+          $env:PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = '1'
+          npm ci
+          exit $LASTEXITCODE
+      - name: Download the retained unified installer and verify its hash
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force release-ultimate | Out-Null
+          gh run download 42392300409 --repo $env:GITHUB_REPOSITORY --name ultimate-installer-8baf1ffe13387bf3fba056d756a448da8b0e1e29 --dir release-ultimate
+          $exe = $env:AZWAH_UNIFIED_INSTALLER
+          $hash = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item -LiteralPath $exe).Length
+          if ($hash -ne $env:AZWAH_UNIFIED_INSTALLER_SHA256) { throw "Retained installer hash is $hash" }
+          if ($size -ne 854726925) { throw "Retained installer size is $size" }
+          @(
+            "Installer source: $env:AZWAH_INSTALLER_SOURCE_SHA"
+            "Harness: $env:GITHUB_SHA"
+            "Installer: Azwah-Multi-Browser-Ultimate-Setup-x64.exe"
+            "Bytes: $size"
+            "SHA256: $hash"
+            "Reused run: 42392300409"
+            "Private keys: not included"
+            "Organization vault: not included"
+            "Concurrent migration: unqualified"
+          ) | Set-Content -Encoding ascii release-ultimate/BUILD-MANIFEST.txt
+          "$hash  Azwah-Multi-Browser-Ultimate-Setup-x64.exe" | Set-Content -Encoding ascii release-ultimate/SHA256SUMS.txt
+      - name: Run the missing installed security and browser checks
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-essential | Out-Null
+          node scripts/ultimate-essential-followup.mjs 2>&1 | Tee-Object build-evidence/ultimate-essential/transcript.log
+          exit $LASTEXITCODE
+      - name: Preserve essential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-essential-${{ github.sha }}
+          path: |
+            build-evidence/ultimate-essential/transcript.log
+            build-evidence/ultimate-essential/essential.json
+          retention-days: 14
+          if-no-files-found: warn

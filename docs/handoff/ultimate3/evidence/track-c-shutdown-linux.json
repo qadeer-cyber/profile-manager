@@ -1,0 +1,64 @@
+{
+  "parentCommit": "c02f5b20d74a92c804a99d2ae6e2f14e2e5b21c0",
+  "scope": "Firefox app Stop and failure recovery source tests; real UI and Windows gates are recorded separately; suites overlap",
+  "results": [
+    {
+      "log": "final-trackc-local.log",
+      "tests": 18,
+      "pass": 18,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "902aa9d038ea35d1975c970d1df3bc4d4898fc42f4d53af04d7c0e2d79d2edb6"
+    },
+    {
+      "log": "final-recovery-local.log",
+      "tests": 63,
+      "pass": 63,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "46ea155a1d9f73b7490600b1aacf27a5a84a43c33ac057e7585d26cf7d4e54ce"
+    },
+    {
+      "log": "final-stabilization-local.log",
+      "tests": 90,
+      "pass": 90,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "da3fae1cbcbfe052cfec30ecd655fd26ff08872515804ba7091700d63f85775a"
+    },
+    {
+      "log": "final-unit-local.log",
+      "tests": 134,
+      "pass": 132,
+      "fail": 2,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "8cec62cf7db488c9b522d76c0e03ca621265b8a8626598fc7d2a46f27e4c67e5"
+    },
+    {
+      "log": "firefox-shutdown-local.log",
+      "tests": 19,
+      "pass": 19,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "4fc1cc642415ddba78a4a5f8c967550037081842bfc87ea918f60e460d08907c"
+    },
+    {
+      "log": "headless-fix-local.log",
+      "tests": 15,
+      "pass": 15,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "logSHA256": "4252ef6e6a7fb68d31c99eca59da189c50cbf765bafdd07e317bb49c5eef952c"
+    }
+  ],
+  "unitFailures": [
+    "Chromium executable unavailable",
+    "Host /proc PID identity unavailable"
+  ]
+}

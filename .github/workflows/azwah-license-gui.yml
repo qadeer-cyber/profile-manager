@@ -1,0 +1,51 @@
+name: Azwah installed Admin and Office GUI qualification
+on:
+  push:
+    branches: [feature/azwah-office-edition]
+    paths:
+      - '.github/workflows/azwah-license-gui.yml'
+      - 'admin-desktop/**'
+      - 'scripts/qualify-license-gui.mjs'
+      - 'electron-builder.license-admin.cjs'
+      - 'electron-builder.office-payload.cjs'
+permissions:
+  contents: read
+jobs:
+  installed:
+    if: "!contains(github.event.head_commit.message, '[reuse-admin]')"
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build Admin and embed unbound Office payload
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-chromium.mjs win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder install-app-deps --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.office-payload.cjs --win --dir --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.license-admin.cjs --win nsis --x64 --publish never
+          exit $LASTEXITCODE
+      - name: Installed GUI and disposable Office activation
+        shell: pwsh
+        run: node scripts/qualify-license-gui.mjs
+      - name: Retain reusable Admin installer after GUI pass
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-license-admin
+          path: release-license-admin/Azwah-License-Admin-Setup-x64.exe
+          if-no-files-found: error

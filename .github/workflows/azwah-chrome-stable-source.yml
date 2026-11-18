@@ -1,0 +1,25 @@
+name: Azwah Chrome Stable source prequalification
+on:
+  push:
+    branches: [feature/azwah-chrome-stable-proxy-location]
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Proxy location, stable identity, and Issue 20 regressions
+        run: node --test test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js
+      - name: Visible real Chrome Stable through Azwah server
+        run: node --test --test-force-exit test/chrome-stable-windows-live.test.js

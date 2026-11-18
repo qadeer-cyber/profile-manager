@@ -7,8 +7,10 @@ function language(value, field) {
 }
 export function validateBrowserSettings(value, previous = DEFAULT_BROWSER_SETTINGS) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('browserSettings must be an object');
-  if (Object.keys(value).some(k => !['locale', 'timezoneId', 'languages'].includes(k))) invalid('Unknown browserSettings field');
+  if (Object.keys(value).some(k => !['locale', 'timezoneId', 'languages', 'firefoxSessionMode'].includes(k))) invalid('Unknown browserSettings field');
+  if ('firefoxSessionMode' in value && !['marionette', 'bidi'].includes(value.firefoxSessionMode)) invalid('firefoxSessionMode must be marionette or bidi');
   const out = { ...previous, languages: [...previous.languages] };
+  if ('firefoxSessionMode' in value) out.firefoxSessionMode = value.firefoxSessionMode;
   if ('locale' in value) out.locale = value.locale === '' ? '' : language(value.locale, 'locale');
   if ('timezoneId' in value) {
     if (typeof value.timezoneId !== 'string' || value.timezoneId.length > 100) invalid('timezoneId must be an IANA timezone or empty');

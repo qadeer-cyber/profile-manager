@@ -1,0 +1,166 @@
+{
+  "sourceCommit": "860c888762f3869286936f577452e68753aa4123",
+  "platform": "win32",
+  "node": "v22.23.4",
+  "results": [
+    {
+      "suite": "test:unit",
+      "start": "2026-11-01T06:47:05.230Z",
+      "finished": "2026-11-01T06:47:37.678Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 134,
+        "pass": 134,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-unit.log",
+      "logSHA256": "28d4dc459f9315276d474ae0a4707b0a1d5108ed81c5c9c59992be57661024c5"
+    },
+    {
+      "suite": "test:stabilization",
+      "start": "2026-11-01T06:47:37.681Z",
+      "finished": "2026-11-01T06:47:48.189Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 90,
+        "pass": 89,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-stabilization.log",
+      "logSHA256": "0b393d9955d416b57e2eb5cdb595e8653b39f9ed186fb6280251cd80cfc69c1d"
+    },
+    {
+      "suite": "test:data-recovery",
+      "start": "2026-11-01T06:47:48.190Z",
+      "finished": "2026-11-01T06:49:18.877Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 63,
+        "pass": 62,
+        "fail": 0,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-data-recovery.log",
+      "logSHA256": "9f3584487b7c7c7b752550624087758ca8c39381093f3b5265c83e536ecb49a9"
+    },
+    {
+      "suite": "test:browser-runtime",
+      "start": "2026-11-01T06:49:18.878Z",
+      "finished": "2026-11-01T06:50:19.154Z",
+      "exitCode": 1,
+      "timedOut": false,
+      "totals": {
+        "tests": 190,
+        "pass": 187,
+        "fail": 2,
+        "skipped": 1,
+        "cancelled": 0
+      },
+      "log": "test-browser-runtime.log",
+      "logSHA256": "63e1b785f46ac63fead8a6d2b76ddfca093d61f0780a0f2dc1169988975e7925"
+    },
+    {
+      "suite": "test:m4",
+      "start": "2026-11-01T06:50:19.155Z",
+      "finished": "2026-11-01T06:50:23.099Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 48,
+        "pass": 48,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-m4.log",
+      "logSHA256": "cca1136d897e33fe6d470893db401e6f31e8d8b9ad2d7928c85c0c87e61c86f8"
+    },
+    {
+      "suite": "test:trackc",
+      "start": "2026-11-01T06:50:23.099Z",
+      "finished": "2026-11-01T06:50:29.862Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 18,
+        "pass": 18,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc.log",
+      "logSHA256": "593069d6b60a8e0cc7d8361d1fa5bfe82f5ece31ffa54985452b01afa21d2bda"
+    },
+    {
+      "suite": "test:api",
+      "start": "2026-11-01T06:50:29.862Z",
+      "finished": "2026-11-01T06:50:58.121Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 45,
+        "fail": 0,
+        "tests": 45
+      },
+      "log": "test-api.log",
+      "logSHA256": "7581ba092cf4280ddb6895d9cfe4764753098d795b6bfa123ab8be1d4e9c9058"
+    },
+    {
+      "suite": "test:security",
+      "start": "2026-11-01T06:50:58.122Z",
+      "finished": "2026-11-01T06:51:20.788Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 41,
+        "fail": 0,
+        "tests": 41
+      },
+      "log": "test-security.log",
+      "logSHA256": "2b4ae8c69c811ce4fcfa248b638ca720e67df765dca29023fd563bf5d91477f4"
+    },
+    {
+      "suite": "test:ui",
+      "start": "2026-11-01T06:51:20.788Z",
+      "finished": "2026-11-01T06:52:06.599Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "pass": 25,
+        "fail": 0,
+        "tests": 25
+      },
+      "log": "test-ui.log",
+      "logSHA256": "5c552582e8d16ad5de677fe4f6ee3f2e5de7e492b509fc2cb9a54a02c7fc5913"
+    },
+    {
+      "suite": "test:trackc:acceptance",
+      "start": "2026-11-01T06:52:06.600Z",
+      "finished": "2026-11-01T06:54:31.064Z",
+      "exitCode": 0,
+      "timedOut": false,
+      "totals": {
+        "tests": 6,
+        "pass": 6,
+        "fail": 0,
+        "skipped": 0,
+        "cancelled": 0
+      },
+      "log": "test-trackc-acceptance.log",
+      "logSHA256": "8500e2a63671846895cb190c7bd4d25e03d1685bc1038f181c6762344e406b2a"
+    }
+  ],
+  "runURL": "https://github.com/qadeer-cyber/profile-manager/actions/runs/41282069470",
+  "conclusion": "failure",
+  "artifactId": 13073399769,
+  "artifactSHA256": "857f9c9b1f45ce6d79cf45cc89ef75f183146932db12df59e6dec51ff8a7cec5",
+  "scope": "All six real Track C acceptance cases PASS; overall run FAIL because both raw-spawn CDP input fixtures timed out after websocket connection"
+}

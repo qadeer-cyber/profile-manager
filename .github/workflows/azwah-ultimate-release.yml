@@ -1,0 +1,119 @@
+name: Azwah Ultimate Windows release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  owner:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      AZWAH_OWNER_BUILD: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install native dependencies and system Firefox
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $metadata = Invoke-RestMethod 'https://addons.mozilla.org/api/v5/addons/addon/cookie-editor/' -TimeoutSec 60
+          if ($metadata.guid -ne '{c3c10168-4186-445c-9c5b-63f12b8e2c87}') { throw 'Official Cookie-Editor identity mismatch' }
+          $file = $metadata.current_version.file
+          if ($file.url -notmatch '^https://addons.mozilla.org/' -or $file.hash -notmatch '^sha256:[a-f0-9]{64}$') { throw 'Unexpected official artifact metadata' }
+          $xpi = Join-Path $env:RUNNER_TEMP 'ultimate-cookie-editor.signed.xpi'
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            if (Test-Path $xpi) { Remove-Item $xpi -Force }
+            try { Invoke-WebRequest $file.url -OutFile $xpi -TimeoutSec 60 -ErrorAction Stop; break }
+            catch { if ($attempt -eq 3) { throw 'INFRASTRUCTURE_DOWNLOAD_FAILURE: official Cookie-Editor unavailable' }; Start-Sleep -Seconds ([int][Math]::Pow(2,$attempt)) }
+          }
+          if ('sha256:'+(Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.hash) { Remove-Item $xpi -Force; throw 'Official Cookie-Editor checksum mismatch' }
+          "PM_COOKIE_EDITOR_XPI=$xpi" >> $env:GITHUB_ENV
+      - name: Build, install and verify the Ultimate Owner application
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-owner | Out-Null
+          node scripts/build-ultimate-owner.mjs 2>&1 | Tee-Object build-evidence/ultimate-owner/transcript.log
+          exit $LASTEXITCODE
+      - name: Preserve installer acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-owner-${{ github.sha }}
+          path: build-evidence/ultimate-owner
+          retention-days: 30
+  admin:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      AZWAH_QA_SEPARATE_IDENTITY: '1'
+      AZWAH_QA_STARTUP_ONLY: '0'
+      AZWAH_ADMIN_BUILD_SHA: ${{ github.sha }}
+      AZWAH_ADMIN_SETUP: release-ultimate-admin/Azwah-License-Admin-Ultimate-Setup-x64.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Prepare Windows acceptance dependencies
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          choco install nsis firefox -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $metadata = Invoke-RestMethod 'https://addons.mozilla.org/api/v5/addons/addon/cookie-editor/' -TimeoutSec 60
+          if ($metadata.guid -ne '{c3c10168-4186-445c-9c5b-63f12b8e2c87}') { throw 'Cookie-Editor identity mismatch' }
+          $file = $metadata.current_version.file
+          if ($file.url -notmatch '^https://addons.mozilla.org/' -or $file.hash -notmatch '^sha256:[a-f0-9]{64}$') { throw 'Invalid official artifact metadata' }
+          $xpi = Join-Path $env:RUNNER_TEMP 'qualification-cookie-editor.xpi'
+          for ($attempt=1; $attempt -le 3; $attempt++) {
+            try { Invoke-WebRequest $file.url -OutFile $xpi -TimeoutSec 60 -ErrorAction Stop; break }
+            catch { if (Test-Path $xpi) { Remove-Item $xpi -Force }; if ($attempt -eq 3) { throw }; Start-Sleep -Seconds (2*$attempt) }
+          }
+          if ('sha256:'+(Get-FileHash $xpi -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.hash) { throw 'Official XPI checksum mismatch' }
+          "PM_COOKIE_EDITOR_XPI=$xpi" >> $env:GITHUB_ENV
+      - name: Rebuild Admin with the current Office browser payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npm run test:office
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-chromium.mjs win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder install-app-deps --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.office-payload.cjs --win --dir --x64 --publish never
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.ultimate-admin.cjs --win nsis --x64 --publish never
+          exit $LASTEXITCODE
+      - name: Qualify installed Admin and the generated Office payload
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-admin | Out-Null
+          node scripts/qualify-license-gui.mjs 2>&1 | Tee-Object build-evidence/ultimate-admin/acceptance.log
+          exit $LASTEXITCODE
+      - name: Preserve Admin acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-admin-${{ github.sha }}
+          path: build-evidence/ultimate-admin
+          retention-days: 30

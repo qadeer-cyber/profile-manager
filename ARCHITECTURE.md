@@ -60,6 +60,10 @@ The pinned browser is Playwright core 1.64.1, revision 1248, Chrome for Testing 
 | 4 | `last_launched_at`, `last_error`, folder index |
 | 5 | `profiles.automation_enabled` default 0 |
 | 6 | `proxies` library, `profiles.proxy_id`, inline proxies copied into library rows |
+| 7–11 | profile indexes, regional settings, WebRTC policy, extensions, advanced settings |
+| 12 | saved views, proxy check history, provider accounts, bulk jobs, proxy provider columns |
+| 7–11 | profile indexes, regional settings, WebRTC policy, extensions, advanced settings |
+| 12 | saved views, proxy check history, provider accounts, bulk jobs, proxy provider columns |
 
 Node 22 loads the Node prebuild (modules ABI 127). The packaged app loads the Electron 44 rebuild (modules ABI 149) from `better_sqlite3.node`. electron-builder `asarUnpack` includes `**/*.node`. Electron may report the virtual `app.asar` path; the unpacked file is the sibling path with `app.asar` replaced by `app.asar.unpacked`. Prebuilds are excluded from the packaged `files` list.
 
@@ -70,6 +74,10 @@ Node 22 loads the Node prebuild (modules ABI 127). The packaged app loads the El
 A normal launch does not add `--remote-debugging-port`. Playwright may still add `--remote-debugging-pipe` for its own control channel. That pipe is not a CDP port.
 
 An explicit `automationEnabled` profile, or `POST /api/v1/profiles/:id/launch` with `{"automation": true}`, binds CDP to `127.0.0.1` and returns `cdp.debuggerAddress`. The UI launch route does not accept an override.
+
+## Fingerprint controls
+
+`server/fingerprint-settings.js` stores a per-profile `advancedSettings.fingerprint` object. The accepted modes are Chromium's own: WebGL default or `--disable-webgl`, local-fonts and camera/microphone left alone or denied, and canvas, audio, and port-scan results left real. Client hints for a user-agent preset always carry the installed Chromium version. Vendor strings, font lists, device lists, canvas noise, audio noise, WebRTC addresses, and port-scan masks are rejected. `server/fingerprint-consistency.js` grades saved settings against a live page and the process command line as pass, warning, unsupported, or unavailable. A pass requires both sides of the comparison. The matrix is `FINGERPRINT_PARITY_MATRIX.md`.
 
 ## Proxies and loopback
 

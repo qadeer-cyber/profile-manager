@@ -1,0 +1,7 @@
+{
+  "id": 7,
+  "email": "fixture@example.com",
+  "username": "fixture-user",
+  "password": "fixture-webshare-profile-password-must-not-leak",
+  "plan": "fixture"
+}

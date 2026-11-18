@@ -1,0 +1,20 @@
+{
+  "comment": "Pinned Mozilla geckodriver release for optional user-initiated cache install (MPL-2.0). Not bundled in the offline installer.",
+  "version": "0.36.0",
+  "license": "MPL-2.0",
+  "publisher": "Mozilla",
+  "builds": {
+    "win64": {
+      "url": "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-win64.zip",
+      "sha256": "4c23d54681d431b42575a66c3c89202a40add3ef45e64b94acac620a89774ad2",
+      "size": 1845646,
+      "executableInArchive": "geckodriver.exe"
+    },
+    "linux64": {
+      "url": "https://github.com/mozilla/geckodriver/releases/download/v0.36.0/geckodriver-v0.36.0-linux64.tar.gz",
+      "sha256": "0bde38707eb0a686a20c6bd50f4adcc7d60d4f73c60eb83ee9e0db8f65823e04",
+      "size": 2306404,
+      "executableInArchive": "geckodriver"
+    }
+  }
+}

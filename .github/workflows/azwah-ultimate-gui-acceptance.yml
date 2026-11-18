@@ -1,0 +1,45 @@
+name: Azwah Ultimate installed GUI acceptance
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gui:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build the Owner installer without repeating the full qualification
+        shell: pwsh
+        run: |
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-bundled-chromium.mjs win64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder install-app-deps --arch=x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron-builder --config electron-builder.ultimate-owner.cjs --win nsis --x64 --publish never
+          exit $LASTEXITCODE
+      - name: Drive the installed GUI for one-line proxy, fingerprint sections, and payload limits
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build-evidence/ultimate-gui | Out-Null
+          node scripts/ultimate-installed-gui-acceptance.mjs 2>&1 | Tee-Object build-evidence/ultimate-gui/transcript.log
+          exit $LASTEXITCODE
+      - name: Preserve GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ultimate-gui-${{ github.sha }}
+          path: build-evidence/ultimate-gui
+          retention-days: 30
