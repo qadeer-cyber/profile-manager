@@ -12,6 +12,7 @@ on:
         default: false
   push:
     branches:
+      - main
       - windows-validation
       - development/v0.5.0
       # M17 validation-only when workflow_dispatch is unavailable to integration tokens

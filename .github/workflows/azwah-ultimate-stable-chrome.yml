@@ -5,13 +5,14 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 jobs:
   build:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability'
     runs-on: windows-2022
     timeout-minutes: 65
     env:
+      # Rebuild the pinned predecessor for the upgrade test so artifact expiry cannot break CI.
+      AZWAH_UPGRADE_BASELINE: '4a45831209cbf603ff9328a086f8f5f7ad5dd118'
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v4
@@ -121,12 +122,36 @@ jobs:
           $env:PM_TEST_SOCKS5 = '1'
           node --test --test-force-exit test/chrome-stable-dbip-windows.test.js
           exit $LASTEXITCODE
-      - uses: actions/download-artifact@v4
+      - name: Check out the pinned upgrade baseline
+        uses: actions/checkout@v4
         with:
-          github-token: ${{ github.token }}
-          run-id: 42790260276
-          name: azwah-ultimate-stable-chrome-x64-4a45831209cbf603ff9328a086f8f5f7ad5dd118
-          path: prior
+          ref: ${{ env.AZWAH_UPGRADE_BASELINE }}
+          path: prior-source
+          persist-credentials: false
+      - name: Build the pinned upgrade baseline
+        shell: pwsh
+        working-directory: prior-source
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $source = git rev-parse HEAD
+          if ($source -ne $env:AZWAH_UPGRADE_BASELINE) { throw 'Upgrade baseline source mismatch.' }
+          npm ci --no-audit --no-fund
+          node scripts/fetch-bundled-firefox.mjs
+          npx electron-builder install-app-deps --arch=x64
+          $env:VITE_AZWAH_ADMIN = '0'
+          npm run build
+          npx electron-builder --config electron-builder.office-stable-payload.cjs --win --dir --x64 --publish never
+          $env:VITE_AZWAH_ADMIN = '1'
+          npm run build
+          New-Item -ItemType Directory -Force build | Out-Null
+          Copy-Item "${env:ProgramFiles(x86)}\NSIS" build/admin-nsis -Recurse
+          npx electron-builder --config electron-builder.ultimate-stable.cjs --win nsis --x64 --publish never
+          $dir = 'release-ultimate-stable'
+          $name = 'Azwah-Ultimate-Stable-Chrome-Setup-x64.exe'
+          $hash = (Get-FileHash -LiteralPath (Join-Path $dir $name)).Hash.ToLowerInvariant()
+          "$hash  $name" | Set-Content (Join-Path $dir 'SHA256SUMS.txt')
+          Write-Output "Rebuilt upgrade baseline: source=$source SHA-256=$hash"
       - name: Verify in-place upgrade and preserve the profile database
         shell: pwsh
         run: |
@@ -143,11 +168,11 @@ jobs:
             $app = Join-Path $dir $appName
             $exe = Resolve-Path (Join-Path $folder $name)
             $actual = (Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant()
-            if ($actual -ne $expectedHash) { throw 'Historical installer SHA-256 mismatch.' }
+            if ($actual -ne $expectedHash) { throw 'Installer SHA-256 mismatch.' }
             Write-Output "$folder EXE SHA256=$actual"
             $setup = Start-Process -FilePath $exe -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
             if ($setup.ExitCode -ne 0) { throw 'Install or upgrade failed.' }
-            $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP "$folder-smoke.json"
+            $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP "$name-smoke.json"
             $proc = Start-Process -FilePath $app -PassThru
             try {
               if (!$proc.WaitForExit(120000)) { throw 'Installed Chrome smoke timed out.' }
@@ -155,7 +180,9 @@ jobs:
               if ($proc.ExitCode -ne 0 -or !$smoke.chromeStable -or !$smoke.stopped) { throw 'Installed Chrome smoke failed.' }
             } finally { if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force } }
           }
-          InstallAndSmoke prior 'Azwah-Ultimate-Stable-Chrome-Setup-x64.exe' 'Azwah Multi Browser Ultimate.exe' '5e21b46f79dc471fbfb144c1d4eaddb6d89b53549988ffa734a1b9196c0019f9'
+          $prior = 'prior-source/release-ultimate-stable'
+          $priorHash = ((Get-Content -Raw (Join-Path $prior 'SHA256SUMS.txt')).Trim() -split '\s+')[0]
+          InstallAndSmoke $prior 'Azwah-Ultimate-Stable-Chrome-Setup-x64.exe' 'Azwah Multi Browser Ultimate.exe' $priorHash
           $priorIds = @(ProfileIds)
           if ($priorIds.Count -lt 1) { throw 'Prior installation did not create a profile.' }
           $expected = ((Get-Content -Raw 'release-ultimate-stable/SHA256SUMS.txt').Trim() -split '\s+')[0]
