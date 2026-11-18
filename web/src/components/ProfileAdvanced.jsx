@@ -117,11 +117,12 @@ export function FingerprintFields({ settings, onChange }) {
   </div>;
 }
 
-export function PreferenceFields({ settings, onChange }) {
+export function PreferenceFields({ settings, onChange, section }) {
   const prefs = settings.preferences;
   const [urls, setUrls] = useState((prefs.startupUrls || []).join('\n'));
   const setPerm = (key, value) => onChange({ ...settings, preferences: { ...prefs, permissions: { ...prefs.permissions, [key]: value } } });
   return <div className="form">
+    {section !== 'extra' && <>
     <div className="notice">Startup options apply on the next manual launch (native Chromium or Firefox). They do not affect CookieRobot jobs, which use automation CDP with their own URL list.</div>
     <label>Startup URLs<textarea rows="4" value={urls} onChange={e => { setUrls(e.target.value); onChange({ ...settings, preferences: { ...prefs, startupUrls: e.target.value.split(/\s+/).map(s => s.trim()).filter(Boolean) } }); }} placeholder="https://example.com" /></label>
     <p className="muted hint">One http or https URL per line, at most 8. An explicit launch URL replaces them for that launch. Credentials in a URL are rejected.</p>
@@ -129,12 +130,15 @@ export function PreferenceFields({ settings, onChange }) {
       <option value="restore">Restore previous session</option><option value="fresh">Start fresh</option>
     </select></label>
     <label className="check"><input type="checkbox" checked={prefs.restoreTabs === true} onChange={e => onChange({ ...settings, preferences: { ...prefs, restoreTabs: e.target.checked } })} /> Restore previous tabs in other runtimes</label>
+    <p className="muted hint">Off unless you turn it on for this profile. A graceful stop or last-window close saves that profile’s http(s) tabs and opens them on the next launch. An explicit launch address or the startup URLs above are used instead for that launch, so the old tabs are not opened beside them. Diagnostic tabs, browser-internal pages, loopback addresses, and addresses that contain a password are not saved. A crash does not rewrite the list.</p>
+    </>}
+    {section !== 'startup' && <>
     <label className="check"><input type="checkbox" checked={prefs.rememberLastWindow === true} onChange={e => onChange({ ...settings, preferences: { ...prefs, rememberLastWindow: e.target.checked } })} /> Remember last window size/position</label>
     <p className="muted hint">When enabled, a graceful stop saves window bounds to a local file (`.pm-window.json`) and reapplies them on the next launch where the browser supports it (Chromium flags / Firefox -width/-height).</p>
-    <p className="muted hint">Off unless you turn it on for this profile. A graceful stop or last-window close saves that profile’s http(s) tabs and opens them on the next launch. An explicit launch address or the startup URLs above are used instead for that launch, so the old tabs are not opened beside them. Diagnostic tabs, browser-internal pages, loopback addresses, and addresses that contain a password are not saved. A crash does not rewrite the list.</p>
     {PERMISSIONS.map(([key, label]) => <label key={key}>{label}<select value={prefs.permissions[key]} onChange={e => setPerm(key, e.target.value)}>
       {STATES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
     </select></label>)}
     <p className="muted hint">Notifications, camera, microphone, and MIDI are applied with Chromium's permission API when a page opens. Clipboard is stored in the profile preferences; Chromium does not expose a matching live permission call, so it is not described as enforced in the page.</p>
+    </>}
   </div>;
 }

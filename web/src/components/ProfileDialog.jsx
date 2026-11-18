@@ -20,6 +20,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const [f, setF] = useState(initial);
   const [tab, setTab] = useState('general');
   const [test, setTest] = useState(null);
+  const [savingProxy, setSavingProxy] = useState(false);
   const [verification, setVerification] = useState(0);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -69,6 +70,23 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       setTest(r);
     } catch (e) { setTest({ ok: false, error: e.message }); }
   };
+  const saveProxy = async () => {
+    setSavingProxy(true);
+    try {
+      const saved = await api('/api/proxies', { method: 'POST', body: {
+        type: f.proxy.type, host: f.proxy.host, port: Number(f.proxy.port),
+        username: f.proxy.username, password: f.proxy.password,
+      } });
+      setF(current => ({ ...current, proxyMode: 'library', proxyId: saved.id }));
+      setTest(null);
+      await lib.reload();
+      toast('Proxy saved to the library', 'success');
+    } catch (error) {
+      setFormError(error.message);
+    } finally {
+      setSavingProxy(false);
+    }
+  };
   const useTemplate = async () => {
     if (!templateId) return;
     try {
@@ -107,7 +125,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       {confirmClose && <span className="muted">Discard unsaved changes?</span>}
       {confirmClose && <button type="button" onClick={onClose}>Discard</button>}
       <button type="button" onClick={requestClose} disabled={saving}>Cancel</button>
-      <button type="button" className="primary" onClick={submit} disabled={saving} aria-busy={saving} aria-label={initial.id ? 'Save changes' : 'Create profile'}>{saving ? 'Saving…' : initial.id ? 'Update' : 'Create'}</button>
+      <button type="button" className="primary" onClick={submit} disabled={saving || savingProxy} aria-busy={saving} aria-label={initial.id ? 'Save changes' : 'Create profile'}>{saving ? 'Saving…' : initial.id ? 'Update' : 'Create'}</button>
     </>}>
     <div className="editor-top">
       <button type="button" className="ghost" onClick={requestClose}>Back</button>
@@ -129,6 +147,9 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           <label>Tags<input value={f.tags} onChange={e => set('tags', e.target.value)} placeholder="Search or type tags, comma separated" /></label>
           {tagList.length > 0 && <div className="chips">{tagList.map(t => <span key={t} className="tag">{t}</span>)}</div>}
           <label>Notes<textarea rows="4" value={f.notes} onChange={e => set('notes', e.target.value)} placeholder="Note" /></label>
+          <h3 className="h3">Startup behavior</h3>
+          <PreferenceFields settings={advanced} onChange={setAdvanced} section="startup" />
+          <h3 className="h3">Browser and storage</h3>
           <label>Browser engine<select aria-label="Browser engine" value={f.browserEngine || 'chromium'} onChange={e => set('browserEngine', e.target.value)}>
             <option value="chromium">Chromium</option>
             <option value="firefox">Firefox</option>
@@ -175,6 +196,10 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             <button type="button" disabled={!templateId} onClick={useTemplate}>Create live proxy from template</button>
           </div>}
           {f.proxyMode === 'custom' && <ProxyLineField proxy={f.proxy} onValidity={setProxyLineOk} onChange={proxy => { setTest(null); setF(current => ({ ...current, proxy })); }} />}
+          {f.proxyMode === 'custom' && <button type="button" onClick={saveProxy}
+            disabled={savingProxy || !proxyReady || !proxyLineOk || f.proxy.password === '••••'}>
+            {savingProxy ? 'Saving proxy…' : 'Save to proxy library'}
+          </button>}
           {f.proxyMode !== 'none' && f.proxyMode !== 'template' && <div className="row center">
             <button type="button" onClick={runTest} disabled={test?.busy || !proxyReady}>Test Proxy</button>
             <ProxyTestResult r={test} />
@@ -214,8 +239,8 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {verification > 0 && initial.id && !dirty && <HardwarePanel key={verification} profileId={initial.id} allowExport />}
         </div>}
         {tab === 'extra' && <div className="form">
-          <h3 className="h3">Startup</h3>
-          <PreferenceFields settings={advanced} onChange={setAdvanced} />
+          <h3 className="h3">Permissions and window persistence</h3>
+          <PreferenceFields settings={advanced} onChange={setAdvanced} section="extra" />
           <h3 className="h3">Extensions</h3>
           {(f.browserEngine || 'chromium') === 'firefox'
             ? <div className="notice warn">Chromium extension assignments do not apply on Firefox. Import a signed or unpacked add-on on the Extensions page. There is no signing bypass.</div>
