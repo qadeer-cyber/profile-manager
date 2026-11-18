@@ -1,5 +1,5 @@
 // End-to-end tests. Spawns the server on a temp data dir plus local helper servers
-// (an HTTP CONNECT proxy, a SOCKS5 proxy that requires a login, and a target web page).
+// (an HTTP CONNECT proxy, a SOCKS5 proxy that requires a login, and a local IP echo/browser target).
 import { spawn, execFile } from 'child_process';
 import { promisify } from 'util';
 const run = async (f, env) => (await promisify(execFile)('node', [f], { env, encoding: 'utf8' })).stdout;
@@ -19,8 +19,17 @@ let B, srv, env;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pm-test-'));
 const startServer = async () => { srv = await spawnServer(env); srv.stdout.pipe(process.stdout); B = srv.url; };
 
-// target page
-const target = http.createServer((req, res) => res.end('<title>hello-target</title>ok'));
+// The reported address is a fixture value. All traffic goes to the local server.
+const EXIT_IP = '8.8.4.4';
+let reportedIp = EXIT_IP;
+const target = http.createServer((req, res) => {
+  if (req.url === '/ip') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ip: reportedIp }));
+    return;
+  }
+  res.end('<title>hello-target</title>ok');
+});
 // HTTP CONNECT proxy (no auth)
 const httpProxy = http.createServer((req, res) => res.end()).on('connect', (req, sock) => {
   const [h, p] = req.url.split(':'); const up = net.connect(p, h, () => { sock.write('HTTP/1.1 200 OK\r\n\r\n'); up.pipe(sock); sock.pipe(up); });
@@ -47,7 +56,7 @@ const socks = net.createServer(c => {
 });
 const TARGET = await listenFree(target, 'PM_TEST_TARGET_PORT'), HTTPP = await listenFree(httpProxy, 'PM_TEST_HTTP_PROXY_PORT'), SOCKS = await listenFree(socks, 'PM_TEST_SOCKS_PORT');
 const TARGET_URL = `http://127.0.0.1:${TARGET}/`;
-env = { ...process.env, PM_DATA_DIR: dataDir, HEADLESS: '1', PM_API_TOKEN: TOKEN, PM_PROXY_LOOPBACK: '1', PROXY_TEST_URL: TARGET_URL };
+env = { ...process.env, PM_DATA_DIR: dataDir, HEADLESS: '1', PM_API_TOKEN: TOKEN, PM_PROXY_LOOPBACK: '1', PROXY_TEST_URL: new URL('/ip', TARGET_URL).href };
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log(`${c ? 'PASS' : 'FAIL'} ${m}`); };
@@ -74,9 +83,19 @@ try {
   r = await j('GET', '/api/profiles?folder=Me'); ok(r.d.length === 1, 'folder filter');
 
   // --- proxy test endpoint ---
-  r = await j('POST', '/api/proxy/test', { proxy: { type: 'http', host: '127.0.0.1', port: HTTPP } }); ok(r.d.ok, 'proxy test: http proxy');
-  r = await j('POST', `/api/profiles/${a.id}/test-proxy`); ok(r.d.ok, 'proxy test: socks5 with login (saved profile)');
-  r = await j('POST', '/api/proxy/test', { proxy: { type: 'socks5', host: '127.0.0.1', port: SOCKS, username: 'alice', password: 'wrong' } }); ok(!r.d.ok, 'proxy test: wrong socks5 password fails');
+  const httpProxyConfig = { type: 'http', host: '127.0.0.1', port: HTTPP };
+  const verified = ({ s, d }) => s === 200 && d.ok === true && d.ip === EXIT_IP && d.error === null;
+  r = await j('POST', '/api/proxy/test', { proxy: httpProxyConfig });
+  ok(verified(r), `proxy test: http proxy (HTTP ${r.s}, error ${r.d.error})`);
+  const beforeProbe = socksAuthed;
+  r = await j('POST', `/api/profiles/${a.id}/test-proxy`);
+  ok(verified(r) && socksAuthed > beforeProbe, `proxy test: socks5 with login (saved profile; HTTP ${r.s}, error ${r.d.error})`);
+  r = await j('POST', '/api/proxy/test', { proxy: { type: 'socks5', host: '127.0.0.1', port: SOCKS, username: 'alice', password: 'wrong' } });
+  ok(r.s === 200 && r.d.ok === false && r.d.ip === null && r.d.error === 'auth_failed', 'proxy test: wrong socks5 password fails with auth_failed');
+  reportedIp = '203.0.113.9';
+  r = await j('POST', '/api/proxy/test', { proxy: httpProxyConfig });
+  ok(r.s === 200 && r.d.ok === false && r.d.ip === null && r.d.error === 'unknown', 'proxy test: rejects a reserved exit address even after a successful tunnel');
+  reportedIp = EXIT_IP;
 
   // --- socks5 auth through local relay, attach via CDP ---
   const before = socksAuthed;
