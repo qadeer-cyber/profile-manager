@@ -35,6 +35,8 @@ Record each result as **Pass / Fail / Not tested**, with the Windows build (`win
 3. Install the newer CI build over it. Profiles, proxies, settings and the profile database are kept.
 4. Uninstall. Profile data remains in `%APPDATA%` unless removed on purpose.
 
+4b. In-place upgrade (see `docs/in-place-upgrade.md`): on a disposable copy of an existing `%APPDATA%\azwah-multi-browser-ultimate`, install the new installer over the previous version, once with the app closed and once with a profile running and the interactive installer. Record any close-app prompt, and confirm profiles, proxies, cookies and bookmarks are present.
+
 ### B. Device identity (client-only)
 5. On Windows 11: create a profile with **Windows 11 desktop** and launch it with Chrome Stable. Verify → *Device identity* is **Pass**, and the client-hint `platformVersion` is 13 or higher.
 6. On Windows 11, **Windows 10 desktop** is listed but disabled with the client-hint reason. On Windows 10 the opposite applies.
