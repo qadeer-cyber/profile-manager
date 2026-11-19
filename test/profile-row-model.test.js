@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { engineLabel, compactDate, proxyLabel, proxyVerificationLevel, proxyEvidenceFields, proxyEvidenceSummary, nativeVerification, tabRestoreBadge, isNativeRuntime } from '../web/src/lib/profileRow.js';
+import { engineLabel, compactDate, proxyLabel, proxyVerificationLevel, proxyEvidenceFields, proxyEvidenceSummary, nativeVerification, tabRestoreBadge, isNativeRuntime, cdpLabel } from '../web/src/lib/profileRow.js';
 
 test('engine labels keep the full honest label and a visible qualifier', () => {
   assert.deepEqual(engineLabel({ browserEngine: 'firefox', advancedSettings: { runtime: 'azwah-native' } }), { short: 'Firefox', full: 'Firefox', qualifier: '' });
@@ -71,4 +71,12 @@ test('tab restore badge', () => {
   assert.equal(tabRestoreBadge({ enabled: false }), null);
   assert.deepEqual(tabRestoreBadge({ enabled: true, savedCount: 3 }, false), { text: 'Tabs 3', title: '3 tab(s) saved for next launch' });
   assert.equal(tabRestoreBadge({ enabled: true }, true).title, 'Tab restore on — saved on graceful stop');
+});
+
+test('cdp label keeps the endpoint visible as a port', () => {
+  assert.equal(cdpLabel(null), null);
+  assert.equal(cdpLabel({}), null);
+  assert.deepEqual(cdpLabel({ debuggerAddress: '127.0.0.1:9333' }), { text: ':9333', endpoint: '127.0.0.1:9333' });
+  assert.deepEqual(cdpLabel({ wsEndpoint: 'ws://127.0.0.1:41234/devtools/browser/abc', debuggerAddress: '127.0.0.1:41234' }), { text: ':41234', endpoint: 'ws://127.0.0.1:41234/devtools/browser/abc' });
+  assert.equal(cdpLabel({ debuggerAddress: 'pipe' }).text, 'pipe');
 });

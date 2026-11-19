@@ -100,3 +100,12 @@ export function tabRestoreBadge(tabRestore, running) {
     title: running ? 'Tab restore on — saved on graceful stop' : count ? `${count} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet',
   };
 }
+
+// Compact, always-visible automation endpoint label for a running profile ("CDP :9333").
+// The full endpoint stays in the tooltip and the details dialog.
+export function cdpLabel(cdp) {
+  const endpoint = cdp?.wsEndpoint || cdp?.debuggerAddress;
+  if (!endpoint) return null;
+  const port = /:(\d+)(?:\/|$)/.exec(String(endpoint))?.[1];
+  return { text: port ? `:${port}` : String(endpoint), endpoint: String(endpoint) };
+}

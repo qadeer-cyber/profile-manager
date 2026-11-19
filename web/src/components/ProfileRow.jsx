@@ -2,7 +2,7 @@ import React from 'react';
 import { Icon } from './Icon.jsx';
 import { RowActionsMenu } from './RowActionsMenu.jsx';
 import { crashSummary } from '../lib.js';
-import { engineLabel, compactDate, proxyLabel, proxyEvidenceSummary, proxyVerificationLevel, tabRestoreBadge } from '../lib/profileRow.js';
+import { engineLabel, compactDate, cdpLabel, proxyLabel, proxyEvidenceSummary, proxyVerificationLevel, tabRestoreBadge } from '../lib/profileRow.js';
 
 // One single-line profile row. Every cell is nowrap + ellipsis; long content lives in tooltips and
 // in the details dialog, so the row height stays fixed regardless of data.
@@ -11,6 +11,7 @@ export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
   const engine = engineLabel(p);
   const proxy = proxyLabel(p.proxy);
   const tabs = tabRestoreBadge(p.tabRestore, p.running);
+  const cdp = cdpLabel(p.cdp);
   const level = proxyVerificationLevel(p.lastProxyLocation);
   const lastUsed = p.last_launched_at ? new Date(p.last_launched_at) : null;
   const errorTitle = st.showError ? `${crashSummary(p.last_error)}\n\n${p.last_error || ''}`.trim() : undefined;
@@ -39,11 +40,11 @@ export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
     {show('status') && <td className="col-status"><span className={'status ' + st.key} title={errorTitle}><i />{st.label}</span></td>}
     {show('name') && <td className="col-name"><div className="name-line">
       <span className="name" title={p.name}>{p.name}</span>
-      {p.isQuick && <span className="badge" title="Quick profile">quick</span>}
+      {p.isQuick && <span className="row-badge" title="Quick profile">quick</span>}
       {st.showError && <span className="err-text row-error" title={errorTitle}><Icon name="info" size={12} />{crashSummary(p.last_error)}</span>}
-      {p.automationEnabled && !p.running && <span className="badge" data-badge="automation" title="Automation enabled" aria-label="Automation enabled">Auto</span>}
-      {p.cdp && <span className="badge" title={`Automation endpoint: ${p.cdp.wsEndpoint || p.cdp.debuggerAddress}`}>CDP</span>}
-      {tabs && <span className="badge" title={tabs.title}>{tabs.text}</span>}
+      {p.automationEnabled && !p.running && <span className="row-badge" data-badge="automation" title="Automation enabled" aria-label="Automation enabled">Auto</span>}
+      {cdp && <span className="row-badge cdp" title={`Automation endpoint: ${cdp.endpoint}`}>CDP <span className="mono">{cdp.text}</span></span>}
+      {tabs && <span className="row-badge" title={tabs.title}>{tabs.text}</span>}
     </div></td>}
     {show('engine') && <td className="col-engine" title={engine.full}><span className="engine-line"><span className="engine-name">{engine.short}</span>{engine.qualifier && <span className="qual">{engine.qualifier}</span>}</span></td>}
     {show('storage') && <td className="col-storage" title="Stored in the local data folder"><Icon name="storage" size={14} /><span>Local</span></td>}

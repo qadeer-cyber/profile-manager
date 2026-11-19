@@ -73,8 +73,9 @@
 
 .profiles .name-line{display:flex;align-items:center;gap:6px;min-width:0}
 .profiles .name-line .name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.profiles .badge{flex:none;display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:600;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
+.profiles .row-badge{flex:none;display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:600;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
 .profiles .name-line .name{flex:0 1 auto}
+.profiles .row-badge.cdp .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
 .profiles .row-error{flex:1 1 0;min-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--bad)}
 .profiles .row-error .i{vertical-align:-2px;margin-right:4px}
 .profiles .engine-line{display:flex;align-items:center;min-width:0}
