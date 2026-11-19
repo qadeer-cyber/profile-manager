@@ -49,6 +49,7 @@ async function timed(operation, fn) {
   const start = performance.now();
   const result = await fn();
   report.timingsMs.push([operation, Math.round(performance.now() - start)]);
+  console.log('Completed ' + operation);
   return result;
 }
 async function open() {
@@ -227,7 +228,11 @@ try {
   await observe(first.page, 'A', false);
   const child = application.process();
   const exited = once(child, 'exit');
-  child.kill('SIGKILL');
+  // Playwright starts a cmd.exe wrapper on Windows. Its PID does not belong to AZWAH.
+  const main = await application.evaluate(() => ({ pid: process.pid, executable: process.execPath }));
+  assert.equal(path.resolve(main.executable).toLowerCase(), exe.toLowerCase());
+  assert.ok(Number.isSafeInteger(main.pid) && main.pid > 0);
+  process.kill(main.pid, 'SIGKILL');
   await exited;
   application = null;
   await timed('desktop crash recovery', open);
