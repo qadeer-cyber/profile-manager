@@ -71,6 +71,7 @@ import { geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import {
   assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
 } from './profile-browser-export.js';
+import { importBookmarksIntoProfile, bookmarksToNetscapeHtml, LIMITS as BOOKMARK_LIMITS } from './bookmark-import.js';
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
 import {
   adbAdapterReport, adbDiagnostics, connectAdbTarget, disconnectAdbTarget, getAdbDeviceInfo,
@@ -462,6 +463,12 @@ async function cookieList(id) {
   }
   return { engine: 'chromium', readOnly: false, cookies: readProfileCookies(userDataDir(profile.id)) };
 }
+function bookmarkDiskProfile(id) {
+  const profile = must(id);
+  if (profile.browserEngine === 'firefox') throw Object.assign(err(400, 'Bookmarks import and HTML export support Chromium-based profiles only.'), { code: 'BOOKMARKS_ENGINE_UNSUPPORTED' });
+  if (engine.isRunning(profile.id)) throw Object.assign(err(409, 'Stop the profile before importing or exporting its bookmarks. Chrome rewrites the Bookmarks file while it runs.'), { code: 'PROFILE_RUNNING' });
+  return profile;
+}
 function cookieMutation(id) {
   const profile = must(id);
   if (engine.isRunning(id)) throw Object.assign(err(409, 'Stop the profile before changing its cookies. A live cookie database cannot be edited safely.'), { code: 'PROFILE_RUNNING' });
@@ -851,6 +858,17 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     assertProfileStoppedForDiskExport(engine.isRunning, profile.id);
     res.set('Cache-Control', 'no-store');
     res.json(exportStoppedProfileBookmarks(userDataDir(profile.id)));
+  }));
+  router.get('/profiles/:id/bookmarks/export.html', wrap((req, res) => {
+    const profile = bookmarkDiskProfile(req.params.id);
+    res.set('Cache-Control', 'no-store');
+    res.type('text/html').send(bookmarksToNetscapeHtml(userDataDir(profile.id)));
+  }));
+  // Body: { content: "<file text>" } — Chromium Bookmarks JSON, an AZWAH export or browser-export HTML.
+  router.post('/profiles/:id/bookmarks/import', wrap((req, res) => {
+    const profile = bookmarkDiskProfile(req.params.id);
+    if (typeof req.body?.content !== 'string') throw Object.assign(err(400, 'content must be the bookmarks file text'), { code: 'INVALID_BOOKMARKS' });
+    res.json(importBookmarksIntoProfile(userDataDir(profile.id), req.body.content));
   }));
   router.get('/profiles/:id/history/export', wrap((req, res) => {
     const profile = must(req.params.id);
@@ -1538,6 +1556,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const { status, body } = diagnosticsHttpError('UNAUTHORIZED');
     return res.status(status).json(body);
   });
+  // Bookmark files can exceed the default 1 MB body limit; bookmark-import.js enforces its own 5 MB cap.
+  app.use(/^\/api(\/v1)?\/profiles\/[^/]+\/bookmarks\/import$/, express.json({ limit: BOOKMARK_LIMITS.bytes * 2 }));
   app.use(express.json({ limit: '1mb' }));
   app.use((req, res, next) => { req.body ??= {}; next(); });
 

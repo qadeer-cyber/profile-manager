@@ -27,6 +27,8 @@ Legend: ✅ supported (selectable, verified at runtime) · ⛔ refused (disabled
 | iPhone | ⛔ | ⛔ | ⛔ | ⛔ | iOS browsers are Apple WebKit. Chrome, Chromium and Firefox cannot present WebKit |
 | iPad | ⛔ | ⛔ | ⛔ | ⛔ | As above |
 
+**Windows Server hosts** (for example the Windows Server 2022 CI runners) offer only *Match this computer*. Windows 10 and Windows 11 desktop are refused because Chrome derives the client-hint `platformVersion` from the Windows API contract, so Server 2022 (build 20348) can report a Windows 11-like value. Verification on Server checks `navigator.platform`, the client-hint platform and the mobile flag, not a client version. Windows 10 and 11 client verification needs the physical-machine checklist in `docs/windows-client-qualification.md`.
+
 The same table applies to every engine AZWAH runs (Chrome Stable, bundled or native Chromium, the experimental privacy engine and Firefox), because each exposes the host's platform.
 
 ## What is checked for a supported preset

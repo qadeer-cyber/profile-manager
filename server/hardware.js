@@ -106,26 +106,8 @@ async function observeInPage() {
       };
     } catch { clientHints = { availability: 'unavailable', reason: 'client_hints_failed' }; }
   }
-  let fontsQuery = { availability: 'unavailable', reason: 'queryLocalFonts_missing' };
-  if (typeof window.queryLocalFonts === 'function') {
-    try {
-      const list = await window.queryLocalFonts();
-      fontsQuery = { availability: 'observed', apiPresent: true, resolved: true, count: list.length };
-    } catch (error) {
-      fontsQuery = { availability: 'observed', apiPresent: true, resolved: false, errorName: error.name };
-    }
-  } else {
-    fontsQuery = { availability: 'observed', apiPresent: false, resolved: false };
-  }
-  let mediaCapture = { availability: 'unavailable', reason: 'getUserMedia_missing' };
-  if (navigator.mediaDevices?.getUserMedia) {
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      mediaCapture = { availability: 'observed', errorName: 'granted' };
-    } catch (error) {
-      mediaCapture = { availability: 'observed', errorName: error.name || 'Error' };
-    }
-  }
+  // Permission states first: a call that would open a permission prompt in the user's browser is
+  // never made. A prompt waits for a person, so the probe would hang and the user would see it.
   const permissions = {
     geolocation: await permission('geolocation'),
     camera: await permission('camera'),
@@ -134,6 +116,31 @@ async function observeInPage() {
     'local-network-access': await permission('local-network-access'),
     notifications: await permission('notifications'),
   };
+  const decided = name => permissions[name].availability === 'observed' && permissions[name].state !== 'prompt';
+  let fontsQuery = { availability: 'unavailable', reason: 'queryLocalFonts_missing' };
+  if (typeof window.queryLocalFonts !== 'function') fontsQuery = { availability: 'observed', apiPresent: false, resolved: false };
+  else if (!decided('local-fonts')) fontsQuery = { availability: 'unavailable', apiPresent: true, reason: 'permission_not_decided' };
+  else {
+    try {
+      const list = await window.queryLocalFonts();
+      fontsQuery = { availability: 'observed', apiPresent: true, resolved: true, count: list.length };
+    } catch (error) {
+      fontsQuery = { availability: 'observed', apiPresent: true, resolved: false, errorName: error.name };
+    }
+  }
+  let mediaCapture = { availability: 'unavailable', reason: 'getUserMedia_missing' };
+  if (navigator.mediaDevices?.getUserMedia) {
+    if (!decided('camera') || !decided('microphone')) mediaCapture = { availability: 'unavailable', reason: 'permission_not_decided' };
+    else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach(track => track.stop());
+        mediaCapture = { availability: 'observed', errorName: 'granted' };
+      } catch (error) {
+        mediaCapture = { availability: 'observed', errorName: error.name || 'Error' };
+      }
+    }
+  }
   let geolocation = null;
   if (permissions.geolocation.state === 'granted' && navigator.geolocation) {
     geolocation = await new Promise(resolve => {

@@ -233,6 +233,8 @@ export function fingerprintFindings({
     : `The local-fonts permission is ${seen.permissions['local-fonts'].state}, not denied.`));
   if (fingerprint.fonts !== 'restricted') findings.push(finding('fonts_query_api', 'unavailable', 'Local font access is not restricted on this profile.'));
   else if (!seen?.fontsQuery) findings.push(finding('fonts_query_api', 'unavailable', 'queryLocalFonts was not collected.'));
+  else if (seen.fontsQuery.availability !== 'observed') findings.push(finding('fonts_query_api', 'unavailable', seen.fontsQuery.reason === 'permission_not_decided'
+    ? 'queryLocalFonts was not called because it would open a permission prompt.' : 'queryLocalFonts was not collected.'));
   else if (seen.fontsQuery.apiPresent === false) {
     findings.push(finding('fonts_query_api', 'pass', `queryLocalFonts is unavailable because ${FONT_ACCESS_DISABLE_FEATURE} is disabled for this profile. Canvas measureText is not blocked.`));
   } else if (seen.fontsQuery.resolved) {
@@ -249,7 +251,8 @@ export function fingerprintFindings({
       : `Camera is ${seen.permissions.camera.state} and microphone is ${seen.permissions.microphone.state}. Restricted expected both to be denied.`));
   }
   if (fingerprint.mediaDevices !== 'restricted') findings.push(finding('media_capture', 'unavailable', 'Media devices are Real. No capture classification is graded.'));
-  else if (seen?.mediaCapture?.availability !== 'observed') findings.push(finding('media_capture', 'unavailable', 'getUserMedia was not exercised.'));
+  else if (seen?.mediaCapture?.availability !== 'observed') findings.push(finding('media_capture', 'unavailable', seen?.mediaCapture?.reason === 'permission_not_decided'
+    ? 'getUserMedia was not called because it would open a camera or microphone prompt.' : 'getUserMedia was not exercised.'));
   else {
     const classified = classifyMediaCaptureError(seen.mediaCapture.errorName, {
       cameraState: seen.permissions?.camera?.state,

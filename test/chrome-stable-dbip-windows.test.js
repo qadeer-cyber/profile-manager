@@ -120,6 +120,21 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
       const context = engine.liveContext(profile.id);
       const page = context.pages()[0] || await context.newPage();
       assert.equal(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), result.timezone);
+      if (launch === 0) {
+        // Per-category verification for the proxy-following timezone and geolocation.
+        const hw = await fetch(server.url + '/api/v1' + route + '/hardware', { headers: { Authorization: 'Bearer ' + process.env.PM_API_TOKEN }, signal: AbortSignal.timeout(55_000) }).then(r => r.json());
+        const rows = Object.fromEntries(hw.consistency.byCategory.map(row => [row.id, row]));
+        for (const id of ['timezone', 'geolocationAccess', 'geolocationData']) console.log(`# proxy-following ${id}: ${rows[id].status} ${rows[id].findings.map(f => `${f.id}=${f.status}`).join(' ')}`);
+        assert.equal(hw.browser.availability, 'observed', `observation ${hw.browser.reason}`);
+        assert.equal(hw.browser.timezone, result.timezone);
+        assert.ok(['pass', 'partial'].includes(rows.timezone.status), `timezone follows the proxy: ${JSON.stringify(rows.timezone.findings)}`);
+        for (const id of ['geolocationAccess', 'geolocationData']) {
+          if (rows[id].status !== 'pass') continue;
+          const g = hw.browser.geolocation;
+          assert.ok(g && Math.abs(g.latitude - result.latitude) < 1 && Math.abs(g.longitude - result.longitude) < 1, `${id} pass needs browser coordinates near the proxy location, got ${JSON.stringify(g)}`);
+        }
+        assert.equal(JSON.stringify(hw).includes(password), false, 'no proxy password in the verification report');
+      }
       await engine.stop(profile.id);
     }
     assert.ok(authenticated >= 3, 'Proxy must receive authenticated outbound traffic');

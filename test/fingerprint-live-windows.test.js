@@ -13,6 +13,9 @@ import http from 'node:http';
 import test from 'node:test';
 
 const NON_PASS = new Set(['warning', 'partial', 'unavailable', 'real-only', 'unsupported']);
+// Findings read from the running browser process's real command line (an observation of the
+// process, not of a page). Every other pass needs the in-page observation.
+const PROCESS_EVIDENCE = new Set(['webrtc_flag', 'port_scan_policy']);
 
 test('real Chrome Stable: per-category verification matches what the browser exposes', { timeout: 420000 }, async t => {
   if (process.platform !== 'win32') { t.skip('Chrome Stable runtime is Windows-only'); return; }
@@ -40,7 +43,7 @@ test('real Chrome Stable: per-category verification matches what the browser exp
   const report = id => api('GET', `/profiles/${id}/hardware`);
   const rows = rep => Object.fromEntries(rep.consistency.byCategory.map(row => [row.id, row]));
   const table = (label, rep) => {
-    console.log(`# ${label}: engine ${rep.engine?.source} ${rep.engine?.version}; observed ${rep.browser.availability}`);
+    console.log(`# ${label}: engine ${rep.engine?.source} ${rep.engine?.version}; observed ${rep.browser.availability}${rep.browser.reason ? ` (${rep.browser.reason})` : ''}`);
     for (const row of rep.consistency.byCategory) console.log(`#   ${row.id.padEnd(18)} ${row.status.padEnd(11)} ${row.findings.filter(f => f.status !== 'unsupported').map(f => `${f.id}=${f.status}`).join(' ')}`);
   };
 
@@ -52,7 +55,7 @@ test('real Chrome Stable: per-category verification matches what the browser exp
       if (row.status === 'pass') {
         const checks = row.findings.filter(f => f.status !== 'unsupported');
         assert.ok(checks.length && checks.every(f => f.status === 'pass'), `${label}: ${row.id} pass without passing checks`);
-        assert.equal(seen.availability, 'observed', `${label}: ${row.id} pass without an observation`);
+        if (!checks.every(f => PROCESS_EVIDENCE.has(f.id))) assert.equal(seen.availability, 'observed', `${label}: ${row.id} pass without an observation`);
       }
     }
     const bs = profile.browserSettings;
@@ -103,6 +106,9 @@ test('real Chrome Stable: per-category verification matches what the browser exp
     await api('POST', `/profiles/${B.id}/launch`, { headless: false });
     const repA = await report(A.id), repB = await report(B.id);
     table('A', repA); table('B', repB);
+    // Both running profiles must be observable; a probe that hangs (e.g. on a permission prompt) is a defect.
+    assert.equal(repA.browser.availability, 'observed', `A not observed: ${repA.browser.reason}`);
+    assert.equal(repB.browser.availability, 'observed', `B not observed: ${repB.browser.reason}`);
     assert.equal(repA.engine.source, 'chrome-stable');
     assert.equal(repA.engine.version, stable.version, 'verification compares against the Chrome that is running');
     const profA = await api('GET', `/profiles/${A.id}`), profB = await api('GET', `/profiles/${B.id}`);
