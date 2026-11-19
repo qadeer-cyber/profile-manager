@@ -158,6 +158,8 @@ test('E4 restart: no observation cache, stale lock cleanup, auth and error contr
     }));
 
     second = await spawnServer(env, { envName: 'PM_E4_PORT', echo: false });
+    // spawnServer resolves on the URL line; the recovery summary is printed just after it.
+    for (const until = Date.now() + 5000; !/stale lock/.test(second.out) && Date.now() < until;) await new Promise(r => setTimeout(r, 50));
     assert.match(second.out, /Recovery: cleared \d+ running record/);
     assert.match(second.out, /stale lock/);
     assert.equal(fs.existsSync(path.join(dataDir, 'profiles', id, '.pm-lock')), false);

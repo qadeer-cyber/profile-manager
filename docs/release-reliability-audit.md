@@ -50,5 +50,11 @@ The npm scripts `test:m3`, `test:m6`, `test:m10`, `test:m11` and other milestone
 
 ## Open items
 
-- Ungated suites after the fixes, run locally: `test:m3` 34/34, `test:m4`, `test:m6`, `test:m7`, `test:m9`, `test:m12`, `test:m13` and `test:m14` pass. `test:m10` and `test:m11` each have one failure, caused by the local sandbox's Chromium build (153) differing from the pinned 156 (a version-equality check), not by the product. The remaining ungated scripts (`test:e4`, `test:trackc`, `test:unified`, `test:ultimate3-track-b`, the `:browser` variants, `test:alpha3-upgrade`) were still running when this was written; they are not release gates.
+- Ungated suites (no workflow runs them on this branch), triaged locally after the fixes:
+  - Pass: `test:m3` 34/34, `test:m4`, `test:m6`, `test:m7`, `test:m9`, `test:m12`, `test:m13`, `test:m14`, `test:trackc`, `test:ultimate3-track-b`, `test:m4:browser`.
+  - Fixed stale tests (behavior is intended):
+    - `test:unified`: the migration list was frozen at v19.
+    - `test:m7:browser`: DELETE now moves a profile to Trash, so the restore must use `collision=rename`.
+    - `test:e4`: the recovery summary line is printed just after the URL line the harness waits for. With that read race fixed, the test confirms that restart clears stale running records and locks, so crash recovery works.
+  - Local sandbox only: `test:m10`, `test:m11`, `test:m14-m16` and `test:m6:browser` each fail one version-equality check because this sandbox's Chromium is 153 and the app pins 156. `test:alpha3-upgrade` requires Windows.
 - A real Windows 10/11 client run of the qualification checklist (`docs/windows-client-qualification.md`). CI runs on Windows Server 2022.

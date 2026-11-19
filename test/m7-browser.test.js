@@ -59,11 +59,12 @@ test('cookies survive Chromium, live copies are refused, and backup restores the
     const archive = await fetch(proc.url + '/api/v1/backup', { method: 'POST', headers: { Authorization: 'Bearer m7-browser' } });
     assert.equal(archive.status, 200);
     const bytes = Buffer.from(await archive.arrayBuffer());
+    // DELETE moves the profile to Trash (the row remains), so the restore must not overwrite it.
     assert.equal((await api('DELETE', `/profiles/${profile.id}`)).status, 204);
-    const restored = await fetch(proc.url + '/api/v1/backup/restore?collision=abort', { method: 'POST', headers: { Authorization: 'Bearer m7-browser', 'Content-Type': 'application/octet-stream' }, body: bytes });
+    const restored = await fetch(proc.url + '/api/v1/backup/restore?collision=rename', { method: 'POST', headers: { Authorization: 'Bearer m7-browser', 'Content-Type': 'application/octet-stream' }, body: bytes });
     const restoredBody = await restored.json();
     assert.equal(restored.status, 200, JSON.stringify(restoredBody));
-    const back = restoredBody.added.find(item => item.name === 'Cookie source');
+    const back = restoredBody.renamed.find(item => item.name === 'Cookie source');
     const cookies = (await api('GET', `/profiles/${back.id}/cookies`)).body.cookies;
     assert.equal(cookies.some(item => item.name === 'sid'), false);
     assert.equal(cookies.find(item => item.name === 'frombrowser').value, 'written-by-chromium');
