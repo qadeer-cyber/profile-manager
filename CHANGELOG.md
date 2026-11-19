@@ -45,6 +45,7 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - Device Identity presets: only presets the host engine can present are selectable. Other OS and mobile presets are visible, disabled, and refused by the server. Each preset is verified against the browser's platform and client hints. See `docs/device-identity-support.md`.
 - The MAC address explanation is in the editor. A virtual-network environment is a deferred, approval-gated design (`docs/mac-virtualization-feasibility.md`).
 - Netscape `cookies.txt` import and export are added. Import is all-or-nothing through the existing validator. Cookie tests now run in the Windows native gate.
+- Action synchronizer: the person's own clicks, scrolling, key presses and navigation in a chosen leader profile are repeated in explicitly selected running followers. Password-field typing is never repeated. It covers the default Chromium and Chrome Stable runtimes only, and stops on request or when any participant stops. Tested with real Chromium (`test:sync`, Windows native gate).
 
 ## Unreleased — local fingerprint controls on `feature/m10-local-parity`
 

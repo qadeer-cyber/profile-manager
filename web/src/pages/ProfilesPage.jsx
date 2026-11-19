@@ -36,6 +36,9 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const [views, setViews] = useState([]), [viewName, setViewName] = useState('');
   const [dialog, setDialog] = useState(null), [busy, setBusy] = useState({}), [bulkBusy, setBulkBusy] = useState(false), [bulkJob, setBulkJob] = useState(null);
   const loadGen = useRef(0);
+  const [syncSessions, setSyncSessions] = useState([]);
+  const loadSync = useCallback(() => api('/api/sync').then(r => setSyncSessions(r.sessions || [])).catch(() => {}), []);
+  useEffect(() => { loadSync(); }, [loadSync, meta]);
   const [cardRef, cardWidth] = useElementWidth();
   useEffect(() => { if (workspaceFilter !== workspaceId) setWorkspaceId(workspaceFilter || ''); }, [workspaceFilter]);
   useEffect(() => { setPage(1); }, [scope, folder, workspaceId]);
@@ -235,7 +238,9 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
         <Tool label="Delete selected" icon="trash" danger disabled={!selected.length || bulkBusy} onClick={() => selected.length === 1 ? setDialog({ kind: 'delete', data: selected[0] }) : setDialog({ kind: 'bulk-delete' })} />
         <RowActionsMenu label="More profile actions" icon="more" buttonClassName="tool" items={[
           ...(narrow ? lowPriorityActions : []),
-          { key: 'import', label: 'Import profiles', icon: 'upload', separatorBefore: narrow, onSelect: () => setDialog({ kind: 'import' }) },
+          { key: 'sync', label: 'Synchronize selected…', ariaLabel: 'Synchronize selected', icon: 'bolt', separatorBefore: narrow,
+            disabled: selected.filter(p => p.running).length < 2, title: 'Select at least two running profiles', onSelect: () => setDialog({ kind: 'sync' }) },
+          { key: 'import', label: 'Import profiles', icon: 'upload', onSelect: () => setDialog({ kind: 'import' }) },
           { key: 'refresh', label: 'Refresh list', icon: 'refresh', onSelect: () => { load(); reloadMeta(); } },
           { key: 'filters', label: showFilters ? 'Hide filters' : 'Show filters', icon: 'filter', onSelect: () => setFiltersOpen(v => !v) },
         ]} />
@@ -260,6 +265,10 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     </div>}
     {columnsOpen && <div className="column-picker" role="group" aria-label="Visible columns">{COLUMN_DEFS.map(([key, label]) => <label key={key} className="check"><input type="checkbox" checked={columns[key] !== false} onChange={e => setColumns(current => ({ ...current, [key]: e.target.checked }))} />{label}</label>)}</div>}
     {loadError && <div className="notice warn" role="alert">{loadError}</div>}
+    {syncSessions.map(session => { const name = id => list.find(p => p.id === id)?.name || 'profile'; return <div key={session.id} className="notice sync-notice" role="status">
+      Synchronizing <strong>{name(session.leaderId)}</strong> → {session.followerIds.map(name).join(', ')}. Your input in the leader is repeated in these profiles (password fields excluded).{' '}
+      <button type="button" onClick={async () => { try { await api(`/api/sync/${session.id}/stop`, { method: 'POST' }); toast('Synchronization stopped', 'success'); } catch (e) { toast(e.message, 'error'); } loadSync(); }}>Stop</button>
+    </div>; })}
     {S.sel.size > 0 && <div className="bulkbar" role="toolbar" aria-label="Bulk actions">
       <strong>{S.sel.size} selected</strong>
       <button disabled={bulkBusy} onClick={() => serverBulk('Launched', { action: 'launch', ids: selected.filter(p => !p.running).map(p => p.id), concurrency: 2 })}><Icon name="play" /> Launch</button>
@@ -308,9 +317,32 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       onApply={proxyId => bulkProxySwitch(proxyId || null)} />}
     {dialog?.kind === 'proxy-switch' && <ProfileProxySwitch profile={dialog.data} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'automation' && <ProfileAutomationDialog profile={dialog.data} onClose={() => setDialog(null)} />}
+    {dialog?.kind === 'sync' && <SyncDialog profiles={selected.filter(p => p.running)} onClose={() => setDialog(null)} onStarted={() => { loadSync(); toast('Synchronization started', 'success'); }} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}
   </>;
+}
+
+function SyncDialog({ profiles, onClose, onStarted }) {
+  const toast = useToast();
+  const [leaderId, setLeaderId] = useState(profiles[0]?.id || '');
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const followers = profiles.filter(p => p.id !== leaderId);
+  const start = async () => {
+    setBusy(true);
+    try {
+      await api('/api/sync/start', { method: 'POST', body: { leaderId, followerIds: followers.map(p => p.id) } });
+      onStarted(); onClose();
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return <Dialog title="Synchronize profiles" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!confirmed || busy || !followers.length} onClick={start}>{busy ? 'Starting…' : 'Start'}</button></>}>
+    <p className="muted">Clicks, scrolling, key presses and navigation in the leader are repeated in the followers. Typing into password fields is never repeated. Only the default Chromium and Chrome Stable runtimes are supported.</p>
+    <label>Leader<select value={leaderId} onChange={e => setLeaderId(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <p className="muted">Followers: {followers.map(p => p.name).join(', ') || 'none'}</p>
+    <label className="check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I want my actions in the leader repeated in {followers.length} profile{followers.length === 1 ? '' : 's'}.</label>
+  </Dialog>;
 }
 
 function SaveTemplateDialog({ profile, onClose, toast }) {

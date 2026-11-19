@@ -100,6 +100,13 @@ import { fingerprintFindings, readPreviousObservation } from './fingerprint-cons
 import { FINGERPRINT_CATEGORIES, verificationByCategory } from './fingerprint-catalog.js';
 import { assertDevicePresetSupported, describeHost, hostLabel, presetMatrix } from './device-identity.js';
 const HOST_DEVICE = describeHost(process.platform, os.release());
+import { createActionSync } from './action-sync.js';
+const actionSync = createActionSync({
+  liveContext: id => engine.liveContext?.(id) || null,
+  isRunning: id => engine.isRunning(id),
+  profileName: id => db.prepare('SELECT name FROM profiles WHERE id=?').get(id)?.name || 'Profile',
+  emit: (type, id, extra) => engine.events.emit('event', { type, id, at: new Date().toISOString(), ...extra }),
+});
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED, FINGERPRINT_REJECTED } from './fingerprint-settings.js';
 import { processCommandLine } from './proc.js';
 import { copyProfileTree } from './profile-copy.js';
@@ -648,6 +655,13 @@ const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })), categories: FINGERPRINT_CATEGORIES })));
+  router.get('/sync', wrap((req, res) => res.json({ sessions: actionSync.list() })));
+  router.post('/sync/start', wrap(async (req, res) => res.status(201).json(await actionSync.start({ leaderId: req.body?.leaderId, followerIds: req.body?.followerIds }))));
+  router.post('/sync/:id/stop', wrap((req, res) => {
+    const result = actionSync.stop(req.params.id, 'stopped by user');
+    if (!result) throw err(404, 'Synchronization session not found');
+    res.json(result);
+  }));
   router.get('/device-identity', wrap((req, res) => res.json({ host: { ...HOST_DEVICE, label: hostLabel(HOST_DEVICE) }, presets: presetMatrix(HOST_DEVICE) })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/privacy-engine', wrap((req, res) => res.json(privacyEngineReport({ platform: process.platform }))));
@@ -1822,6 +1836,7 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const server = await new Promise((res, rej) => { const s = app.listen(port, host, () => res(s)).on('error', rej); });
   const onBrowserEvent = event => {
     if (event.type === 'profile:crashed' || event.type === 'profile:stopped') {
+      actionSync.profileStopped(event.id);
       automationBrowserEnded(event.id, engine.automationLaunch?.(event.id), event.type === 'profile:crashed' || Boolean(event.error));
     }
   };

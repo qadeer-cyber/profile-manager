@@ -87,6 +87,7 @@ await step('narrow toolbar keeps search visible and moves low-priority actions t
   await pg.check('tbody tr:nth-child(1) .cb input');
   await pg.getByRole('button', { name: 'More profile actions' }).click();
   const dup = pg.getByRole('menuitem', { name: 'Duplicate selected', exact: true });
+  if (!(await pg.getByRole('menuitem', { name: 'Synchronize selected', exact: true }).isDisabled())) throw new Error('synchronize enabled without two running profiles');
   if (await dup.isDisabled()) throw new Error('Duplicate selected disabled with one selection');
   await pg.keyboard.press('Escape');
   await pg.uncheck('tbody tr:nth-child(1) .cb input');

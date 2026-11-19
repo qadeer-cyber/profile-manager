@@ -171,6 +171,13 @@ jobs:
           set -o pipefail
           mkdir -p test-logs
           npm run test:proxies 2>&1 | tee test-logs/proxies.log
+      - name: Action synchronizer (real Chromium profiles)
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p test-logs
+          npm run test:sync 2>&1 | tee test-logs/sync.log
       - name: Security tests
         timeout-minutes: 15
         shell: bash
