@@ -95,8 +95,13 @@ await step('narrow toolbar keeps search visible and moves low-priority actions t
   await pg.setViewportSize({ width: 1360, height: 820 });
 });
 await step('fingerprint tab shows every category with unavailable modes disabled, and saves supported modes', async () => {
+  const alphaId = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha').id);
+  const seeded = await pg.evaluate(async id => (await fetch('/api/profiles/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advancedSettings: { experimental: { canvasReadback: 'prototype', webglReadback: 'prototype' } } }) })).status, alphaId);
+  if (seeded !== 200) throw new Error('seed prototype ' + seeded);
+  await pg.reload(); await rows(3);
   await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
   await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
+  if (await editor.getByText(/readback prototype|readPixels prototype/i).count()) { await pg.keyboard.press('Escape'); throw new Error('prototype controls still in the editor'); }
   const info = await editor.evaluate(root => {
     const opts = [...root.querySelectorAll('select option[value^="unavailable:"]')];
     return { unavailable: opts.length, allDisabled: opts.every(o => o.disabled), categories: [...new Set([...root.querySelectorAll('[data-category]')].map(e => e.dataset.category))].sort() };
@@ -111,6 +116,7 @@ await step('fingerprint tab shows every category with unavailable modes disabled
   await saveProfile();
   const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha'));
   if (p.advancedSettings.fingerprint.webgl !== 'restricted' || p.advancedSettings.fingerprint.canvas !== 'real') throw new Error('saved ' + JSON.stringify(p.advancedSettings.fingerprint));
+  if (p.advancedSettings.experimental.canvasReadback !== 'off' || p.advancedSettings.experimental.webglReadback !== 'off') throw new Error('editor save kept readback prototypes ' + JSON.stringify(p.advancedSettings.experimental));
   await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
   await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
   await editor.getByRole('button', { name: 'Verify Profile Settings' }).click();

@@ -107,7 +107,9 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     try {
       const browserSettings = validateBrowserSettings({ ...regional, languages: languageText.trim() ? languageText.split(',').map(s => s.trim()) : [] });
       const webrtcSettings = validateWebRtcSettings(policy);
-      const advancedSettings = validateAdvancedSettings(advanced);
+      // The canvas/WebGL readback page hooks are not offered in the editor (owner Decision 3: no
+      // canvas or WebGL masking controls), so every editor save turns them off.
+      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback: 'off', webglReadback: 'off' } });
       next = { ...f, browserSettings, webrtcSettings, advancedSettings };
     } catch (e) {
       const nextTab = e.code === 'INVALID_ADVANCED_SETTINGS' && e.tab === 'preferences' ? 'extra' : (e.code === 'INVALID_WEBRTC_SETTINGS' || e.code === 'INVALID_BROWSER_SETTINGS' || e.code === 'INVALID_ADVANCED_SETTINGS') ? 'fingerprint' : 'general';

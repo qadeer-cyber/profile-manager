@@ -140,7 +140,7 @@ try {
   await shot('geolocation-1366x768');
   await dialog.getByLabel('WebGL', {exact: true}).scrollIntoViewIfNeeded();
   await shot('graphics-webgl-1366x768');
-  await dialog.getByLabel('Canvas readback prototype').scrollIntoViewIfNeeded();
+  await dialog.getByLabel('Canvas', {exact: true}).scrollIntoViewIfNeeded();
   await shot('canvas-audio-1366x768');
   await dialog.getByRole('tab', {name: 'Proxy'}).click();
   await dialog.getByRole('radio', {name: 'Custom'}).click();
