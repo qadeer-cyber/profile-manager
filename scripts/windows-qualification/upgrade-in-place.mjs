@@ -42,6 +42,8 @@ const proxyPassword = crypto.randomUUID();
 let proxyHits = 0;
 const proxy = new ProxyServer({ host: '127.0.0.1', port: 0, prepareRequestFunction(req) {
   if (!(req.username === 'upgrade-fixture' && req.password === proxyPassword)) return { requestAuthentication: true };
+  // Chrome Stable profiles that follow their proxy verify the exit IP through it before launch.
+  if (req.hostname === 'api64.ipify.org' && req.port === 443) { proxyHits++; return {}; }
   if (req.hostname === 'azwah-upgrade.test' && req.isHttp) { proxyHits++; return { customResponseFunction: () => ({
     statusCode: 200, body: '<title>Upgrade proxy route</title>', headers: { 'Content-Type': 'text/html' } }) }; }
   throw new Error('Outside fixture scope');
