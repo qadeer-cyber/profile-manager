@@ -27,16 +27,24 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - Verify Profile Settings reports one result per category from live browser observations. A category passes only when its observed checks passed, and nothing passes while the profile is stopped.
 - The canvas and WebGL readback prototype controls were removed from the editor. Editor saves turn them off.
 
-### Milestone D — online update qualification (pushed at `67cb8a3`, Windows CI pending)
+### Milestone D — online update qualification (Windows CI verified at `5e17aec`, run 44508916606)
 
 - Windows CI builds Beta A (`2.0.0-beta.1`) and Beta B (`2.0.0-beta.2`) from the same source.
 - Beta A's shipping updater finds, downloads and SHA-256-verifies Beta B from a loopback stand-in for GitHub Releases. The downloaded installer upgrades A in place, and every existing profile must survive.
 - A tampered release digest must be refused.
+- Observed on Windows Server 2022: A `2.0.0-beta.1` offered B `2.0.0-beta.2` (467,687,051 bytes, SHA-256 `6a955230…b063927`). The tampered digest was refused with "Installer integrity check failed." B started as `2.0.0-beta.2` with 1 of 1 profile IDs preserved, and then reported no newer update.
 - A real published Beta A → Beta B run is planned for Milestone E, subject to the owner's approval.
 
 ### Not included
 
 - No release is published. The canvas and audio noise, WebGL and WebGPU masking, and invented navigator hardware described in `FINGERPRINT_PARITY_MATRIX.md` remain unsupported on stock Chromium.
+
+### Dolphin Anty / Multilogin expansion, part 1 (pushed at `fed1535`)
+
+- `docs/azwah-capability-parity.md` is an evidence-based audit of 24 capabilities with code paths, CI-backed statuses and official competitor references.
+- Device Identity presets: only presets the host engine can present are selectable. Other OS and mobile presets are visible, disabled, and refused by the server. Each preset is verified against the browser's platform and client hints. See `docs/device-identity-support.md`.
+- The MAC address explanation is in the editor. A virtual-network environment is a deferred, approval-gated design (`docs/mac-virtualization-feasibility.md`).
+- Netscape `cookies.txt` import and export are added. Import is all-or-nothing through the existing validator. Cookie tests now run in the Windows native gate.
 
 ## Unreleased — local fingerprint controls on `feature/m10-local-parity`
 
