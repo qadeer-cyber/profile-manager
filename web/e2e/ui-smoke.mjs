@@ -44,6 +44,56 @@ if (process.env.OUT_DIR) {
   }
   await pg.setViewportSize({ width: 1360, height: 820 });
 }
+const activeLabel = () => pg.evaluate(() => document.activeElement?.getAttribute('aria-label') || document.activeElement?.tagName);
+await step('keyboard: / focuses search, n opens the editor, Escape closes it', async () => {
+  await pg.locator('body').click({ position: { x: 5, y: 5 } });
+  await pg.keyboard.press('/');
+  if (await activeLabel() !== 'Search profiles') throw new Error('/ focused ' + await activeLabel());
+  await pg.keyboard.type('n');
+  if (await editor.count()) throw new Error('typing n in search opened the editor');
+  await pg.fill('.search input', ''); await pg.locator('body').click({ position: { x: 5, y: 5 } });
+  await pg.keyboard.press('n'); await editor.waitFor();
+  await pg.keyboard.press('Escape'); await editor.waitFor({ state: 'hidden' });
+  await pg.keyboard.press('Shift+N'); await editor.waitFor();
+  await pg.keyboard.press('Escape'); await editor.waitFor({ state: 'hidden' });
+});
+await step('keyboard: row menu arrows, Details dialog focus trap and focus return', async () => {
+  const more = pg.getByRole('button', { name: 'More actions for Alpha', exact: true });
+  await more.focus(); await pg.keyboard.press('Enter');
+  await pg.waitForSelector('[role=menu]');
+  if (await activeLabel() !== 'Details for Alpha') throw new Error('menu focus ' + await activeLabel());
+  await pg.keyboard.press('ArrowDown');
+  if (await activeLabel() !== 'Edit profile Alpha') throw new Error('ArrowDown focus ' + await activeLabel());
+  await pg.keyboard.press('ArrowUp'); await pg.keyboard.press('Enter');
+  const dialog = pg.getByRole('dialog', { name: 'Details · Alpha' }); await dialog.waitFor();
+  if (!(await dialog.evaluate(d => d.contains(document.activeElement)))) throw new Error('focus not moved into dialog');
+  await pg.keyboard.press('n');
+  if (await editor.count()) throw new Error('n opened the editor behind an open dialog');
+  for (let i = 0; i < 6; i++) await pg.keyboard.press('Tab');
+  if (!(await dialog.evaluate(d => d.contains(document.activeElement)))) throw new Error('Tab escaped the dialog');
+  await pg.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+  if (await activeLabel() !== 'More actions for Alpha') throw new Error('focus returned to ' + await activeLabel());
+});
+await step('Escape closes the profile editor and returns focus to its trigger', async () => {
+  await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
+  await pg.keyboard.press('Escape'); await editor.waitFor({ state: 'hidden' });
+  if (await activeLabel() !== 'Edit Alpha') throw new Error('focus returned to ' + await activeLabel());
+});
+await step('narrow toolbar keeps search visible and moves low-priority actions to overflow', async () => {
+  await pg.setViewportSize({ width: 1024, height: 768 });
+  await pg.waitForFunction(() => { const c = document.querySelector('.profile-card').getBoundingClientRect(), s = document.querySelector('.profile-toolbar .search').getBoundingClientRect(); return s.width > 150 && s.right <= c.right + 0.5; }, null, { timeout: 3000 })
+    .catch(async () => { throw new Error('search clipped at 1024: ' + JSON.stringify(await pg.evaluate(() => ({ card: document.querySelector('.profile-card').getBoundingClientRect().right, search: document.querySelector('.profile-toolbar .search').getBoundingClientRect().toJSON() })))); });
+  if (await pg.getByRole('button', { name: 'Duplicate selected', exact: true }).count()) throw new Error('low-priority action still inline at 1024');
+  await pg.check('tbody tr:nth-child(1) .cb input');
+  await pg.getByRole('button', { name: 'More profile actions' }).click();
+  const dup = pg.getByRole('menuitem', { name: 'Duplicate selected', exact: true });
+  if (await dup.isDisabled()) throw new Error('Duplicate selected disabled with one selection');
+  await pg.keyboard.press('Escape');
+  await pg.uncheck('tbody tr:nth-child(1) .cb input');
+  await pg.setViewportSize({ width: 1366, height: 768 });
+  await pg.getByRole('button', { name: 'Duplicate selected', exact: true }).waitFor();
+  await pg.setViewportSize({ width: 1360, height: 820 });
+});
 await step('sidebar lists folders', async () => {
   await pg.locator('.profile-scopes summary').click();
   await pg.waitForSelector('.folders >> text=Work');

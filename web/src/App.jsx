@@ -18,6 +18,7 @@ import { LicenseAdminPage } from '@azwah-admin';
 import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
+import { shortcutAllowed } from './lib/shortcuts.js';
 
 const SHOW_ADMIN = import.meta.env.VITE_AZWAH_ADMIN === '1';
 const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['workspaces', 'Workspaces'], ['cookie-robot', 'Automation'], ...(SHOW_ADMIN ? [['license-admin', 'License admin']] : []), ['diagnostics', 'Help and diagnostics'], ['settings', 'Settings']];
@@ -56,10 +57,9 @@ export function App() {
   useEffect(() => {
     let prefix = '';
     const onKey = event => {
-      const target = event.target;
-      if (target && (target.closest('input, textarea, select') || target.isContentEditable)) return;
+      if (!shortcutAllowed(event)) { prefix = ''; return; }
       if (event.key === '/') { event.preventDefault(); document.querySelector(page === 'profiles' ? '.search input' : '.command-search input')?.focus(); return; }
-      if (event.key === 'n' && page === 'profiles') { event.preventDefault(); document.querySelector('[data-action=new-profile]')?.click(); return; }
+      if ((event.key === 'n' || event.key === 'N') && page === 'profiles') { event.preventDefault(); document.querySelector('[data-action=new-profile]')?.click(); return; }
       if (event.key === 'g') { prefix = 'g'; return; }
       if (prefix === 'g') {
         const map = { d: 'dashboard', p: 'profiles', x: 'proxies', e: 'extensions', m: 'monitoring', s: 'settings', i: 'diagnostics' };

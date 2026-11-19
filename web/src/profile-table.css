@@ -135,10 +135,6 @@
 @container profiles (max-width:860px){.profiles :is(th,td):is(.col-engine,.col-folder){display:none}}
 @container profiles (max-width:700px){.profiles :is(th,td):is(.col-tags,.col-status){display:none}}
 @container profiles (max-width:560px){.profiles :is(th,td).col-proxy{display:none}}
-@container profiles (max-width:1080px){
-  .profile-card .profile-toolbar{flex-wrap:wrap}
-  .profile-toolbar .search{order:5;flex-basis:100%}
-}
 @container profiles (max-width:620px){
   .profile-card .pager{flex-wrap:wrap}
   .profile-card .pager .pager-spacer{display:none}

@@ -11,6 +11,7 @@ import { ProfileRow } from '../components/ProfileRow.jsx';
 import { RowActionsMenu } from '../components/RowActionsMenu.jsx';
 import { ProfileDetailsDialog } from '../components/ProfileDetailsDialog.jsx';
 import { useSelection } from '../hooks/useSelection.js';
+import { useElementWidth } from '../hooks/useElementWidth.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { rowStatus, plural, runAll } from '../lib.js';
 import { assignableLibraryProxies, switchProfileProxy } from '../lib/proxySwitch.js';
@@ -35,6 +36,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const [views, setViews] = useState([]), [viewName, setViewName] = useState('');
   const [dialog, setDialog] = useState(null), [busy, setBusy] = useState({}), [bulkBusy, setBulkBusy] = useState(false), [bulkJob, setBulkJob] = useState(null);
   const loadGen = useRef(0);
+  const [cardRef, cardWidth] = useElementWidth();
   useEffect(() => { if (workspaceFilter !== workspaceId) setWorkspaceId(workspaceFilter || ''); }, [workspaceFilter]);
   useEffect(() => { setPage(1); }, [scope, folder, workspaceId]);
   useEffect(() => { localStorage.setItem('pm.profileTable', JSON.stringify({ columns, pageSize })); }, [columns, pageSize]);
@@ -195,9 +197,20 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     folder: () => setFolder(p.folder),
     tag: t => { setTag(t); setPage(1); },
   });
+  // Below this card width the less-used selection actions move into the toolbar's overflow menu
+  // (same accessible names) so the toolbar stays on one line instead of clipping the search field.
+  const narrow = cardWidth < 960;
+  const restartOne = () => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); });
+  const lowPriorityActions = [
+    { key: 'restart', label: 'Restart selected', ariaLabel: 'Restart selected', icon: 'refresh', disabled: !one?.running || bulkBusy, onSelect: restartOne },
+    { key: 'proxy', label: 'Proxy for selected', ariaLabel: 'Proxy for selected', icon: 'proxies', disabled: !selected.length || bulkBusy, onSelect: () => setDialog({ kind: 'bulk-proxy' }) },
+    { key: 'export', label: 'Export selected', ariaLabel: 'Export selected', icon: 'download', disabled: !one || one.running, onSelect: () => setDialog({ kind: 'portable', data: one }) },
+    { key: 'dup', label: 'Duplicate selected', ariaLabel: 'Duplicate selected', icon: 'copy', disabled: !one || busy[one?.id], onSelect: () => clone(one) },
+    { key: 'clone', label: 'Clone selected settings', ariaLabel: 'Clone selected settings', icon: 'templates', disabled: !selected.length || bulkBusy, onSelect: () => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) }) },
+  ];
   return <>
     {dialog?.kind === 'portable' && <PortableExportDialog profile={dialog.data} busy={!!busy[dialog.data.id]} onClose={() => setDialog(null)} onExport={options => exportPortable(dialog.data, options)} />}
-    <section className="profile-card" aria-label="Profiles table">
+    <section ref={cardRef} className="profile-card" aria-label="Profiles table">
     <div className="toolbar profile-toolbar" role="toolbar" aria-label="Profile actions">
       <div className="split-btn">
         <button className="primary" data-action="new-profile" aria-label="New profile" onClick={newProfile}><Icon name="plus" /> Create</button>
@@ -211,17 +224,18 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <div className="tool-group" role="group" aria-label={selected.length ? `${selected.length} selected` : 'Select profiles to enable these actions'}>
         <Tool label="Start selected" icon="play" disabled={!selected.some(p => !p.running) || bulkBusy} onClick={() => serverBulk('Launched', { action: 'launch', ids: selected.filter(p => !p.running).map(p => p.id), concurrency: 2 })} />
         <Tool label="Stop selected" icon="stop" disabled={!selected.some(p => p.running) || bulkBusy} onClick={() => serverBulk('Stopped', { action: 'stop', ids: selected.filter(p => p.running).map(p => p.id), concurrency: 4 })} />
-        <Tool label="Restart selected" icon="refresh" title="Restart stops the browser and launches it again" disabled={!one?.running || bulkBusy} onClick={() => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); })} />
+        {!narrow && <Tool label="Restart selected" icon="refresh" title="Restart stops the browser and launches it again" disabled={!one?.running || bulkBusy} onClick={() => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); })} />}
         <Tool label="Edit selected" icon="edit" disabled={!one} onClick={() => setDialog({ kind: 'edit', data: toForm(one) })} />
         <Tool label="Tag selected" icon="tag" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-tag' })} />
         <Tool label="Move selected" icon="move" title="Move selected to folder" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-move' })} />
-        <Tool label="Proxy for selected" icon="proxies" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-proxy' })} />
-        <Tool label="Export selected" icon="download" title="Export portable backup of the selected profile" disabled={!one || one.running} onClick={() => setDialog({ kind: 'portable', data: one })} />
-        <Tool label="Duplicate selected" icon="copy" disabled={!one || busy[one?.id]} onClick={() => clone(one)} />
-        <Tool label="Clone selected settings" icon="templates" title="Clone settings of all selected profiles" disabled={!selected.length || bulkBusy} onClick={() => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) })} />
+        {!narrow && <Tool label="Proxy for selected" icon="proxies" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-proxy' })} />}
+        {!narrow && <Tool label="Export selected" icon="download" title="Export portable backup of the selected profile" disabled={!one || one.running} onClick={() => setDialog({ kind: 'portable', data: one })} />}
+        {!narrow && <Tool label="Duplicate selected" icon="copy" disabled={!one || busy[one?.id]} onClick={() => clone(one)} />}
+        {!narrow && <Tool label="Clone selected settings" icon="templates" title="Clone settings of all selected profiles" disabled={!selected.length || bulkBusy} onClick={() => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) })} />}
         <Tool label="Delete selected" icon="trash" danger disabled={!selected.length || bulkBusy} onClick={() => selected.length === 1 ? setDialog({ kind: 'delete', data: selected[0] }) : setDialog({ kind: 'bulk-delete' })} />
         <RowActionsMenu label="More profile actions" icon="more" buttonClassName="tool" items={[
-          { key: 'import', label: 'Import profiles', icon: 'upload', onSelect: () => setDialog({ kind: 'import' }) },
+          ...(narrow ? lowPriorityActions : []),
+          { key: 'import', label: 'Import profiles', icon: 'upload', separatorBefore: narrow, onSelect: () => setDialog({ kind: 'import' }) },
           { key: 'refresh', label: 'Refresh list', icon: 'refresh', onSelect: () => { load(); reloadMeta(); } },
           { key: 'filters', label: showFilters ? 'Hide filters' : 'Show filters', icon: 'filter', onSelect: () => setFiltersOpen(v => !v) },
         ]} />
