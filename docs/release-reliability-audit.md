@@ -8,6 +8,7 @@ Scope: the areas the release mission listed. Each was checked by reading the cod
 |---|---|---|
 | Profile lock / browser PID | **Fixed earlier** (52db563): transient Windows read errors made `updateLock` drop `browserPid` | 4 lock unit tests; lifecycle e2e on Windows |
 | Live verification probe | **Fixed** (58cad4b): the probe opened camera/microphone/local-fonts permission prompts and hung on default Chrome Stable profiles | `test/observe-no-prompt.test.js`; live Windows test |
+| Port-scan protection after relaunch | **Fixed** (d5af883): Chromium's Local Network Access split dropped the deny from the second launch on; loopback was never denied; verification passed without loopback evidence | `test/port-scan-restart.test.js`, `test/observe-repeat-api.test.js`, live Windows test (native run 44553471309) |
 | Verification probe cleanup | **Fixed** (30f79b5): cleanup waited for Chrome's keep-alive connection and discarded collected facts | `test/observe-repeat-api.test.js` (fails on the old probe) |
 | Follow-proxy timezone grading | **Fixed** (257c4f2): a correct proxy-following zone was graded against the computer's zone | `test/fingerprint-consistency.test.js`; DB-IP live test |
 | Proxy location probe at launch | **Fixed** (410f7db): one transient reset failed the launch (seen twice in CI) | `test/proxy-location.test.js` |
@@ -28,6 +29,26 @@ Scope: the areas the release mission listed. Each was checked by reading the cod
 ### 1. Verification probe opened permission prompts (high)
 `observeInPage` called `navigator.mediaDevices.getUserMedia()` and `window.queryLocalFonts()` unconditionally. On real, headed Chrome Stable an undecided permission opens a prompt that waits for a person. On a default profile the probe hung until its 35 s deadline, so the whole report came back "unavailable", and the user saw an unexpected camera/microphone prompt. The live Windows test caught this on profile B. Profile A passed only because its permissions were set to deny.
 **Fix:** permission states are read first, and those APIs are called only when the permission is already decided (geolocation already followed this rule). Undecided permissions are recorded as `permission_not_decided` and graded `unavailable`. A missing fonts result could previously fall through to `pass`, and that path is closed. Granted capture tracks are stopped.
+
+### 1b. Port-scan protection weakened after relaunch (high)
+Found by the live Windows test at `30f79b5`. After a Chrome Stable profile was stopped and relaunched, verification showed port-scan protection as **warning**. The first launch had shown **pass**.
+
+**Root cause.** Chromium has split Local Network Access into two content settings, `local_network` and `loopback_network`. It migrates the legacy `local_network_access` default once and records that it did so (`has_migrated_local_network_access`), but it does not persist the migrated value under the new keys. AZWAH wrote only the legacy key. As a result:
+- from the second launch on, the legacy key was ignored and every Local Network Access permission fell back to "ask";
+- even on the first launch, `loopback-network` stayed "ask";
+- verification queried only the legacy permission name, so the first launch passed without evidence for loopback.
+
+The failure reproduced locally with bundled Chromium through the same launch → stop → relaunch lifecycle, so it was not specific to Chrome Stable.
+
+**Impact.** With "ask", pages in a headless browser are still blocked, because nobody can accept the prompt. In a visible browser, a page could prompt the user, and an accepted prompt let it probe loopback and LAN ports. Protection was weakened, not disabled.
+
+**Fix.**
+- The preference writer denies `local_network` and `loopback_network` as well as the legacy key, on every launch. Existing profiles are repaired on their next launch.
+- The probe also observes the `local-network` and `loopback-network` permissions. Port-scan protection passes only when every observed permission is denied, and it is `unavailable` without an observation.
+
+**Evidence.** Native run [44553471309](https://github.com/qadeer-cyber/profile-manager/actions/runs/44553471309) at `d5af883`:
+- portScan is **pass** for both simultaneous Chrome Stable profiles, for A after a setting change, after a first restart and after a second restart.
+- `port-scan-restart` (one profile relaunched 4×, two simultaneous profiles relaunched 3×; every permission denied and a public page cannot reach a loopback port) and `observe-repeat-api` (API launch, Verify and stop 3×) pass. Both fail on the previous code.
 
 ### 2. Launch failed on one transient exit-probe error (medium)
 The Windows installer gate failed twice (67cb8a3 over SOCKS5, 584f145 over HTTP) with `503 PROXY_UPSTREAM_UNAVAILABLE`: a connection reset between the proxy and the exit-IP service. The Chrome Stable watchdog already retried a transient failure once, but the launch-time probe did not.
@@ -52,7 +73,6 @@ The npm scripts `test:m3`, `test:m6`, `test:m10`, `test:m11` and other milestone
 
 ## Open items
 
-- **Port-scan protection after a Chrome Stable relaunch (found by the live test at `30f79b5`).** On first launch, `local-network-access` is observed as denied (pass). After stopping and relaunching the same profile, the page reports it as not denied, so verification shows **warning**. The verification reports this honestly; the cause (the preference being rewritten or not reapplied on relaunch) is not yet diagnosed. The live test prints but does not assert this category.
 
 - Ungated suites (no workflow runs them on this branch), triaged locally after the fixes:
   - Pass: `test:m3` 34/34, `test:m4`, `test:m6`, `test:m7`, `test:m9`, `test:m12`, `test:m13`, `test:m14`, `test:trackc`, `test:ultimate3-track-b`, `test:m4:browser`.

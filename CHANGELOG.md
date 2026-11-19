@@ -60,6 +60,7 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - Fixed: `DEFAULT_ADVANCED_SETTINGS` omitted the runtime every profile gets (the `advanced-settings-api` mismatch). Stale ungated settings tests now assert the intended behavior.
 - Fixed: Verify could discard everything it had observed and report a running profile as unavailable, because the probe's cleanup waited for Chrome's keep-alive connection. ICE gathering is now also time-limited, and a failed observation reports which step failed.
 - Fixed: a profile that follows its proxy was flagged because its timezone differed from the computer's. It is now graded against the proxy location's zone.
+- Fixed (Windows CI verified at `d5af883`, native run 44553471309, installer run 44553453220): port-scan protection was weakened after a profile relaunch, and loopback was never denied, because Chromium split Local Network Access into `local_network` and `loopback_network`. AZWAH now denies all three settings on every launch. Verification checks every Local Network Access permission and passes only when all observed ones are denied.
 - `docs/release-reliability-audit.md` (findings and notes) and `docs/windows-client-qualification.md` (what Server 2022 CI covers, and the Windows 10/11 physical-PC checklist).
 
 ## Unreleased — local fingerprint controls on `feature/m10-local-parity`
