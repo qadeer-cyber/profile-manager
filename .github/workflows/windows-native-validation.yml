@@ -185,8 +185,8 @@ jobs:
           set -o pipefail
           mkdir -p test-logs
           npm run test:productivity 2>&1 | tee test-logs/productivity.log
-      - name: Live fingerprint verification (real Chrome Stable)
-        timeout-minutes: 12
+      - name: Live fingerprint verification and cookie import (real Chrome Stable)
+        timeout-minutes: 18
         shell: bash
         run: |
           set -o pipefail
