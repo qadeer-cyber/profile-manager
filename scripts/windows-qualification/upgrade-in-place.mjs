@@ -121,6 +121,13 @@ async function seedBrowserState(page, label) {
     await new Promise((resolve, reject) => { const r = indexedDB.open('upgrade-' + label); r.onsuccess = () => { r.result.close(); resolve(); }; r.onerror = () => reject(r.error); });
   }, label);
 }
+// Cookies as the app lists them, without raw values: a digest when readable, else the reason.
+async function cookieView(page, id) {
+  return (await api(page, 'GET', `/profiles/${id}/cookies`)).cookies
+    .map(c => ({ domain: c.domain, name: c.name, path: c.path, secure: !!c.secure, httpOnly: !!c.httpOnly,
+      value: typeof c.value === 'string' ? 'sha256:' + sha256(c.value) : 'unreadable:' + (c.valueReason || 'unknown') }))
+    .sort((a, b) => `${a.domain}|${a.name}|${a.path}`.localeCompare(`${b.domain}|${b.name}|${b.path}`));
+}
 async function launchProfile(page, id) {
   const state = await api(page, 'POST', `/profiles/${id}/launch`, {});
   assert.ok(state.cdp?.httpEndpoint, 'automation endpoint');
@@ -151,6 +158,8 @@ try {
   const P = await mk({ name: 'Upgrade proxied', folder: 'Team', tags: [], proxy: { type: 'http', host: '127.0.0.1', port: proxy.port, username: 'upgrade-fixture', password: proxyPassword } });
   const future = Math.floor(Date.now() / 1000) + 864000;
   await api(ui, 'POST', `/profiles/${B.id}/cookies/import`, { cookies: [{ name: 'imported', value: 'b-value', domain: 'b.upgrade.test', path: '/', secure: true, httpOnly: true, sameSite: 'Lax', expires: future }] });
+  const importedFound = view => view.find(c => c.name === 'imported') || null;
+  report.importedCookie = { afterImport: importedFound(await cookieView(ui, B.id)) };
   for (const [profile, label] of [[A, 'A'], [B, 'B']]) {
     const s = await launchProfile(ui, profile.id);
     await s.page.goto(`${origin}/${label}`);
@@ -163,6 +172,9 @@ try {
   fs.writeFileSync(path.join(defaultData, 'data', 'profiles', A.id, 'Default', 'Bookmarks'), JSON.stringify(NESTED_BOOKMARKS));
   const before = await appManifest(ui);
   assert.equal(before.count, 3);
+  const cookiesBefore = { A: await cookieView(ui, A.id), B: await cookieView(ui, B.id) };
+  report.importedCookie.afterChromeRanProfile = importedFound(cookiesBefore.B);
+  report.cookieCountsBefore = { A: cookiesBefore.A.length, B: cookiesBefore.B.length };
   const schemaBefore = (await api(ui, 'GET', '/meta')).schemaVersion ?? null;
   await closeApp();
   const filesBefore = dataManifest();
@@ -218,10 +230,11 @@ try {
   assert.deepEqual(after, before, 'profiles, names, folders, tags, notes and proxy assignments are unchanged');
   const ids = after.profiles.map(p => p.id);
   assert.equal(new Set(ids).size, ids.length, 'no duplicate profiles');
-  // Cookies imported in the old version, read back by the new one.
-  const cookiesB = (await api(ui, 'GET', `/profiles/${B.id}/cookies`)).cookies;
-  assert.ok(cookiesB.some(c => c.name === 'imported' && c.value === 'b-value' && c.httpOnly === true), 'imported cookie kept with its flags');
-  assert.equal((await api(ui, 'GET', `/profiles/${A.id}/cookies`)).cookies.some(c => c.name === 'imported'), false, 'B\'s cookie did not leak into A');
+  // Each profile's cookie store is exactly what the old version had just before the upgrade
+  // (names, flags and value digests; values Chrome encrypted are compared as unreadable).
+  assert.deepEqual({ A: await cookieView(ui, A.id), B: await cookieView(ui, B.id) }, cookiesBefore, 'cookie stores unchanged by the upgrade');
+  assert.ok(cookiesBefore.A.some(c => c.name === 'upgrade') && cookiesBefore.B.some(c => c.name === 'upgrade'), 'browser-written cookies were present before the upgrade');
+  assert.equal(cookiesBefore.A.some(c => c.domain.includes('b.upgrade.test')), false, 'B\'s cookies are not in A');
   // Bookmarks: the new version's export and Chrome itself see the nested Unicode tree.
   const exported = (await api(ui, 'GET', `/profiles/${A.id}/bookmarks/export`)).bookmarks.map(b => `${b.folder} | ${b.name} | ${b.url}`);
   assert.ok(exported.length === 2 && exported.some(l => l.includes('深い')), `bookmarks export ${JSON.stringify(exported)}`);
