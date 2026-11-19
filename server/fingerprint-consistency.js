@@ -40,6 +40,7 @@ export function fingerprintFindings({
   chromiumVersion = null,
   hostPlatform = process.platform,
   hostTimezone = null,
+  proxyTimezone = null,
   deviceHost = null,
   previous = null,
 } = {}) {
@@ -111,11 +112,15 @@ export function fingerprintFindings({
 
   findings.push(finding('navigator_custom', 'unsupported', 'hardwareConcurrency, deviceMemory, and OSCPU are not per-profile settings. Observed numbers are this computer’s, not a chosen device.'));
 
-  const timezone = browserSettings.timezoneId || '';
+  // A manual zone wins; otherwise a launch that followed the proxy expects the proxy location's zone
+  // (resolved and browser-verified at launch). The page value is still what is graded.
+  const fromProxy = !browserSettings.timezoneId && !!proxyTimezone;
+  const timezone = browserSettings.timezoneId || proxyTimezone || '';
+  const zoneLabel = fromProxy ? `the proxy location's zone ${timezone}` : `the configured zone ${timezone}`;
   if (!seen?.timezone) findings.push(finding('timezone', 'unavailable', 'The page timezone was not collected.'));
   else if (timezone) findings.push(finding('timezone', seen.timezone === timezone ? 'pass' : 'warning', seen.timezone === timezone
-    ? `The page timezone is the configured zone ${timezone}.`
-    : `The page timezone is ${seen.timezone}. The profile is set to ${timezone}.`));
+    ? `The page timezone is ${zoneLabel}.`
+    : `The page timezone is ${seen.timezone}. The profile expects ${zoneLabel}.`));
   else if (!hostTimezone) findings.push(finding('timezone', 'unavailable', 'No timezone is configured, and the computer timezone was not available to compare.'));
   else findings.push(finding('timezone', seen.timezone === hostTimezone ? 'pass' : 'warning', seen.timezone === hostTimezone
     ? `No timezone override is set. The page matches this computer (${hostTimezone}).`

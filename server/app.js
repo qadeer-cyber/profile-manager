@@ -433,6 +433,7 @@ async function hardwareReport(id, { previous = null } = {}) {
     hostPlatform: process.platform,
     deviceHost: HOST_DEVICE,
     hostTimezone: host.timezone?.value || null,
+    proxyTimezone: evidence?.proxyTimezone || null,
     previous,
   });
   return {
