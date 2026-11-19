@@ -22,7 +22,7 @@ Scope: the areas the release mission listed. Each was checked by reading the cod
 | Backup integrity | OK, one note | per-file SHA-256 manifest verified on restore; encrypted backups are AES-256-GCM |
 | Migrations | OK | additive; backed up before migrating; idempotent (`test/browser-settings-api.test.js`, `test/migration-v13-v16.test.js`, `test/upgrade-data-depth.test.js`) |
 | Cookie import, Chrome Stable | **Fixed** (finding 8): Chrome Stable discarded cookies imported into a stopped profile | `test/cookie-import-stable-windows.test.js` (native gate), `test/stable-cookies.test.js`, upgrade gate |
-| Installer upgrade | OK | installer gate rebuilds a pinned predecessor, upgrades in place and checks profile IDs and the database survive |
+| Installer upgrade | OK, see `docs/in-place-upgrade.md` | the installer gate upgrades the pinned predecessor in place on the default data folder with populated data, an interrupted install and the old app running; profiles, settings, cookies, bookmarks, storage and proxy credentials survive. A newer schema is now refused (`SCHEMA_TOO_NEW`) |
 | Update checksum | OK | `test/update-loopback-e2e.test.js` serves a tampered installer and expects the update to be refused |
 
 ## Fixed findings
@@ -101,6 +101,8 @@ Not changed: clearing cookies deletes rows by host, name and path, which needs n
 - **Backup integrity vs authenticity.** Unencrypted `.pmb` files carry per-file SHA-256 checksums that are verified on restore. That catches corruption, not deliberate tampering: legacy backups without a manifest skip the check. Use encrypted backups (AES-256-GCM, authenticated) for files that leave the computer.
 
 ## Open items
+
+- Upgrades with the old app open: the silent installer closes the old app and its running browser without a prompt (observed in CI). Interactive installs and physical Windows 10/11 upgrades from a user's real previous version are unverified.
 
 
 - Ungated suites (no workflow runs them on this branch), triaged locally after the fixes:

@@ -6,6 +6,12 @@ This project records changes by **verified milestones**. Git tags and package ve
 
 Draft PR. No main merge, release tag or published installer. Installer version metadata is `2.0.0-beta.1`.
 
+### In-place upgrade qualification
+
+- Windows installer acceptance now upgrades the real pinned predecessor (`4a45831`, *Azwah Multi Browser Ultimate*) to *AZWAH* in place on the default data folder, with populated synthetic data. It covers an interrupted install, an upgrade while the old app runs a browser, and the new version reading every profile, folder, tag, note, cookie, bookmark, browser storage and saved proxy credential. See `docs/in-place-upgrade.md`.
+- A build that finds a database written by a newer AZWAH now refuses to start and changes nothing (`SCHEMA_TOO_NEW`).
+- Found: the silent installer closes a running old app and its browser before replacing it.
+
 ### Fresh Windows installation qualification
 
 - Fixed the running-profile limit counting the request itself and counting waiting requests multiple times. Admitted launches reserve one slot until completion. The configured maximum now permits that many browsers while retaining the free-memory guard.
