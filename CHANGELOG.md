@@ -49,6 +49,17 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - Cookie robot, extensions and backup tests now run in the Windows native gate (49 pass, 1 skipped for Windows symlink privileges). On Windows with Chrome Stable installed, a headed launch with unpacked extensions is refused with a clear error (`CHROME_STABLE_UNPACKED_EXTENSION`), and that behavior is now tested.
 - Fixed: on Windows the profile lock could lose the browser PID when another process briefly held the file (`EBUSY`/`EPERM`), which hid the running browser from crash recovery. Lock reads now retry transient errors, writes are atomic, and an unreadable lock is rewritten by its owner. Verified by the Windows lifecycle race test (run 44532670648).
 
+### Live verification, bookmarks import and release hardening (part 2)
+
+- **Live fingerprint verification on Windows.** A new native-gate step launches two real Chrome Stable profiles with different settings. For every category it checks that a "pass" is backed by what the browser actually exposed, that a stopped profile verifies nothing, that a setting changed while running reports a warning until relaunch, that settings survive a restart, and that timezone, languages and cookies stay isolated per profile. The DB-IP proxy-following test now also checks per-category timezone and geolocation verification.
+- Fixed: for Chrome Stable profiles, verification compared the browser with the bundled Chromium version instead of the Chrome that was running.
+- Fixed: Windows Server 2022 hosts were labelled as Windows 10 clients. Server now offers only *Match this computer*.
+- Fixed: the verification probe opened camera/microphone and local-fonts permission prompts in the user's browser on default profiles, hung, and reported the whole profile as unavailable. It now never triggers a prompt.
+- **Bookmarks import** for stopped Chromium profiles from Chrome/Edge/Brave `Bookmarks` JSON, AZWAH exports, or any browser's HTML export. The merge is additive: folders merge by name, a link already in the same folder is skipped, and only http(s) links are imported. The write is atomic and never damages existing bookmarks on failure. **HTML export** is added, and the JSON export no longer repeats root folder names. See `docs/bookmarks-import.md`.
+- Fixed: a single transient network reset while checking the proxy's exit IP failed the launch (seen twice in CI), and in the native runtime it stopped a running profile. Launch and watchdog checks now retry once for transient errors only.
+- Fixed: `DEFAULT_ADVANCED_SETTINGS` omitted the runtime every profile gets (the `advanced-settings-api` mismatch). Stale ungated settings tests now assert the intended behavior.
+- `docs/release-reliability-audit.md` (findings and notes) and `docs/windows-client-qualification.md` (what Server 2022 CI covers, and the Windows 10/11 physical-PC checklist).
+
 ## Unreleased — local fingerprint controls on `feature/m10-local-parity`
 
 Source only. No installer, release tag, or main merge.
