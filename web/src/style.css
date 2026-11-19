@@ -174,9 +174,6 @@ label.file-btn input{position:absolute;width:1px;height:1px;overflow:hidden;clip
 .app.shell .grid th,.app.shell .grid td{padding:7px 8px}
 .app.shell .grid th{text-transform:none;letter-spacing:0;font-size:12px}
 .app.shell .name-line{display:flex;align-items:center;gap:6px;min-width:0}
-.app.shell table.grid.profiles{min-width:1180px}
-.app.shell .col-name .name{white-space:nowrap}
-.app.shell .fav{width:68px;white-space:nowrap}
 .column-picker{display:flex;flex-wrap:wrap;gap:8px 14px;margin:0 0 10px;padding:8px 10px;background:var(--surface);border:1px solid var(--border);border-radius:8px}
 .column-picker label.check{margin:0}
 .drawer-scrim:has(.editor-sheet){background:var(--bg);opacity:1;animation:none;padding:0;align-items:stretch;justify-content:stretch}

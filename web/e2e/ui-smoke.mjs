@@ -81,11 +81,11 @@ await step('custom proxy in profile editor', async () => { await pg.click('[aria
   await saveProfile();
   await pg.waitForSelector('tr:has-text("Bravo") td.col-proxy >> text=/10.9.9.9/'); });
 await step('automationEnabled toggle saves', async () => { await pg.click('[aria-label="Edit Charlie"]'); await pg.check('.drawer [role=switch]'); await saveProfile();
-  await pg.waitForSelector('tr:has-text("Charlie") >> text=Automation enabled');
+  await pg.waitForSelector('tr:has-text("Charlie") [data-badge="automation"]');
   const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Charlie'));
   if (p.automationEnabled !== true) throw new Error('server has ' + p.automationEnabled);
   await pg.click('[aria-label="Edit Charlie"]'); if (!(await pg.isChecked('.drawer [role=switch]'))) throw new Error('not reloaded as checked'); await pg.uncheck('.drawer [role=switch]'); await saveProfile();
-  await pg.waitForFunction(() => !document.body.innerText.includes('Automation enabled')); });
+  await pg.waitForFunction(() => !document.querySelector('[data-badge="automation"]')); });
 await step('editor validates empty name', async () => { await newProfile(); await editor.getByRole('button', { name: 'Create profile', exact: true }).click(); await pg.waitForSelector('.toast >> text=Name is required'); await pg.keyboard.press('Escape'); });
 await pg.screenshot({ path: OUT + 'light.png' });
 await step('dark theme persists', async () => { await pg.click('[title="Dark theme"]'); await pg.reload(); await pg.waitForSelector('.side'); if (await pg.evaluate(() => document.documentElement.dataset.theme) !== 'dark') throw new Error('not dark'); });
@@ -164,7 +164,7 @@ else await step('CHROMIUM_MISSING 503 on launch shows the Download Chromium bann
   await pg.goto(NOCHROME); await pg.waitForSelector('tbody td.col-name >> text=NoChrome');
   if (await pg.locator('.notice.warn >> text=Download Chromium').count()) throw new Error('banner shown before any launch');
   const resp = pg.waitForResponse(x => /\/api\/profiles\/[^/]+\/launch$/.test(x.url()));
-  await pg.click('tbody tr:has(td.col-name:has-text("NoChrome")) .col-actions button:has-text("Launch")');
+  await pg.click('[aria-label="Launch NoChrome"]');
   const lr = await resp; const body = await lr.json();
   if (lr.status() !== 503 || (body.code || body.error) !== 'CHROMIUM_MISSING') throw new Error(`expected 503 CHROMIUM_MISSING, got ${lr.status()} ${JSON.stringify(body)}`);
   await pg.waitForSelector('.notice.warn button:has-text("Download Chromium")', { timeout: 5000 });

@@ -68,9 +68,7 @@
 .app.shell .grid th { background: var(--surface-2); color: var(--text-2); font-weight: 700; }
 .app.shell .grid th, .app.shell .grid td { padding: 9px 10px; }
 .app.shell.compact .grid th, .app.shell.compact .grid td { padding: 5px 8px; }
-.app.shell table.grid.profiles { min-width: 1040px; }
 .app.shell .pill { border-radius: 999px; }
-.app.shell .proxy-evidence { color: var(--text-2); margin-top: 5px; line-height: 1.5; max-width: 38ch; overflow-wrap: anywhere; }
 .app.shell .drawer:not(.editor-sheet), .app.shell .modal { border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
 .app.shell :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app.shell .command-search input:focus-visible { outline: none; }
@@ -116,30 +114,6 @@
 .app.shell .settings-nav a { border-radius: 8px; padding: 8px 10px; }
 .app.shell :is(input:not([type=checkbox],[type=radio],[type=file]),select,textarea) { border-radius: var(--r); }
 .app.shell .profile-heading { background: linear-gradient(110deg,var(--surface),var(--accent-soft)); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px 20px; box-shadow: var(--shadow); }
-
-/* Keep profile controls reachable inside the desktop content area. */
-.app.shell table.grid.profiles { min-width: 0; width: 100%; }
-.app.shell .profiles :is(td,th) { overflow-wrap: anywhere; }
-.app.shell .profiles .col-name .name { white-space: normal; }
-.app.shell .profiles .col-actions { white-space: normal; }
-.app.shell .profiles .col-actions button { margin: 2px; }
-.app.shell .profiles .profile-error { line-height: 1.45; max-width: 38ch; overflow-wrap: anywhere; }
-@media (max-width: 1450px) {
-  .app.shell .profiles .col-actions { min-width: 96px; }
-  .app.shell .profiles .col-proxy .mono-sm { white-space: normal; }
-  .app.shell .profiles .col-name { min-width: 120px; }
-}
-
-@media (max-width: 1450px) {
-  .app.shell table.grid.profiles { table-layout: fixed; }
-  .app.shell .profiles th.cb { width: 29px; }
-  .app.shell .profiles th.fav { width: 68px; }
-  .app.shell .profiles th.col-name { width: 23%; }
-  .app.shell .profiles th.col-status { width: 91px; }
-  .app.shell .profiles th.col-actions { width: 134px; }
-  .app.shell .profiles :is(td,th) { padding-inline: 5px; }
-  .app.shell .profiles .col-lastused { white-space: normal; }
-}
 
 .app.shell .side { overflow-x: hidden; }
 .app.shell .side > *, .app.shell .side .nav, .app.shell .folder-tools input { min-width: 0; }

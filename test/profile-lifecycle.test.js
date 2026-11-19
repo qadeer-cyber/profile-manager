@@ -10,8 +10,9 @@ process.env.PM_DATA_DIR = dataDir;
 const { db } = await import('../server/db.js');
 const {
   softDeleteProfile, restoreFromTrash, listTrash, purgeFromTrash, convertQuickToRegular,
-  createTemplateFromProfile, applyTemplate, deleteTemplate,
+  createTemplateFromProfile, applyTemplate, deleteTemplate, createQuickProfile,
 } = await import('../server/profile-lifecycle.js');
+const { validateAdvancedSettings } = await import('../server/advanced-settings.js');
 
 after(() => {
   try { db.close(); } catch {}
@@ -37,6 +38,17 @@ test('convertQuickToRegular clears is_quick', () => {
     .run(id, 'Quick', '["quick"]', '', '', 1, now, now);
   convertQuickToRegular(id);
   assert.equal(db.prepare('SELECT is_quick FROM profiles WHERE id=?').get(id).is_quick, 0);
+});
+
+test('createQuickProfile sends advanced settings that pass validation', () => {
+  let payload;
+  createQuickProfile({ folder: 'Field', insertFn: v => { payload = v; return 'quick-id'; } });
+  assert.ok('advancedSettings' in payload);
+  // The profile route validates 'advancedSettings' whenever the key is present, so an
+  // undefined value made every Quick profile request fail with HTTP 400.
+  assert.doesNotThrow(() => validateAdvancedSettings(payload.advancedSettings));
+  assert.equal(payload.isQuick, true);
+  assert.equal(payload.folder, 'Field');
 });
 
 test('template create apply and delete', () => {

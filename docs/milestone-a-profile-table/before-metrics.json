@@ -1,0 +1,152 @@
+{
+  "1366x768": {
+    "rows": [
+      {
+        "name": "Quick 2026-11-19T08-54-32",
+        "h": 157.3
+      },
+      {
+        "name": "Plain",
+        "h": 157.3
+      },
+      {
+        "name": "Stable Chrome sales",
+        "h": 191.3
+      },
+      {
+        "name": "Privacy engine trial",
+        "h": 157.3
+      },
+      {
+        "name": "Crashed profile",
+        "h": 157.3
+      },
+      {
+        "name": "Automation runner with a very long descr",
+        "h": 229
+      },
+      {
+        "name": "Research",
+        "h": 157.3
+      },
+      {
+        "name": "Support desk 02",
+        "h": 191.3
+      },
+      {
+        "name": "Marketing — Northeast retail campaign pr",
+        "h": 298
+      }
+    ],
+    "hScroll": true,
+    "wrapW": 1121,
+    "tableW": 1637,
+    "toolbarH": 99,
+    "docHScroll": false,
+    "summary": {
+      "min": 157.3,
+      "max": 298,
+      "median": 157.3
+    }
+  },
+  "1920x1080": {
+    "rows": [
+      {
+        "name": "Quick 2026-11-19T08-54-32",
+        "h": 175.5
+      },
+      {
+        "name": "Plain",
+        "h": 175.5
+      },
+      {
+        "name": "Stable Chrome sales",
+        "h": 400.6
+      },
+      {
+        "name": "Privacy engine trial",
+        "h": 222
+      },
+      {
+        "name": "Crashed profile",
+        "h": 175.5
+      },
+      {
+        "name": "Automation runner with a very long descr",
+        "h": 499.2
+      },
+      {
+        "name": "Research",
+        "h": 175.5
+      },
+      {
+        "name": "Support desk 02",
+        "h": 380.3
+      },
+      {
+        "name": "Marketing — Northeast retail campaign pr",
+        "h": 666.8
+      }
+    ],
+    "hScroll": false,
+    "wrapW": 1658,
+    "tableW": 1658,
+    "toolbarH": 56,
+    "docHScroll": false,
+    "summary": {
+      "min": 175.5,
+      "max": 666.8,
+      "median": 222
+    }
+  },
+  "1024x768": {
+    "rows": [
+      {
+        "name": "Quick 2026-11-19T08-54-32",
+        "h": 157.3
+      },
+      {
+        "name": "Plain",
+        "h": 157.3
+      },
+      {
+        "name": "Stable Chrome sales",
+        "h": 315.3
+      },
+      {
+        "name": "Privacy engine trial",
+        "h": 309.3
+      },
+      {
+        "name": "Crashed profile",
+        "h": 157.3
+      },
+      {
+        "name": "Automation runner with a very long descr",
+        "h": 390.8
+      },
+      {
+        "name": "Research",
+        "h": 157.3
+      },
+      {
+        "name": "Support desk 02",
+        "h": 254.3
+      },
+      {
+        "name": "Marketing — Northeast retail campaign pr",
+        "h": 587.6
+      }
+    ],
+    "hScroll": true,
+    "wrapW": 789,
+    "tableW": 1414,
+    "toolbarH": 99,
+    "docHScroll": false,
+    "summary": {
+      "min": 157.3,
+      "max": 587.6,
+      "median": 254.3
+    }
+  }
+}

@@ -229,7 +229,8 @@ try {
   await page.getByRole('cell', {name: /bulk/}).first().waitFor();
   const tagged = (await api('/profiles')).body.filter(item => (item.tags || []).includes('bulk'));
   check(tagged.length === 2, 'Bulk tag applies to both selected profiles');
-  await page.getByRole('button', {name: 'Delete Bulk mate', exact: true}).click();
+  await page.getByRole('button', {name: 'More actions for Bulk mate', exact: true}).click();
+  await page.getByRole('menuitem', {name: 'Delete Bulk mate', exact: true}).click();
   await page.getByRole('button', {name: 'Move to trash'}).click();
   await page.locator('[data-nav=trash]').click();
   await page.getByRole('cell', {name: 'Bulk mate', exact: true}).waitFor();

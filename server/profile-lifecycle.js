@@ -64,7 +64,7 @@ export function createQuickProfile({ name, folder = '', insertFn }) {
     browserEngine: 'chromium',
     browserSettings: { locale: '', timezoneId: '', languages: [] },
     webrtcSettings: { mode: 'browser_default' },
-    advancedSettings: undefined,
+    advancedSettings: {},
     extensionAssignments: [],
     proxyId: null,
     automationEnabled: false,
