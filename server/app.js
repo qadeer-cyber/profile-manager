@@ -99,7 +99,7 @@ import { advancedLaunchPlan } from './advanced-launch.js';
 import { fingerprintFindings, readPreviousObservation } from './fingerprint-consistency.js';
 import { FINGERPRINT_CATEGORIES, verificationByCategory } from './fingerprint-catalog.js';
 import { assertDevicePresetSupported, describeHost, hostLabel, presetMatrix } from './device-identity.js';
-const HOST_DEVICE = describeHost(process.platform, os.release());
+const HOST_DEVICE = describeHost(process.platform, os.release(), typeof os.version === 'function' ? os.version() : '');
 import { createActionSync } from './action-sync.js';
 const actionSync = createActionSync({
   liveContext: id => engine.liveContext?.(id) || null,
@@ -428,7 +428,7 @@ async function hardwareReport(id, { previous = null } = {}) {
     webrtc: profile?.webrtcSettings || { mode: 'browser_default' },
     observation: browser.availability === 'observed' ? browser : null,
     commandLine,
-    chromiumVersion: chromium.version,
+    chromiumVersion: evidence?.engineVersion || chromium.version,
     hostPlatform: process.platform,
     deviceHost: HOST_DEVICE,
     hostTimezone: host.timezone?.value || null,
@@ -436,6 +436,7 @@ async function hardwareReport(id, { previous = null } = {}) {
   });
   return {
     chromium,
+    engine: evidence?.engineVersion ? { version: evidence.engineVersion, source: evidence.engineSource || 'chrome-stable' } : { version: chromium.version || null, source: 'bundled-chromium' },
     host,
     configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions, fingerprint: profile.advancedSettings.fingerprint } : null,
     browser,

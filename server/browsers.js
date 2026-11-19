@@ -84,7 +84,7 @@ export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()]
 export const liveContext = id => live.get(id)?.ctx || null;
 export const launchEvidence = id => {
   const entry = live.get(id);
-  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null };
+  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null, engineVersion: entry?.engineVersion ?? null, engineSource: entry?.engineSource ?? null };
 };
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 export function automationLaunch(id) {
@@ -520,7 +520,10 @@ async function doLaunch(p, opts = {}) {
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
       // Sanitized launch-time proxy only. The classifier never reads this field.
       launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null,
-      requestedArgs: [...args] };
+      requestedArgs: [...args],
+      // The browser this profile actually runs, so verification compares against it (Chrome Stable
+      // is a different version from the bundled Chromium).
+      engineVersion: launchPlan.stable?.version || null, engineSource: launchPlan.stable ? 'chrome-stable' : null };
     const trackRenderer = page => page.on('crash', () => {
       entry.rendererCrashes = (entry.rendererCrashes || 0) + 1;
       const event = { profileId: p.id, launchId: entry.launchId, browserPid: entry.browserPid,

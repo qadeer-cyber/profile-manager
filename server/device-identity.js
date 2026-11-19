@@ -30,10 +30,13 @@ const MOBILE_REASON = {
 
 export const presetById = id => DEVICE_PRESETS.find(preset => preset.id === id) || null;
 
-// Host description from the OS: { os: 'windows'|'macos'|'linux', osVersion?: '10'|'11', release }.
-// Windows 11 still reports kernel 10.0; build 22000 and later is Windows 11.
-export function describeHost(platform, release = '') {
+// Host description from the OS: { os: 'windows'|'macos'|'linux', osVersion?: '10'|'11', server?, release }.
+// Windows 11 still reports kernel 10.0; build 22000 and later is Windows 11. Windows Server is
+// neither: Chrome derives client-hint platformVersion from the API contract, so Server 2022
+// (build 20348) can look like Windows 11. Server hosts get no client 10/11 version.
+export function describeHost(platform, release = '', versionName = '') {
   if (platform === 'win32') {
+    if (/server/i.test(String(versionName))) return { os: 'windows', osVersion: null, server: true, release: String(release) };
     const build = Number(String(release).split('.')[2]);
     return { os: 'windows', osVersion: Number.isFinite(build) ? (build >= 22000 ? '11' : '10') : null, release: String(release) };
   }
@@ -44,6 +47,7 @@ export function describeHost(platform, release = '') {
 
 export function hostLabel(host) {
   if (!host?.os) return 'This computer';
+  if (host.server) return 'Windows Server';
   return [OS_NAMES[host.os], host.osVersion].filter(Boolean).join(' ');
 }
 
@@ -60,6 +64,7 @@ export function presetSupport(presetId, host) {
   if (preset.osVersion && host.osVersion && preset.osVersion !== host.osVersion) {
     return { state: 'unsupported', reason: `This computer runs ${hostLabel(host)}. Chrome reports the real Windows version through client hints, so ${preset.label} would contradict it.` };
   }
+  if (preset.osVersion && host.server) return { state: 'unsupported', reason: `This computer runs Windows Server. ${preset.label} needs a Windows 10 or 11 client computer; Server reports its own client-hint version.` };
   if (preset.osVersion && !host.osVersion) return { state: 'unsupported', reason: 'The Windows version of this computer could not be determined.' };
   return { state: 'supported', reason: `Matches this computer (${hostLabel(host)}).` };
 }

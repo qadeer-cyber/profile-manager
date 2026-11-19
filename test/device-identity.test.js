@@ -16,6 +16,8 @@ test('host detection uses the Windows build number, not the 10.0 kernel version'
   assert.deepEqual([WIN10.os, WIN10.osVersion], ['windows', '10']);
   assert.equal(describeHost('win32', '10.0.22000').osVersion, '11');
   assert.equal(describeHost('win32', 'garbage').osVersion, null);
+  const server = describeHost('win32', '10.0.20348', 'Windows Server 2022 Datacenter');
+  assert.deepEqual([server.os, server.osVersion, server.server], ['windows', null, true], 'Server is not labelled a Windows 10/11 client');
   assert.equal(LINUX.os, 'linux');
   assert.equal(MAC.os, 'macos');
 });
@@ -34,6 +36,9 @@ test('only presets the host engine can present are supported', () => {
     }
   }
   assert.match(presetSupport('macos-imac', WIN11).reason, /Requires a macOS computer/);
+  const SERVER = describeHost('win32', '10.0.20348', 'Windows Server 2022 Datacenter');
+  assert.deepEqual(supported(SERVER), ['host'], 'only Match this computer on Windows Server');
+  assert.match(presetSupport('windows-11', SERVER).reason, /Windows Server/);
   assert.match(presetSupport('windows-10', WIN11).reason, /client hints/);
   assert.equal(presetSupport('windows-11', describeHost('win32', '')).state, 'unsupported', 'unknown Windows version is not guessed');
 });
@@ -64,4 +69,7 @@ test('verification compares the preset with the browser and never passes without
   assert.equal(moved.status, 'warning', 'a profile restored onto a different OS is flagged, not passed');
   assert.equal(deviceIdentityFinding(undefined, LINUX, { platform: 'Linux x86_64', clientHints: { availability: 'observed', platform: 'Linux', mobile: false } }).status, 'pass');
   assert.equal(deviceIdentityFinding(undefined, WIN11, {}).status, 'unavailable', 'no platform values exposed');
+  // On Windows Server the host preset checks platform and the mobile flag, not a client version.
+  const SERVER = describeHost('win32', '10.0.20348', 'Windows Server 2022 Datacenter');
+  assert.equal(deviceIdentityFinding(undefined, SERVER, observed({ clientHints: { availability: 'observed', platform: 'Windows', platformVersion: '14.0.0', mobile: false } })).status, 'pass');
 });
