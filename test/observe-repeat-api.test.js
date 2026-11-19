@@ -43,3 +43,18 @@ test('repeated Verify on a running profile stays observed and grades a stale set
     assert.ok(first.ms < 30000 && second.ms < 30000, `observations took ${first.ms} and ${second.ms} ms`);
   } finally { await api('POST', `/profiles/${p.id}/stop`); }
 });
+
+test('port-scan protection verifies as pass on every launch of the same profile', { timeout: 240000 }, async () => {
+  const p = await api('POST', '/profiles', { name: 'Port scan relaunch' });
+  for (const run of [1, 2, 3]) {
+    const launched = await api('POST', `/profiles/${p.id}/launch`, { headless: true });
+    assert.equal(launched.error, undefined, JSON.stringify(launched));
+    try {
+      const rep = await api('GET', `/profiles/${p.id}/hardware`);
+      assert.equal(rep.browser.availability, 'observed', `run ${run}: ${rep.browser.reason} at ${rep.browser.stage}`);
+      const states = ['local-network-access', 'local-network', 'loopback-network'].map(n => rep.browser.permissions?.[n]?.state);
+      const portScan = rep.consistency.byCategory.find(c => c.id === 'portScan');
+      assert.equal(portScan.status, 'pass', `run ${run}: ${JSON.stringify(states)} ${JSON.stringify(portScan.findings)}`);
+    } finally { await api('POST', `/profiles/${p.id}/stop`); }
+  }
+});

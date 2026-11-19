@@ -23,6 +23,12 @@ const CONTENT_KEYS = {
   'local-fonts': 'local_fonts',
   'local-network-access': 'local_network_access',
 };
+// Chromium split Local Network Access into local_network and loopback_network and migrates the
+// legacy local_network_access default once (has_migrated_local_network_access). The migrated value
+// is not persisted under the new keys, so after the first run the legacy key alone is ignored and
+// the permission falls back to "ask". Writing all three keeps the deny on every launch, before and
+// after the migration.
+const EXTRA_CONTENT_KEYS = { 'local-network-access': ['local_network', 'loopback_network'] };
 const CONTENT_VALUES = { allow: 1, deny: 2, ask: 3 };
 const CDP_SETTING = { allow: 'granted', deny: 'denied', ask: 'prompt' };
 const CDP_PERMISSIONS = ['geolocation', 'notifications', 'camera', 'microphone', 'midi'];
@@ -143,8 +149,10 @@ export function applyAdvancedPreferences(dir, settings, { chromeSessionStartup }
   const next = { ...current };
   for (const [key, prefKey] of Object.entries(CONTENT_KEYS)) {
     const state = contentState(advanced, key);
-    if (!state || state === 'default') delete next[prefKey];
-    else next[prefKey] = CONTENT_VALUES[state];
+    for (const name of [prefKey, ...(EXTRA_CONTENT_KEYS[key] || [])]) {
+      if (!state || state === 'default') delete next[name];
+      else next[name] = CONTENT_VALUES[state];
+    }
   }
   const sessionChanged = chromeSessionStartup != null && prefs.session?.restore_on_startup !== chromeSessionStartup;
   if (sessionChanged) prefs.session = { ...prefs.session, restore_on_startup: chromeSessionStartup };

@@ -38,7 +38,7 @@ test('default advanced settings add no arguments and do not rewrite preferences'
   assert.equal(saved.profile.exit_type, 'Normal');
   assert.equal(saved.webrtc.ip_handling_policy, 'leave-me');
   // Port-scan protection is on by default: local-network-access is denied (2) and nothing else is written.
-  assert.deepEqual(saved.profile.default_content_setting_values, { local_network_access: 2 });
+  assert.deepEqual(saved.profile.default_content_setting_values, { local_network_access: 2, local_network: 2, loopback_network: 2 });
 });
 test('a coherent full user agent and window preset reach Chromium with the real version', async () => {
   const id = newId();

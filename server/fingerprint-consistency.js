@@ -279,9 +279,17 @@ export function fingerprintFindings({
   if (fingerprint.portScan !== 'real') findings.push(finding('local_network_access', 'unavailable', 'Port scan is not in the default real mode.'));
   else if (seen?.permissions?.['local-network-access']?.availability !== 'observed') {
     findings.push(finding('local_network_access', 'unavailable', 'The local-network-access permission was not collected.'));
-  } else findings.push(finding('local_network_access', seen.permissions['local-network-access'].state === 'denied' ? 'pass' : 'warning', seen.permissions['local-network-access'].state === 'denied'
-    ? 'local-network-access is denied through profile preferences (local_network_access). Private-network weakening flags are still refused on launch.'
-    : `local-network-access is ${seen.permissions['local-network-access'].state}, not denied.`));
+  } else {
+    // Every observed Local Network Access permission must be denied: the legacy name and, on newer
+    // Chromium, the split local-network and loopback-network permissions.
+    const observed = ['local-network-access', 'local-network', 'loopback-network']
+      .filter(name => seen.permissions[name]?.availability === 'observed')
+      .map(name => [name, seen.permissions[name].state]);
+    const open = observed.filter(([, state]) => state !== 'denied');
+    findings.push(finding('local_network_access', open.length ? 'warning' : 'pass', open.length
+      ? `${open.map(([name, state]) => `${name} is ${state}`).join('; ')}, not denied.`
+      : `${observed.map(([name]) => name).join(', ')} denied through profile preferences. Private-network weakening flags are still refused on launch.`));
+  }
 
   const restart = (id, key, label) => {
     if (!previous || previous[key] == null || previous[key] === '') return finding(id, 'unavailable', `No previous ${label} was supplied.`);

@@ -114,6 +114,9 @@ async function observeInPage() {
     microphone: await permission('microphone'),
     'local-fonts': await permission('local-fonts'),
     'local-network-access': await permission('local-network-access'),
+    // Newer Chromium splits Local Network Access into these two permissions.
+    'local-network': await permission('local-network'),
+    'loopback-network': await permission('loopback-network'),
     notifications: await permission('notifications'),
   };
   const decided = name => permissions[name].availability === 'observed' && permissions[name].state !== 'prompt';

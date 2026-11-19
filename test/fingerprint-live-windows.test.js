@@ -83,6 +83,11 @@ test('real Chrome Stable: per-category verification matches what the browser exp
     }
     if (r.webgl.status === 'pass') assert.notEqual(seen.webgl?.availability, 'observed', `${label}: WebGL restriction pass but a WebGL context exists`);
     if (r.canvas.status === 'pass') assert.match(seen.canvas?.sha256 || '', /^[a-f0-9]{64}$/);
+    if (r.portScan.status === 'pass') {
+      // Every Local Network Access permission the browser exposes must be denied.
+      const lna = ['local-network-access', 'local-network', 'loopback-network'].map(n => [n, seen.permissions?.[n]]).filter(([, v]) => v?.availability === 'observed');
+      assert.ok(lna.length && lna.every(([, v]) => v.state === 'denied'), `${label}: portScan pass but ${JSON.stringify(lna)}`);
+    }
     for (const id of ['webglMetadata', 'webgpu', 'navigatorHardware']) assert.ok(NON_PASS.has(r[id].status) || r[id].status === 'pass', `${label}: ${id} status ${r[id].status}`);
   }
 
@@ -123,6 +128,10 @@ test('real Chrome Stable: per-category verification matches what the browser exp
     for (const [id, r] of [['timezone', ra], ['languages', ra], ['deviceIdentity', ra], ['canvas', ra], ['webgl', ra], ['timezone', rb], ['languages', rb], ['deviceIdentity', rb]]) {
       assert.ok(r[id].status === 'pass' || r[id].status === 'partial', `${id}: ${r[id].status} ${JSON.stringify(r[id].findings)}`);
     }
+    // Port-scan protection is on by default and must verify on both simultaneous profiles.
+    for (const [label, r] of [['A', ra], ['B', rb]]) {
+      assert.equal(r.portScan.status, 'pass', `${label} portScan: ${JSON.stringify(r.portScan.findings)}`);
+    }
     assert.notEqual(ra.userAgent.status, 'warning', `user agent: ${JSON.stringify(ra.userAgent.findings)}`);
     assert.notEqual(ra.webrtc.status, 'warning', `webrtc: ${JSON.stringify(ra.webrtc.findings)}`);
 
@@ -154,6 +163,15 @@ test('real Chrome Stable: per-category verification matches what the browser exp
     assert.equal(restarted.browser.timezone, 'Europe/Berlin');
     assert.ok(['pass', 'partial'].includes(rows(restarted).timezone.status));
     assertHonest('A restarted', restarted, await api('GET', `/profiles/${A.id}`));
+    // Port-scan protection must survive relaunch (Chromium's one-time Local Network Access migration
+    // used to drop it from the second launch on). Check this restart and one more.
+    assert.equal(rows(restarted).portScan.status, 'pass', `A portScan after restart: ${JSON.stringify(rows(restarted).portScan.findings)}`);
+    await api('POST', `/profiles/${A.id}/stop`);
+    await api('POST', `/profiles/${A.id}/launch`, { headless: false });
+    const restartedAgain = await report(A.id);
+    table('A after second restart', restartedAgain);
+    assert.equal(rows(restartedAgain).portScan.status, 'pass', `A portScan after second restart: ${JSON.stringify(rows(restartedAgain).portScan.findings)}`);
+    assertHonest('A restarted twice', restartedAgain, await api('GET', `/profiles/${A.id}`));
 
     // A failed observation cannot pass: once stopped, the same profile reports nothing as verified.
     await api('POST', `/profiles/${A.id}/stop`);
