@@ -293,17 +293,20 @@ async function captureInstalledVisuals() {
           const expectedPage = destination === 'backup' ? 'settings' : destination;
           for (let attempt = 0; attempt < 50; attempt++) {
             const page = document.querySelector('main[data-shot="' + expectedPage + '"]');
-            const ready = destination === 'profiles' ? page?.querySelector('.profiles .launch') :
+            const ready = destination === 'profiles' ? page?.querySelector('.profiles .col-run .run-btn') :
               destination === 'backup' ? page?.querySelector('#backup') : page?.querySelector('h1');
             if (ready && document.documentElement.dataset.theme === theme) break;
             await new Promise(resolve => setTimeout(resolve, 100));
           }
           const content = document.querySelector('.content');
           const sidebar = document.querySelector('.side');
-          const launch = document.querySelector('.profiles .col-actions .primary');
+          // The compact table puts Launch/Stop at the start of each row and the remaining row actions
+          // behind the trailing menu button; both must sit fully inside the visible table.
+          const launch = document.querySelector('.profiles .col-run .run-btn');
+          const actions = document.querySelector('.profiles .col-actions [aria-haspopup="menu"]');
           const table = document.querySelector('.profiles')?.closest('.table-wrap');
-          const bounds = launch?.getBoundingClientRect();
-          const tableBounds = table?.getBoundingClientRect();
+          const inside = el => { const r = el?.getBoundingClientRect(), t = table?.getBoundingClientRect();
+            return !!r && !!t && r.width > 0 && r.left >= t.left && r.right <= t.right; };
           return {
             destination, width: innerWidth, height: innerHeight, theme: document.documentElement.dataset.theme,
             ready: content?.dataset.shot === expectedPage && !!content?.querySelector(destination === 'backup' ? '#backup' : 'h1'),
@@ -311,8 +314,7 @@ async function captureInstalledVisuals() {
             sidebarOverflow: sidebar ? sidebar.scrollWidth - sidebar.clientWidth : null,
             overflow: content ? content.scrollWidth - content.clientWidth : null,
             tableOverflow: table ? table.scrollWidth - table.clientWidth : null,
-            launchVisible: !!bounds && !!tableBounds && bounds.width > 0 &&
-              bounds.left >= tableBounds.left && bounds.right <= tableBounds.right,
+            launchVisible: inside(launch) && inside(actions),
           };
         })()`);
         results.push(result);
