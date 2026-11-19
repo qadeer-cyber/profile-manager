@@ -8,6 +8,8 @@ Scope: the areas the release mission listed. Each was checked by reading the cod
 |---|---|---|
 | Profile lock / browser PID | **Fixed earlier** (52db563): transient Windows read errors made `updateLock` drop `browserPid` | 4 lock unit tests; lifecycle e2e on Windows |
 | Live verification probe | **Fixed** (58cad4b): the probe opened camera/microphone/local-fonts permission prompts and hung on default Chrome Stable profiles | `test/observe-no-prompt.test.js`; live Windows test |
+| Verification probe cleanup | **Fixed** (30f79b5): cleanup waited for Chrome's keep-alive connection and discarded collected facts | `test/observe-repeat-api.test.js` (fails on the old probe) |
+| Follow-proxy timezone grading | **Fixed** (257c4f2): a correct proxy-following zone was graded against the computer's zone | `test/fingerprint-consistency.test.js`; DB-IP live test |
 | Proxy location probe at launch | **Fixed** (410f7db): one transient reset failed the launch (seen twice in CI) | `test/proxy-location.test.js` |
 | Native runtime proxy watchdog | **Fixed** (410f7db): one transient reset stopped a running native profile | same retry helper |
 | Default advanced settings constant | **Fixed** (410f7db): `DEFAULT_ADVANCED_SETTINGS` lacked the `runtime` every profile gets | `test/advanced-settings-api.test.js` |
@@ -49,6 +51,8 @@ The npm scripts `test:m3`, `test:m6`, `test:m10`, `test:m11` and other milestone
 - **Backup integrity vs authenticity.** Unencrypted `.pmb` files carry per-file SHA-256 checksums that are verified on restore. That catches corruption, not deliberate tampering: legacy backups without a manifest skip the check. Use encrypted backups (AES-256-GCM, authenticated) for files that leave the computer.
 
 ## Open items
+
+- **Port-scan protection after a Chrome Stable relaunch (found by the live test at `30f79b5`).** On first launch, `local-network-access` is observed as denied (pass). After stopping and relaunching the same profile, the page reports it as not denied, so verification shows **warning**. The verification reports this honestly; the cause (the preference being rewritten or not reapplied on relaunch) is not yet diagnosed. The live test prints but does not assert this category.
 
 - Ungated suites (no workflow runs them on this branch), triaged locally after the fixes:
   - Pass: `test:m3` 34/34, `test:m4`, `test:m6`, `test:m7`, `test:m9`, `test:m12`, `test:m13`, `test:m14`, `test:trackc`, `test:ultimate3-track-b`, `test:m4:browser`.
