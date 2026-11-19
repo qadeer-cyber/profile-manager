@@ -1,6 +1,7 @@
 // Window-close versus crash. A user closing the last window is Stopped.
 // A killed browser is Error. One tab closing does not stop the profile.
 import http from 'http';
+import { readLock } from '../server/lock.js';
 import fs from 'fs';
 import net from 'net';
 import os from 'os';
@@ -62,9 +63,12 @@ function runningPid(id) {
   try { return db.prepare('SELECT pid FROM running WHERE id=?').get(id)?.pid ?? null; }
   finally { db.close(); }
 }
+// Uses the app's own readLock (retries brief Windows sharing errors) and reports an unreadable
+// lock as 'unreadable' instead of null, so a missing PID and a busy file are not confused.
 function lockBrowserPid(id) {
-  try { return JSON.parse(fs.readFileSync(lockPath(id), 'utf8')).browserPid ?? null; }
-  catch { return null; }
+  const l = readLock(path.dirname(lockPath(id)));
+  if (l?.corrupt) return 'unreadable';
+  return l?.browserPid ?? null;
 }
 const evs = [];
 let eventsAbort = null;

@@ -1,5 +1,5 @@
 // Unit tests (node:test): migrations, locking, process killing, secrets.
-import { test } from 'node:test';
+import { test, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 import os from 'os';
@@ -79,6 +79,49 @@ test('lock: release does not remove a lock owned by someone else', () => {
 test('lock: updateLock merges browserPid', () => {
   const d = dir(); lock.acquireLock(d); lock.updateLock(d, { browserPid: 123, cdpPort: 9 });
   assert.equal(lock.readLock(d).browserPid, 123);
+});
+// Windows: another process (e.g. antivirus) can briefly hold a just-written lock. Before this fix
+// readLock reported it corrupt and updateLock silently skipped writing browserPid.
+const busy = code => Object.assign(new Error(code), { code });
+test('lock: readLock retries transient sharing errors and torn writes', () => {
+  const d = dir(); lock.acquireLock(d); lock.updateLock(d, { browserPid: 77 });
+  const real = fs.readFileSync;
+  let calls = 0;
+  const m = mock.method(fs, 'readFileSync', (...args) => {
+    calls++;
+    if (calls === 1) throw busy('EBUSY');
+    if (calls === 2) throw busy('EPERM');
+    if (calls === 3) return '{"ownerPid":';
+    return real(...args);
+  });
+  try { assert.equal(lock.readLock(d, { delayMs: 1 }).browserPid, 77); }
+  finally { m.mock.restore(); }
+  assert.equal(calls, 4);
+});
+test('lock: updateLock still records browserPid when the first read is busy', () => {
+  const d = dir(); lock.acquireLock(d);
+  const real = fs.readFileSync;
+  let failures = 3;
+  const m = mock.method(fs, 'readFileSync', (...args) => { if (failures-- > 0) throw busy('EBUSY'); return real(...args); });
+  try { lock.updateLock(d, { browserPid: 4321, cdpPort: 9 }); }
+  finally { m.mock.restore(); }
+  const l = lock.readLock(d);
+  assert.equal(l.browserPid, 4321);
+  assert.equal(l.ownerPid, process.pid);
+  assert.equal(fs.readdirSync(d).some(name => name.endsWith('.tmp')), false, 'no temp file left behind');
+});
+test('lock: a lock that stays unreadable is rewritten by its owner, not left without browserPid', () => {
+  const d = dir(); lock.acquireLock(d);
+  const m = mock.method(fs, 'readFileSync', () => { throw busy('EBUSY'); });
+  try { lock.updateLock(d, { browserPid: 999 }); }
+  finally { m.mock.restore(); }
+  const l = lock.readLock(d);
+  assert.equal(l.browserPid, 999);
+  assert.equal(l.ownerPid, process.pid);
+});
+test('lock: updateLock never creates a lock that was released', () => {
+  const d = dir(); lock.updateLock(d, { browserPid: 5 });
+  assert.equal(lock.readLock(d), null);
 });
 
 // ---------- process killing ----------
