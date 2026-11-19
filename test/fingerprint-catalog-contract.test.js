@@ -13,10 +13,10 @@ import { fingerprintFindings } from '../server/fingerprint-consistency.js';
 const emitted = new Set([...['server/fingerprint-consistency.js', 'server/webrtc-observe.js']
   .flatMap(file => [...fs.readFileSync(file, 'utf8').matchAll(/finding\('([a-z_]+)'/g)].map(m => m[1]))]);
 
-test('the catalog covers all sixteen requested categories with unique ids', () => {
+test('the catalog covers all seventeen categories with unique ids', () => {
   const ids = FINGERPRINT_CATEGORIES.map(c => c.id);
   assert.equal(new Set(ids).size, ids.length);
-  assert.deepEqual(ids.sort(), ['audio', 'canvas', 'fonts', 'geolocationAccess', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'].sort());
+  assert.deepEqual(ids.sort(), ['audio', 'canvas', 'deviceIdentity', 'fonts', 'geolocationAccess', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'].sort());
   for (const c of FINGERPRINT_CATEGORIES) {
     assert.ok(c.modes.some(m => m.state === 'supported'), `${c.id} has a selectable mode`);
     for (const m of c.modes) {

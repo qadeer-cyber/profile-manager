@@ -90,7 +90,7 @@ async function observeInPage() {
   let clientHints = { availability: 'unavailable', reason: 'not_exposed' };
   if (navigator.userAgentData?.getHighEntropyValues) {
     try {
-      const high = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'uaFullVersion', 'platform', 'architecture', 'bitness', 'model', 'wow64']);
+      const high = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'uaFullVersion', 'platform', 'platformVersion', 'architecture', 'bitness', 'model', 'wow64']);
       const chromium = Array.isArray(high.fullVersionList) ? high.fullVersionList.find(item => item.brand === 'Chromium') : null;
       const brands = Array.isArray(navigator.userAgentData.brands) ? navigator.userAgentData.brands.map(item => text(item.brand)).filter(Boolean).slice(0, 8) : [];
       clientHints = {
@@ -98,6 +98,7 @@ async function observeInPage() {
         uaFullVersion: text(high.uaFullVersion),
         chromiumVersion: text(chromium?.version),
         platform: text(high.platform || navigator.userAgentData.platform),
+        platformVersion: text(high.platformVersion),
         architecture: text(high.architecture),
         bitness: text(high.bitness),
         mobile: navigator.userAgentData.mobile === true ? true : navigator.userAgentData.mobile === false ? false : null,
@@ -160,6 +161,7 @@ async function observeInPage() {
     webgl, webgpu, canvas, audio, media, mediaCapture, fontsQuery, clientHints, permissions, geolocation,
     userAgent: text(navigator.userAgent),
     platform: text(navigator.platform),
+    maxTouchPoints: Number.isFinite(navigator.maxTouchPoints) ? navigator.maxTouchPoints : null,
     locale: text(navigator.language),
     languages: Array.isArray(navigator.languages) ? navigator.languages.slice(0, 10).map(tag => text(tag)).filter(Boolean) : [],
     timezone: text(timezone),

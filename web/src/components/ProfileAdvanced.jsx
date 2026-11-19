@@ -7,6 +7,39 @@ import { UnavailableOptions, CategoryNotes, FixedCategory } from './FingerprintC
 const PERMISSIONS = [['notifications', 'Notifications'], ['microphone', 'Microphone'], ['camera', 'Camera'], ['clipboard', 'Clipboard'], ['midi', 'MIDI']];
 const STATES = [['default', 'Browser default'], ['ask', 'Ask'], ['allow', 'Allow'], ['deny', 'Deny']];
 
+// Device identity: presets this computer's real engine can present. Others are listed, disabled,
+// with the reason, and the server refuses them as well.
+export function DeviceIdentityFields({ settings, onChange }) {
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { api('/api/device-identity').then(setInfo).catch(e => setError(e.message)); }, []);
+  const value = settings.deviceIdentity?.preset || 'host';
+  const presets = info?.presets || [];
+  const usable = presets.filter(p => p.state === 'supported');
+  const blocked = presets.filter(p => p.state !== 'supported');
+  const current = presets.find(p => p.id === value);
+  return <div className="form">
+    <div className="notice">A browser profile presents the computer it runs on. A preset declares that identity and Verify Profile Settings checks it against the live browser. It never changes this computer, and other devices need a matching computer.</div>
+    <label>Device preset<select aria-label="Device preset" data-category="deviceIdentity" value={value} disabled={!info} onChange={e => onChange({ ...settings, deviceIdentity: { preset: e.target.value } })}>
+      {!info && <option value={value}>{error ? 'Unavailable' : 'Checking this computer…'}</option>}
+      {usable.map(p => <option key={p.id} value={p.id}>{p.id === 'host' ? `${p.label} (${info.host.label})` : p.label}</option>)}
+      {current && current.state !== 'supported' && <option value={current.id} disabled>{current.label} — saved earlier, not available here</option>}
+      {blocked.length > 0 && <optgroup label="Not available on this computer">
+        {blocked.filter(p => p.id !== value).map(p => <option key={p.id} value={`unavailable:${p.id}`} disabled title={p.reason}>{p.label} — unavailable</option>)}
+      </optgroup>}
+    </select><span className="muted hint">{current?.reason || 'Detecting this computer\u2019s operating system.'}</span></label>
+    {error && <p className="err-text">{error}</p>}
+    {blocked.length > 0 && <details className="proxy-rules fp-notes" data-category="deviceIdentity">
+      <summary>Device identity: {blocked.length} unavailable preset{blocked.length === 1 ? '' : 's'}</summary>
+      <ul className="muted small">{blocked.map(p => <li key={p.id}><strong>{p.label}</strong>: {p.reason}</li>)}</ul>
+    </details>}
+    <details className="proxy-rules fp-notes" data-category="macAddress">
+      <summary>MAC address</summary>
+      <p className="muted small">Websites cannot read your network adapter’s MAC address through standard browser APIs, and a browser profile has no network adapter of its own. AZWAH does not offer a MAC field for browser profiles and never changes this computer’s MAC address. A separate virtual-network environment would need its own approval and setup.</p>
+    </details>
+  </div>;
+}
+
 export function IdentityFields({ settings, onChange }) {
   const [identity, setIdentity] = useState(null);
   const [error, setError] = useState('');

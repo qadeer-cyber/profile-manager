@@ -98,6 +98,8 @@ import { hostHardware, observeBrowser, UNSUPPORTED_OVERRIDES } from './hardware.
 import { advancedLaunchPlan } from './advanced-launch.js';
 import { fingerprintFindings, readPreviousObservation } from './fingerprint-consistency.js';
 import { FINGERPRINT_CATEGORIES, verificationByCategory } from './fingerprint-catalog.js';
+import { assertDevicePresetSupported, describeHost, hostLabel, presetMatrix } from './device-identity.js';
+const HOST_DEVICE = describeHost(process.platform, os.release());
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED, FINGERPRINT_REJECTED } from './fingerprint-settings.js';
 import { processCommandLine } from './proc.js';
 import { copyProfileTree } from './profile-copy.js';
@@ -280,6 +282,9 @@ function validate(b, prev) {
   const browserSettings = validateBrowserSettings('browserSettings' in b ? b.browserSettings : {}, prev?.browserSettings);
   const webrtcSettings = validateWebRtcSettings('webrtcSettings' in b ? b.webrtcSettings : {}, prev?.webrtcSettings);
   const advancedSettings = validateAdvancedSettings('advancedSettings' in b ? b.advancedSettings : {}, prev?.advancedSettings);
+  // Only a request that sets a device preset is checked against this host, so a profile restored
+  // from another computer stays editable and shows the mismatch in verification instead.
+  if (b.advancedSettings && typeof b.advancedSettings === 'object' && 'deviceIdentity' in b.advancedSettings) assertDevicePresetSupported(advancedSettings.deviceIdentity, HOST_DEVICE);
   const extensionAssignments = 'extensionAssignments' in b ? assertKnownAssignments(b.extensionAssignments) : null;
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
   let browserEngine = prev?.browserEngine ?? 'chromium';
@@ -418,6 +423,7 @@ async function hardwareReport(id, { previous = null } = {}) {
     commandLine,
     chromiumVersion: chromium.version,
     hostPlatform: process.platform,
+    deviceHost: HOST_DEVICE,
     hostTimezone: host.timezone?.value || null,
     previous,
   });
@@ -642,6 +648,7 @@ const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })), categories: FINGERPRINT_CATEGORIES })));
+  router.get('/device-identity', wrap((req, res) => res.json({ host: { ...HOST_DEVICE, label: hostLabel(HOST_DEVICE) }, presets: presetMatrix(HOST_DEVICE) })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/privacy-engine', wrap((req, res) => res.json(privacyEngineReport({ platform: process.platform }))));
   router.get('/privacy-acceptance', wrap((req, res) => {

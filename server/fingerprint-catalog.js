@@ -8,6 +8,7 @@
 // `verifiedBy` names the fingerprint-consistency findings that compare the saved value with what a
 // running browser actually exposed. Nothing here fabricates a value.
 import { FINGERPRINT_REJECTED } from './fingerprint-settings.js';
+import { DEVICE_PRESETS, presetSupport } from './device-identity.js';
 
 const reasonFor = (surface, mode, fallback) =>
   FINGERPRINT_REJECTED.find(([s, m]) => s === surface && m === mode)?.[2] || fallback;
@@ -56,6 +57,11 @@ export const FINGERPRINT_CATEGORIES = Object.freeze([
       no('masked', 'Masked — generated screen', 'A generated screen would not match the real window. Choose a preset or custom size instead.'),
     ],
     verifiedBy: ['screen', 'screen_monitor'] },
+  { id: 'deviceIdentity', label: 'Device identity', section: 'navigator', setting: 'advancedSettings.deviceIdentity.preset',
+    modes: DEVICE_PRESETS.map(preset => preset.id === 'host' ? ok('host', preset.label)
+      : preset.family === 'mobile' ? no(preset.id, preset.label, presetSupport(preset.id, null).reason)
+      : conditional(preset.id, preset.label, `Only on a ${preset.label.replace(/ desktop$/, '')} computer; the preset must match the host this profile runs on.`)),
+    verifiedBy: ['device_identity'] },
   { id: 'userAgent', label: 'User agent', section: 'navigator', setting: 'advancedSettings.userAgent.mode',
     modes: [
       ok('default', 'Browser default'), ok('reduced', 'Reduced'), ok('full', 'Full'),

@@ -7,6 +7,7 @@ import { classifyMediaCaptureError } from './media-capture.js';
 import { FONT_ACCESS_DISABLE_FEATURE } from './fingerprint-settings.js';
 import { chromiumPolicyArgs } from './webrtc-policy.js';
 import { iceConsistencyFinding } from './webrtc-observe.js';
+import { deviceIdentityFinding, describeHost } from './device-identity.js';
 
 const STATUSES = new Set(['pass', 'warning', 'unsupported', 'unavailable']);
 const HOST_PLATFORM = {
@@ -39,6 +40,7 @@ export function fingerprintFindings({
   chromiumVersion = null,
   hostPlatform = process.platform,
   hostTimezone = null,
+  deviceHost = null,
   previous = null,
 } = {}) {
   const fingerprint = advanced.fingerprint || {};
@@ -103,6 +105,9 @@ export function fingerprintFindings({
   else if (!expectedPlatform) findings.push(finding('host_platform', 'unavailable', 'This operating system has no platform token to compare.'));
   else if (seen.platform === expectedPlatform) findings.push(finding('host_platform', 'pass', `navigator.platform is ${seen.platform}, which is this computer.`));
   else findings.push(finding('host_platform', 'warning', `navigator.platform is ${seen.platform}. This computer expects ${expectedPlatform}.`));
+
+  const device = deviceIdentityFinding(advanced.deviceIdentity, deviceHost || describeHost(hostPlatform), seen);
+  findings.push(finding('device_identity', device.status, device.summary));
 
   findings.push(finding('navigator_custom', 'unsupported', 'hardwareConcurrency, deviceMemory, and OSCPU are not per-profile settings. Observed numbers are this computer’s, not a chosen device.'));
 

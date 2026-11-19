@@ -3,6 +3,7 @@
 // settings, fingerprint restrictions) or rejected. Nothing here claims a
 // different Chromium version or a substitute GPU, font list, or device.
 import { DEFAULT_FINGERPRINT, validateFingerprint } from './fingerprint-settings.js';
+import { validateDeviceIdentity } from './device-identity.js';
 export const SCREEN_PRESETS = Object.freeze({
   '1280x800': Object.freeze({ width: 1280, height: 800 }),
   '1366x768': Object.freeze({ width: 1366, height: 768 }),
@@ -170,6 +171,11 @@ function finishAdvanced(settings) {
   if (!['compatibility', 'privacy', 'azwah-native', 'stable-chrome', 'custom-native-chromium'].includes(out.runtime)) invalid('Unknown Chromium runtime');
   out.experimental = validateExperimental(out.experimental);
   out.fingerprint = validateFingerprint(out.fingerprint || DEFAULT_FINGERPRINT, out.preferences);
+  // "Match this computer" is the default and is stored by omission, so legacy profiles are unchanged.
+  if ('deviceIdentity' in out) {
+    const identity = validateDeviceIdentity(out.deviceIdentity);
+    if (identity.preset === 'host') delete out.deviceIdentity; else out.deviceIdentity = identity;
+  }
   return out;
 }
 
@@ -177,7 +183,7 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
   if (!keysOf(value).length) return finishAdvanced(base);
-  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental'].includes(key))) invalid('Unknown advancedSettings field');
+  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
   if ('runtime' in value) out.runtime = value.runtime;
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
@@ -186,6 +192,7 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   if ('preferences' in value) out.preferences = validatePreferences(value.preferences, out.preferences);
   if ('fingerprint' in value) out.fingerprint = value.fingerprint;
   if ('experimental' in value) out.experimental = validateExperimental({ ...out.experimental, ...value.experimental });
+  if ('deviceIdentity' in value) out.deviceIdentity = validateDeviceIdentity(value.deviceIdentity);
   return finishAdvanced(out);
 }
 

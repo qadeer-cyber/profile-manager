@@ -106,23 +106,29 @@ await step('fingerprint tab shows every category with unavailable modes disabled
     const opts = [...root.querySelectorAll('select option[value^="unavailable:"]')];
     return { unavailable: opts.length, allDisabled: opts.every(o => o.disabled), categories: [...new Set([...root.querySelectorAll('[data-category]')].map(e => e.dataset.category))].sort() };
   });
-  // 24 unsupported modes in the catalog; Languages "Masked" is explained in notes because Languages uses text fields.
-  if (info.unavailable !== 23 || !info.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable options ' + JSON.stringify(info)); }
-  for (const c of ['audio', 'canvas', 'fonts', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'])
+  // 24 unsupported catalog modes minus Languages "Masked" (text fields, explained in notes), plus every
+  // device preset this host cannot present (computed from the API because it depends on the host OS).
+  const device = await pg.evaluate(async () => (await (await fetch('/api/device-identity')).json()));
+  const blockedPresets = device.presets.filter(p => p.state !== 'supported');
+  if (info.unavailable !== 23 + blockedPresets.length || !info.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable options ' + JSON.stringify({ ...info, blockedPresets: blockedPresets.length })); }
+  for (const c of ['audio', 'canvas', 'deviceIdentity', 'macAddress', 'fonts', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'])
     if (!info.categories.includes(c)) throw new Error('category not shown: ' + c + ' in ' + info.categories.join(','));
   const canvasNoise = await editor.getByRole('combobox', { name: 'Canvas', exact: true }).evaluate(sel => { const o = sel.querySelector('option[value="unavailable:noise"]'); return o ? { disabled: o.disabled, label: o.textContent } : null; });
   if (!canvasNoise?.disabled) { await pg.keyboard.press('Escape'); throw new Error('canvas noise option ' + JSON.stringify(canvasNoise)); }
   await editor.getByRole('combobox', { name: 'WebGL', exact: true }).selectOption('restricted');
+  const explicit = device.presets.find(p => p.state === 'supported' && p.id !== 'host');
+  if (explicit) await editor.getByRole('combobox', { name: 'Device preset', exact: true }).selectOption(explicit.id);
   await saveProfile();
   const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha'));
   if (p.advancedSettings.fingerprint.webgl !== 'restricted' || p.advancedSettings.fingerprint.canvas !== 'real') throw new Error('saved ' + JSON.stringify(p.advancedSettings.fingerprint));
+  if (explicit && p.advancedSettings.deviceIdentity?.preset !== explicit.id) throw new Error('device preset not saved ' + JSON.stringify(p.advancedSettings.deviceIdentity));
   if (p.advancedSettings.experimental.canvasReadback !== 'off' || p.advancedSettings.experimental.webglReadback !== 'off') throw new Error('editor save kept readback prototypes ' + JSON.stringify(p.advancedSettings.experimental));
   await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
   await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
   await editor.getByRole('button', { name: 'Verify Profile Settings' }).click();
   const section = editor.getByRole('region', { name: 'Verification by category' }); await section.waitFor();
   const pills = await section.locator('.fact .pill').allInnerTexts();
-  if (pills.length !== 16) throw new Error('category rows ' + pills.length);
+  if (pills.length !== 17) throw new Error('category rows ' + pills.length);
   if (pills.some(t => t === 'pass' || t === 'partial')) throw new Error('stopped profile reported verification pass: ' + pills.join(','));
   await editor.getByRole('combobox', { name: 'WebGL', exact: true }).selectOption('default');
   await saveProfile();
