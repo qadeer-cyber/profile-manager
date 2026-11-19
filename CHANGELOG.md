@@ -6,6 +6,12 @@ This project records changes by **verified milestones**. Git tags and package ve
 
 Draft PR. No main merge, release tag or published installer. Installer version metadata is `2.0.0-beta.1`.
 
+### Release reliability hardening
+
+- Profile lock takeover, PID updates and release use a cross-process SQLite writer lock and an ownership token. Crash recovery reserves the profile before changing its running row or singleton files.
+- Stopping synchronization releases session, page and context listeners and pending navigation timers. Recent Stop responses retain up to 64 summaries. Credential-marked fields and clipboard shortcuts are excluded, as are navigation URLs with credentials, query strings or fragments.
+- Cookie Robot uses a dedicated tab in the selected profile. Cancel closes that tab, interrupts retry delays and preserves the full URL list and completed progress. Retry waits for the old worker to finish cleanup.
+
 ### Milestone A — compact profile table (Windows CI verified at `bbd395a`)
 
 - Profile rows are a single 48 px line (41 px with Compact rows) at 1024×768, 1366×768 and 1920×1080. They were 157–298 px at 1366×768.

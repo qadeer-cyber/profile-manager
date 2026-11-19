@@ -1866,6 +1866,7 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const actual = server.address().port;
   return { server, port: actual, url: `http://${host}:${actual}`, recovery, dataRecovery, purgeRecovery, reencrypted, scrubbed, migration, events: engine.events,
     close: async () => {
+      actionSync.shutdown();
       stopSampler?.();
       try { await engine.shutdown(); } finally { engine.events.off('event', onBrowserEvent); }
       const closed = new Promise(r => server.close(() => r()));

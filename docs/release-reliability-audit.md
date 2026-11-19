@@ -16,8 +16,8 @@ Scope: the areas the release mission listed. Each was checked by reading the cod
 | Default advanced settings constant | **Fixed** (410f7db): `DEFAULT_ADVANCED_SETTINGS` lacked the `runtime` every profile gets | `test/advanced-settings-api.test.js` |
 | Bookmarks JSON export | **Fixed** (58cad4b): root names repeated in folder paths | `test/bookmark-import.test.js` round trips |
 | Crash recovery | OK, one low-risk note | `test/m17-crash-recovery.test.js` (installer gate) |
-| Action synchronizer cleanup | OK, one low-risk note | `test/action-sync-browser.test.js` (native gate) |
-| Cookie robot cancel | OK, one low-risk note | `test/cookie-robot-cancel.test.js` (native gate) |
+| Action synchronizer cleanup | Fixed in finding 6 | `test/action-sync-browser.test.js` (native gate) |
+| Cookie robot cancel | Fixed in finding 6 | `test/cookie-robot-cancel.test.js` (native gate) |
 | Extensions | OK | `test/extensions*.test.js`; Chrome Stable refuses unpacked extensions with a reason |
 | Backup integrity | OK, one note | per-file SHA-256 manifest verified on restore; encrypted backups are AES-256-GCM |
 | Migrations | OK | additive; backed up before migrating; idempotent (`test/browser-settings-api.test.js`, `test/migration-v13-v16.test.js`, `test/upgrade-data-depth.test.js`) |
@@ -63,12 +63,19 @@ This was the `advanced-settings-api.test.js` mismatch, and it was already on `ma
 ### 5. Ungated suites had drifted (process)
 The npm scripts `test:m3`, `test:m6`, `test:m10`, `test:m11` and other milestone suites run in no workflow that triggers on this branch, so their expectations had drifted from intended behavior. The drift: launches with ids that have no profile row, a migration list frozen at v12, and the port-scan default. The launch and settings tests are updated to assert the intended behavior. Remaining ungated failures are listed under open items; none is a product defect found so far.
 
+### 6. Concurrent lock takeover, stopped synchronizers and in-flight robot cancellation
+
+| Area | Root cause and repair | Regression evidence |
+|---|---|---|
+| Profile ownership | On the original branch, three independent processes all reported ownership of one stale lock. Removal and acquisition were separate operations, and PID updates did not check ownership. A short SQLite writer transaction now covers each metadata mutation. A fresh token identifies the lease, and an asynchronous recovery pass reserves it while checking the browser PID and updating the database. Persistent sharing errors propagate to contenders. The acquiring process can repair its metadata after checking file identity. | `test/profile-lock-process.test.js` and its IPC worker, the existing Windows sharing-error tests in `test/unit.test.js` and `test/m17-crash-recovery.test.js`. |
+| Action Synchronizer | Stop kept the session and closures referencing browser contexts. A Stop during asynchronous setup could also install listeners after cleanup. Stop now detaches listeners, cancels deferred navigation, clears session references and keeps bounded summaries. Context closure and server shutdown stop affected sessions. Input events carry the session ID. | `test/action-sync-lifecycle.test.js` stops during attachment and closes a follower over 80 cycles. `test/action-sync-browser.test.js` exercises real browser forwarding and isolation. |
+| Cookie Robot | Cancellation only set a flag. Navigation, backoff and delays could continue, redirect listeners remained on reused personal tabs, and cancellation could discard untouched tasks. An abort signal closes the dedicated job tab and interrupts waits. Each completed task is persisted and cleanup precedes retry. | `test/cookie-robot-cancel.test.js` exercises two blocked navigations. `test/cookie-robot-navigation-cancel.test.js` uses live CDP, a server that never responds, an existing tab and a cookie marker. |
+
+The lock protocol covers processes running the new source on a local filesystem. Earlier builds do not participate in its SQLite guard. Physical Windows clients and authenticated external proxies remain on the Windows client checklist.
+
 ## Notes (not changed; low risk)
 
-- **Lock takeover race (cross-process).** `acquireLock` removes a stale lock and retries. Two *processes* that both decide a lock is stale could in theory remove each other's fresh lock. AZWAH runs one server process (Electron single-instance lock), and launches inside it are serialized, so this needs two app instances on one data folder. A compare-before-remove (rename to a unique name, then verify) would close it.
-- **Crash recovery** skips corrupt locks in the sweep. `acquireLock` treats them as stale, so they clear on the next launch instead of at startup. A `statSync` race on a profile folder deleted during the sweep would abort the sweep for that pass.
-- **Action synchronizer** keeps stopped session summaries in memory for the life of the process (a few hundred bytes each). Sessions stop on request, when the leader closes and when any participant stops (`profileStopped` is wired to the engine's stop event).
-- **Cookie robot cancel** is checked between tasks and before connecting. A navigation already in progress finishes or times out (bounded) before the cancel takes effect.
+- **Crash recovery** still skips corrupt locks in the startup sweep. The next acquisition handles them. A profile folder removed during directory enumeration can interrupt that sweep.
 - **Backup integrity vs authenticity.** Unencrypted `.pmb` files carry per-file SHA-256 checksums that are verified on restore. That catches corruption, not deliberate tampering: legacy backups without a manifest skip the check. Use encrypted backups (AES-256-GCM, authenticated) for files that leave the computer.
 
 ## Open items

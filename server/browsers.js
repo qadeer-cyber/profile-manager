@@ -35,7 +35,7 @@ import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
 import { geoIpCredentials } from './geoip-settings.js';
 import { isTransientProxyProbeError, resolveProxyLocation } from './proxy-location.js';
 import { db, userDataDir, getSetting, setSetting } from './db.js';
-import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
+import { acquireLock, releaseLock, updateLock, readLock, recoverLock, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
@@ -141,18 +141,10 @@ export function cdpBrowserPid(ws) {
 async function browserOwnedByProfile(pid, dir) {
   return !!(pid && isAlive(pid) && await pidMatches(pid, dir));
 }
-// Another process still holds the lock. isAlive can be a reused pid; the browser command-line
-// check below is what decides whether a recorded browser pid may be killed or the row dropped.
-function otherLiveOwner(lock) {
-  return !!(lock && !lock.corrupt && lock.ownerPid !== process.pid && !isStale(lock));
-}
-// A running row is stale when its pid is dead or fails the command-line check. A live matching
-// browser is never overwritten. An active lock held by another live owner is left untouched
-// (acquireLock reports 409). Returns true when the caller may insert a new row.
+// Caller owns the profile lock while checking and clearing a stale database row.
 async function dropStaleRunningRow(id, dir) {
   const row = db.prepare('SELECT * FROM running WHERE id=?').get(id);
   if (!row) return true;
-  if (otherLiveOwner(readLock(dir))) return false;
   if (await browserOwnedByProfile(row.pid, dir)) {
     throw httpErr(409, `Profile is already running (pid ${row.pid}).`, 'ALREADY_RUNNING');
   }
@@ -168,19 +160,21 @@ export async function recoverAfterRestart() {
   const report = { killed: 0, cleared: 0, staleLocks: 0, skipped: 0 };
   for (const r of db.prepare('SELECT * FROM running').all()) {
     let dir; try { dir = userDataDir(r.id); } catch { db.prepare('DELETE FROM running WHERE id=?').run(r.id); continue; }
-    const lock = readLock(dir);
-    if (otherLiveOwner(lock)) { report.skipped++; continue; }
-    const pid = r.pid || lock?.browserPid;
-    if (await browserOwnedByProfile(pid, dir)) {
-      if (await killTree(pid, { expect: dir })) report.killed++;
-      else if (await browserOwnedByProfile(pid, dir)) { report.skipped++; continue; }
-    }
-    clearChromeLocks(dir); releaseLock(dir, lock?.ownerPid);
-    db.prepare('DELETE FROM running WHERE id=?').run(r.id);
-    report.cleared++;
-    try {
+    const cleared = await recoverLock(dir, async lock => {
+      const current = db.prepare('SELECT * FROM running WHERE id=?').get(r.id);
+      if (!current || current.pid !== r.pid || current.started_at !== r.started_at) return false;
+      const pid = r.pid || lock?.browserPid;
+      if (await browserOwnedByProfile(pid, dir)) {
+        if (await killTree(pid, { expect: dir })) report.killed++;
+        else if (await browserOwnedByProfile(pid, dir)) return false;
+      }
+      clearChromeLocks(dir);
+      db.prepare('DELETE FROM running WHERE id=?').run(r.id);
       setStatus(r.id, { last_error: 'Previous browser session did not shut down cleanly. Storage was kept; launch again when ready.' });
-    } catch {}
+      return true;
+    });
+    if (cleared) report.cleared++;
+    else report.skipped++;
   }
   const abandoned = await sweepAbandonedLocks({ browserOwnedByProfile, killTree });
   report.staleLocks += abandoned.abandonedLocks;
@@ -271,9 +265,13 @@ async function reconcileOrphanRunningRows() {
       continue;
     }
     if (!(await browserOwnedByProfile(row.pid, dir))) {
-      clearChromeLocks(dir);
-      releaseLock(dir);
-      db.prepare('DELETE FROM running WHERE id=?').run(row.id);
+      await recoverLock(dir, async lock => {
+        if (lock?.browserPid && await browserOwnedByProfile(lock.browserPid, dir)) return false;
+        const result = db.prepare('DELETE FROM running WHERE id=? AND pid IS ? AND started_at IS ?').run(row.id, row.pid, row.started_at);
+        if (!result.changes) return false;
+        clearChromeLocks(dir);
+        return true;
+      });
     }
   }
 }
@@ -374,11 +372,11 @@ async function doLaunch(p, opts = {}) {
   if (fs.existsSync(dir) && fs.lstatSync(dir).isSymbolicLink()) throw httpErr(409, 'A browser profile directory cannot be a symbolic link or junction.', 'CHROME_PROFILE_LINK');
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
-  await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null, entry = null;
   let launchPlan = null, azwahLaunch = null;
   try {
+    await dropStaleRunningRow(p.id, dir);
     if ((p.browserEngine || 'chromium') === 'firefox') {
       const adv = (await import('./advanced-settings.js')).validateAdvancedSettings(p.advancedSettings || {});
       const restoreTabs = adv.preferences.restoreTabs === true;
