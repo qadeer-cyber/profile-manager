@@ -46,6 +46,8 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - The MAC address explanation is in the editor. A virtual-network environment is a deferred, approval-gated design (`docs/mac-virtualization-feasibility.md`).
 - Netscape `cookies.txt` import and export are added. Import is all-or-nothing through the existing validator. Cookie tests now run in the Windows native gate.
 - Action synchronizer: the person's own clicks, scrolling, key presses and navigation in a chosen leader profile are repeated in explicitly selected running followers. Password-field typing is never repeated. It covers the default Chromium and Chrome Stable runtimes only, and stops on request or when any participant stops. Tested with real Chromium (`test:sync`, Windows native gate).
+- Cookie robot, extensions and backup tests now run in the Windows native gate (49 pass, 1 skipped for Windows symlink privileges). On Windows with Chrome Stable installed, a headed launch with unpacked extensions is refused with a clear error (`CHROME_STABLE_UNPACKED_EXTENSION`), and that behavior is now tested.
+- Fixed: on Windows the profile lock could lose the browser PID when another process briefly held the file (`EBUSY`/`EPERM`), which hid the running browser from crash recovery. Lock reads now retry transient errors, writes are atomic, and an unreadable lock is rewritten by its owner. Verified by the Windows lifecycle race test (run 44532670648).
 
 ## Unreleased — local fingerprint controls on `feature/m10-local-parity`
 
