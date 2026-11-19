@@ -203,8 +203,14 @@ async function withObservationPage(ctx) {
   return {
     page, url,
     close: async () => {
-      await page.close().catch(() => {});
-      await new Promise(resolve => server.close(() => resolve()));
+      // Chrome keeps its keep-alive connection to this server open after the tab closes, and
+      // server.close() waits for every connection to end, so close the connections explicitly.
+      // Bounded so cleanup can never cost the observation that was already collected.
+      const bounded = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(resolve, ms).unref())]);
+      await bounded(page.close().catch(() => {}), 5000);
+      const closed = new Promise(resolve => server.close(() => resolve()));
+      server.closeAllConnections?.();
+      await bounded(closed, 2000);
     },
   };
 }
@@ -231,18 +237,32 @@ export const UNSUPPORTED_OVERRIDES = Object.freeze([
 ]);
 
 const OBSERVE_DEADLINE_MS = 35000;
+const ICE_STAGE_MS = 8000;
 
-async function collectBrowserObservation(ctx, permissions) {
+async function collectBrowserObservation(ctx, permissions, progress = {}) {
   let probe;
   try {
+    progress.stage = 'open_page';
     probe = await withObservationPage(ctx);
+    progress.stage = 'navigate';
     await probe.page.goto(probe.url, { timeout: 15000, waitUntil: 'domcontentloaded' });
+    progress.stage = 'permissions';
     if (permissions && Object.keys(permissions).length) await applyDocumentPermissions(probe.page, probe.url, permissions);
+    progress.stage = 'page_probe';
     const facts = summarize(await probe.page.evaluate(observeInPage));
-    const iceRaw = await gatherIceInPage(probe.page);
+    progress.stage = 'webrtc';
+    // ICE gathering can stall inside createOffer/setLocalDescription (for example when the STUN host
+    // is unreachable). Bound it here so the facts already observed are kept; ICE is then reported as
+    // not observed rather than failing the whole observation.
+    let iceTimer;
+    const iceRaw = await Promise.race([
+      gatherIceInPage(probe.page).catch(() => ({ availability: 'unavailable', reason: 'ice_gather_failed' })),
+      new Promise(resolve => { iceTimer = setTimeout(() => resolve({ availability: 'unavailable', reason: 'ice_timeout' }), ICE_STAGE_MS); }),
+    ]).finally(() => clearTimeout(iceTimer));
     facts.webrtcIce = iceRaw.availability === 'observed' ? summarizeIceCandidates(iceRaw.lines) : iceRaw;
     return { availability: 'observed', source: 'browser', ...facts };
   } finally {
+    progress.stage = 'close';
     await probe?.close();
   }
 }
@@ -253,11 +273,15 @@ export async function observeBrowser(ctx, { permissions } = {}) {
   const deadline = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('observe_deadline')), OBSERVE_DEADLINE_MS);
   });
-  const work = collectBrowserObservation(ctx, permissions);
+  const progress = { stage: 'start' };
+  const work = collectBrowserObservation(ctx, permissions, progress);
   try {
     return await Promise.race([work, deadline]);
-  } catch {
-    return { availability: 'unavailable', reason: 'collection_failed' };
+  } catch (error) {
+    // Which step failed, and the first line of the error (local probe URLs only; no page content).
+    const timedOut = error?.message === 'observe_deadline';
+    return { availability: 'unavailable', reason: timedOut ? 'deadline' : 'collection_failed', stage: progress.stage,
+      detail: timedOut ? null : String(error?.message || error).split('\n')[0].slice(0, 200) };
   } finally {
     clearTimeout(timer);
     work.catch(() => {});

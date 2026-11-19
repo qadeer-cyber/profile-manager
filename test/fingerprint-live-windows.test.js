@@ -47,7 +47,7 @@ test('real Chrome Stable: per-category verification matches what the browser exp
   const report = id => api('GET', `/profiles/${id}/hardware`);
   const rows = rep => Object.fromEntries(rep.consistency.byCategory.map(row => [row.id, row]));
   const table = (label, rep) => {
-    console.log(`# ${label}: engine ${rep.engine?.source} ${rep.engine?.version}; observed ${rep.browser.availability}${rep.browser.reason ? ` (${rep.browser.reason})` : ''}`);
+    console.log(`# ${label}: engine ${rep.engine?.source} ${rep.engine?.version}; observed ${rep.browser.availability}${rep.browser.reason ? ` (${rep.browser.reason} at ${rep.browser.stage}: ${rep.browser.detail})` : ''}`);
     for (const row of rep.consistency.byCategory) console.log(`#   ${row.id.padEnd(18)} ${row.status.padEnd(11)} ${row.findings.filter(f => f.status !== 'unsupported').map(f => `${f.id}=${f.status}`).join(' ')}`);
   };
 
@@ -140,7 +140,10 @@ test('real Chrome Stable: per-category verification matches what the browser exp
     // A setting saved while running applies on the next launch: it must not verify as pass now.
     const changed = await api('PUT', `/profiles/${A.id}`, { browserSettings: { locale: 'de-DE', languages: ['de-DE', 'en-US'], timezoneId: 'Europe/Berlin' } });
     assert.equal(changed.appliesOnNextLaunch, true);
-    const stale = rows(await report(A.id));
+    const staleReport = await report(A.id);
+    table('A after saving a new timezone while running', staleReport);
+    const stale = rows(staleReport);
+    assert.equal(staleReport.browser.availability, 'observed', `A not observed after the save: ${staleReport.browser.reason} at ${staleReport.browser.stage}: ${staleReport.browser.detail}`);
     assert.equal(stale.timezone.status, 'warning', `stale timezone verified as ${stale.timezone.status}`);
 
     // Restart: the saved settings are applied and verified again.
