@@ -11,6 +11,7 @@ import { ProfileOverview } from './ProfileOverview.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { assignableLibraryProxies } from '../lib/proxySwitch.js';
 import { FingerprintFields, IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
+import { UnavailableOptions, CategoryNotes, FixedCategory } from './FingerprintCatalog.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
 
@@ -217,11 +218,15 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {f.browserEngine === 'firefox' && <label>Firefox session mode<select value={regional.firefoxSessionMode || 'marionette'} onChange={e => setRegional('firefoxSessionMode', e.target.value)}><option value="marionette">Marionette / geckodriver (Windows host timezone)</option><option value="bidi">Managed BiDi timezone (independent geckodriver unavailable)</option></select></label>}
           <label>Preferred languages, in order<input value={languageText} onChange={e => setLanguageText(e.target.value)} placeholder="e.g. en-US, ur-PK" /></label>
           <p className="muted hint">Empty fields keep the host values. The first preferred language must match an explicit locale. These values do not change the proxy address.</p>
+          <CategoryNotes category="timezone" />
+          <CategoryNotes category="languages" />
           <h3 className="h3">WebRTC</h3>
           <div className="notice warn">These are the browser’s real IP-handling choices. Browser default adds no policy flag. A restrictive policy does not turn WebRTC off, spoof an address, or promise that media follows the proxy.</div>
           <label>WebRTC IP handling<select value={policy.mode} onChange={e => setF({ ...f, webrtcSettings: { mode: e.target.value } })}>
             {WEBRTC_CHOICES.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
+            <UnavailableOptions category="webrtc" />
           </select></label>
+          <CategoryNotes category="webrtc" />
           {(f.browserEngine || 'chromium') === 'firefox' && <p className="muted hint">On Firefox the same mode is written to stock Gecko ICE prefs in user.js.</p>}
           <h3 className="h3">Navigator identity</h3>
           <IdentityFields settings={advanced} onChange={setAdvanced} />
@@ -232,7 +237,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           <h3 className="h3">Graphics, canvas, and audio</h3>
           <FingerprintFields settings={advanced} onChange={setAdvanced} />
           <h3 className="h3">Port scan protection</h3>
-          <p className="muted">Browser private-network security checks remain enabled. Per-profile port scan masking is unavailable.</p>
+          <FixedCategory category="portScan" note="Browser private-network security checks remain enabled. Per-profile port scan masking is unavailable." />
           <h3 className="h3">Fingerprint verification</h3>
           <p className="muted">Verification reads the saved configuration and available live browser observations. Save changes and relaunch to verify settings that apply at startup.</p>
           <button type="button" disabled={!initial.id || dirty} onClick={() => setVerification(value => value + 1)}>Verify Profile Settings</button>

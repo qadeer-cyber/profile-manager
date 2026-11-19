@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { SCREEN_PRESETS } from '../../../server/advanced-settings.js';
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED } from '../../../server/fingerprint-settings.js';
 import { api } from '../api.js';
+import { UnavailableOptions, CategoryNotes, FixedCategory } from './FingerprintCatalog.jsx';
 
 const PERMISSIONS = [['notifications', 'Notifications'], ['microphone', 'Microphone'], ['camera', 'Camera'], ['clipboard', 'Clipboard'], ['midi', 'MIDI']];
 const STATES = [['default', 'Browser default'], ['ask', 'Ask'], ['allow', 'Allow'], ['deny', 'Deny']];
@@ -20,9 +21,12 @@ export function IdentityFields({ settings, onChange }) {
       <option value="default">Browser default</option>
       <option value="reduced">Reduced — major version only in the UA string</option>
       <option value="full">Full — exact Chromium version in the UA string</option>
+      <UnavailableOptions category="userAgent" />
     </select></label>
     {identity?.presets?.[mode] && <p className="mono muted">{identity.presets[mode]}</p>}
     <p className="muted hint">A free-form user agent is rejected. A string that names a different Chromium version would disagree with client hints.</p>
+    <CategoryNotes category="userAgent" />
+    <FixedCategory category="navigatorHardware" note="hardwareConcurrency, deviceMemory and platform are always this computer's values. Verification shows what the page observed." />
   </div>;
 }
 
@@ -34,7 +38,7 @@ export function LocationFields({ settings, onChange }) {
     <div className="notice">Chrome Stable on Windows applies location settings at launch. Proxy locations are approximate and require a configured GeoIP service. Restart the profile after changing its location or proxy.</div>
     <label>Location mode<select value={geo.mode ?? ''} onChange={e => set({ mode: e.target.value || null })}>
       <option value="">Default for this profile</option>
-      <option value="auto">Automatically follow proxy</option>
+      <option value="auto">Automatically follow proxy (Chrome Stable or native runtime)</option>
       <option value="manual">Manual coordinates and timezone</option>
       <option value="system">System/default location</option>
     </select></label>
@@ -47,6 +51,7 @@ export function LocationFields({ settings, onChange }) {
       <label>Accuracy (meters)<input inputMode="decimal" disabled={!allow} value={geo.accuracy ?? ''} onChange={e => set({ accuracy: e.target.value })} placeholder="Optional" /></label>
     </div>
     {!allow && <p className="muted hint">Coordinates are stored only when geolocation is Allow.</p>}
+    <CategoryNotes category="geolocationData" />
   </div>;
 }
 
@@ -72,7 +77,9 @@ export function WindowFields({ settings, onChange, profileId }) {
       <option value="native">Native window</option>
       {Object.entries(SCREEN_PRESETS).map(([id, size]) => <option key={id} value={id}>{size.width} × {size.height}</option>)}
       <option value="custom">Custom</option>
+      <UnavailableOptions category="screen" />
     </select></label>
+    <CategoryNotes category="screen" />
     {custom && <div className="proxy-grid">
       <label>Screen width<input inputMode="numeric" value={screen.width ?? ''} onChange={e => set({ width: e.target.value })} /></label>
       <label>Screen height<input inputMode="numeric" value={screen.height ?? ''} onChange={e => set({ height: e.target.value })} /></label>
@@ -100,10 +107,14 @@ export function FingerprintFields({ settings, onChange }) {
   const set = (key, value) => onChange({ ...settings, fingerprint: { ...fingerprint, [key]: value } });
   return <div className="form">
     <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Canvas, AudioContext, and WebGPU vendor masking are <strong>not</strong> available on stock Chromium (see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> in the repo). Nothing here makes a profile undetectable.</div>
-    {FINGERPRINT_CONTROLS.map(control => <label key={control.id}>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)}>
+    {FINGERPRINT_CONTROLS.map(control => <React.Fragment key={control.id}><label>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)} data-category={control.id}>
       {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
-    </select><span className="muted hint">{control.note}</span></label>)}
-    {FINGERPRINT_FIXED.map(item => <p key={item.id}><span className="label">{item.label}</span><br />{item.reason}</p>)}
+      <UnavailableOptions category={control.id} />
+    </select><span className="muted hint">{control.note}</span></label>
+      <CategoryNotes category={control.id} />
+      {control.id === 'webgl' && <FixedCategory category="webglMetadata" note="Vendor and renderer strings are this GPU's. Restricted WebGL above turns the context off instead." />}
+    </React.Fragment>)}
+    {FINGERPRINT_FIXED.filter(item => item.id !== 'portScan').map(item => <FixedCategory key={item.id} category={item.id} note={item.reason} />)}
     <label>Canvas readback prototype<select aria-label="Canvas readback prototype" value={settings.experimental?.canvasReadback || 'off'} onChange={e => onChange({ ...settings, experimental: { canvasReadback: e.target.value } })}>
       <option value="off">Off — real readback</option>
       <option value="prototype">Opt-in page hook</option>

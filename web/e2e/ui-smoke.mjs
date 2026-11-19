@@ -94,6 +94,33 @@ await step('narrow toolbar keeps search visible and moves low-priority actions t
   await pg.getByRole('button', { name: 'Duplicate selected', exact: true }).waitFor();
   await pg.setViewportSize({ width: 1360, height: 820 });
 });
+await step('fingerprint tab shows every category with unavailable modes disabled, and saves supported modes', async () => {
+  await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
+  await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
+  const info = await editor.evaluate(root => {
+    const opts = [...root.querySelectorAll('select option[value^="unavailable:"]')];
+    return { unavailable: opts.length, allDisabled: opts.every(o => o.disabled), categories: [...new Set([...root.querySelectorAll('[data-category]')].map(e => e.dataset.category))].sort() };
+  });
+  // 24 unsupported modes in the catalog; Languages "Masked" is explained in notes because Languages uses text fields.
+  if (info.unavailable !== 23 || !info.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable options ' + JSON.stringify(info)); }
+  for (const c of ['audio', 'canvas', 'fonts', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'])
+    if (!info.categories.includes(c)) throw new Error('category not shown: ' + c + ' in ' + info.categories.join(','));
+  const canvasNoise = await editor.getByRole('combobox', { name: 'Canvas', exact: true }).evaluate(sel => { const o = sel.querySelector('option[value="unavailable:noise"]'); return o ? { disabled: o.disabled, label: o.textContent } : null; });
+  if (!canvasNoise?.disabled) { await pg.keyboard.press('Escape'); throw new Error('canvas noise option ' + JSON.stringify(canvasNoise)); }
+  await editor.getByRole('combobox', { name: 'WebGL', exact: true }).selectOption('restricted');
+  await saveProfile();
+  const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha'));
+  if (p.advancedSettings.fingerprint.webgl !== 'restricted' || p.advancedSettings.fingerprint.canvas !== 'real') throw new Error('saved ' + JSON.stringify(p.advancedSettings.fingerprint));
+  await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
+  await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
+  await editor.getByRole('button', { name: 'Verify Profile Settings' }).click();
+  const section = editor.getByRole('region', { name: 'Verification by category' }); await section.waitFor();
+  const pills = await section.locator('.fact .pill').allInnerTexts();
+  if (pills.length !== 16) throw new Error('category rows ' + pills.length);
+  if (pills.some(t => t === 'pass' || t === 'partial')) throw new Error('stopped profile reported verification pass: ' + pills.join(','));
+  await editor.getByRole('combobox', { name: 'WebGL', exact: true }).selectOption('default');
+  await saveProfile();
+});
 await step('sidebar lists folders', async () => {
   await pg.locator('.profile-scopes summary').click();
   await pg.waitForSelector('.folders >> text=Work');

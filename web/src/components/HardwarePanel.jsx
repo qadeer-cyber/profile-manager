@@ -50,7 +50,16 @@ export function HardwarePanel({ profileId, allowExport = false }) {
       <Fact label="Screen" availability="observed">{browser.screen?.innerWidth}×{browser.screen?.innerHeight} viewport · {browser.screen?.width}×{browser.screen?.height} screen · scale {browser.screen?.devicePixelRatio}</Fact>
     </> : <Fact label="Browser facts" availability="unavailable">{browser.reason === 'not_running' ? 'Launch the profile to observe browser hardware. Nothing is simulated while it is stopped.' : browser.reason}</Fact>}
     {report.consistency?.interpretation && <div className="notice"><strong>{report.consistency.interpretation.headline}</strong> {report.consistency.interpretation.detail}</div>}
-    {report.consistency?.findings?.map(item => <Fact key={item.id} label={item.id} availability={item.status}>{item.summary}</Fact>)}
+    {report.consistency?.byCategory && <section className="fp-verify" aria-label="Verification by category">
+      <h4 className="h3">Verification by category</h4>
+      <p className="muted hint">Pass needs a live browser observation that matched the saved setting. Partial means some checks could not be observed. Real-only categories have no setting; their values are this computer's.</p>
+      {report.consistency.byCategory.map(row => <Fact key={row.id} label={row.label} availability={row.status}>
+        {row.findings.length ? row.findings.map(item => item.summary).join(' ') : 'No observation for this category yet.'}
+      </Fact>)}
+    </section>}
+    {report.consistency?.findings?.length > 0 && <details className="proxy-rules"><summary>All {report.consistency.findings.length} individual checks</summary>
+      {report.consistency.findings.map((item, index) => <Fact key={item.id + index} label={item.id} availability={item.status}>{item.summary}</Fact>)}
+    </details>}
     {report.unsupported.map(item => <Fact key={item.fact} label={item.fact} availability="unsupported">{item.reason}</Fact>)}
   </div>;
 }

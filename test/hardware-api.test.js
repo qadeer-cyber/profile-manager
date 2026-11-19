@@ -28,4 +28,7 @@ test('stopped profiles report host facts and do not invent browser hardware', as
   assert.ok(facts.includes('fonts') && facts.includes('hardwareConcurrency') && facts.includes('webgl'));
   assert.equal(JSON.stringify(report.body).includes('undetectable'), false);
   assert.equal(report.body.browser.hardwareConcurrency, undefined);
+  const rows = report.body.consistency.byCategory;
+  assert.equal(rows.length, 16);
+  assert.equal(rows.some(row => row.status === 'pass' || row.status === 'partial'), false, 'nothing verifies while stopped');
 });

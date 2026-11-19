@@ -97,6 +97,7 @@ import { buildEndpoint, createAccount, deleteAccount, listAccounts, listWebshare
 import { hostHardware, observeBrowser, UNSUPPORTED_OVERRIDES } from './hardware.js';
 import { advancedLaunchPlan } from './advanced-launch.js';
 import { fingerprintFindings, readPreviousObservation } from './fingerprint-consistency.js';
+import { FINGERPRINT_CATEGORIES, verificationByCategory } from './fingerprint-catalog.js';
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED, FINGERPRINT_REJECTED } from './fingerprint-settings.js';
 import { processCommandLine } from './proc.js';
 import { copyProfileTree } from './profile-copy.js';
@@ -426,7 +427,7 @@ async function hardwareReport(id, { previous = null } = {}) {
     configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions, fingerprint: profile.advancedSettings.fingerprint } : null,
     browser,
     unsupported: UNSUPPORTED_OVERRIDES,
-    consistency: { ...consistency, interpretation: summarizeConsistency(consistency) },
+    consistency: { ...consistency, interpretation: summarizeConsistency(consistency), byCategory: verificationByCategory(consistency.findings) },
   };
 }
 function assertGeckoCookieWrite(profile) {
@@ -640,7 +641,7 @@ function batchHandlers(allowOverride) {
 const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
   router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
-  router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
+  router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })), categories: FINGERPRINT_CATEGORIES })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/privacy-engine', wrap((req, res) => res.json(privacyEngineReport({ platform: process.platform }))));
   router.get('/privacy-acceptance', wrap((req, res) => {
