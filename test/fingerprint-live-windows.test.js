@@ -28,7 +28,11 @@ test('real Chrome Stable: per-category verification matches what the browser exp
   process.env.PM_API_TOKEN = 'fp-live-token';
   const { startServer } = await import('../server/app.js');
   const { setSetting } = await import('../server/db.js');
-  const site = http.createServer((req, res) => res.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': `fp_live=${req.url === '/a' ? 'A' : 'B'}; Path=/` }).end('<title>fp</title>'));
+  // Only /a and /b set a cookie: Chrome also requests /favicon.ico, which must not overwrite it.
+  const site = http.createServer((req, res) => {
+    const value = { '/a': 'A', '/b': 'B' }[req.url];
+    res.writeHead(value ? 200 : 404, { 'Content-Type': 'text/html', ...(value && { 'Set-Cookie': `fp_live=${value}; Path=/` }) }).end('<title>fp</title>');
+  });
   await new Promise(r => site.listen(0, '127.0.0.1', r));
   const origin = `http://127.0.0.1:${site.address().port}`;
   const server = await startServer({ port: 0, staticDir: null });
