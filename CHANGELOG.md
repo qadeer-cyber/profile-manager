@@ -2,6 +2,42 @@
 
 This project records changes by **verified milestones**. Git tags and package versions are not inferred from branch names. Release artifacts are separate from source acceptance.
 
+## Unreleased — AZWAH Ultimate 2.0 workspace on `feature/azwah-ultimate-2` (PR #27)
+
+Draft PR. No main merge, release tag or published installer. Installer version metadata is `2.0.0-beta.1`.
+
+### Milestone A — compact profile table (Windows CI verified at `bbd395a`)
+
+- Profile rows are a single 48 px line (41 px with Compact rows) at 1024×768, 1366×768 and 1920×1080. They were 157–298 px at 1366×768.
+- Row actions moved to a keyboard-accessible ⋮ menu. A Details dialog keeps the full proxy-exit evidence and native-runtime verification text.
+- The toolbar, filters, table and pager share one card. Column widths are fixed, and columns drop by priority as the table narrows.
+- Fixed: the Quick profile button always failed with HTTP 400.
+
+### Milestone B — keyboard, focus and narrow layouts (Windows CI verified at `786b11b`)
+
+- Dialogs and the profile editor move focus inside, keep Tab inside, close one layer per Escape, and return focus to the opener.
+- The `/` and `n` shortcuts ignore modifier keys, text fields and open dialogs or menus.
+- At narrow widths, less-used toolbar actions move into the overflow menu instead of clipping the search field.
+- Notifications are announced to screen readers.
+- The approved visual design is unchanged. The navigation rail proposal was declined.
+
+### Milestone C — fingerprint settings (pushed at `15e8f52` and `60c171e`)
+
+- All 16 fingerprint categories are visible in the Fingerprint tab. Modes that stock Chromium cannot apply (masked, noise, custom values and similar) appear as disabled options with the validator's reason. Proxy-following timezone and location are marked conditional on Chrome Stable or native runtimes.
+- Verify Profile Settings reports one result per category from live browser observations. A category passes only when its observed checks passed, and nothing passes while the profile is stopped.
+- The canvas and WebGL readback prototype controls were removed from the editor. Editor saves turn them off.
+
+### Milestone D — online update qualification (pushed at `67cb8a3`, Windows CI pending)
+
+- Windows CI builds Beta A (`2.0.0-beta.1`) and Beta B (`2.0.0-beta.2`) from the same source.
+- Beta A's shipping updater finds, downloads and SHA-256-verifies Beta B from a loopback stand-in for GitHub Releases. The downloaded installer upgrades A in place, and every existing profile must survive.
+- A tampered release digest must be refused.
+- A real published Beta A → Beta B run is planned for Milestone E, subject to the owner's approval.
+
+### Not included
+
+- No release is published. The canvas and audio noise, WebGL and WebGPU masking, and invented navigator hardware described in `FINGERPRINT_PARITY_MATRIX.md` remain unsupported on stock Chromium.
+
 ## Unreleased — local fingerprint controls on `feature/m10-local-parity`
 
 Source only. No installer, release tag, or main merge.
