@@ -204,6 +204,10 @@ jobs:
           $after = @(ProfileIds)
           if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
           Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'
+      - name: Verify in-place upgrade on the default data location with populated data
+        shell: pwsh
+        timeout-minutes: 25
+        run: node scripts/windows-qualification/upgrade-in-place.mjs
       - name: Build Beta B installer for the online update test
         shell: pwsh
         run: |
