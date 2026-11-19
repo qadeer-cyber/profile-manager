@@ -13,9 +13,11 @@ import { classifyLaunch, writeSmokeRejection } from './smoke-gate.js';
 
 import { downloadUpdate } from './update-download.js';
 import { createUpdateChecker } from './release-updates.js';
+import { loopbackUpdateTransport } from './update-test-transport.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const SMOKE = process.env.PM_SMOKE === '1';
+let updateSmoke = null;
 // Overwrite any inherited value before the backend is loaded (dynamic import in startBackend).
 applyPackagedFlag(process.env, app.isPackaged);
 const packageMetadata = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
@@ -143,7 +145,11 @@ ipcMain.handle('pm:app-info', () => ({ product: productName, edition: isUltimate
 app.on('child-process-gone', (e, d) => logErr('child-process-gone', d)); // GPU/utility crashes (profile browsers are not Electron children)
 if (app.isPackaged && process.platform === 'win32' && packageMetadata.azwahChromiumRuntime === 'stable-chrome') {
   const version = app.getVersion();
-  const checker = createUpdateChecker({ version, channel: version.includes('-beta.') ? 'beta' : 'stable' });
+  // Milestone D CI only: both PM_SMOKE=1 and a loopback origin are required before the update
+  // code talks to a local release fixture instead of GitHub. Validation is unchanged either way.
+  const testTransport = SMOKE && process.env.PM_SMOKE_UPDATE_ORIGIN ? loopbackUpdateTransport(process.env.PM_SMOKE_UPDATE_ORIGIN) : null;
+  const checker = createUpdateChecker({ version, channel: version.includes('-beta.') ? 'beta' : 'stable', ...(testTransport ? { fetchRelease: testTransport } : {}) });
+  updateSmoke = { checker, transport: testTransport, version };
   function authorizeUpdateRequest(event) {
     if (!win || !backend || event.sender !== win.webContents ||
         event.senderFrame !== win.webContents.mainFrame ||
@@ -167,7 +173,7 @@ if (app.isPackaged && process.platform === 'win32' && packageMetadata.azwahChrom
     verifiedFile = null;
     transfer = { status: 'downloading', version: latest.version, size: latest.size, received: 0 };
     try {
-      verifiedFile = await downloadUpdate(latest, { signal: controller.signal, progress: received => { transfer.received = received; } });
+      verifiedFile = await downloadUpdate(latest, { signal: controller.signal, progress: received => { transfer.received = received; }, ...(testTransport ? { fetchAsset: testTransport } : {}) });
       transfer = { ...transfer, status: 'verified', sha256: latest.sha256 };
     } catch {
       transfer = { ...transfer, status: controller.signal.aborted ? 'cancelled' : 'failed' };
@@ -332,7 +338,31 @@ async function captureInstalledVisuals() {
   fs.writeFileSync(path.join(directory, 'layout.json'), JSON.stringify(results, null, 2));
 }
 
+// Installed update test: run the real checker and downloader once and record the outcome.
+async function runUpdateSmoke() {
+  const result = { installedVersion: app.getVersion(), updaterEnabled: !!updateSmoke, transport: !!updateSmoke?.transport };
+  try {
+    if (!updateSmoke?.transport) throw new Error('Update smoke needs the packaged stable-chrome build and PM_SMOKE_UPDATE_ORIGIN.');
+    const state = await updateSmoke.checker.check();
+    result.status = state.status;
+    result.latest = state.latest && { version: state.latest.version, size: state.latest.size, sha256: state.latest.sha256 };
+    if (state.status === 'available') {
+      try {
+        const file = await downloadUpdate(state.latest, { fetchAsset: updateSmoke.transport });
+        result.download = { status: 'verified', file, sha256: state.latest.sha256 };
+      } catch (error) {
+        result.download = { status: 'failed', error: error.message };
+      }
+    }
+  } catch (error) {
+    result.error = error.message;
+  }
+  fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify(result, null, 2));
+  app.quit();
+}
+
 async function runSmoke() {
+  if (process.env.PM_SMOKE_UPDATE === '1') { await runUpdateSmoke(); return; }
   // Literal in-app import. Both flags are required; a path is never taken from the environment.
   if (process.env.PM_SMOKE === '1' && process.env.PM_SMOKE_OFFLINE === '1') {
     const { runOfflineSmoke } = await import('./offline-smoke.js');
@@ -352,7 +382,7 @@ async function runSmoke() {
     const stopped = await call('POST', endpoint + '/stop');
     if (stopped.s !== 200) throw new Error('Installed Chrome stop failed: ' + JSON.stringify(stopped));
     if (process.env.PM_SMOKE_VISUAL_DIR) await captureInstalledVisuals();
-    fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, userData }));
+    fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, userData, version: app.getVersion() }));
     app.quit();
     return;
   }

@@ -200,6 +200,91 @@ jobs:
           $after = @(ProfileIds)
           if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
           Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'
+      - name: Build Beta B installer for the online update test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          npx electron-builder --config electron-builder.ultimate-update-test.cjs --win nsis --x64 --publish never
+          $b = Get-Item 'release-update-b/Azwah-Setup-x64.exe'
+          Write-Output "Beta B 2.0.0-beta.2 bytes=$($b.Length) SHA-256=$((Get-FileHash -LiteralPath $b.FullName).Hash.ToLowerInvariant())"
+      - name: Verify online update Beta A to Beta B with preserved profile data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PM_SMOKE = '1'
+          $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-update-data'
+          $dir = Join-Path $env:RUNNER_TEMP 'azwah-update-install'
+          $app = Join-Path $dir 'AZWAH.exe'
+          $db = Join-Path $env:PM_USER_DATA 'data/profiles.db'
+          $a = Resolve-Path 'release-ultimate-stable/Azwah-Setup-x64.exe'
+          $b = Resolve-Path 'release-update-b/Azwah-Setup-x64.exe'
+          $bHash = (Get-FileHash -LiteralPath $b).Hash.ToLowerInvariant()
+          function ProfileIds {
+            node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.argv[1],{readOnly:true}); for(const r of db.prepare('SELECT id FROM profiles ORDER BY id').all()) console.log(r.id)" $db
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect installed profile database.' }
+          }
+          function RunApp($name, [hashtable]$extra = @{}) {
+            $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP "$name.json"
+            if (Test-Path $env:PM_SMOKE_RESULT) { Remove-Item $env:PM_SMOKE_RESULT }
+            foreach ($k in $extra.Keys) { Set-Item "env:$k" $extra[$k] }
+            try {
+              $proc = Start-Process -FilePath $app -PassThru
+              if (!$proc.WaitForExit(180000)) { Stop-Process -Id $proc.Id -Force; throw "$name timed out." }
+              $result = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
+              if ($proc.ExitCode -ne 0) { throw "$name exited $($proc.ExitCode): $($result | ConvertTo-Json -Depth 5)" }
+              Write-Output "$name $($result | ConvertTo-Json -Depth 5 -Compress)"
+              return $result
+            } finally { foreach ($k in $extra.Keys) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } }
+          }
+          function StartFeed($name, [switch]$Tamper) {
+            $info = Join-Path $env:RUNNER_TEMP "$name-feed.json"
+            $feedArgs = @('scripts/update-feed-fixture.mjs', '--installer', "$b", '--version', '2.0.0-beta.2', '--previous', '2.0.0-beta.1', '--port-file', $info)
+            if ($Tamper) { $feedArgs += '--tamper' }
+            $proc = Start-Process -FilePath node -ArgumentList $feedArgs -PassThru -NoNewWindow
+            for ($i = 0; $i -lt 100 -and !(Test-Path $info); $i++) { Start-Sleep -Milliseconds 100 }
+            if (!(Test-Path $info)) { throw "$name feed did not start." }
+            return @{ proc = $proc; info = (Get-Content -Raw $info | ConvertFrom-Json) }
+          }
+          # 1. Install Beta A and create profile data with a real Chrome launch.
+          $setup = Start-Process -FilePath $a -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw 'Beta A install failed.' }
+          $smokeA = RunApp 'update-beta-a'
+          if (!$smokeA.chromeStable -or $smokeA.version -ne '2.0.0-beta.1') { throw 'Beta A smoke failed.' }
+          $idsA = @(ProfileIds)
+          if ($idsA.Count -lt 1) { throw 'Beta A created no profile.' }
+          # 2. A tampered release digest must be refused by Beta A's updater.
+          $bad = StartFeed 'tampered' -Tamper
+          try {
+            $refused = RunApp 'update-check-tampered' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $bad.info.origin }
+            if ($refused.status -ne 'available' -or $refused.download.status -ne 'failed' -or $refused.download.error -notmatch 'integrity') { throw 'Tampered installer was not refused.' }
+          } finally { Stop-Process -Id $bad.proc.Id -Force -ErrorAction SilentlyContinue }
+          # 3. Beta A's real updater finds Beta B, downloads it and verifies size and SHA-256.
+          $good = StartFeed 'good'
+          try {
+            $update = RunApp 'update-check' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $good.info.origin }
+          } finally { Stop-Process -Id $good.proc.Id -Force -ErrorAction SilentlyContinue }
+          if ($update.installedVersion -ne '2.0.0-beta.1' -or $update.status -ne 'available' -or $update.latest.version -ne '2.0.0-beta.2') { throw 'Beta A did not offer Beta B.' }
+          if ($update.download.status -ne 'verified' -or $update.latest.sha256 -ne $bHash) { throw 'Beta B download was not verified.' }
+          $downloaded = $update.download.file
+          if ((Get-FileHash -LiteralPath $downloaded).Hash.ToLowerInvariant() -ne $bHash) { throw 'Downloaded installer differs from Beta B.' }
+          # 4. Run the downloaded, verified installer over Beta A, then launch Beta B.
+          $upgrade = Start-Process -FilePath $downloaded -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw 'Upgrade with the downloaded installer failed.' }
+          $smokeB = RunApp 'update-beta-b'
+          if (!$smokeB.chromeStable -or $smokeB.version -ne '2.0.0-beta.2') { throw "Beta B did not start as 2.0.0-beta.2: $($smokeB.version)" }
+          $idsB = @(ProfileIds)
+          $lost = @($idsA | Where-Object { $_ -notin $idsB })
+          if ($lost.Count) { throw "Profiles lost during the online update: $($lost -join ', ')" }
+          # 5. Beta B sees no newer release in the same feed.
+          $good = StartFeed 'good-after'
+          try {
+            $after = RunApp 'update-check-after' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $good.info.origin }
+          } finally { Stop-Process -Id $good.proc.Id -Force -ErrorAction SilentlyContinue }
+          if ($after.installedVersion -ne '2.0.0-beta.2' -or $after.status -ne 'current') { throw 'Beta B still offered an update.' }
+          $summary = "PASS online update: Beta A 2.0.0-beta.1 -> Beta B 2.0.0-beta.2 via the shipping updater (loopback release fixture). Verified SHA-256 $bHash, tampered digest refused, $($idsA.Count) profile(s) preserved, Beta B launched Chrome Stable."
+          $summary | Add-Content $env:GITHUB_STEP_SUMMARY
+          Write-Output $summary
       - name: Upload installed layout evidence
         if: always()
         uses: actions/upload-artifact@v4
