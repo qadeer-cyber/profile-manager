@@ -11,6 +11,14 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - Fixed the running-profile limit counting the request itself and counting waiting requests multiple times. Admitted launches reserve one slot until completion. The configured maximum now permits that many browsers while retaining the free-memory guard.
 - Windows installer acceptance now exercises the installed desktop with an empty store, opens multiple signed Chrome Stable profiles, checks browser storage and crash recovery, samples working sets and verifies the downloaded CI installer against the build output.
 
+### Cookie import into Chrome Stable profiles
+
+- Fixed: cookies imported into a stopped Chrome Stable profile on Windows (JSON, Netscape cookies.txt or an encrypted cookie archive) were listed after import, then lost on the next run. The importer wrote values with Chromium's fixed basic key, as bundled Chromium uses. Chrome Stable encrypts cookies with its own key in the profile's `Local State`, so it could not decrypt those values and discarded them.
+- Chrome Stable profiles now import through Chrome. The stopped profile opens briefly in headless Chrome Stable with all network traffic sent to a closed local port. The cookies are set over CDP, read back and checked against the request, and Chrome closes so it writes them to disk. A cookie Chrome rejects or changes fails the whole request with 422 `COOKIE_REJECTED_BY_CHROME`. Cookies the request added are removed and any it replaced are restored. If Chrome cannot start, the response is 503 `CHROME_STABLE_COOKIE_WRITE_FAILED`. The response includes `writtenBy: "chrome-stable"`.
+- The stopped-profile cookie list no longer tries the basic key on Chrome Stable values. Those values are reported as unavailable (`unsupported_encryption`), with names and flags still listed.
+- Bundled Chromium import and clear are unchanged. Clear on Chrome Stable deletes rows, which needs no decryption. Session cookies follow Chrome's own rule and survive a restart only if the profile restores its previous session.
+- Native gate: `test/cookie-import-stable-windows.test.js` imports into a stopped profile and checks the cookies in Chrome's CDP store and `document.cookie`. The installer upgrade gate imports a cookie in the new version and checks Chrome reads it.
+
 ### Release reliability hardening
 
 - Profile lock takeover, PID updates and release use a cross-process SQLite writer lock and an ownership token. Crash recovery reserves the profile before changing its running row or singleton files.

@@ -258,6 +258,19 @@ try {
     await s.browser.close().catch(() => {});
     await api(ui, 'POST', `/profiles/${profile.id}/stop`);
   }
+  // Cookie import in the new version: Chrome Stable writes the cookie into the stopped profile
+  // with its own key, so Chrome still has it on the next run (the old version's import was lost).
+  const importedAfter = await api(ui, 'POST', `/profiles/${B.id}/cookies/import`, { cookies: [{ name: 'imported_after', value: 'b-after-upgrade', domain: '127.0.0.1', path: '/', secure: false, httpOnly: false, sameSite: 'Lax', expires: future }] });
+  assert.equal(importedAfter.imported, 1, 'new version imported the cookie');
+  {
+    const s = await launchProfile(ui, B.id);
+    await s.page.goto(`${origin}/B`);
+    const visible = await s.page.evaluate(() => document.cookie.split('; ').includes('imported_after=b-after-upgrade'));
+    report.importedCookie.newVersionImport = { writtenBy: importedAfter.writtenBy ?? null, visibleInChrome: visible };
+    assert.equal(visible, true, 'Chrome reads the cookie the new version imported');
+    await s.browser.close().catch(() => {});
+    await api(ui, 'POST', `/profiles/${B.id}/stop`);
+  }
   // The proxy password saved by the old version still decrypts and authenticates.
   const routed = await launchProfile(ui, P.id);
   await routed.page.goto('http://azwah-upgrade.test/');

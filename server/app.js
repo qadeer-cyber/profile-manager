@@ -65,7 +65,8 @@ import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-
 import { buildUserAgent } from './advanced-launch.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
-import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection } from './cookies.js';
+import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection, validateCookies } from './cookies.js';
+import { usesChromeStableCookieStore, writeCookiesWithChromeStable } from './browser-runtime/stable-cookies.js';
 import { readGeckoProfileCookies, exportGeckoCookiesPayload } from './gecko-cookies.js';
 import { geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import {
@@ -462,7 +463,14 @@ async function cookieList(id) {
     const geckoDir = geckoUserDataDir(profile.id, userDataDir);
     return { engine: 'firefox', readOnly: true, cookies: readGeckoProfileCookies(geckoDir) };
   }
-  return { engine: 'chromium', readOnly: false, cookies: readProfileCookies(userDataDir(profile.id)) };
+  return { engine: 'chromium', readOnly: false, cookies: readProfileCookies(userDataDir(profile.id), { basicKey: !usesChromeStableCookieStore(profile) }) };
+}
+// Chrome Stable on Windows cannot read values encrypted with the basic key and drops them, so its
+// profiles are written by Chrome itself (see browser-runtime/stable-cookies.js).
+function importCookiesInto(profile, cookies) {
+  const dir = userDataDir(profile.id);
+  if (!usesChromeStableCookieStore(profile)) return importProfileCookies(dir, cookies);
+  return writeCookiesWithChromeStable(dir, validateCookies(cookies));
 }
 function bookmarkDiskProfile(id) {
   const profile = must(id);
@@ -757,11 +765,11 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     const body=encryptCookies({profileId:req.params.id,engine:data.engine,cookies:data.cookies,passphrase:req.body.passphrase,confirmSensitive:req.body.confirmSensitive});
     res.set({'Content-Type':'application/octet-stream','Cache-Control':'no-store','Content-Disposition':'attachment; filename="cookies.azwc"'});res.send(body);
   }));
-  router.post('/profiles/:id/cookies/import-encrypted',wrap((req,res)=>{
+  router.post('/profiles/:id/cookies/import-encrypted',wrap(async(req,res)=>{
     const profile=cookieMutation(req.params.id);rejectPassphraseQuery(req);
     if(typeof req.body.archive!=='string'||req.body.archive.length>410000||!/^[A-Za-z0-9+/]*={0,2}$/.test(req.body.archive))throw err(400,'Invalid bounded cookie archive');
     const cookies=decryptCookies({bytes:Buffer.from(req.body.archive,'base64'),passphrase:req.body.passphrase,profileId:profile.id,engine:profile.browserEngine||'chromium',confirm:req.body.confirm,confirmTransfer:req.body.confirmTransfer});
-    res.json(importProfileCookies(userDataDir(profile.id),cookies));
+    res.json(await importCookiesInto(profile,cookies));
   }));
   router.get('/geckodriver', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -931,10 +939,10 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     const which = req.body?.driver === 'chromedriver' || req.body?.driver === 'geckodriver' ? req.body.driver : 'both';
     res.json(await installAutomationDrivers(which, { confirm: !!req.body?.confirm }));
   }));
-  router.post('/profiles/:id/cookies/import', wrap((req, res) => {
+  router.post('/profiles/:id/cookies/import', wrap(async (req, res) => {
     const profile = cookieMutation(req.params.id);
     const cookies = Array.isArray(req.body) ? req.body : req.body.cookies;
-    res.json(importProfileCookies(userDataDir(profile.id), cookies));
+    res.json(await importCookiesInto(profile, cookies));
   }));
   router.post('/profiles/:id/cookies/clear', wrap((req, res) => {
     const profile = cookieMutation(req.params.id);

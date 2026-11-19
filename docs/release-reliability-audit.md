@@ -21,6 +21,7 @@ Scope: the areas the release mission listed. Each was checked by reading the cod
 | Extensions | OK | `test/extensions*.test.js`; Chrome Stable refuses unpacked extensions with a reason |
 | Backup integrity | OK, one note | per-file SHA-256 manifest verified on restore; encrypted backups are AES-256-GCM |
 | Migrations | OK | additive; backed up before migrating; idempotent (`test/browser-settings-api.test.js`, `test/migration-v13-v16.test.js`, `test/upgrade-data-depth.test.js`) |
+| Cookie import, Chrome Stable | **Fixed** (finding 8): Chrome Stable discarded cookies imported into a stopped profile | `test/cookie-import-stable-windows.test.js` (native gate), `test/stable-cookies.test.js`, upgrade gate |
 | Installer upgrade | OK | installer gate rebuilds a pinned predecessor, upgrades in place and checks profile IDs and the database survive |
 | Update checksum | OK | `test/update-loopback-e2e.test.js` serves a tampered installer and expects the update to be refused |
 
@@ -78,6 +79,16 @@ The lock protocol covers processes running the new source on a local filesystem.
 With a running-profile limit of one and zero live browsers, three sequentially admitted requests all returned TOO_MANY_PROFILES before reaching profile preflight. The calculation combined live entries, the launching map and queue reservations. These overlap. The corrected admission check counts unique live and admitted profile IDs, and releases each reservation on failure. The local reproducer is in `test/launch-limits-local.test.js`. The Windows installed gate checks four live profiles when memory permits and requires the next launch to be refused.
 
 The former fresh-install smoke checked one blank tab. `scripts/windows-qualification/fresh-install.mjs` now drives a separate normal installed desktop through its own renderer and backend, with an explicitly empty temporary user-data directory. It records observed storage, lifecycle outcomes and process measurements, and leaves the historical upgrade test intact. The post-upload readback compares the distributed EXE with the tested build.
+
+### 8. Chrome Stable discarded imported cookies (high)
+
+`POST /api/profiles/:id/cookies/import` is shared by JSON import, Netscape cookies.txt import and encrypted-archive import (`/cookies/import-encrypted`). For a stopped profile it wrote rows to the SQLite store with `encryptCookieValue()`, which uses a `v10` prefix, Chromium's fixed basic key (PBKDF2 of `peanuts`) and a SHA-256 host prefix. That is the format of bundled Chromium on Linux. On Windows, Chrome Stable keeps a random AES-256 key in the profile's `Local State` (`os_crypt.encrypted_key`, protected with DPAPI; newer versions add `app_bound_encrypted_key`). Its `v10` values use AES-GCM with that key, and `v20` values use the app-bound key. Chrome cannot decrypt a basic-key value, so it drops the cookie when it loads the store.
+
+Evidence: the installer upgrade gate at ea7e697 (job 135805602731) logged the imported cookie as present after import and `null` after Chrome Stable ran the profile once. The new native-gate test (`test/cookie-import-stable-windows.test.js`) reproduces it directly and logs the `os_crypt` key names in `Local State` and the stored blob prefixes (never values). Run IDs are recorded under Open items.
+
+Fix: for Chrome Stable profiles on Windows (`advancedSettings.runtime: 'stable-chrome'`, or every Chromium profile in the Chrome Stable edition), `server/browser-runtime/stable-cookies.js` performs the write in Chrome. It holds the profile lock and checks the profile was not last opened by a newer Chrome. It then launches headless Chrome Stable on the profile. Proxy traffic goes to a closed loopback port and background networking is off, so nothing reaches the internet. Host-only cookies are passed to CDP `Network.setCookie` by URL and domain cookies by dotted domain, and Chrome's read-back must match name, scope, value and flags. Any mismatch rolls the request back and returns 422. A graceful close flushes the store, encrypted with Chrome's own key.
+
+Not changed: clearing cookies deletes rows by host, name and path, which needs no decryption and is verified in Chrome by the same test. Running profiles still refuse cookie changes (`PROFILE_RUNNING`). Backups copy the profile folder, including `Local State`, together with the cookie store. That keeps Chrome's own key with its cookies, but the key is DPAPI-protected for the Windows account that created it, so a restore under another account or on another computer cannot be expected to keep Chrome Stable cookie values. This follows from the format and is not yet covered by a test.
 
 ## Notes (not changed; low risk)
 
