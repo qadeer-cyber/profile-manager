@@ -7,7 +7,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Server } from 'proxy-chain';
 import { db, getSetting, setSetting } from '../db.js';
 import { geoIpCredentials } from '../geoip-settings.js';
-import { resolveProxyLocation } from '../proxy-location.js';
+import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
 import { isPackaged } from '../testflags.js';
 
@@ -97,7 +97,7 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
   const receipt = path.join(nativeDir, `.ready-${randomUUID()}`);
   const proxy = profile.proxy;
   const locationKey = 'proxy-location:' + profile.id;
-  const resolveLocation = () => resolveProxyLocation(proxy, {
+  const resolveLocation = () => resolveProxyLocationWithRetry(proxy, {
     read: () => getSetting(locationKey, null), credentials: geoIpCredentials,
   });
   const assignmentCurrent = () => {

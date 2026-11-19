@@ -16,7 +16,7 @@ import { extensionLaunchPlan } from '../extensions.js';
 import { getSetting, setSetting } from '../db.js';
 import { assertProfileVersion, resolveWindowsChromeStable, stableProxyNetworkArgs } from './chrome-stable.js';
 import { geoIpCredentials } from '../geoip-settings.js';
-import { resolveProxyLocation } from '../proxy-location.js';
+import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
@@ -72,7 +72,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       const key = 'proxy-location:' + p.id;
       const cached = getSetting(key, null);
       if (requireStable) setSetting(key, null);
-      locationOverride = await resolveProxyLocation(p.proxy, { read: () => cached,
+      locationOverride = await resolveProxyLocationWithRetry(p.proxy, { read: () => cached,
         save: requireStable ? undefined : value => setSetting(key, value), credentials: geoIpCredentials });
       regional.timezoneId = locationOverride.timezone;
       if (/^[A-Z]{2}$/.test(locationOverride.country || '') && !regional.locale && !regional.languages.length) {

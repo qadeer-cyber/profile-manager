@@ -158,3 +158,16 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
     throw fail('Proxy location could not be verified. Check proxy connectivity and the location provider in Settings → Proxy location.');
   } finally { agent?.destroy(); }
 }
+
+// Launch-time resolution: one bounded retry for a transient network failure (connection reset,
+// timeout, 5xx from the exit service), the same rule the running-profile watchdog uses. A single
+// reset between the proxy and the exit-IP service must not fail the launch. Anything else
+// (authentication, rotation, bad data) fails at once. The exit is still verified on the retry.
+export async function resolveProxyLocationWithRetry(proxy, options = {}, { retryDelayMs = 1500, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+  try { return await resolveProxyLocation(proxy, options); }
+  catch (error) {
+    if (!isTransientProxyProbeError(error)) throw error;
+    await sleep(retryDelayMs);
+    return resolveProxyLocation(proxy, options);
+  }
+}

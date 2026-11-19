@@ -17,6 +17,7 @@ export const GEO_STATES = PERMISSION_STATES;
 const SCALE = new Set([1, 1.25, 1.5, 2, 3]);
 
 export const DEFAULT_ADVANCED_SETTINGS = Object.freeze({
+  runtime: 'compatibility',
   userAgent: Object.freeze({ mode: 'default' }),
   geolocation: Object.freeze({ mode: null, permission: 'default', latitude: null, longitude: null, accuracy: null }),
   screen: Object.freeze({

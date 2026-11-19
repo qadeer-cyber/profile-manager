@@ -6,7 +6,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
 import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
 import { geoIpCredentials } from '../geoip-settings.js';
-import { resolveProxyLocation } from '../proxy-location.js';
+import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { db, getSetting, setSetting } from '../db.js';
 import { killTree } from '../proc.js';
 import { enabledChromiumExtensionPaths } from '../extensions.js';
@@ -47,7 +47,7 @@ export async function launchPrivacyEngine(profile, dir, opts, checkCancelled) {
       ? { latitude: geo.latitude, longitude: geo.longitude, accuracy: geo.accuracy } : null;
     const proxy = profile.proxy;
     if (mode === 'auto') {
-      const result = await resolveProxyLocation(proxy, { read: () => getSetting(locationKey, null), credentials: geoIpCredentials });
+      const result = await resolveProxyLocationWithRetry(proxy, { read: () => getSetting(locationKey, null), credentials: geoIpCredentials });
       autoLocation = result;
       timezone = result.timezone;
       location = { latitude: result.latitude, longitude: result.longitude, accuracy: result.accuracy };
