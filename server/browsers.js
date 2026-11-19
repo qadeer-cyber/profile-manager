@@ -58,6 +58,7 @@ let shuttingDown = false;
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
+const admitted = new Set(); // Holds a browser slot from queue admission until launch completes.
 const launchAbort = new Map(); // id -> true when user cancelled during startup
 let healthTicks = 0;
 // Read-only, in-process evidence for the installed offline smoke; no HTTP surface.
@@ -192,7 +193,12 @@ export function launch(p, opts = {}) {
   const closing = settling.get(p.id);
   if (closing?.done) return closing.done.then(() => launch(p, opts));
   if (launching.has(p.id)) return launching.get(p.id);
-  const pr = runWithLaunchQueue(p.id, () => doLaunch(p, opts)).finally(() => {
+  const pr = runWithLaunchQueue(p.id, async () => {
+    assertLaunchResources(new Set([...live.keys(), ...admitted]).size);
+    admitted.add(p.id);
+    try { return await doLaunch(p, opts); }
+    finally { admitted.delete(p.id); }
+  }).finally(() => {
     launching.delete(p.id);
     launchAbort.delete(p.id);
   });
@@ -364,7 +370,6 @@ async function doLaunch(p, opts = {}) {
   assertProfileOperationAvailable(p.id);
   const current = db.prepare('SELECT deleted_at,purge_error FROM profiles WHERE id=?').get(p.id);
   if (!current || current.deleted_at || current.purge_error) throw httpErr(409, 'Profile was deleted or requires recovery', 'PROFILE_RECOVERY_REQUIRED');
-  assertLaunchResources(live.size + launching.size + Math.max(0, pendingLaunchCount() - 1));
   const metricsHandle = beginLaunchMetrics(p.id);
   assertLaunchNotCancelled(p.id);
   const { headless, url } = opts, automation = automationEnabled(opts);

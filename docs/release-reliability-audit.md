@@ -73,6 +73,12 @@ The npm scripts `test:m3`, `test:m6`, `test:m10`, `test:m11` and other milestone
 
 The lock protocol covers processes running the new source on a local filesystem. Earlier builds do not participate in its SQLite guard. Physical Windows clients and authenticated external proxies remain on the Windows client checklist.
 
+### 7. Fresh-install admission limit and installed coverage
+
+With a running-profile limit of one and zero live browsers, three sequentially admitted requests all returned TOO_MANY_PROFILES before reaching profile preflight. The calculation combined live entries, the launching map and queue reservations. These overlap. The corrected admission check counts unique live and admitted profile IDs, and releases each reservation on failure. The local reproducer is in `test/launch-limits-local.test.js`. The Windows installed gate checks four live profiles when memory permits and requires the next launch to be refused.
+
+The former fresh-install smoke checked one blank tab. `scripts/windows-qualification/fresh-install.mjs` now drives a separate normal installed desktop through its own renderer and backend, with an explicitly empty temporary user-data directory. It records observed storage, lifecycle outcomes and process measurements, and leaves the historical upgrade test intact. The post-upload readback compares the distributed EXE with the tested build.
+
 ## Notes (not changed; low risk)
 
 - **Crash recovery** still skips corrupt locks in the startup sweep. The next acquisition handles them. A profile folder removed during directory enumeration can interrupt that sweep.

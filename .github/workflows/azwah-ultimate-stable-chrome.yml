@@ -116,6 +116,10 @@ jobs:
           if (!$uninstaller) { throw 'Uninstaller missing.' }
           $removed = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
           if ($removed.ExitCode -ne 0 -or (Test-Path $app) -or !(Test-Path $env:PM_USER_DATA)) { throw 'Uninstall or data retention check failed.' }
+      - name: Qualify installed first run, profile storage, recovery and working sets
+        shell: pwsh
+        timeout-minutes: 15
+        run: node scripts/windows-qualification/fresh-install.mjs
       - name: Test concurrent Chrome isolation, timezone, geolocation and failed proxy
         shell: pwsh
         run: |
@@ -319,3 +323,17 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+
+      - name: Read back the uploaded installer
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-windows-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/azwah-readback
+      - name: Verify distributed installer against build provenance
+        shell: pwsh
+        run: |
+          $file = Get-Item (Join-Path $env:RUNNER_TEMP 'azwah-readback/Azwah-Setup-x64.exe')
+          $built = Get-Item 'release-ultimate-stable/Azwah-Setup-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($file.Length -ne $built.Length -or $hash -ne (Get-FileHash $built.FullName).Hash.ToLowerInvariant()) { throw 'CI artifact differs from the tested installer.' }
+          Write-Output "INSTALLER_READBACK source=$env:GITHUB_SHA bytes=$($file.Length) sha256=$hash"

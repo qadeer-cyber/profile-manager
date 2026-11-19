@@ -62,6 +62,21 @@ Record each result as **Pass / Fail / Not tested**, with the Windows build (`win
 20. Backup (encrypted) and restore on a second PC. Profiles launch and cookies and bookmarks are present.
 21. End `chrome.exe` from Task Manager. The app reports the crash, and the profile can be relaunched without manual cleanup.
 
+## Fresh-install evidence and outstanding client checks
+
+The installer gate uses a fresh disposable local data directory, ordinary installed Electron startup and signed Chrome Stable. The driver uses Node and Playwright outside the installed application. Chrome automation is enabled on the disposable profiles to inspect actual storage. The separate installed smoke exercises ordinary browsing with the debugging endpoint closed. The fixture exercises HTTP cache reuse and isolation, Cache Storage, IndexedDB, cookies, session/local storage, profile history and bookmarks. Electron metrics report summed working sets and sampled CPU. Chrome memory is the sum of the attributed process working sets. Shared pages can appear in multiple working sets. A short local page workload does not establish a minimum RAM or CPU specification.
+
+Record each of the following as **NOT EXECUTED** until a physical client has evidence. Use a new standard Windows account or a clean client image with no pre-existing AZWAH store. Keep Defender and SmartScreen enabled.
+
+| Client check | Procedure and evidence |
+|---|---|
+| Windows 10 and 11 x64 | Record edition, build, RAM, CPU and display adapter. Download the exact CI artifact, compare EXE size and SHA-256 to its manifest, install per user, open AZWAH and create two disposable profiles. Record elevation prompts, version, launch/stop and reopening persistence. |
+| SmartScreen and Defender | Download with Edge, preserve Mark-of-the-Web and record any prompt, publisher and Defender Protection History entry. Recheck the binary hash and verify startup and uninstall. Record a block as a block. |
+| Intel graphics and media | Record Intel driver version, attach a working camera/microphone and follow tests 8–10 with default and restricted profiles. Record permission prompts and observed device availability without recording media. |
+| DPI | At 100%, 125% and 150%, reopen the app at each scale, measure standard/compact row heights in CSS pixels, check all primary dialogs and menus at 1024×768 and 1366×768, and record clipping. |
+| 8 GB memory | With a representative background workload, record idle and 1/2/4-profile working sets, free memory, paging, CPU and launch/stop times. Repeat three cycles and one controlled crash on disposable profiles. Record any resource refusal. |
+| Real authenticated proxies | Use two owner-authorized endpoints from different regions. Compare observed egress and IANA timezone for each across restarts. Test the outage with a disposable proxy endpoint and check that its destination receives no direct requests. Record redacted results only. |
+
 ## Sign-off
 
 | Machine | Windows build | RAM | GPU | Result | Tester | Date |

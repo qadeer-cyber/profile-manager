@@ -6,6 +6,11 @@ This project records changes by **verified milestones**. Git tags and package ve
 
 Draft PR. No main merge, release tag or published installer. Installer version metadata is `2.0.0-beta.1`.
 
+### Fresh Windows installation qualification
+
+- Fixed the running-profile limit counting the request itself and counting waiting requests multiple times. Admitted launches reserve one slot until completion. The configured maximum now permits that many browsers while retaining the free-memory guard.
+- Windows installer acceptance now exercises the installed desktop with an empty store, opens multiple signed Chrome Stable profiles, checks browser storage and crash recovery, samples working sets and verifies the downloaded CI installer against the build output.
+
 ### Release reliability hardening
 
 - Profile lock takeover, PID updates and release use a cross-process SQLite writer lock and an ownership token. Crash recovery reserves the profile before changing its running row or singleton files.
