@@ -185,7 +185,7 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
   if (!keysOf(value).length) return finishAdvanced(base);
-  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity', 'macLabel', 'macLabelMode'].includes(key))) invalid('Unknown advancedSettings field');
+  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity', 'macLabel', 'macLabelMode', 'proxyLaunch'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
   if ('runtime' in value) out.runtime = value.runtime;
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
@@ -196,6 +196,12 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   if ('experimental' in value) out.experimental = validateExperimental({ ...out.experimental, ...value.experimental });
   if ('deviceIdentity' in value) out.deviceIdentity = validateDeviceIdentity(value.deviceIdentity);
   // Saved MAC label (null clears it back to the label derived from the profile id).
+  // Chrome Stable proxy profiles: 'controlled' (proxy timezone and location, automation connection) or
+  // 'manual' (plain Chrome through the proxy; this computer's timezone and location).
+  if ('proxyLaunch' in value) {
+    if (!['controlled', 'manual'].includes(value.proxyLaunch)) invalid('proxyLaunch must be "controlled" or "manual"');
+    out.proxyLaunch = value.proxyLaunch;
+  }
   if ('macLabelMode' in value) {
     if (!['random', 'manual'].includes(value.macLabelMode)) invalid('macLabelMode must be "random" or "manual"');
     out.macLabelMode = value.macLabelMode;

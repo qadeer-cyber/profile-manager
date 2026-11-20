@@ -226,7 +226,7 @@ const row2p = r => {
   delete r.workspace_id;
   const purgeError = r.purge_error || null;
   delete r.purge_error;
-  const chromeLaunchMode = process.env.AZWAH_STABLE_CHROME_EDITION === '1'
+  const chromeLaunchMode = process.env.AZWAH_STABLE_CHROME_EDITION === '1' || advancedSettings.runtime === 'stable-chrome'
     ? predictStableLaunchMode({ browserEngine, advancedSettings, browserSettings, proxy, automationEnabled: !!r.automation_enabled }) : null;
   return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings,
     macLabel: advancedSettings.macLabel || deriveMacLabel(r.id), macLabelMode: advancedSettings.macLabel ? advancedSettings.macLabelMode || 'manual' : 'derived', extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
@@ -282,7 +282,8 @@ const publicP = p => {
   }
   out.tabRestore = tabRestore;
   const mode = proxy_id && p.browserEngine !== 'firefox' && (['azwah-native', 'custom-native-chromium', 'stable-chrome'].includes(p.advancedSettings?.runtime) ||
-    (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && p.advancedSettings?.runtime !== 'privacy'))
+    (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && p.advancedSettings?.runtime !== 'privacy')) &&
+    p.advancedSettings?.proxyLaunch !== 'manual'
     ? 'auto' : p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
   if (mode === 'auto' && proxy_id) {
     const location = getSetting('proxy-location:' + p.id, null);

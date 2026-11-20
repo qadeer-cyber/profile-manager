@@ -22,9 +22,11 @@ const REASONS = Object.freeze({
 });
 export const launchModeReason = id => REASONS[id] || id;
 
-export function stableLaunchMode({ proxy, timezoneId, coordinates, launch = {}, automation, headless }) {
+// proxyManual: the owner chose "Manual" for this proxy profile. Traffic still goes through the proxy,
+// but the page shows this computer's timezone and location instead of the proxy's.
+export function stableLaunchMode({ proxy, proxyManual = false, timezoneId, coordinates, launch = {}, automation, headless }) {
   const reasons = [];
-  if (proxy) reasons.push('proxy');
+  if (proxy && !proxyManual) reasons.push('proxy');
   if (timezoneId) reasons.push('timezone');
   if (coordinates) reasons.push('coordinates');
   if (launch.viewport || launch.screen || launch.deviceScaleFactor) reasons.push('screen');
@@ -46,6 +48,7 @@ export function predictStableLaunchMode(profile) {
   const ua = adv.userAgent?.mode;
   return stableLaunchMode({
     proxy: profile.proxy || null,
+    proxyManual: adv.proxyLaunch === 'manual',
     timezoneId: profile.browserSettings?.timezoneId || '',
     coordinates: geo.latitude != null && geo.longitude != null ? geo : null,
     launch: {

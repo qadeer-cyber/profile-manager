@@ -56,7 +56,11 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   let locationOverride = null;
   const advanced = p.advancedSettings || {};
   const geo = advanced.geolocation || {};
-  const mode = requireStable && p.proxy ? 'auto' : geo.mode ?? (p.proxy ? 'auto' : 'manual');
+  // A Chrome Stable proxy profile set to Manual does not follow the proxy's location: the page keeps this
+  // computer's timezone and location, so no controlled connection is needed for them.
+  const proxyManual = Boolean(requireStable && p.proxy && advanced.proxyLaunch === 'manual');
+  const mode = proxyManual ? (geo.mode === 'manual' ? 'manual' : 'host')
+    : requireStable && p.proxy ? 'auto' : geo.mode ?? (p.proxy ? 'auto' : 'manual');
   if (stable) {
     const profileRoot = fs.realpathSync(dir);
     const defaultData = process.env.LOCALAPPDATA && process.env.LOCALAPPDATA + '\\Google\\Chrome\\User Data';
@@ -83,6 +87,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       }
     } else if (mode === 'system') {
       regional.timezoneId = '';
+    } else if (mode === 'host') {
+      // Manual proxy profile: a timezone saved on purpose stays (and keeps the profile controlled).
     } else if (geo.latitude != null && geo.longitude != null) {
       if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
       locationOverride = geo;
@@ -138,7 +144,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   // (no automation pipe or remote debugging). Profiles that need the controlled path keep it.
   let launchMode = null;
   if (stable && requireStable) {
-    launchMode = stableLaunchMode({ proxy: p.proxy, timezoneId: regional.timezoneId, coordinates: locationOverride,
+    launchMode = stableLaunchMode({ proxy: p.proxy, proxyManual, timezoneId: regional.timezoneId, coordinates: locationOverride,
       launch: plan.launch, automation, headless: !!headless });
     runtime = launchMode.mode === 'manual' ? 'native' : 'playwright';
     if (runtime === 'native') args.push('--no-first-run', '--no-default-browser-check');

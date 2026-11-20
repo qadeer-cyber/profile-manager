@@ -36,6 +36,24 @@ function MacAddressField({ settings, onChange, derivedMac }) {
   </div>;
 }
 
+// Chrome Stable proxy profiles: Controlled follows the proxy's timezone and location through the
+// automation connection (navigator.webdriver is true); Manual opens plain Chrome through the proxy with
+// this computer's timezone and location. Shown only in the Chrome Stable edition.
+export function ProxyLaunchFields({ settings, onChange }) {
+  const [edition, setEdition] = useState('');
+  useEffect(() => { api('/api/chromium-identity').then(r => setEdition(r.edition || '')).catch(() => {}); }, []);
+  const runtime = settings.runtime || 'compatibility';
+  if (edition !== 'chrome-stable' && runtime !== 'stable-chrome') return null;
+  if (['privacy', 'azwah-native', 'custom-native-chromium'].includes(runtime)) return null;
+  const value = settings.proxyLaunch || 'controlled';
+  return <ModeSegment category="proxyLaunch" label="Proxy launch" value={value} onChange={next => onChange({ ...settings, proxyLaunch: next })} options={[
+    { id: 'controlled', label: 'Controlled — proxy timezone', title: 'Timezone and location follow the proxy. AZWAH keeps an automation connection, so navigator.webdriver is true.' },
+    { id: 'manual', label: 'Manual — no automation', title: 'Plain Chrome through the proxy. navigator.webdriver is false; timezone and location are this computer’s.' },
+  ]} note={value === 'manual'
+    ? 'Traffic still goes through the proxy, with DNS and WebRTC leak protection. The page shows this computer’s timezone and location, not the proxy’s, and AZWAH does not check the exit IP inside the browser. A custom timezone, coordinates, screen or user-agent emulation, or automation keep the profile controlled.'
+    : 'Timezone and location follow the proxy and the exit IP is checked inside the browser. The automation connection is visible to sites (navigator.webdriver is true).'} />;
+}
+
 export function DeviceIdentityFields({ settings, onChange, derivedMac = null }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');

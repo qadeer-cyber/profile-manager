@@ -56,3 +56,25 @@ test('the native launcher refuses automation, debugging and concealment switches
   const env = nativeChromiumEnv({ regional: {} }, { PATH: 'p', PM_API_TOKEN: 'a', PM_SECRET: 'b', PM_UI_TOKEN: 'c', NODE_OPTIONS: '--x', ELECTRON_RUN_AS_NODE: '1', AZWAH_MAXMIND_LICENSE_KEY: 'k' });
   assert.deepEqual(Object.keys(env), ['PATH'], 'Chrome gets no AZWAH secrets');
 });
+
+test('per-profile choice: a proxy profile set to manual launches without the controlled connection', async () => {
+  const proxy = { host: 'p.example', port: 1080 };
+  assert.deepEqual(stableLaunchMode({ ...plain, proxy, proxyManual: true }), { mode: 'manual', reasons: [] });
+  assert.deepEqual(stableLaunchMode({ ...plain, proxy, proxyManual: false }).reasons, ['proxy']);
+  // Manual proxy does not lift other controlled-only needs.
+  assert.deepEqual(stableLaunchMode({ ...plain, proxy, proxyManual: true, automation: true }).reasons, ['automation']);
+  assert.deepEqual(stableLaunchMode({ ...plain, proxy, proxyManual: true, timezoneId: 'Asia/Tokyo' }).reasons, ['timezone']);
+  const { predictStableLaunchMode } = await import('../server/browser-runtime/stable-launch-mode.js');
+  const base = { browserSettings: { timezoneId: '' }, advancedSettings: { geolocation: { mode: 'auto' }, screen: { preset: 'native' }, userAgent: { mode: 'default' } }, proxy, automationEnabled: false };
+  assert.deepEqual(predictStableLaunchMode(base).reasons, ['proxy']);
+  assert.deepEqual(predictStableLaunchMode({ ...base, advancedSettings: { ...base.advancedSettings, proxyLaunch: 'manual' } }), { mode: 'manual', reasons: [] });
+});
+
+test('proxyLaunch is validated and stored', async () => {
+  const { validateAdvancedSettings } = await import('../server/advanced-settings.js');
+  assert.equal(validateAdvancedSettings({ proxyLaunch: 'manual' }).proxyLaunch, 'manual');
+  assert.equal(validateAdvancedSettings({ proxyLaunch: 'controlled' }).proxyLaunch, 'controlled');
+  assert.throws(() => validateAdvancedSettings({ proxyLaunch: 'stealth' }));
+  const kept = validateAdvancedSettings({ runtime: 'stable-chrome' }, validateAdvancedSettings({ proxyLaunch: 'manual' }));
+  assert.equal(kept.proxyLaunch, 'manual', 'kept across other edits');
+});

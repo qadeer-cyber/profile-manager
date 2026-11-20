@@ -96,6 +96,35 @@ test('real Chrome Stable: manual profiles are not automation-controlled and keep
     assert.deepEqual([a2.report.webdriver, a2.report.cookie, a2.report.local, a2.report.idb], ['false', 'probe=a', 'a', ['probe-a']], 'A data after restart');
     await api('POST', `/profiles/${A.id}/stop`);
 
+    // A proxy profile the owner set to Manual: plain Chrome, traffic through the (authenticated) proxy.
+    const { Server } = await import('proxy-chain');
+    let proxied = 0;
+    const proxy = new Server({ host: '127.0.0.1', port: 0, prepareRequestFunction: request => {
+      const allowed = request.username === 'probe-user' && request.password === 'probe-pass';
+      if (allowed) proxied++;
+      return { requestAuthentication: !allowed };
+    } });
+    await proxy.listen();
+    try {
+      const D = await api('POST', '/profiles', { name: 'manual proxy D', advancedSettings: { runtime: 'stable-chrome', proxyLaunch: 'manual' },
+        proxy: { type: 'http', host: '127.0.0.1', port: proxy.port, username: 'probe-user', password: 'probe-pass' } });
+      assert.equal(D.chromeLaunchMode?.mode, 'manual', 'the editor predicts manual');
+      const d1 = await visit(D.id, 'd-check', 'check');
+      results.manualProxy = d1.report?.webdriver ?? 'no-report';
+      assert.ok(d1.report, 'manual proxy profile page reported');
+      assert.equal(d1.launched.cdp, undefined, 'no automation endpoint');
+      for (const flag of ['--remote-debugging-pipe', '--remote-debugging-port', '--enable-automation', '--disable-blink-features']) {
+        assert.equal(d1.args.some(arg => String(arg).startsWith(flag)), false, `manual proxy launch has no ${flag}`);
+      }
+      assert.ok(d1.args.some(arg => String(arg).startsWith('--proxy-server=')), 'traffic is sent to the proxy');
+      assert.ok(d1.args.some(arg => String(arg).startsWith('--host-resolver-rules=')), 'DNS leak protection stays on');
+      assert.ok(proxied > 0, 'the page was loaded through the authenticated proxy');
+      assert.equal(d1.report.webdriver, 'false', 'navigator.webdriver in a manual proxy profile');
+      await api('POST', `/profiles/${D.id}/stop`);
+    } finally {
+      await proxy.close(true);
+    }
+
     // A profile that asks for automation stays controlled; what Chrome reports there is recorded.
     const C = await api('POST', '/profiles', { name: 'controlled C', automationEnabled: true, advancedSettings: { runtime: 'stable-chrome' } });
     const c1 = await visit(C.id, 'c-check', 'check');

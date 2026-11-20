@@ -10,7 +10,7 @@ import { ProxyLineField } from './ProxyLineField.jsx';
 import { ProfileOverview } from './ProfileOverview.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { assignableLibraryProxies } from '../lib/proxySwitch.js';
-import { DeviceIdentityFields, FingerprintFields, IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
+import { DeviceIdentityFields, ProxyLaunchFields, FingerprintFields, IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
 import { UnavailableOptions, CategoryNotes, FixedCategory, ModeSegment } from './FingerprintCatalog.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
@@ -210,6 +210,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             {test?.locationError && <span className="muted">{test.locationError}</span>}
           </div>}
           {test && !test.busy && <p className="muted hint">Test Proxy sends one request with this same proxy configuration and reports the observed egress address, latency, and status when the service returns them. A successful transport check is not a statement about every browser API, and it is not an anonymity claim.</p>}
+          {f.proxyMode !== 'none' && (f.browserEngine || 'chromium') !== 'firefox' && <ProxyLaunchFields settings={advanced} onChange={setAdvanced} />}
           {initial.running && f.proxyMode !== 'none' && <p className="notice">This profile is running. The open browser keeps its current route until you stop it and launch again.</p>}
         </div>}
         {tab === 'fingerprint' && <div className="form">
