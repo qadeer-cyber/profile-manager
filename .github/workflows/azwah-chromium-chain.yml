@@ -122,9 +122,45 @@ jobs:
         shell: pwsh
         run: |
           sccache.exe --show-stats
+          sccache.exe --show-stats --stats-format json | Set-Content -LiteralPath (Join-Path $env:RUNNER_TEMP 'sccache-stats.json')
           sccache.exe --stop-server
           $bytes = (Get-ChildItem -LiteralPath $env:AZWAH_CACHE -Recurse -File | Measure-Object Length -Sum).Sum
           Write-Output "CACHE_BYTES $bytes"
+      # Build inputs that decide sccache keys, recorded per stage so stages can be compared from evidence
+      # rather than from assumptions. Text only; no profiles, credentials or sources.
+      - name: Record build inputs for cache diagnosis
+        if: always()
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'chain-diagnostics'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          $src = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src'
+          $out = Join-Path $src 'out/azwah-native-development'
+          $report = [ordered]@{ job = $env:GITHUB_JOB; runnerImage = $env:ImageVersion; os = [Environment]::OSVersion.VersionString;
+            workspace = $env:AZWAH_BUILD_WORKSPACE; freeBytes = ([IO.DriveInfo]::new([IO.Path]::GetPathRoot($env:AZWAH_BUILD_WORKSPACE))).AvailableFreeSpace }
+          try { $report.chromiumRevision = (git -C $src rev-parse HEAD) } catch {}
+          try { $report.argsGn = Get-Content -Raw (Join-Path $out 'args.gn') } catch {}
+          try { $report.clangCl = (& (Join-Path $src 'third_party/llvm-build/Release+Asserts/bin/clang-cl.exe') --version | Out-String) } catch {}
+          try { $report.sccache = (sccache.exe --version | Out-String) } catch {}
+          try { $report.visualStudio = (& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property catalog_productDisplayVersion) } catch {}
+          try { $report.windowsSdks = @(Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/Include" -Directory | ForEach-Object Name) } catch {}
+          try { $env:Path = "$env:AZWAH_DEPOT_TOOLS;$env:Path"
+            $report.sampleCommands = @('obj/base/base/values.obj', 'obj/v8/v8_base_without_compiler/objects.obj', 'obj/third_party/blink/renderer/core/core/dom.obj') |
+              ForEach-Object { (& ninja.exe -C $out -t commands $_ 2>$null | Select-Object -Last 1) } } catch {}
+          foreach ($name in 'INCLUDE', 'LIB', 'LIBPATH') {
+            $value = [Environment]::GetEnvironmentVariable($name)
+            $report["env_$name"] = if ($value) { [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($value))).Replace('-', '') } else { $null }
+          }
+          $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $dir 'build-inputs.json')
+          Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'sccache-stats.json') -Destination $dir -ErrorAction SilentlyContinue
+          Get-Content -Raw (Join-Path $dir 'build-inputs.json')
+      - name: Upload build-input diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-chain-diagnostics-${{ github.run_id }}-${{ github.job }}
+          path: ${{ runner.temp }}/chain-diagnostics
+          retention-days: 14
       - name: Hand the compiler cache to the next job
         if: steps.build.outputs.complete == 'false'
         uses: actions/upload-artifact@v4
