@@ -1,5 +1,7 @@
 # AZWAH 2.0 private release candidate: evidence and open items
 
+**Current candidate: `2b314d0f91344b461185afc57bd61a32248b9e88`.** [Native 44721114358](https://github.com/qadeer-cyber/profile-manager/actions/runs/44721114358) and [installer 44721107696](https://github.com/qadeer-cyber/profile-manager/actions/runs/44721107696) passed. Installer artifact ID 14622323753 (expires 2026-11-23 10:58 UTC), `Azwah-Setup-x64.exe` 471,337,586 bytes, SHA-256 `1045e11cc669a1850d1d162cd362970271132d03703966dda81bb81e0c609993`, unsigned. Changes since `e0d4c3d`: new proxy profiles launch Manual with a one-time offer to switch existing ones (`4be3e82`); Manual launches check the proxy (credentials, host, reachability) before Chrome opens; the low-memory message names its setting (`61b6ff4`); one retry for a transient failure of the in-browser exit-IP check (`2b314d0`, after it failed an upgrade launch on `61b6ff4`). The `e0d4c3d` evidence below still applies.
+
 Source: `e0d4c3d3691cc0c729625a7419b5238491632546` on `feature/azwah-ultimate-2` (PR #27, Draft). Later commits change only documentation and the experimental Chromium-chain workflow, not the app.
 
 All results below are from GitHub-hosted **Windows Server 2022** runners (4 logical cores, 16 GB RAM, Chrome Stable 157.0.8103.79). None of them is a physical Windows 10/11 or 8 GB laptop result.
