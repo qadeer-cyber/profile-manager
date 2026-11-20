@@ -146,7 +146,7 @@ jobs:
           try { $report.windowsSdks = @(Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/Include" -Directory | ForEach-Object Name) } catch {}
           try { $env:Path = "$env:AZWAH_DEPOT_TOOLS;$env:Path"
             $report.sampleCommands = @('obj/base/base/values.obj', 'obj/v8/v8_base_without_compiler/objects.obj', 'obj/third_party/blink/renderer/core/core/dom.obj') |
-              ForEach-Object { (& ninja.exe -C $out -t commands $_ 2>$null | Select-Object -Last 1) } } catch {}
+              ForEach-Object { $ninja = Join-Path $src 'third_party/ninja/ninja.exe'; if (!(Test-Path $ninja)) { $ninja = 'ninja.exe' }; (& $ninja -C $out -t commands $_ 2>$null | Select-Object -Last 1) } } catch {}
           foreach ($name in 'INCLUDE', 'LIB', 'LIBPATH') {
             $value = [Environment]::GetEnvironmentVariable($name)
             $report["env_$name"] = if ($value) { [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($value))).Replace('-', '') } else { $null }
