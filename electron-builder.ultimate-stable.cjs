@@ -7,6 +7,7 @@ module.exports = {
   extraResources: [
     ...base.extraResources.filter(({ to }) => !['browsers', 'privacy-engine', 'native-chromium'].includes(to)),
     { from: 'build/geoip-dbip', to: 'geoip-dbip' },
+    { from: 'build/geoip-dbip-asn', to: 'geoip-dbip-asn' },
   ],
   directories: { ...base.directories, output: 'release-ultimate-stable' },
   nsis: { ...base.nsis, shortcutName: 'AZWAH', artifactName: 'Azwah-Setup-x64.exe' },

@@ -69,6 +69,7 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-dbip-live-'));
   process.env.PM_DATA_DIR = directory;
   fs.cpSync('build/geoip-dbip', path.join(directory, 'geoip-dbip'), { recursive: true });
+  fs.cpSync('build/geoip-dbip-asn', path.join(directory, 'geoip-dbip-asn'), { recursive: true });
   process.env.PM_API_TOKEN = randomUUID();
   const username = randomUUID();
   const password = randomUUID();
@@ -134,6 +135,11 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
           assert.ok(g && Math.abs(g.latitude - result.latitude) < 1 && Math.abs(g.longitude - result.longitude) < 1, `${id} pass needs browser coordinates near the proxy location, got ${JSON.stringify(g)}`);
         }
         assert.equal(JSON.stringify(hw).includes(password), false, 'no proxy password in the verification report');
+        // The shipped DB-IP ASN Lite database names the network of the real exit IP (the runner's).
+        const { lookupDbipNetwork } = await import('../server/dbip-location.js');
+        const network = await lookupDbipNetwork(result.ip);
+        console.log(`# exit network: AS${network.asn} ${network.organization} type=${network.type}`);
+        assert.ok(Number.isInteger(network.asn) && network.asn > 0, 'exit network ASN');
       }
       await engine.stop(profile.id);
     }

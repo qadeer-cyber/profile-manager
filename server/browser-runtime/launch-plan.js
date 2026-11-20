@@ -89,6 +89,24 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       regional.timezoneId = '';
     } else if (mode === 'host') {
       // Manual proxy profile: a timezone saved on purpose stays (and keeps the profile controlled).
+      // Language is an ordinary startup setting: when none is saved, use the proxy country's, looked up
+      // through the proxy outside the browser. Best effort: Chrome itself never falls back to a direct
+      // connection, so a failed lookup does not block the launch.
+      if (!regional.locale && !regional.languages.length) {
+        try {
+          let timer;
+          const found = await Promise.race([
+            resolveProxyLocationWithRetry(p.proxy, { credentials: geoIpCredentials,
+              read: () => getSetting('proxy-location:' + p.id, null), save: value => setSetting('proxy-location:' + p.id, value) }),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('language lookup timed out')), 8000); }),
+          ]).finally(() => clearTimeout(timer));
+          if (/^[A-Z]{2}$/.test(found.country || '')) {
+            const inferred = new Intl.Locale('und-' + found.country).maximize();
+            regional.locale = inferred.language + '-' + found.country;
+            regional.languages = [regional.locale, inferred.language];
+          }
+        } catch { /* keep this PC's language */ }
+      }
     } else if (geo.latitude != null && geo.longitude != null) {
       if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
       locationOverride = geo;

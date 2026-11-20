@@ -62,7 +62,7 @@ fetch('http://example.com/', { mode: 'no-cors', cache: 'no-store' }).then(() => 
     await new Promise(r => { const q = indexedDB.open('probe-' + label); q.onsuccess = () => { q.result.close(); r(); }; q.onerror = r; });
   }
   const dbs = (await indexedDB.databases()).map(d => d.name);
-  const data = { webdriver: String(navigator.webdriver), cookie: document.cookie, local: localStorage.getItem('probe'), idb: dbs.filter(n => n.startsWith('probe-')) };
+  const data = { webdriver: String(navigator.webdriver), lang: navigator.language, cookie: document.cookie, local: localStorage.getItem('probe'), idb: dbs.filter(n => n.startsWith('probe-')) };
   fetch('/report?key=${key}&data=' + encodeURIComponent(JSON.stringify(data)));
 })();</script>`);
   });
@@ -129,6 +129,7 @@ fetch('http://example.com/', { mode: 'no-cors', cache: 'no-store' }).then(() => 
       assert.equal(D.chromeLaunchMode?.mode, 'manual', 'the editor predicts manual');
       const d1 = await visit(D.id, 'd-check', 'check');
       results.manualProxy = d1.report?.webdriver ?? 'no-report';
+      results.manualProxyLanguage = d1.report?.lang ?? null; // recorded: the proxy country's language when the lookup succeeds
       assert.ok(d1.report, 'manual proxy profile page reported');
       assert.equal(d1.launched.cdp, undefined, 'no automation endpoint');
       for (const flag of ['--remote-debugging-pipe', '--remote-debugging-port', '--enable-automation', '--disable-blink-features']) {

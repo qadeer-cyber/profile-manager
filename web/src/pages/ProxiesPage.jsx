@@ -39,7 +39,7 @@ export function ProxiesPage() {
         else if (result.location) {
           const { ip, city, region, country, timezone, radiusKm } = result.location;
           toast(`${ip} · ${[city, region, country].filter(Boolean).join(', ')} · ${timezone} · ~${radiusKm} km`, 'success');
-        } else toast(`Proxy reachable · ${result.ip}. ${result.locationError || ''}`, 'success');
+        } else toast(`Proxy reachable · ${result.ip}.${result.network?.asn ? ` AS${result.network.asn} ${result.network.organization || ''}${result.network.type === 'hosting' ? ' (hosting or cloud network; sites often challenge these IPs)' : ''}.` : ''} ${result.locationError || ''}`, result.network?.type === 'hosting' ? 'warning' : 'success');
       } else {
         const batch = await api('/api/proxies/test-batch', { method: 'POST', body: { ids: ids.slice(0, 50) } });
         const failed = (batch.results || []).filter(r => !r.ok || r.status === 'failed');

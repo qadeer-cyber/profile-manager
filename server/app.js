@@ -1,3 +1,4 @@
+import { lookupDbipNetwork } from './dbip-location.js';
 import { deriveMacLabel, randomMacLabel } from './mac-label.js';
 import { publicIp, resolveProxyLocation } from './proxy-location.js';
 import { resolveWindowsChromeStable } from './browser-runtime/chrome-stable.js';
@@ -1283,13 +1284,21 @@ async function testLibraryProxy(id, previewLocation = false) {
     try { location = await resolveProxyLocation(proxy, { credentials: geoIpCredentials }); }
     catch (error) { locationError = error.message; }
   }
-  return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, location, locationError, proxy: publicProxy(proxyRow(id)) };
+  return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, location, locationError,
+    network: await exitNetwork(res), proxy: publicProxy(proxyRow(id)) };
+}
+// Which network the exit IP belongs to (offline DB-IP ASN Lite). Diagnosis only.
+async function exitNetwork(res) {
+  if (!res.ok || !res.ip) return undefined;
+  try { return await lookupDbipNetwork(res.ip); }
+  catch (error) { return { ip: res.ip, error: error.code || 'PROXY_NETWORK_UNAVAILABLE' }; }
 }
 // Legacy ad-hoc test (inline proxy object, not saved)
 async function testProxy(px) {
   px = cleanProxy(px);
   if (!px) throw err(400, 'no proxy configured');
-  return runProxyTest(px);
+  const res = await runProxyTest(px);
+  return { ...res, network: await exitNetwork(res) };
 }
 
 // Routes shared by /api and /api/v1
