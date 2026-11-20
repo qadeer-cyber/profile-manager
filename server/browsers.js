@@ -1039,6 +1039,8 @@ export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
     // SIGTERM is a fallback on Unix; Windows taskkill is forceful and is used
     // only after the graceful protocol/window-close request has failed to stop.
     if (e.engine === 'firefox' && e.runtime === 'native') Object.assign(killOpts, { graceMs: 8000, waitMs: 15000 });
+    // A manual (native) Chrome has no controlled connection to close: ask its windows to close first.
+    else if (e.runtime === 'native') Object.assign(killOpts, { gracefulWin32: true, graceMs: 8000 });
     await killTree(e.browserPid, killOpts);
   }
   if (e.done) await e.done;
