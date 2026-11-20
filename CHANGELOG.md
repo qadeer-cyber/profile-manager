@@ -6,6 +6,25 @@ This project records changes by **verified milestones**. Git tags and package ve
 
 Draft PR. No main merge, release tag or published installer. Installer version metadata is `2.0.0-beta.1`.
 
+### Release-candidate stabilization
+
+- Lifecycle telemetry: a requested Stop no longer records "exit event not seen" because the browser pid vanished before Node delivered the exit event (reproduced in `test/stop-telemetry.test.js`). Each exit is labelled `RequestedStop`, `ForcedTermination`, `NormalWindowClose`, `BrowserCrash` or `Unknown`, with `stopEscalation` (graceful or forced). A forced Stop is reported as forced, never as a crash.
+- The live Windows step runs 30 Stop/restart cycles of a manual profile (cookie and localStorage written just before each Stop must survive) and checks that Chrome applies AZWAH's `--host-resolver-rules` DNS guard.
+- The Chrome Stable edition says plainly when Google Chrome is not installed and links to Google's download page, instead of offering to download Chromium.
+- Installer acceptance reads the uploaded installer back a second time when the artifact service briefly reports it missing.
+
+### Proxy launch: Controlled or Manual (Chrome Stable)
+
+- A proxy profile can be set to *Manual*: plain Chrome through the proxy (authenticated relay, DNS and WebRTC protections kept), `navigator.webdriver` false, this PC's timezone and location, and no in-browser exit-IP check. *Controlled* (default) is unchanged. Verified live on Chrome 157 (`manualProxy: "false"`).
+
+### Flight Deck redesign
+
+- Owner-approved visual system: ink navigation rail, cobalt actions, teal only for running browsers, bundled Schibsted Grotesk, light and dark. One navigation (top-bar duplicates removed), a live *N running* control, and a fleet bar (running, idle, stopped with an error). Rows stay 48 px / 41 px compact.
+
+### Per-profile MAC label and segmented fingerprint controls
+
+- See the per-profile MAC section in PR #27: a unique saved label per profile (Random or Manual), never sent to Chrome.
+
 ### Manual Chrome Stable profiles (owner-approved Option A)
 
 - Ordinary profiles in the Chrome Stable edition (no proxy, timezone, coordinates, screen or user-agent emulation, or automation) now open the installed Google Chrome as a genuine manual browser. AZWAH no longer holds an automation pipe or remote-debugging connection to them, and no switch hides automation. Owner-observed symptoms on the previous build: BrowserScan flagged WebDriver (`navigator.webdriver` true), and Google showed "unusual traffic" on the owner's own IP while everyday Chrome on the same network did not.

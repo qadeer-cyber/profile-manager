@@ -93,10 +93,11 @@ export function App() {
   const [meta, setMeta] = useState({ tags: [], folders: [], running: [] });
   const [eventsLog, setEventsLog] = useState([]);
   const [browserMissing, setBrowserMissing] = useState(false);
+  const [browserInfo, setBrowserInfo] = useState(null);
   const names = useRef({});
   const reloadMeta = useCallback(() => api('/api/meta').then(setMeta).catch(() => {}), []);
   useEffect(() => {
-    reloadMeta(); api('/api/browser').then(b => setBrowserMissing(!b.installed)).catch(() => {});
+    reloadMeta(); api('/api/browser').then(b => { setBrowserInfo(b); setBrowserMissing(!b.installed); }).catch(() => {});
     const t = setInterval(reloadMeta, 5000);
     const off = subscribe(async e => {
       if (refreshesNow(e)) reloadMeta(); // refresh rows now; don't wait on the name lookup
@@ -175,7 +176,9 @@ export function App() {
           <button onClick={openUpdates}>View update</button>{' '}
           <button onClick={() => setRemindedVersion(update.latest.version)}>Remind me later</button>
         </div>}
-        {browserMissing && page !== 'diagnostics' && <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>}
+        {browserMissing && page !== 'diagnostics' && (browserInfo?.runtime === 'stable-chrome'
+          ? <div className="notice warn" role="status">Google Chrome isn't installed on this PC, so profiles can't launch. AZWAH opens profiles in your installed Chrome; it does not include a browser. Install Chrome, then reopen AZWAH. <a className="primary btn-link" href={browserInfo.downloadUrl} target="_blank" rel="noreferrer">Get Google Chrome</a></div>
+          : <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>)}
         {page === 'dashboard' && <DashboardPage onOpenProfiles={() => showProfiles('__all')} />}
         {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={showProfiles} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} scope={scope} />}
         {page === 'trash' && <TrashPage />}

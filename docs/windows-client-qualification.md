@@ -64,6 +64,26 @@ Record each result as **Pass / Fail / Not tested**, with the Windows build (`win
 20. Backup (encrypted) and restore on a second PC. Profiles launch and cookies and bookmarks are present.
 21. End `chrome.exe` from Task Manager. The app reports the crash, and the profile can be relaunched without manual cleanup.
 
+### G. Launch modes and websites (owner-operated, record results)
+
+AZWAH shows each Chrome Stable profile's effective launch mode and the reasons in the editor's Profile overview (*Launch mode*). Record it for every test below.
+
+| Profile | Expected launch mode | Expected `navigator.webdriver` | Page timezone |
+| --- | --- | --- | --- |
+| No proxy, no overrides | Manual | false | This PC |
+| Proxy, *Proxy launch: Manual* | Manual | false | This PC (not the proxy's) |
+| Proxy, *Proxy launch: Controlled* (default) | Controlled: proxy | true | The proxy's |
+| Any profile with a custom timezone, coordinates, screen or user-agent preset, or automation | Controlled, with that reason | true | As configured |
+
+For each row, on the same PC and network:
+
+1. Open BrowserScan's bot-detection page. Note the overall result and the WebDriver line.
+2. Open Walmart, Google and Facebook. Note any challenge (for example *Robot or human?*) and whether it was passed by hand. Do not use any solving tool.
+3. **Control test:** with the same proxy and IP, open the same pages in an ordinary Chrome window (a fresh Chrome profile, the proxy set in that profile only, same time of day). A site can challenge ordinary Chrome too: IP reputation, account history, region and the site's own risk systems all count. Only a difference between AZWAH and the control under the same IP points at the browser setup.
+4. Note the Chrome version (`chrome://version`), the proxy type (HTTP or SOCKS5) and the proxy's country, without the credentials.
+
+Chrome shows a bar *You are using an unsupported command-line flag: --host-resolver-rules=…* on proxy profiles. That is AZWAH's DNS-leak guard: Chrome lists this switch among the flags it warns about, and the warning bar is shown to you only. Websites cannot see browser infobars. The Windows CI step checks that Chrome applies the switch (a real hostname does not resolve inside Chrome with it).
+
 ## Fresh-install evidence and outstanding client checks
 
 The installer gate uses a fresh disposable local data directory, ordinary installed Electron startup and signed Chrome Stable. The driver uses Node and Playwright outside the installed application. Chrome automation is enabled on the disposable profiles to inspect actual storage. The separate installed smoke exercises ordinary browsing with the debugging endpoint closed. The fixture exercises HTTP cache reuse and isolation, Cache Storage, IndexedDB, cookies, session/local storage, profile history and bookmarks. Electron metrics report summed working sets and sampled CPU. Chrome memory is the sum of the attributed process working sets. Shared pages can appear in multiple working sets. A short local page workload does not establish a minimum RAM or CPU specification.
