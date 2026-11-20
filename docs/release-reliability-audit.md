@@ -100,6 +100,10 @@ Not changed: clearing cookies deletes rows by host, name and path, which needs n
 - **Crash recovery** still skips corrupt locks in the startup sweep. The next acquisition handles them. A profile folder removed during directory enumeration can interrupt that sweep.
 - **Backup integrity vs authenticity.** Unencrypted `.pmb` files carry per-file SHA-256 checksums that are verified on restore. That catches corruption, not deliberate tampering: legacy backups without a manifest skip the check. Use encrypted backups (AES-256-GCM, authenticated) for files that leave the computer.
 
+## Release-candidate stabilization (2026-11-20, source `e0d4c3d`)
+
+- Stop telemetry race fixed and verified over 30 live Stop/restart cycles; `--host-resolver-rules` shown to be applied by Chrome 157; Chrome-missing message corrected; installer read-back retried once after a pause. Evidence and open items: `docs/release-candidate-evidence.md`.
+
 ## Open items
 
 - Manual Chrome Stable profiles (Option A): automation detection on Google, Walmart and Facebook must be re-tested by the owner on a physical Windows PC. A local `navigator.webdriver` check is a diagnostic, not proof of site acceptance.
