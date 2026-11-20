@@ -85,7 +85,7 @@ export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()]
 export const liveContext = id => live.get(id)?.ctx || null;
 export const launchEvidence = id => {
   const entry = live.get(id);
-  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null, engineVersion: entry?.engineVersion ?? null, engineSource: entry?.engineSource ?? null, proxyTimezone: entry?.proxyTimezone ?? null };
+  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null, engineVersion: entry?.engineVersion ?? null, engineSource: entry?.engineSource ?? null, proxyTimezone: entry?.proxyTimezone ?? null, launchMode: entry?.launchMode ?? null, runtime: entry?.runtime ?? null };
 };
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 export function automationLaunch(id) {
@@ -451,6 +451,9 @@ async function doLaunch(p, opts = {}) {
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
         requestedArgs: native.argv, requestStop: native.requestStop, restoreTabs: launchPlan?.restoreTabs, rememberWindow: launchPlan?.rememberWindow, tabUrls: [],
+        // A manual Chrome Stable session: the browser AZWAH started, without a control connection.
+        engineVersion: launchPlan?.stable?.version || null, engineSource: launchPlan?.stable ? 'chrome-stable' : null,
+        launchMode: launchPlan?.launchMode || null,
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, dir);
@@ -529,7 +532,8 @@ async function doLaunch(p, opts = {}) {
       engineVersion: launchPlan.stable?.version || null, engineSource: launchPlan.stable ? 'chrome-stable' : null,
       // Timezone this launch applied from the proxy's verified location (follow-proxy mode), so
       // verification expects the proxy's zone instead of this computer's.
-      proxyTimezone: launchPlan.locationMode === 'auto' && launchPlan.stableLocation?.timezone ? launchPlan.stableLocation.timezone : null };
+      proxyTimezone: launchPlan.locationMode === 'auto' && launchPlan.stableLocation?.timezone ? launchPlan.stableLocation.timezone : null,
+      launchMode: launchPlan.launchMode || null };
     const trackRenderer = page => page.on('crash', () => {
       entry.rendererCrashes = (entry.rendererCrashes || 0) + 1;
       const event = { profileId: p.id, launchId: entry.launchId, browserPid: entry.browserPid,

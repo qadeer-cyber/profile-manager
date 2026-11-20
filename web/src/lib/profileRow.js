@@ -8,6 +8,13 @@ export const isNativeRuntime = p => NATIVE_RUNTIMES.includes(p?.advancedSettings
 // (development / experimental) visible in the compact cell.
 export function engineLabel(p) {
   if (p?.browserEngine === 'firefox') return { short: 'Firefox', full: 'Firefox', qualifier: '' };
+  // Chrome Stable edition: the server reports how this profile's Chrome will start.
+  if (p?.chromeLaunchMode) {
+    const m = p.chromeLaunchMode;
+    return { short: 'Chrome Stable', qualifier: '', full: m.mode === 'manual'
+      ? 'Google Chrome Stable · manual browser (no remote control)'
+      : `Google Chrome Stable · controlled for ${m.reasons.join(', ')}` };
+  }
   const runtime = p?.advancedSettings?.runtime;
   if (NATIVE_RUNTIMES.includes(runtime)) return { short: 'Native Chromium', full: 'Azwah Native Chromium (development)', qualifier: 'dev' };
   if (runtime === 'privacy') return { short: 'Privacy Engine', full: 'Azwah Privacy Engine (experimental)', qualifier: 'exp' };

@@ -80,3 +80,12 @@ test('cdp label keeps the endpoint visible as a port', () => {
   assert.deepEqual(cdpLabel({ wsEndpoint: 'ws://127.0.0.1:41234/devtools/browser/abc', debuggerAddress: '127.0.0.1:41234' }), { text: ':41234', endpoint: 'ws://127.0.0.1:41234/devtools/browser/abc' });
   assert.equal(cdpLabel({ debuggerAddress: 'pipe' }).text, 'pipe');
 });
+
+test('Chrome Stable edition: the engine cell names the real browser and its launch mode', () => {
+  const manual = engineLabel({ browserEngine: 'chromium', advancedSettings: { runtime: 'compatibility' }, chromeLaunchMode: { mode: 'manual', reasons: [] } });
+  assert.deepEqual([manual.short, manual.full], ['Chrome Stable', 'Google Chrome Stable · manual browser (no remote control)']);
+  const controlled = engineLabel({ browserEngine: 'chromium', advancedSettings: {}, chromeLaunchMode: { mode: 'controlled', reasons: ['proxy', 'timezone'] } });
+  assert.equal(controlled.short, 'Chrome Stable');
+  assert.match(controlled.full, /controlled.*proxy.*timezone/);
+  assert.equal(engineLabel({ browserEngine: 'chromium', advancedSettings: {} }).short, 'Chromium', 'other editions unchanged');
+});

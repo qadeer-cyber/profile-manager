@@ -1,5 +1,6 @@
 import { publicIp, resolveProxyLocation } from './proxy-location.js';
 import { resolveWindowsChromeStable } from './browser-runtime/chrome-stable.js';
+import { predictStableLaunchMode } from './browser-runtime/stable-launch-mode.js';
 import { parseProxyLine } from './proxy-line.js';
 import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
 import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
@@ -224,7 +225,9 @@ const row2p = r => {
   delete r.workspace_id;
   const purgeError = r.purge_error || null;
   delete r.purge_error;
-  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const chromeLaunchMode = process.env.AZWAH_STABLE_CHROME_EDITION === '1'
+    ? predictStableLaunchMode({ browserEngine, advancedSettings, browserSettings, proxy, automationEnabled: !!r.automation_enabled }) : null;
+  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
 };
 const publicP = p => {
   if (!p) return p;
@@ -419,7 +422,10 @@ async function hardwareReport(id, { previous = null } = {}) {
     catch { permissions = null; }
   }
   const browser = id
-    ? (engine.isRunning(id) ? await observeBrowser(ctx, { permissions }) : { availability: 'unavailable', reason: 'not_running' })
+    ? (!engine.isRunning(id) ? { availability: 'unavailable', reason: 'not_running' }
+      // A manual Chrome Stable session has no control connection, so nothing is read from its pages.
+      : !ctx && engine.launchEvidence?.(id)?.launchMode?.mode === 'manual' ? { availability: 'unavailable', reason: 'manual_browser' }
+      : await observeBrowser(ctx, { permissions }))
     : { availability: 'unavailable', reason: 'no_profile' };
   const evidence = id && typeof engine.launchEvidence === 'function' ? engine.launchEvidence(id) : null;
   const commandLine = evidence?.browserPid ? await processCommandLine(evidence.browserPid) : null;
@@ -440,6 +446,7 @@ async function hardwareReport(id, { previous = null } = {}) {
   return {
     chromium,
     engine: evidence?.engineVersion ? { version: evidence.engineVersion, source: evidence.engineSource || 'chrome-stable' } : { version: chromium.version || null, source: 'bundled-chromium' },
+    launchMode: evidence?.launchMode || null,
     host,
     configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions, fingerprint: profile.advancedSettings.fingerprint } : null,
     browser,
@@ -670,7 +677,18 @@ function batchHandlers(allowOverride) {
 }
 const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
-  router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
+  router.get('/chromium-identity', wrap(async (req, res) => {
+    // The Chrome Stable edition runs the Chrome installed on this computer, not a bundled Chromium.
+    if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
+      try {
+        const stable = await resolveWindowsChromeStable();
+        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: stable.version, executable: stable.path });
+      } catch (error) {
+        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: null, error: error.message, code: error.code || null });
+      }
+    }
+    res.json(chromiumFacts());
+  }));
   router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })), categories: FINGERPRINT_CATEGORIES })));
   router.get('/sync', wrap((req, res) => res.json({ sessions: actionSync.list() })));
   router.post('/sync/start', wrap(async (req, res) => res.status(201).json(await actionSync.start({ leaderId: req.body?.leaderId, followerIds: req.body?.followerIds }))));

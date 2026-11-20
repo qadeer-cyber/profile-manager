@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { predictStableLaunchMode, launchModeReason } from '../../../server/browser-runtime/stable-launch-mode.js';
 import { api } from '../api.js';
 import { WEBRTC_CHOICES } from '../../../server/webrtc-policy.js';
 
@@ -11,6 +12,7 @@ function row(label, value, title) {
 
 export function ProfileOverview({ form, languageText, warnings }) {
   const [version, setVersion] = useState('');
+  const [edition, setEdition] = useState('');
   const advanced = form.advancedSettings || {};
   const regional = form.browserSettings || {};
   const fingerprint = advanced.fingerprint || {};
@@ -22,11 +24,17 @@ export function ProfileOverview({ form, languageText, warnings }) {
     : runtime === 'azwah-native' || runtime === 'custom-native-chromium' ? 'Development Chromium'
     : runtime === 'privacy' ? 'Experimental privacy engine' : 'Default Chromium runtime';
   const usesProxy = form.proxyMode === 'library' ? Boolean(form.proxyId) : form.proxyMode === 'custom' && Boolean(form.proxy?.host);
+  // Chrome Stable edition: every Chromium profile runs the installed Google Chrome. Ordinary profiles
+  // open it as a manual browser; profiles that need the controlled connection say so and why.
+  const stableEdition = edition === 'chrome-stable' && form.browserEngine !== 'firefox' && !['privacy', 'azwah-native', 'custom-native-chromium'].includes(runtime);
+  const launchMode = stableEdition ? predictStableLaunchMode({ ...form, proxy: usesProxy ? {} : null }) : null;
+  const launchModeText = !launchMode ? null : launchMode.mode === 'manual' ? 'Manual (no remote control)'
+    : `Controlled: ${launchMode.reasons.map(r => ({ proxy: 'proxy', timezone: 'timezone', coordinates: 'coordinates', screen: 'screen', userAgent: 'user agent', automation: 'automation', headless: 'headless' })[r] || r).join(', ')}`;
   const followsProxy = usesProxy && (!geo.mode || geo.mode === 'auto' || runtime === 'stable-chrome') && form.browserEngine !== 'firefox';
 
   useEffect(() => {
     if (form.browserEngine === 'firefox') { setVersion('Stock Firefox on this computer'); return; }
-    api('/api/chromium-identity').then(r => setVersion(r.version || 'Unavailable')).catch(() => setVersion('Unavailable'));
+    api('/api/chromium-identity').then(r => { setEdition(r.edition || ''); setVersion(r.version || (r.error ? 'Chrome Stable not found' : 'Unavailable')); }).catch(() => setVersion('Unavailable'));
   }, [form.browserEngine]);
   const proxy = form.proxyMode === 'none'
     ? 'Direct'
@@ -43,7 +51,8 @@ export function ProfileOverview({ form, languageText, warnings }) {
   return <aside className="profile-overview" aria-label="Profile overview">
     <h3>Profile overview</h3>
     {row('Name', form.name || 'Untitled')}
-    {row('Engine', engine)}
+    {row('Engine', stableEdition ? 'Google Chrome Stable' : engine)}
+    {launchModeText && row('Launch mode', launchModeText, launchMode.mode === 'manual' ? 'Chrome starts like you start it: no automation connection.' : launchMode.reasons.map(launchModeReason).join(' '))}
     {row('Installed reference', version || 'Checking…', 'The installed browser version. This is not a substituted user-agent version.')}
     {row('Storage', 'Local', 'Profiles are stored in this computer’s data folder.')}
     {row('Folder', form.folder || 'No folder')}

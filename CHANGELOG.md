@@ -6,6 +6,13 @@ This project records changes by **verified milestones**. Git tags and package ve
 
 Draft PR. No main merge, release tag or published installer. Installer version metadata is `2.0.0-beta.1`.
 
+### Manual Chrome Stable profiles (owner-approved Option A)
+
+- Ordinary profiles in the Chrome Stable edition (no proxy, timezone, coordinates, screen or user-agent emulation, or automation) now open the installed Google Chrome as a genuine manual browser. AZWAH no longer holds an automation pipe or remote-debugging connection to them, and no switch hides automation. Owner-observed symptoms on the previous build: BrowserScan flagged WebDriver (`navigator.webdriver` true), and Google showed "unusual traffic" on the owner's own IP while everyday Chrome on the same network did not.
+- Profiles that need the controlled connection (proxy exit and timezone verification, timezone or coordinate overrides, screen or user-agent emulation, automation, Cookie Robot, Action Synchronizer) keep it, and the editor and table say so and why.
+- The editor and table name the real engine (Google Chrome Stable and its installed version) instead of the bundled Chromium version this installer does not ship.
+- Live Verify cannot read a manual browser's pages; the report says so (`manual_browser`) instead of claiming results. Checks read from the process command line still run.
+
 ### In-place upgrade qualification
 
 - Windows installer acceptance now upgrades the real pinned predecessor (`4a45831`, *Azwah Multi Browser Ultimate*) to *AZWAH* in place on the default data folder, with populated synthetic data. It covers an interrupted install, an upgrade while the old app runs a browser, and the new version reading every profile, folder, tag, note, cookie, bookmark, browser storage and saved proxy credential. See `docs/in-place-upgrade.md`.

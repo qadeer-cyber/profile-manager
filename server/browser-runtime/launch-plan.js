@@ -18,6 +18,7 @@ import { assertProfileVersion, resolveWindowsChromeStable, stableProxyNetworkArg
 import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
+import { stableLaunchMode } from './stable-launch-mode.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
 const automationEnabled = opts => !!opts.automation || automationDefault();
@@ -86,7 +87,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
       locationOverride = geo;
     }
-    if (requireStable || locationOverride || regional.timezoneId) runtime = 'playwright';
+    // The Chrome Stable edition chooses manual or controlled below, once the advanced plan is known.
+    if (locationOverride || regional.timezoneId) runtime = 'playwright';
   }
   const contextSettings = browserContextSettings(regional);
 
@@ -132,6 +134,15 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     throw httpErr(500, 'Refusing to launch because the WebGL restriction does not match the saved fingerprint settings.', 'FINGERPRINT_LAUNCH_MISMATCH');
   }
   if (plan.launch.userAgent) args.push(`--user-agent=${plan.launch.userAgent}`);
+  // Option A: in the Chrome Stable edition an ordinary profile starts as a genuine manual browser
+  // (no automation pipe or remote debugging). Profiles that need the controlled path keep it.
+  let launchMode = null;
+  if (stable && requireStable) {
+    launchMode = stableLaunchMode({ proxy: p.proxy, timezoneId: regional.timezoneId, coordinates: locationOverride,
+      launch: plan.launch, automation, headless: !!headless });
+    runtime = launchMode.mode === 'manual' ? 'native' : 'playwright';
+    if (runtime === 'native') args.push('--no-first-run', '--no-default-browser-check');
+  }
   assertPrivateNetworkLaunchPolicy(args);
 
   if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
@@ -235,6 +246,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     restoreTabs,
     nativeSession,
     rememberWindow,
+    launchMode,
     playwrightOpts,
     identity,
   };

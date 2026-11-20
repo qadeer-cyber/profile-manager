@@ -73,7 +73,8 @@ test('real Chrome Stable: cookies imported into a stopped profile are readable b
 
   let id = null;
   try {
-    const profile = await api('POST', '/profiles', { name: 'Cookie import (Chrome Stable)', advancedSettings: { runtime: 'stable-chrome' } }, 201);
+    // This test reads the running browser's cookie store, so it uses the controlled (automation) path.
+    const profile = await api('POST', '/profiles', { name: 'Cookie import (Chrome Stable)', automationEnabled: true, advancedSettings: { runtime: 'stable-chrome' } }, 201);
     id = profile.id;
     const dataDir = userDataDir(id);
     console.log(`# Chrome Stable ${stable.version}`);
