@@ -230,8 +230,10 @@ symbol_level = 0
             $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
         }
         if ($Sccache) {
-            # Precompiled headers make compiles uncacheable for sccache.
-            $gnArgs += "`n" + 'enable_precompiled_headers = false'
+            # Precompiled headers and Clang header modules make compiles uncacheable for sccache. Measured on
+            # run 44706934362 stage 1: all 23,303 compile requests were non-cacheable (-fmodules-cache-path),
+            # from use_clang_modules (build/config/c++/c++.gni at the pinned revision).
+            $gnArgs += "`n" + 'enable_precompiled_headers = false' + "`n" + 'use_clang_modules = false'
         }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
@@ -272,6 +274,21 @@ symbol_level = 0
             if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
             return
         }
+        if ($Sccache) {
+            # Fail within minutes, not after a full job, if compiles still cannot be cached.
+            Write-Output 'BEGIN cacheability check: compile //base through sccache.'
+            Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", 'base') -Budgeted
+            $stats = (& sccache.exe --show-stats | Out-String)
+            Write-Output $stats
+            $requests = if ($stats -match '(?m)^Compile requests\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $uncacheable = if ($stats -match '(?m)^Non-cacheable calls\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $stored = if ($stats -match '(?m)^Cache misses\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $hits = if ($stats -match '(?m)^Cache hits\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            Write-Output "CACHEABILITY requests=$requests stored=$stored hits=$hits uncacheable=$uncacheable"
+            if ($requests -eq 0 -or ($stored + $hits) -eq 0 -or $uncacheable -gt [Math]::Floor($requests / 10)) {
+                throw "Compiles are not cacheable by sccache (requests=$requests, stored=$stored, hits=$hits, non-cacheable=$uncacheable). Stopping before the full build."
+            }
+        }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
@@ -283,6 +300,9 @@ symbol_level = 0
         if ($script:BudgetReached) {
             if ($env:GITHUB_OUTPUT) { 'complete=false' | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
             Write-Output 'INCOMPLETE the time budget ended before chrome finished; continue in the next job.'
+            # Stopping at the budget is the expected outcome; do not let taskkill's exit code fail the step
+            # (run 44706934362 stage 1 failed this way and skipped the cache hand-over).
+            $global:LASTEXITCODE = 0
             return
         }
         if ($env:GITHUB_OUTPUT) { "complete=true`nout=$out" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
