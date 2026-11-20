@@ -158,10 +158,13 @@ fetch('http://example.com/', { mode: 'no-cors', cache: 'no-store' }).then(() => 
       if (n > 1) assert.deepEqual(report.prev, { cookie: String(n - 1), local: String(n - 1) }, `cycle ${n} sees the cycle ${n - 1} cookie and localStorage`);
       await api('POST', `/profiles/${E.id}/stop`);
       const exit = lifecycleReport().events.filter(e => e.kind === 'browser-exit' && e.id === E.id).at(-1);
-      cycles.push([exit.terminationKind, exit.stopEscalation, exit.exitEventSeen, exit.exitType, exit.chosen].join('/'));
+      cycles.push([exit.terminationKind, exit.stopEscalation, exit.exitEventSeen, exit.childExitCode, exit.exitType, exit.chosen].join('/'));
       assert.equal(exit.terminationKind, 'RequestedStop', `cycle ${n} stop kind ${JSON.stringify(exit)}`);
       assert.equal(exit.exitEventSeen, true, `cycle ${n} exit event observed`);
-      assert.equal(exit.exitType, 'Normal', `cycle ${n} Chrome wrote its clean-exit marker`);
+      // Chrome's own exit code is the primary evidence. Its Preferences exit marker can be absent after a
+      // brand-new profile's first run (observed on Chrome 157), but must never say Crashed after a graceful Stop.
+      assert.equal(exit.childExitCode, 0, `cycle ${n} Chrome exit code`);
+      assert.notEqual(exit.exitType, 'Crashed', `cycle ${n} exit marker`);
       assert.equal(exit.chosen, 'stopped');
     }
     results.stopCycles = { count: cycles.length, kinds: [...new Set(cycles)] };
