@@ -39,13 +39,14 @@ function MacAddressField({ settings, onChange, derivedMac }) {
 // Chrome Stable proxy profiles: Controlled follows the proxy's timezone and location through the
 // automation connection (navigator.webdriver is true); Manual opens plain Chrome through the proxy with
 // this computer's timezone and location. Shown only in the Chrome Stable edition.
-export function ProxyLaunchFields({ settings, onChange }) {
+export function ProxyLaunchFields({ settings, onChange, isNew = false }) {
   const [edition, setEdition] = useState('');
   useEffect(() => { api('/api/chromium-identity').then(r => setEdition(r.edition || '')).catch(() => {}); }, []);
   const runtime = settings.runtime || 'compatibility';
   if (edition !== 'chrome-stable' && runtime !== 'stable-chrome') return null;
   if (['privacy', 'azwah-native', 'custom-native-chromium'].includes(runtime)) return null;
-  const value = settings.proxyLaunch || 'controlled';
+  // New profiles are saved Manual; profiles saved before that choice existed behave Controlled.
+  const value = settings.proxyLaunch || (isNew ? 'manual' : 'controlled');
   return <ModeSegment category="proxyLaunch" label="Proxy launch" value={value} onChange={next => onChange({ ...settings, proxyLaunch: next })} options={[
     { id: 'controlled', label: 'Controlled — proxy timezone', title: 'Timezone and location follow the proxy. AZWAH keeps an automation connection, so navigator.webdriver is true.' },
     { id: 'manual', label: 'Manual — no automation', title: 'Plain Chrome through the proxy. navigator.webdriver is false; timezone and location are this computer’s.' },

@@ -94,6 +94,15 @@ export function App() {
   const [eventsLog, setEventsLog] = useState([]);
   const [browserMissing, setBrowserMissing] = useState(false);
   const [browserInfo, setBrowserInfo] = useState(null);
+  const [proxyOffer, setProxyOffer] = useState(null);
+  useEffect(() => { api('/api/profiles/proxy-launch-offer').then(setProxyOffer).catch(() => {}); }, []);
+  const answerProxyOffer = async action => {
+    try {
+      const r = await api('/api/profiles/proxy-launch-offer', { method: 'POST', body: { action } });
+      setProxyOffer({ controlled: 0, offered: false });
+      if (action === 'switch') toast(`Switched ${r.switched} proxy ${r.switched === 1 ? 'profile' : 'profiles'} to Manual. A running profile changes on its next launch.`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
   const names = useRef({});
   const reloadMeta = useCallback(() => api('/api/meta').then(setMeta).catch(() => {}), []);
   useEffect(() => {
@@ -175,6 +184,10 @@ export function App() {
           AZWAH update {update.latest.version} is available.{' '}
           <button onClick={openUpdates}>View update</button>{' '}
           <button onClick={() => setRemindedVersion(update.latest.version)}>Remind me later</button>
+        </div>}
+        {page === 'profiles' && browserInfo?.runtime === 'stable-chrome' && proxyOffer?.offered && <div className="notice proxy-offer" role="status">
+          <span>{proxyOffer.controlled} proxy {proxyOffer.controlled === 1 ? 'profile launches' : 'profiles launch'} <strong>Controlled</strong>: sites can see the automation connection (BrowserScan shows WebDriver as Robot). <strong>Manual</strong> opens plain Chrome through the same proxy; the page then shows this PC's timezone.</span>
+          <span className="proxy-offer-actions"><button className="primary" onClick={() => answerProxyOffer('switch')}>Switch to Manual</button><button onClick={() => answerProxyOffer('keep')}>Keep Controlled</button></span>
         </div>}
         {browserMissing && page !== 'diagnostics' && (browserInfo?.runtime === 'stable-chrome'
           ? <div className="notice warn" role="status">Google Chrome isn't installed on this PC, so profiles can't launch. AZWAH opens profiles in your installed Chrome; it does not include a browser. Install Chrome, then reopen AZWAH. <a className="primary btn-link" href={browserInfo.downloadUrl} target="_blank" rel="noreferrer">Get Google Chrome</a></div>

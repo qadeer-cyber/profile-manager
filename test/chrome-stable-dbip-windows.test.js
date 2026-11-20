@@ -108,7 +108,8 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
     }
     profile = await api('/profiles', {
       name: 'Automatic DB-IP acceptance',
-      advancedSettings: { runtime: 'stable-chrome' },
+      // Proxy-following timezone and in-browser exit verification are Controlled features.
+      advancedSettings: { runtime: 'stable-chrome', proxyLaunch: 'controlled' },
       proxy: { type: protocol, host: '127.0.0.1', port: proxy.port, username, password },
     }, 201);
     const route = '/profiles/' + profile.id;

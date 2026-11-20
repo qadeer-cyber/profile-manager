@@ -325,6 +325,9 @@ function validate(b, prev) {
   // Only a request that sets a device preset is checked against this host, so a profile restored
   // from another computer stays editable and shows the mismatch in verification instead.
   if (b.advancedSettings && typeof b.advancedSettings === 'object' && 'deviceIdentity' in b.advancedSettings) assertDevicePresetSupported(advancedSettings.deviceIdentity, HOST_DEVICE);
+  // Owner decision 2026-11-20: new profiles launch proxies Manual (no automation connection) unless the
+  // request chose Controlled. Existing profiles keep what they have (see the one-time offer below).
+  if (!prev && !advancedSettings.proxyLaunch) advancedSettings.proxyLaunch = 'manual';
   // Every profile has its own MAC label, saved with it: a new profile without one gets a random one.
   if (!prev && !advancedSettings.macLabel) { advancedSettings.macLabel = freeRandomMacLabel(); advancedSettings.macLabelMode = 'random'; }
   else if (advancedSettings.macLabel && (!prev || (b.advancedSettings && typeof b.advancedSettings === 'object' && 'macLabel' in b.advancedSettings))) assertMacLabelFree(advancedSettings.macLabel, prev?.id);
@@ -1707,6 +1710,38 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     res.status(201).json(publicP(get(id)));
   }));
   ui.delete('/templates/:id', wrap((req, res) => { deleteTemplate(req.params.id); res.status(204).end(); }));
+  // One-time offer to switch existing Controlled Chrome proxy profiles to Manual. Nothing changes unless
+  // the owner chooses "switch"; either answer is remembered.
+  const controlledProxyProfiles = () => db.prepare("SELECT id, browser_engine, advanced_settings FROM profiles WHERE deleted_at IS NULL AND proxy_id IS NOT NULL").all()
+    .filter(row => {
+      if (row.browser_engine === 'firefox') return false;
+      let adv = {};
+      try { adv = JSON.parse(row.advanced_settings || '{}') || {}; } catch {}
+      return !['privacy', 'azwah-native', 'custom-native-chromium'].includes(adv.runtime) && adv.proxyLaunch !== 'manual';
+    });
+  ui.get('/profiles/proxy-launch-offer', wrap((req, res) => {
+    const controlled = controlledProxyProfiles().length;
+    res.json({ controlled, offered: controlled > 0 && getSetting('proxyLaunchOfferAnswered', false) !== true });
+  }));
+  ui.post('/profiles/proxy-launch-offer', wrap((req, res) => {
+    const action = req.body?.action;
+    if (action !== 'switch' && action !== 'keep') throw err(400, 'action must be "switch" or "keep"');
+    let switched = 0;
+    if (action === 'switch') {
+      const update = db.prepare('UPDATE profiles SET advanced_settings=? WHERE id=?');
+      db.transaction(rows => {
+        for (const row of rows) {
+          // Change only this field; never rewrite the rest of a stored profile.
+          let adv = {};
+          try { adv = JSON.parse(row.advanced_settings || '{}') || {}; } catch { continue; }
+          update.run(JSON.stringify({ ...adv, proxyLaunch: 'manual' }), row.id);
+          switched++;
+        }
+      })(controlledProxyProfiles());
+    }
+    setSetting('proxyLaunchOfferAnswered', true);
+    res.json({ switched });
+  }));
   ui.get('/profiles/:id', wrap((req, res) => res.json(publicP(must(req.params.id)))));
   ui.post('/profiles', wrap((req, res) => res.status(201).json(publicP(get(insert(validate(req.body)))))));
   ui.put('/profiles/:id', wrap(updateHandler));

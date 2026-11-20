@@ -69,7 +69,7 @@ try {
     const p = await api('POST', '/profiles', {
       name: 'Regional acceptance ' + (index + 1),
       proxy: fixture.proxy,
-      advancedSettings: { runtime: 'stable-chrome', geolocation: { mode: 'auto', permission: 'ask' } },
+      advancedSettings: { runtime: 'stable-chrome', proxyLaunch: 'controlled', geolocation: { mode: 'auto', permission: 'ask' } },
     }, 201);
     ids.push(p.id);
   }

@@ -59,7 +59,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   // A Chrome Stable proxy profile set to Manual does not follow the proxy's location: the page keeps this
   // computer's timezone and location, so no controlled connection is needed for them.
   const proxyManual = Boolean(requireStable && p.proxy && advanced.proxyLaunch === 'manual');
-  const mode = proxyManual ? (geo.mode === 'manual' ? 'manual' : 'host')
+  const mode = proxyManual ? (geo.mode === 'manual' && geo.latitude != null && geo.longitude != null ? 'manual' : 'host')
     : requireStable && p.proxy ? 'auto' : geo.mode ?? (p.proxy ? 'auto' : 'manual');
   if (stable) {
     const profileRoot = fs.realpathSync(dir);
@@ -89,23 +89,25 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       regional.timezoneId = '';
     } else if (mode === 'host') {
       // Manual proxy profile: a timezone saved on purpose stays (and keeps the profile controlled).
-      // Language is an ordinary startup setting: when none is saved, use the proxy country's, looked up
-      // through the proxy outside the browser. Best effort: Chrome itself never falls back to a direct
-      // connection, so a failed lookup does not block the launch.
-      if (!regional.locale && !regional.languages.length) {
-        try {
-          let timer;
-          const found = await Promise.race([
-            resolveProxyLocationWithRetry(p.proxy, { credentials: geoIpCredentials,
-              read: () => getSetting('proxy-location:' + p.id, null), save: value => setSetting('proxy-location:' + p.id, value) }),
-            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('language lookup timed out')), 8000); }),
-          ]).finally(() => clearTimeout(timer));
-          if (/^[A-Z]{2}$/.test(found.country || '')) {
-            const inferred = new Intl.Locale('und-' + found.country).maximize();
-            regional.locale = inferred.language + '-' + found.country;
-            regional.languages = [regional.locale, inferred.language];
-          }
-        } catch { /* keep this PC's language */ }
+      // Before launch, check the proxy through the same route (outside the browser): wrong credentials, an
+      // unresolvable proxy host or an offline proxy refuse the launch with a clear error, as in Controlled.
+      // A slow exit-IP service or a missing location database does not. When no language is saved, the
+      // proxy country's language is used (an ordinary startup setting). Capped at 8 seconds.
+      let found = null;
+      try {
+        let timer;
+        found = await Promise.race([
+          resolveProxyLocationWithRetry(p.proxy, { credentials: geoIpCredentials,
+            read: () => getSetting('proxy-location:' + p.id, null), save: value => setSetting('proxy-location:' + p.id, value) }),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('proxy check timed out')), 8000); }),
+        ]).finally(() => clearTimeout(timer));
+      } catch (error) {
+        if (['PROXY_AUTH_REQUIRED', 'PROXY_DNS_FAILED', 'PROXY_UPSTREAM_UNAVAILABLE'].includes(error?.code)) throw error;
+      }
+      if (found && /^[A-Z]{2}$/.test(found.country || '') && !regional.locale && !regional.languages.length) {
+        const inferred = new Intl.Locale('und-' + found.country).maximize();
+        regional.locale = inferred.language + '-' + found.country;
+        regional.languages = [regional.locale, inferred.language];
       }
     } else if (geo.latitude != null && geo.longitude != null) {
       if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
