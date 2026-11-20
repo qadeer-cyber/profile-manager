@@ -1,0 +1,206 @@
+name: AZWAH Chromium chained build
+# Owner-approved: compile the AZWAH Chromium patch on free GitHub Windows runners by splitting the
+# build across chained jobs. Each job compiles until its time budget, then hands the sccache compiler
+# cache to the next job as a short-lived artifact. The job that finishes uploads the browser.
+on:
+  push:
+    branches: [feature/azwah-ultimate-2]
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  DEPOT_TOOLS_PIN: 96a7c1418eedaa6bea333a8941e8a0078681b4d0
+  SCCACHE_CACHE_SIZE: 40G
+  SCCACHE_DIRECT: 'true'
+jobs:
+  qualify:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, '[chromium-chain]') }}
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Parse the build script and check the patch applies to the pinned Chromium
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($script in 'scripts/build-native-chromium-baseline.ps1', 'scripts/test-native-chromium-build.ps1') {
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $env:GITHUB_WORKSPACE $script), [ref]$null, [ref]$parseErrors) | Out-Null
+            if ($parseErrors) { throw ($parseErrors -join [Environment]::NewLine) }
+          }
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          $source = Join-Path $env:RUNNER_TEMP 'azwah-patch-qualification'
+          New-Item -ItemType Directory -Path $source | Out-Null
+          git -C $source init --quiet
+          git -C $source config core.autocrlf false
+          git -C $source remote add origin https://chromium.googlesource.com/chromium/src.git
+          git -C $source sparse-checkout init --no-cone
+          $paths = @(git apply --numstat native-chromium/windows-source.patch | ForEach-Object { ($_ -split "`t")[2] })
+          git -C $source sparse-checkout set --no-cone -- $paths
+          git -C $source fetch --depth=1 --filter=blob:none origin $pin.revision
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned Chromium fetch failed.' }
+          git -C $source checkout --detach FETCH_HEAD
+          ./scripts/qualify-native-chromium-patch.ps1 -Source $source -Patch native-chromium/windows-source.patch -Apply
+
+  stage-1:
+    needs: qualify
+    runs-on: windows-2025
+    timeout-minutes: 355
+    outputs:
+      complete: ${{ steps.build.outputs.complete }}
+    steps: &stage
+      - name: Record the job start
+        shell: pwsh
+        run: "\"AZWAH_JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())\" | Add-Content -LiteralPath $env:GITHUB_ENV"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Prepare and verify the pinned Windows toolchain
+        shell: pwsh
+        run: ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+      - name: Checkout pinned depot_tools
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ('azwah-chain-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_JOB)
+          $tools = Join-Path $root 'depot_tools'
+          $workspace = Join-Path $root 'chromium'
+          New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+          git -C $tools init --quiet
+          git -C $tools remote add origin https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          git -C $tools fetch --no-tags --depth=1 origin $env:DEPOT_TOOLS_PIN
+          if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
+          git -C $tools checkout --detach FETCH_HEAD
+          if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $env:DEPOT_TOOLS_PIN) { throw 'depot_tools pin did not verify.' }
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_CACHE=$(Join-Path $root 'sccache')") | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Initialize and qualify pinned depot_tools
+        shell: pwsh
+        run: ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:DEPOT_TOOLS_PIN
+      - name: Install pinned Mozilla sccache
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $archive = Join-Path $env:RUNNER_TEMP 'sccache.zip'
+          Invoke-WebRequest 'https://github.com/mozilla/sccache/releases/download/v0.19.0/sccache-v0.19.0-x86_64-pc-windows-msvc.zip' -OutFile $archive
+          if ((Get-FileHash -LiteralPath $archive).Hash -ine '28be8c61f6b2c89b9eb2869f6af7f78e6f992e78a8abae0ce855fcc129cbeac1') { throw 'sccache release checksum mismatch.' }
+          $directory = Join-Path $env:RUNNER_TEMP 'sccache-bin'
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          $exe = @(Get-ChildItem -LiteralPath $directory -Recurse -Filter 'sccache.exe' -File)
+          if ($exe.Count -ne 1) { throw 'Expected exactly one sccache executable.' }
+          $exe[0].DirectoryName | Add-Content -LiteralPath $env:GITHUB_PATH
+          "SCCACHE_DIR=$env:AZWAH_CACHE" | Add-Content -LiteralPath $env:GITHUB_ENV
+          New-Item -ItemType Directory -Path $env:AZWAH_CACHE -Force | Out-Null
+      - name: Restore the compiler cache from the previous job
+        if: github.job != 'stage-1'
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-sccache-${{ github.run_id }}
+          path: ${{ env.AZWAH_CACHE }}
+      - name: Sync, patch and compile until the time budget
+        id: build
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          # 355-minute job: leave 35 minutes to stop sccache and hand the cache to the next job.
+          $elapsed = [int](([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64]$env:AZWAH_JOB_START) / 60)
+          $budget = [Math]::Max(30, 355 - 35 - $elapsed - 25)
+          Write-Output "Job ${env:GITHUB_JOB}: $elapsed minutes used before the build; Ninja budget after sync is about $budget minutes."
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Sccache -TimeBudgetMinutes $budget `
+            -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision `
+            -DepotToolsCommit $env:DEPOT_TOOLS_PIN -Jobs 4 -ReserveGiB 10
+      - name: Compiler cache statistics
+        if: always()
+        shell: pwsh
+        run: |
+          sccache.exe --show-stats
+          sccache.exe --stop-server
+          $bytes = (Get-ChildItem -LiteralPath $env:AZWAH_CACHE -Recurse -File | Measure-Object Length -Sum).Sum
+          Write-Output "CACHE_BYTES $bytes"
+      - name: Hand the compiler cache to the next job
+        if: steps.build.outputs.complete == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-sccache-${{ github.run_id }}
+          path: ${{ env.AZWAH_CACHE }}
+          retention-days: 2
+          compression-level: 0
+          overwrite: true
+      - name: Verify and smoke-test the finished browser
+        if: steps.build.outputs.complete == 'true'
+        shell: pwsh
+        run: ./scripts/test-native-chromium-build.ps1 -Workspace $env:AZWAH_BUILD_WORKSPACE
+      - name: Package the finished browser
+        if: steps.build.outputs.complete == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src/out/azwah-native-development'
+          $stage = Join-Path $env:RUNNER_TEMP 'azwah-chromium'
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          $runtime = Get-ChildItem -LiteralPath $out -File | Where-Object { $_.Extension -in '.exe', '.dll', '.pak', '.bin', '.dat', '.json', '.manifest' -and $_.Name -notlike '*.ninja*' }
+          foreach ($file in $runtime) { Copy-Item -LiteralPath $file.FullName -Destination $stage }
+          foreach ($dir in 'locales', 'MEIPreload', 'resources') {
+            if (Test-Path -LiteralPath (Join-Path $out $dir)) { Copy-Item -LiteralPath (Join-Path $out $dir) -Destination $stage -Recurse }
+          }
+          $zip = Join-Path $env:RUNNER_TEMP 'azwah-chromium-win64.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
+          $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Output "AZWAH_CHROMIUM_ZIP bytes=$((Get-Item $zip).Length) sha256=$hash"
+          "AZWAH_CHROMIUM_ZIP=$zip" | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Upload the finished browser
+        if: steps.build.outputs.complete == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-chromium-win64-${{ github.sha }}
+          path: ${{ env.AZWAH_CHROMIUM_ZIP }}
+          retention-days: 14
+
+  stage-2:
+    needs: stage-1
+    if: needs.stage-1.outputs.complete == 'false'
+    runs-on: windows-2025
+    timeout-minutes: 355
+    outputs:
+      complete: ${{ steps.build.outputs.complete }}
+    steps: *stage
+  stage-3:
+    needs: stage-2
+    if: needs.stage-2.outputs.complete == 'false'
+    runs-on: windows-2025
+    timeout-minutes: 355
+    outputs:
+      complete: ${{ steps.build.outputs.complete }}
+    steps: *stage
+  stage-4:
+    needs: stage-3
+    if: needs.stage-3.outputs.complete == 'false'
+    runs-on: windows-2025
+    timeout-minutes: 355
+    outputs:
+      complete: ${{ steps.build.outputs.complete }}
+    steps: *stage
+  stage-5:
+    needs: stage-4
+    if: needs.stage-4.outputs.complete == 'false'
+    runs-on: windows-2025
+    timeout-minutes: 355
+    outputs:
+      complete: ${{ steps.build.outputs.complete }}
+    steps: *stage
+  stage-6:
+    needs: stage-5
+    if: needs.stage-5.outputs.complete == 'false'
+    runs-on: windows-2025
+    timeout-minutes: 355
+    outputs:
+      complete: ${{ steps.build.outputs.complete }}
+    steps: *stage
