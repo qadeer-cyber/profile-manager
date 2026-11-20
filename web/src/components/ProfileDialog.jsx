@@ -228,7 +228,7 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             options={WEBRTC_CHOICES.map(([mode, label]) => ({ id: mode, label }))} />
           {(f.browserEngine || 'chromium') === 'firefox' && <p className="muted hint">On Firefox the same mode is written to stock Gecko ICE prefs in user.js.</p>}
           <h3 className="h3">Device identity</h3>
-          <DeviceIdentityFields settings={advanced} onChange={setAdvanced} />
+          <DeviceIdentityFields settings={advanced} onChange={setAdvanced} derivedMac={initial.macLabelMode === 'derived' ? initial.macLabel : null} />
           <h3 className="h3">Navigator identity</h3>
           <IdentityFields settings={advanced} onChange={setAdvanced} />
           <h3 className="h3">Screen resolution and window</h3>

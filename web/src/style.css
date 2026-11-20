@@ -227,3 +227,6 @@ label.file-btn input{position:absolute;width:1px;height:1px;overflow:hidden;clip
 .seg.fp-seg{margin-bottom:0;flex-wrap:wrap;align-self:flex-start;max-width:100%}
 .seg.fp-seg button.sel{color:var(--accent-text)}
 .seg.fp-seg button:disabled{color:var(--text-3,var(--text-2));opacity:.55;cursor:not-allowed}
+.mac-row{display:flex;gap:8px;align-items:center}
+.mac-row input{flex:1;min-width:0;font-variant-numeric:tabular-nums}
+.mac-field{display:flex;flex-direction:column;gap:6px}

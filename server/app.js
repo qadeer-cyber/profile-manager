@@ -1,3 +1,4 @@
+import { deriveMacLabel, randomMacLabel } from './mac-label.js';
 import { publicIp, resolveProxyLocation } from './proxy-location.js';
 import { resolveWindowsChromeStable } from './browser-runtime/chrome-stable.js';
 import { predictStableLaunchMode } from './browser-runtime/stable-launch-mode.js';
@@ -227,8 +228,33 @@ const row2p = r => {
   delete r.purge_error;
   const chromeLaunchMode = process.env.AZWAH_STABLE_CHROME_EDITION === '1'
     ? predictStableLaunchMode({ browserEngine, advancedSettings, browserSettings, proxy, automationEnabled: !!r.automation_enabled }) : null;
-  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
+  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings,
+    macLabel: advancedSettings.macLabel || deriveMacLabel(r.id), macLabelMode: advancedSettings.macLabel ? advancedSettings.macLabelMode || 'manual' : 'derived', extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
 };
+// Each profile's MAC label must be its own: refuse one that another profile already shows.
+function macLabelsInUse(selfId) {
+  const used = new Set();
+  for (const row of db.prepare('SELECT id, advanced_settings FROM profiles').all()) {
+    if (row.id === selfId) continue;
+    let saved = null;
+    try { saved = JSON.parse(row.advanced_settings || '{}').macLabel || null; } catch {}
+    used.add(saved || deriveMacLabel(row.id));
+  }
+  return used;
+}
+function assertMacLabelFree(label, selfId) {
+  if (macLabelsInUse(selfId).has(label)) throw Object.assign(err(409, 'Another profile already uses this MAC label.'), { code: 'MAC_LABEL_IN_USE' });
+}
+// A profile made from a template gets its own MAC, never the template's.
+function withoutMacLabel(v) {
+  if (!v?.advancedSettings) return v;
+  const { macLabel: _mac, macLabelMode: _mode, ...advancedSettings } = v.advancedSettings;
+  return { ...v, advancedSettings };
+}
+function freeRandomMacLabel() {
+  const used = macLabelsInUse(null);
+  for (;;) { const label = randomMacLabel(); if (!used.has(label)) return label; }
+}
 const publicP = p => {
   if (!p) return p;
   const { automation_enabled, proxy_id, ...rest } = p;
@@ -297,6 +323,9 @@ function validate(b, prev) {
   // Only a request that sets a device preset is checked against this host, so a profile restored
   // from another computer stays editable and shows the mismatch in verification instead.
   if (b.advancedSettings && typeof b.advancedSettings === 'object' && 'deviceIdentity' in b.advancedSettings) assertDevicePresetSupported(advancedSettings.deviceIdentity, HOST_DEVICE);
+  // Every profile has its own MAC label, saved with it: a new profile without one gets a random one.
+  if (!prev && !advancedSettings.macLabel) { advancedSettings.macLabel = freeRandomMacLabel(); advancedSettings.macLabelMode = 'random'; }
+  else if (advancedSettings.macLabel && (!prev || (b.advancedSettings && typeof b.advancedSettings === 'object' && 'macLabel' in b.advancedSettings))) assertMacLabelFree(advancedSettings.macLabel, prev?.id);
   const extensionAssignments = 'extensionAssignments' in b ? assertKnownAssignments(b.extensionAssignments) : null;
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
   let browserEngine = prev?.browserEngine ?? 'chromium';
@@ -353,7 +382,10 @@ function clone(id, body = {}) {
   const p = must(id);
   const copyData = cloneMode(body);
   if (copyData && engine.isRunning(id)) throw err(409, `Profile "${p.name}" is running. Stop it before cloning (browser data can't be copied consistently while in use), or pass {"copyData": false} to clone settings only.`);
-  const nid = insert({ ...p, proxyId: p.proxy_id || null, name: body.name || p.name + ' (copy)' });
+  // A clone gets its own MAC label (derived from its new id), never a copy of the source's.
+  const { macLabel: _sourceMac, macLabelMode: _sourceMode, ...cloneAdvanced } = p.advancedSettings || {};
+  Object.assign(cloneAdvanced, { macLabel: freeRandomMacLabel(), macLabelMode: 'random' });
+  const nid = insert({ ...p, advancedSettings: cloneAdvanced, proxyId: p.proxy_id || null, name: body.name || p.name + ' (copy)' });
   copyExtensionAssignments(id, nid);
   if (copyData) {
     const src = userDataDir(id);
@@ -564,7 +596,7 @@ function bulkFromTemplate(body, onItem) {
     try {
       const id = applyTemplate(templateId, {
         name: `${prefix} ${index + 1}`.slice(0, 200),
-        insertFn: v => insert(validate(folderOverride != null ? { ...v, folder: folderOverride } : v)),
+        insertFn: v => insert(validate(withoutMacLabel(folderOverride != null ? { ...v, folder: folderOverride } : v))),
         getTemplateSnapshot: getSnap,
       });
       const item = { index, ok: true, profile: publicP(get(id)) };
@@ -1657,7 +1689,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/from-template/:templateId', wrap((req, res) => {
     const id = applyTemplate(req.params.templateId, {
       name: req.body?.name,
-      insertFn: v => insert(validate(v)),
+      insertFn: v => insert(validate(withoutMacLabel(v))),
       getTemplateSnapshot: row => JSON.parse(row.snapshot_json),
     });
     res.status(201).json(publicP(get(id)));

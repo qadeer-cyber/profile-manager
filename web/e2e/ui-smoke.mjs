@@ -121,7 +121,7 @@ await step('fingerprint tab shows every category with unavailable modes disabled
   const device = await pg.evaluate(async () => (await (await fetch('/api/device-identity')).json()));
   const blockedPresets = device.presets.filter(p => p.state !== 'supported');
   for (const [id, seen] of Object.entries(info.perCategory)) {
-    const expected = id === 'deviceIdentity' ? blockedPresets.length : catalog.find(c => c.id === id).modes.filter(m => m.state === 'unsupported').length;
+    const expected = id === 'deviceIdentity' ? blockedPresets.length : (catalog.find(c => c.id === id)?.modes ?? []).filter(m => m.state === 'unsupported').length;
     if (seen.count !== expected || !seen.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable modes ' + id + ' ' + JSON.stringify({ seen, expected })); }
   }
   for (const c of ['audio', 'canvas', 'deviceIdentity', 'macAddress', 'fonts', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'])
@@ -131,9 +131,16 @@ await step('fingerprint tab shows every category with unavailable modes disabled
   await editor.getByRole('radiogroup', { name: 'WebGL', exact: true }).getByRole('radio', { name: /^Restricted/ }).click();
   const explicit = device.presets.find(p => p.state === 'supported' && p.id !== 'host');
   if (explicit) await editor.getByRole('combobox', { name: 'Device preset', exact: true }).selectOption(explicit.id);
+  const macInput = editor.getByRole('textbox', { name: 'MAC address value', exact: true });
+  const macBefore = await macInput.inputValue();
+  if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(macBefore)) throw new Error('derived MAC label not shown: ' + macBefore);
+  await editor.locator('.mac-field').getByRole('button', { name: 'Regenerate' }).click();
+  const macAfter = await macInput.inputValue();
+  if (macAfter === macBefore || !/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(macAfter)) throw new Error('regenerate ' + macBefore + ' -> ' + macAfter);
   await saveProfile();
   const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha'));
   if (p.advancedSettings.fingerprint.webgl !== 'restricted' || p.advancedSettings.fingerprint.canvas !== 'real') throw new Error('saved ' + JSON.stringify(p.advancedSettings.fingerprint));
+  if (p.macLabel !== macAfter || p.macLabelMode !== 'random') throw new Error('MAC not saved ' + JSON.stringify([p.macLabel, p.macLabelMode, macAfter]));
   if (explicit && p.advancedSettings.deviceIdentity?.preset !== explicit.id) throw new Error('device preset not saved ' + JSON.stringify(p.advancedSettings.deviceIdentity));
   if (p.advancedSettings.experimental.canvasReadback !== 'off' || p.advancedSettings.experimental.webglReadback !== 'off') throw new Error('editor save kept readback prototypes ' + JSON.stringify(p.advancedSettings.experimental));
   await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();

@@ -1,3 +1,4 @@
+import { validateMacLabel } from './mac-label.js';
 // Per-profile advanced browser settings. Values are either applied through a
 // Chromium feature that exists (user agent, geolocation, window, content
 // settings, fingerprint restrictions) or rejected. Nothing here claims a
@@ -184,7 +185,7 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
   if (!keysOf(value).length) return finishAdvanced(base);
-  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity'].includes(key))) invalid('Unknown advancedSettings field');
+  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity', 'macLabel', 'macLabelMode'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
   if ('runtime' in value) out.runtime = value.runtime;
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
@@ -194,6 +195,17 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   if ('fingerprint' in value) out.fingerprint = value.fingerprint;
   if ('experimental' in value) out.experimental = validateExperimental({ ...out.experimental, ...value.experimental });
   if ('deviceIdentity' in value) out.deviceIdentity = validateDeviceIdentity(value.deviceIdentity);
+  // Saved MAC label (null clears it back to the label derived from the profile id).
+  if ('macLabelMode' in value) {
+    if (!['random', 'manual'].includes(value.macLabelMode)) invalid('macLabelMode must be "random" or "manual"');
+    out.macLabelMode = value.macLabelMode;
+  }
+  if ('macLabel' in value) {
+    if (value.macLabel == null || value.macLabel === '') {
+      if (out.macLabelMode === 'manual') validateMacLabel('');
+      delete out.macLabel;
+    } else out.macLabel = validateMacLabel(value.macLabel);
+  }
   return finishAdvanced(out);
 }
 

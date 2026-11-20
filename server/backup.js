@@ -1,3 +1,4 @@
+import { deriveMacLabel } from './mac-label.js';
 // Backup and restore of profiles, extension files, and the app database.
 // A running browser is refused. Restore validates the archive before it changes
 // the live data directory, and a failed swap rolls the database transaction back.
@@ -43,6 +44,13 @@ function recoverPassword(stored, archivedKey) {
 
 function sha256Hex(data) {
   return crypto.createHash('sha256').update(data).digest('hex');
+}
+
+// A restored copy saved next to the original (new id) gets its own MAC label, derived from that id.
+function withOwnMacLabel(json, id) {
+  let settings = {};
+  try { settings = JSON.parse(json || '{}') || {}; } catch {}
+  return JSON.stringify({ ...settings, macLabel: deriveMacLabel(id), macLabelMode: 'random' });
 }
 
 export function createBackup(options = {}) {
@@ -366,6 +374,7 @@ function applyProfile(source, item, archivedKey, result, sourceColumns, destColu
     webrtc_settings: valueOf(row, 'webrtc_settings', '{"mode":"browser_default"}'),
     advanced_settings: valueOf(row, 'advanced_settings', ADVANCED_DEFAULT),
   };
+  if (item.action === 'rename') record.advanced_settings = withOwnMacLabel(record.advanced_settings, item.id);
   const names = [...destColumns].filter(name => Object.hasOwn(record, name));
   if (item.action === 'replace') {
     db.prepare('DELETE FROM profile_extensions WHERE profile_id=?').run(item.id);
@@ -500,6 +509,7 @@ function applyProfileFromRow(row, item, archivedKey, result, destColumns) {
     deleted_at: null,
     purge_error: null,
   };
+  if (item.action === 'rename') record.advanced_settings = withOwnMacLabel(record.advanced_settings, item.id);
   const names = [...destColumns].filter(name => Object.hasOwn(record, name));
   if (item.action === 'replace') {
     db.prepare('DELETE FROM profile_extensions WHERE profile_id=?').run(item.id);

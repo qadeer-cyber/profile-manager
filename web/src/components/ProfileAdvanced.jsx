@@ -9,7 +9,34 @@ const STATES = [['default', 'Browser default'], ['ask', 'Ask'], ['allow', 'Allow
 
 // Device identity: presets this computer's real engine can present. Others are listed, disabled,
 // with the reason, and the server refuses them as well.
-export function DeviceIdentityFields({ settings, onChange }) {
+// A random locally administered unicast MAC (first octet xxxxxx10), uppercase and colon-separated.
+export function randomMacLabel() {
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  b[0] = (b[0] & 0xfc) | 0x02;
+  return [...b].map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(':');
+}
+
+// Per-profile MAC address label. Random gives each profile its own generated value; Manual takes one the
+// owner types. The server refuses duplicates and malformed values. It is a saved label only.
+function MacAddressField({ settings, onChange, derivedMac }) {
+  const mode = settings.macLabelMode || (settings.macLabel ? 'manual' : 'random');
+  const value = settings.macLabel ?? derivedMac ?? '';
+  return <div className="mac-field">
+    <ModeSegment category="macAddress" label="MAC address" value={mode} options={[
+      { id: 'random', label: 'Random', title: 'A unique generated MAC for this profile' },
+      { id: 'manual', label: 'Manual', title: 'Type the MAC for this profile' },
+    ]} onChange={next => onChange({ ...settings, macLabelMode: next, macLabel: next === 'random' ? randomMacLabel() : value })} />
+    <div className="mac-row">
+      <input aria-label="MAC address value" className="mono" spellCheck={false} value={value} readOnly={mode === 'random'}
+        placeholder={mode === 'random' ? 'Generated when the profile is created' : '02:AB:CD:EF:01:23'}
+        onChange={e => onChange({ ...settings, macLabelMode: 'manual', macLabel: e.target.value })} />
+      {mode === 'random' && <button type="button" onClick={() => onChange({ ...settings, macLabelMode: 'random', macLabel: randomMacLabel() })}>Regenerate</button>}
+    </div>
+    <span className="muted hint">Saved with this profile; each profile’s MAC is unique. It is a label for your records: websites cannot read a MAC address, it is not sent to Chrome, and AZWAH does not change your network adapter.</span>
+  </div>;
+}
+
+export function DeviceIdentityFields({ settings, onChange, derivedMac = null }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => { api('/api/device-identity').then(setInfo).catch(e => setError(e.message)); }, []);
@@ -33,10 +60,7 @@ export function DeviceIdentityFields({ settings, onChange }) {
       <summary>Device identity: {blocked.length} unavailable preset{blocked.length === 1 ? '' : 's'}</summary>
       <ul className="muted small">{blocked.map(p => <li key={p.id}><strong>{p.label}</strong>: {p.reason}</li>)}</ul>
     </details>}
-    <details className="proxy-rules fp-notes" data-category="macAddress">
-      <summary>MAC address</summary>
-      <p className="muted small">Websites cannot read your network adapter’s MAC address through standard browser APIs, and a browser profile has no network adapter of its own. AZWAH does not offer a MAC field for browser profiles and never changes this computer’s MAC address. A separate virtual-network environment would need its own approval and setup.</p>
-    </details>
+    <MacAddressField settings={settings} onChange={onChange} derivedMac={derivedMac} />
   </div>;
 }
 

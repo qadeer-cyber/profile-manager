@@ -54,6 +54,7 @@ export function ProfileOverview({ form, languageText, warnings }) {
     {row('Engine', stableEdition ? 'Google Chrome Stable' : engine)}
     {launchModeText && row('Launch mode', launchModeText, launchMode.mode === 'manual' ? 'Chrome starts like you start it: no automation connection.' : launchMode.reasons.map(launchModeReason).join(' '))}
     {row('Installed reference', version || 'Checking…', 'The installed browser version. This is not a substituted user-agent version.')}
+    {row('MAC address', form.advancedSettings?.macLabel || form.macLabel || 'Assigned when created', 'Saved label only. Websites cannot read a MAC address; AZWAH does not change your network adapter.')}
     {row('Storage', 'Local', 'Profiles are stored in this computer’s data folder.')}
     {row('Folder', form.folder || 'No folder')}
     {row('Proxy', proxy, 'The password is never shown here.')}
