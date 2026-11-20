@@ -221,3 +221,9 @@ label.file-btn input{position:absolute;width:1px;height:1px;overflow:hidden;clip
 /* Sticky editor header covers the drawer-body top padding so scrolled sections do not show above it.
    margin and padding cancel out, so the resting position is unchanged. */
 .editor-sheet .editor-top{top:-18px;margin-top:-18px;padding-top:18px}
+/* Fingerprint editor: segmented choices (existing .seg pills); unavailable modes are visible but inert. */
+.fp-field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.fp-label{font-size:12.5px;font-weight:500;color:var(--text-2)}
+.seg.fp-seg{margin-bottom:0;flex-wrap:wrap;align-self:flex-start;max-width:100%}
+.seg.fp-seg button.sel{color:var(--accent-text)}
+.seg.fp-seg button:disabled{color:var(--text-3,var(--text-2));opacity:.55;cursor:not-allowed}

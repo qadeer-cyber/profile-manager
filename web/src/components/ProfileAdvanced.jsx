@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { SCREEN_PRESETS } from '../../../server/advanced-settings.js';
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED } from '../../../server/fingerprint-settings.js';
 import { api } from '../api.js';
-import { UnavailableOptions, CategoryNotes, FixedCategory } from './FingerprintCatalog.jsx';
+import { UnavailableOptions, CategoryNotes, FixedCategory, ModeSegment } from './FingerprintCatalog.jsx';
 
 const PERMISSIONS = [['notifications', 'Notifications'], ['microphone', 'Microphone'], ['camera', 'Camera'], ['clipboard', 'Clipboard'], ['midi', 'MIDI']];
 const STATES = [['default', 'Browser default'], ['ask', 'Ask'], ['allow', 'Allow'], ['deny', 'Deny']];
@@ -50,7 +50,7 @@ export function IdentityFields({ settings, onChange }) {
     <p><span className="label">Installed Chromium</span><br /><strong className="mono">{identity?.version || (error ? 'Unavailable' : 'Checking…')}</strong>{identity?.source === 'executable' ? <span className="muted"> · observed from the executable</span> : identity ? <span className="muted"> · pinned manifest</span> : null}</p>
     {identity?.versionMismatch && <p className="err-text">The executable version differs from the pinned manifest. Presets follow the executable so the browser is not mislabeled.</p>}
     {error && <p className="err-text">{error}</p>}
-    <label>User-Agent preset<select value={mode} onChange={e => onChange({ ...settings, userAgent: { mode: e.target.value } })}>
+    <label>User-Agent preset<select data-category="userAgent" value={mode} onChange={e => onChange({ ...settings, userAgent: { mode: e.target.value } })}>
       <option value="default">Browser default</option>
       <option value="reduced">Reduced — major version only in the UA string</option>
       <option value="full">Full — exact Chromium version in the UA string</option>
@@ -69,22 +69,21 @@ export function LocationFields({ settings, onChange }) {
   const allow = geo.permission === 'allow';
   return <div className="form">
     <div className="notice">Chrome Stable on Windows applies location settings at launch. Proxy locations are approximate and require a configured GeoIP service. Restart the profile after changing its location or proxy.</div>
-    <label>Location mode<select value={geo.mode ?? ''} onChange={e => set({ mode: e.target.value || null })}>
-      <option value="">Default for this profile</option>
-      <option value="auto">Automatically follow proxy (Chrome Stable or native runtime)</option>
-      <option value="manual">Manual coordinates and timezone</option>
-      <option value="system">System/default location</option>
-    </select></label>
-    <label>Geolocation<select value={geo.permission} onChange={e => set({ permission: e.target.value, ...(e.target.value !== 'allow' ? { latitude: null, longitude: null, accuracy: null } : {}) })}>
-      {STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-    </select></label>
+    <ModeSegment category="geolocationData" label="Location mode" value={geo.mode ?? ''} onChange={value => set({ mode: value || null })} options={[
+      { id: '', label: 'Default', title: 'Default for this profile' },
+      { id: 'auto', label: 'Follow proxy', title: 'Automatically follow proxy (Chrome Stable or native runtime)' },
+      { id: 'manual', label: 'Manual', title: 'Manual coordinates and timezone' },
+      { id: 'system', label: 'System', title: 'System/default location' },
+    ]} />
+    <ModeSegment category="geolocationAccess" label="Geolocation" value={geo.permission}
+      onChange={value => set({ permission: value, ...(value !== 'allow' ? { latitude: null, longitude: null, accuracy: null } : {}) })}
+      options={STATES.map(([value, label]) => ({ id: value, label }))} />
     <div className="proxy-grid">
       <label>Latitude<input inputMode="decimal" disabled={!allow} value={geo.latitude ?? ''} onChange={e => set({ latitude: e.target.value })} placeholder="Optional" /></label>
       <label>Longitude<input inputMode="decimal" disabled={!allow} value={geo.longitude ?? ''} onChange={e => set({ longitude: e.target.value })} placeholder="Optional" /></label>
       <label>Accuracy (meters)<input inputMode="decimal" disabled={!allow} value={geo.accuracy ?? ''} onChange={e => set({ accuracy: e.target.value })} placeholder="Optional" /></label>
     </div>
     {!allow && <p className="muted hint">Coordinates are stored only when geolocation is Allow.</p>}
-    <CategoryNotes category="geolocationData" />
   </div>;
 }
 
@@ -100,7 +99,7 @@ export function WindowFields({ settings, onChange, profileId }) {
   }, [profileId]);
   return <div className="form">
     <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs or multi-monitor layout. On a headed Chromium launch, a position that sits fully outside known displays is moved to the primary origin. Firefox does not receive device scale or window position.</div>
-    <label>Screen preset<select value={screen.preset} onChange={e => {
+    <label>Screen preset<select data-category="screen" value={screen.preset} onChange={e => {
       const preset = e.target.value;
       const known = SCREEN_PRESETS[preset];
       set(known ? { preset, width: known.width, height: known.height, viewportWidth: known.width, viewportHeight: known.height }
@@ -140,11 +139,9 @@ export function FingerprintFields({ settings, onChange }) {
   const set = (key, value) => onChange({ ...settings, fingerprint: { ...fingerprint, [key]: value } });
   return <div className="form">
     <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Canvas, AudioContext, and WebGPU vendor masking are <strong>not</strong> available on stock Chromium (see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> in the repo). Nothing here makes a profile undetectable.</div>
-    {FINGERPRINT_CONTROLS.map(control => <React.Fragment key={control.id}><label>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)} data-category={control.id}>
-      {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
-      <UnavailableOptions category={control.id} />
-    </select><span className="muted hint">{control.note}</span></label>
-      <CategoryNotes category={control.id} />
+    {FINGERPRINT_CONTROLS.map(control => <React.Fragment key={control.id}>
+      <ModeSegment category={control.id} label={control.label} value={fingerprint[control.id]} note={control.note}
+        options={control.modes.map(mode => ({ id: mode.id, label: mode.label }))} onChange={value => set(control.id, value)} />
       {control.id === 'webgl' && <FixedCategory category="webglMetadata" note="Vendor and renderer strings are this GPU's. Restricted WebGL above turns the context off instead." />}
     </React.Fragment>)}
     {FINGERPRINT_FIXED.filter(item => item.id !== 'portScan').map(item => <FixedCategory key={item.id} category={item.id} note={item.reason} />)}

@@ -11,7 +11,7 @@ import { ProfileOverview } from './ProfileOverview.jsx';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { assignableLibraryProxies } from '../lib/proxySwitch.js';
 import { DeviceIdentityFields, FingerprintFields, IdentityFields, LocationFields, PreferenceFields, WindowFields } from './ProfileAdvanced.jsx';
-import { UnavailableOptions, CategoryNotes, FixedCategory } from './FingerprintCatalog.jsx';
+import { UnavailableOptions, CategoryNotes, FixedCategory, ModeSegment } from './FingerprintCatalog.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
 
@@ -224,11 +224,8 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           <CategoryNotes category="languages" />
           <h3 className="h3">WebRTC</h3>
           <div className="notice warn">These are the browser’s real IP-handling choices. Browser default adds no policy flag. A restrictive policy does not turn WebRTC off, spoof an address, or promise that media follows the proxy.</div>
-          <label>WebRTC IP handling<select value={policy.mode} onChange={e => setF({ ...f, webrtcSettings: { mode: e.target.value } })}>
-            {WEBRTC_CHOICES.map(([mode, label]) => <option key={mode} value={mode}>{label}</option>)}
-            <UnavailableOptions category="webrtc" />
-          </select></label>
-          <CategoryNotes category="webrtc" />
+          <ModeSegment category="webrtc" label="WebRTC IP handling" value={policy.mode} onChange={mode => setF({ ...f, webrtcSettings: { mode } })}
+            options={WEBRTC_CHOICES.map(([mode, label]) => ({ id: mode, label }))} />
           {(f.browserEngine || 'chromium') === 'firefox' && <p className="muted hint">On Firefox the same mode is written to stock Gecko ICE prefs in user.js.</p>}
           <h3 className="h3">Device identity</h3>
           <DeviceIdentityFields settings={advanced} onChange={setAdvanced} />

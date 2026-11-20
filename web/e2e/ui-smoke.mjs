@@ -103,20 +103,32 @@ await step('fingerprint tab shows every category with unavailable modes disabled
   await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
   await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
   if (await editor.getByText(/readback prototype|readPixels prototype/i).count()) { await pg.keyboard.press('Escape'); throw new Error('prototype controls still in the editor'); }
+  // Every mode stock Chrome cannot apply stays visible and disabled: per category, the disabled
+  // segmented pills (or <option>s for value lists) must match the catalog's unsupported modes exactly.
+  const catalog = await pg.evaluate(async () => (await (await fetch('/api/fingerprint-catalog')).json()).categories);
   const info = await editor.evaluate(root => {
-    const opts = [...root.querySelectorAll('select option[value^="unavailable:"]')];
-    return { unavailable: opts.length, allDisabled: opts.every(o => o.disabled), categories: [...new Set([...root.querySelectorAll('[data-category]')].map(e => e.dataset.category))].sort() };
+    const perCategory = {};
+    for (const field of root.querySelectorAll('.fp-field[data-category]')) {
+      const pills = [...field.querySelectorAll('button[data-unavailable]')];
+      perCategory[field.dataset.category] = { count: pills.length, allDisabled: pills.every(b => b.disabled) };
+    }
+    for (const sel of root.querySelectorAll('select[data-category]')) {
+      const opts = [...sel.querySelectorAll('option[value^="unavailable:"]')];
+      perCategory[sel.dataset.category] = { count: opts.length, allDisabled: opts.every(o => o.disabled) };
+    }
+    return { perCategory, categories: [...new Set([...root.querySelectorAll('[data-category]')].map(e => e.dataset.category))].sort() };
   });
-  // 24 unsupported catalog modes minus Languages "Masked" (text fields, explained in notes), plus every
-  // device preset this host cannot present (computed from the API because it depends on the host OS).
   const device = await pg.evaluate(async () => (await (await fetch('/api/device-identity')).json()));
   const blockedPresets = device.presets.filter(p => p.state !== 'supported');
-  if (info.unavailable !== 23 + blockedPresets.length || !info.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable options ' + JSON.stringify({ ...info, blockedPresets: blockedPresets.length })); }
+  for (const [id, seen] of Object.entries(info.perCategory)) {
+    const expected = id === 'deviceIdentity' ? blockedPresets.length : catalog.find(c => c.id === id).modes.filter(m => m.state === 'unsupported').length;
+    if (seen.count !== expected || !seen.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable modes ' + id + ' ' + JSON.stringify({ seen, expected })); }
+  }
   for (const c of ['audio', 'canvas', 'deviceIdentity', 'macAddress', 'fonts', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'])
     if (!info.categories.includes(c)) throw new Error('category not shown: ' + c + ' in ' + info.categories.join(','));
-  const canvasNoise = await editor.getByRole('combobox', { name: 'Canvas', exact: true }).evaluate(sel => { const o = sel.querySelector('option[value="unavailable:noise"]'); return o ? { disabled: o.disabled, label: o.textContent } : null; });
+  const canvasNoise = await editor.getByRole('radiogroup', { name: 'Canvas', exact: true }).locator('button[data-unavailable="noise"]').evaluate(b => ({ disabled: b.disabled, label: b.textContent }));
   if (!canvasNoise?.disabled) { await pg.keyboard.press('Escape'); throw new Error('canvas noise option ' + JSON.stringify(canvasNoise)); }
-  await editor.getByRole('combobox', { name: 'WebGL', exact: true }).selectOption('restricted');
+  await editor.getByRole('radiogroup', { name: 'WebGL', exact: true }).getByRole('radio', { name: /^Restricted/ }).click();
   const explicit = device.presets.find(p => p.state === 'supported' && p.id !== 'host');
   if (explicit) await editor.getByRole('combobox', { name: 'Device preset', exact: true }).selectOption(explicit.id);
   await saveProfile();
@@ -131,7 +143,7 @@ await step('fingerprint tab shows every category with unavailable modes disabled
   const pills = await section.locator('.fact .pill').allInnerTexts();
   if (pills.length !== 17) throw new Error('category rows ' + pills.length);
   if (pills.some(t => t === 'pass' || t === 'partial')) throw new Error('stopped profile reported verification pass: ' + pills.join(','));
-  await editor.getByRole('combobox', { name: 'WebGL', exact: true }).selectOption('default');
+  await editor.getByRole('radiogroup', { name: 'WebGL', exact: true }).getByRole('radio', { name: /^Default/ }).click();
   await saveProfile();
 });
 await step('sidebar lists folders', async () => {

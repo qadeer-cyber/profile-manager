@@ -101,7 +101,7 @@ test('Chromium applies coherent identity, geolocation, window settings, and obse
       await editor.getByRole('tab', { name: 'Fingerprint' }).click();
       await editor.getByText(version).waitFor();
       await editor.getByLabel('Screen preset').selectOption('1280x800');
-      await editor.getByLabel('Geolocation').selectOption('allow');
+      await editor.getByRole('radiogroup', { name: 'Geolocation', exact: true }).getByRole('radio', { name: /^Allow/ }).click();
       await editor.getByLabel('Latitude').fill('37.7');
       await editor.getByLabel('Longitude').fill('-122.4');
       await editor.getByRole('button', { name: 'Create profile', exact: true }).click();
