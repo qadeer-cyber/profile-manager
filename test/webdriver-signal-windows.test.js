@@ -34,7 +34,7 @@ test('real Chrome Stable: navigator.webdriver for each launch mode', { timeout: 
   const temp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-webdriver-'));
   const results = {};
   const direct = async (mode, extra, stdio = 'ignore') => {
-    const child = spawn(stable.executablePath, ['--no-first-run', '--no-default-browser-check', `--user-data-dir=${temp()}`, ...extra, `${origin}/${mode}`], { stdio, windowsHide: false });
+    const child = spawn(stable.path, ['--no-first-run', '--no-default-browser-check', `--user-data-dir=${temp()}`, ...extra, `${origin}/${mode}`], { stdio, windowsHide: false });
     try { results[mode] = await waitFor(mode); } finally { child.kill(); await new Promise(r => setTimeout(r, 1500)); }
   };
 
