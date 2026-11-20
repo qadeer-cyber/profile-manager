@@ -21,6 +21,24 @@ import { crashSummary, refreshesNow } from './lib.js';
 import { shortcutAllowed } from './lib/shortcuts.js';
 
 const SHOW_ADMIN = import.meta.env.VITE_AZWAH_ADMIN === '1';
+
+// The profiles header: one bar split by state, so how much of the fleet is live reads at a glance.
+function FleetBar({ total, running, errors, onShow }) {
+  const idle = Math.max(0, total - running - errors);
+  const pct = n => (total ? (n / total) * 100 : 0) + '%';
+  return <div className="fleet" aria-label="Profile summary">
+    <div className="fleet-bar" aria-hidden="true">
+      <span className="fleet-run" style={{ width: pct(running) }} />
+      <span className="fleet-err" style={{ width: pct(errors) }} />
+    </div>
+    <div className="fleet-legend">
+      <button type="button" className="fleet-key run" onClick={() => onShow('running')}><strong>{running}</strong> running</button>
+      <span className="fleet-key idle"><strong>{idle}</strong> idle</span>
+      {errors > 0 && <span className="fleet-key err"><strong>{errors}</strong> stopped with an error</span>}
+      <span className="fleet-key total"><strong>{total}</strong> {total === 1 ? 'profile' : 'profiles'}</span>
+    </div>
+  </div>;
+}
 const NAV = [['profiles', 'Profiles'], ['proxies', 'Proxies'], ['extensions', 'Extensions'], ['workspaces', 'Workspaces'], ['cookie-robot', 'Automation'], ...(SHOW_ADMIN ? [['license-admin', 'License admin']] : []), ['diagnostics', 'Help and diagnostics'], ['settings', 'Settings']];
 const MORE = [['dashboard', 'Dashboard'], ['templates', 'Templates'], ['monitoring', 'Monitoring'], ['activation', 'Edition']];
 export function App() {
@@ -101,13 +119,10 @@ export function App() {
       onSaved={path => { setFolderDialog(null); showProfiles(path); reloadMeta(); }} />}
     <header className="topbar">
       <div className="brand"><span className="logo"><img src="/azwah.svg" alt="" width="22" height="22" /></span><span>AZWAH</span></div>
-      <nav className="top-destinations" aria-label="Primary navigation">
-        {[...NAV.filter(([key]) => ['profiles', 'proxies', 'extensions', 'workspaces', 'settings', 'diagnostics'].includes(key)), ['templates', 'Templates']].map(([key, label]) =>
-          <button key={key} type="button" aria-current={page === key ? 'page' : undefined}
-            onClick={() => { setPage(key); if (key === 'profiles') { setScope('all'); setFolder('__all'); } }}>
-            {key === 'diagnostics' ? 'Diagnostics' : label}
-          </button>)}
-      </nav>
+      <button type="button" className={'top-live' + (meta.running.length ? ' on' : '')} onClick={() => showProfiles('__all', 'running')}
+        aria-label={`${meta.running.length} running ${meta.running.length === 1 ? 'profile' : 'profiles'}. Show running profiles`}>
+        <span className="live-dot" aria-hidden="true" />{meta.running.length ? `${meta.running.length} running` : 'Nothing running'}
+      </button>
       <button className="top-updates" type="button" onClick={openUpdates}>Updates{update?.status === 'available' && <span className="update-dot" aria-label="New version available" />}</button>
       <div className="top-meta">
         <span className="edition-pill">{edition?.edition === 'owner-personal' ? 'Owner' : edition?.active ? 'Office' : edition?.enforced ? 'Office · not activated' : 'Local'}</span>
@@ -152,10 +167,8 @@ export function App() {
       <main className="content" data-shot={page}>
         {page === 'profiles' && <div className="profile-heading">
           <div><h1>Profiles</h1><p>Manage isolated browser sessions and their network settings.</p></div>
-          <div className="profile-metrics" aria-label="Profile summary">
-            <div><strong>{meta.profileCount ?? '—'}</strong><span>Profiles</span></div>
-            <div><strong>{meta.running.length}</strong><span><i /> Running</span></div>
-          </div>
+          <FleetBar total={meta.profileCount ?? 0} running={meta.running.length} errors={meta.errorCount ?? 0}
+            onShow={nextScope => showProfiles('__all', nextScope)} />
         </div>}
         {update?.status === 'available' && update.latest.version !== remindedVersion && <div className="notice" role="status">
           AZWAH update {update.latest.version} is available.{' '}

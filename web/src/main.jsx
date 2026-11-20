@@ -5,5 +5,6 @@ import { App } from './App.jsx';
 import './style.css';
 import './desktop.css';
 import './profile-table.css';
+import './flightdeck.css';
 
 createRoot(document.getElementById('root')).render(<Toasts><App /></Toasts>);

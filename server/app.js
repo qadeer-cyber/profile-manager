@@ -1633,7 +1633,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
-    const all = db.prepare('SELECT tags, folder, favorite, workspace_id FROM profiles WHERE deleted_at IS NULL').all()
+    const all = db.prepare('SELECT id, tags, folder, favorite, workspace_id, last_error FROM profiles WHERE deleted_at IS NULL').all()
       .filter(canAccessFolderProfile);
     const folderCounts = Object.create(null);
     for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
@@ -1646,6 +1646,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       profileCount: all.length,
       trashCount,
       running: engine.runningIds(),
+      // Stopped profiles whose last run ended in an error (for the fleet bar).
+      errorCount: all.filter(r => r.last_error && !engine.isRunning(r.id)).length,
       features: {
         proxyLibrary: true,
         cookieRobotChromiumOnly: true,
