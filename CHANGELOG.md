@@ -13,6 +13,14 @@ Draft PR. No main merge, release tag or published installer. Installer version m
 - The editor and table name the real engine (Google Chrome Stable and its installed version) instead of the bundled Chromium version this installer does not ship.
 - Live Verify cannot read a manual browser's pages; the report says so (`manual_browser`) instead of claiming results. Checks read from the process command line still run.
 
+- Verified on real Chrome Stable 157 on the Windows runner: `navigator.webdriver` is `false` in a manual AZWAH profile, the same as chrome.exe started by hand (`true` with a control pipe). Cookies, localStorage and IndexedDB survive a stop and restart; two manual profiles do not see each other's storage.
+- Fixed: Stop force-killed a manual Chrome window, so cookies and localStorage Chrome had not yet written were lost. Stop now sends the window a normal close and forces only after 8 s.
+
+### Fingerprint tab and per-profile MAC address
+
+- Fingerprint, WebRTC and location settings are segmented Masked/Real/Custom-style controls. Modes stock Chrome cannot provide stay visible as disabled pills with the reason; none can be selected.
+- Every profile has its own MAC address, saved with it: a unique random value at creation (clones, template copies and restored copies get their own), with Random (Regenerate) and Manual modes. Duplicates (`MAC_LABEL_IN_USE`) and malformed or multicast values are refused. It is a saved label: websites cannot read a MAC address, it is never passed to Chrome, and the network adapter is not changed.
+
 ### In-place upgrade qualification
 
 - Windows installer acceptance now upgrades the real pinned predecessor (`4a45831`, *Azwah Multi Browser Ultimate*) to *AZWAH* in place on the default data folder, with populated synthetic data. It covers an interrupted install, an upgrade while the old app runs a browser, and the new version reading every profile, folder, tag, note, cookie, bookmark, browser storage and saved proxy credential. See `docs/in-place-upgrade.md`.

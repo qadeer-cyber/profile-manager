@@ -103,6 +103,7 @@ Not changed: clearing cookies deletes rows by host, name and path, which needs n
 ## Open items
 
 - Manual Chrome Stable profiles (Option A): automation detection on Google, Walmart and Facebook must be re-tested by the owner on a physical Windows PC. A local `navigator.webdriver` check is a diagnostic, not proof of site acceptance.
+- Fixed during Option A CI (`0602d40` → `4f16d32`): Stop force-killed manual Chrome (`taskkill /T /F`) and lost unwritten cookies and localStorage. Stop now closes the window normally first. The live webdriver-signal step checks persistence across restart.
 
 - Upgrades with the old app open: the silent installer closes the old app and its running browser without a prompt (observed in CI). Interactive installs and physical Windows 10/11 upgrades from a user's real previous version are unverified.
 
