@@ -781,6 +781,14 @@ export function closeOutcome(entry) {
   const outcome = terminationOutcome(entry);
   return outcome === 'unknown' ? 'stopped' : outcome;
 }
+// What happened, for people reading the lifecycle export: AZWAH's own Stop (graceful or forced), the
+// user closing the window, a crash, or an exit with no usable evidence. A forced Stop is not a crash.
+export function terminationKind(entry, outcome) {
+  if (entry.stopping) return entry.stopEscalation === 'forced' ? 'ForcedTermination' : 'RequestedStop';
+  if (outcome === 'stopped') return 'NormalWindowClose';
+  if (outcome === 'error') return 'BrowserCrash';
+  return 'Unknown';
+}
 const lifecycleReports = [];
 function recordLifecycle(event) {
   lifecycleReports.push({ at: new Date().toISOString(), ...event });
@@ -812,6 +820,8 @@ function logClassifierEvidence(id, entry, chosen) {
     exitCodeApproach: byCode,
     prefsApproach: byPrefs,
     chosen,
+    terminationKind: terminationKind(entry, chosen),
+    stopEscalation: entry.stopEscalation ?? null,
     stopCause: entry.stopCause ?? (entry.stopping ? 'REQUESTED_STOP' : null),
     lastProxyHealthyAt: entry.lastProxyHealthyAt ?? null,
     rendererCrashes: entry.rendererCrashes ?? 0,
@@ -868,8 +878,12 @@ async function finishClose(id, e) {
   try { dir = userDataDir(id); } catch {}
   // App Stop used to release the row while the pid was still alive. Wait for the
   // process to exit first, and only then read Preferences.
-  if (e.stopping) await waitUntilDead(e, PID_WAIT_MS);
-  else await waitForCloseEvidence(e, dir);
+  if (e.stopping) {
+    await waitUntilDead(e, PID_WAIT_MS);
+    // The pid can be gone before Node delivers the child's exit event; wait for it (bounded) so a
+    // requested Stop is not recorded as "exit not seen".
+    await waitForTermination(e, PID_WAIT_MS);
+  } else await waitForCloseEvidence(e, dir);
   if (!browserDead(e) && e.browserPid && isAlive(e.browserPid)) {
     try { await killTree(e.browserPid, { expect: dir || userDataDir(id) }); } catch {}
     await waitUntilDead(e, 2000);
@@ -1041,6 +1055,8 @@ export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
     if (e.engine === 'firefox' && e.runtime === 'native') Object.assign(killOpts, { graceMs: 8000, waitMs: 15000 });
     // A manual (native) Chrome has no controlled connection to close: ask its windows to close first.
     else if (e.runtime === 'native') Object.assign(killOpts, { gracefulWin32: true, graceMs: 8000 });
+    e.stopEscalation ??= 'graceful';
+    killOpts.onForce = () => { e.stopEscalation = 'forced'; };
     await killTree(e.browserPid, killOpts);
   }
   if (e.done) await e.done;

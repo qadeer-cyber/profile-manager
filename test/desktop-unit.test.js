@@ -42,10 +42,13 @@ test('killTree (win32 mock): verifies the tree is gone after taskkill, retries, 
 test('killTree (win32 mock) gracefulWin32: asks the window to close first so Chrome flushes cookies and storage', async () => {
   let alive = true, calls = [];
   const closes = (cmd, args, o, cb) => { calls.push(args.join(' ')); if (!args.includes('/F')) setTimeout(() => { alive = false; }, 10); cb(null); };
-  assert.equal(await proc.killTree(4244, { platform: 'win32', exec: closes, alive: () => alive, graceMs: 500, gracefulWin32: true }), true);
+  let forced = 0;
+  assert.equal(await proc.killTree(4244, { platform: 'win32', exec: closes, alive: () => alive, graceMs: 500, gracefulWin32: true, onForce: () => forced++ }), true);
+  assert.equal(forced, 0, 'no force reported for a graceful close');
   assert.deepEqual(calls, ['/PID 4244'], 'a graceful close that works needs no force');
   calls = []; const stubborn = (cmd, args, o, cb) => { calls.push(args.join(' ')); cb(null); };
-  assert.equal(await proc.killTree(4245, { platform: 'win32', exec: stubborn, alive: () => true, graceMs: 100, waitMs: 200, gracefulWin32: true }), false);
+  assert.equal(await proc.killTree(4245, { platform: 'win32', exec: stubborn, alive: () => true, graceMs: 100, waitMs: 200, gracefulWin32: true, onForce: () => forced++ }), false);
+  assert.equal(forced, 1, 'force reported once when the grace period ends');
   assert.deepEqual(calls, ['/PID 4245', '/PID 4245 /T /F', '/PID 4245 /F'], 'force only after the grace period');
 });
 test('processCommandLine (win32 mock): uses Get-CimInstance, falls back to wmic', async () => {

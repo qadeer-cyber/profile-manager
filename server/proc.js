@@ -40,7 +40,7 @@ export async function pidMatches(pid, needle, opts = {}) {
   return false;
 }
 
-export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = process.platform, exec = execFile, alive = isAlive, expect, gracefulWin32 = false } = {}) {
+export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = process.platform, exec = execFile, alive = isAlive, expect, gracefulWin32 = false, onForce } = {}) {
   if (!pid) return false;
   if (expect && !(await pidMatches(pid, expect, { platform, exec, alive }))) return false;
   const waitGone = async ms => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (!alive(pid)) return true; await sleep(100); } return !alive(pid); };
@@ -51,6 +51,7 @@ export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = 
       await new Promise(res => exec('taskkill', ['/PID', String(pid)], { windowsHide: true }, () => res()));
       if (await waitGone(graceMs)) return true;
     }
+    onForce?.();
     await new Promise(res => exec('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true }, () => res()));
     if (await waitGone(waitMs)) return true;
     await new Promise(res => exec('taskkill', ['/PID', String(pid), '/F'], { windowsHide: true }, () => res()));
@@ -59,6 +60,7 @@ export async function killTree(pid, { graceMs = 2000, waitMs = 5000, platform = 
   if (!alive(pid)) return true;
   try { process.kill(pid, 'SIGTERM'); } catch { return !alive(pid); }
   if (await waitGone(graceMs)) return true;
+  onForce?.();
   try { process.kill(pid, 'SIGKILL'); } catch {}
   return waitGone(Math.max(1000, waitMs - graceMs));
 }

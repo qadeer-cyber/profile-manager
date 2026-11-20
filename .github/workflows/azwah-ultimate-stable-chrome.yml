@@ -328,7 +328,21 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      # The artifact service can report "not found" for a moment right after an upload finishes
+      # (seen on 6cd3bb3). Read back once more after a pause; the verification below is unchanged.
       - name: Read back the uploaded installer
+        id: readback
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-windows-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/azwah-readback
+      - name: Wait before reading back again
+        if: steps.readback.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 30
+      - name: Read back the uploaded installer (second attempt)
+        if: steps.readback.outcome == 'failure'
         uses: actions/download-artifact@v4
         with:
           name: azwah-windows-x64-${{ github.sha }}
