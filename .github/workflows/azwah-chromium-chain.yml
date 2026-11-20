@@ -130,6 +130,8 @@ jobs:
       # rather than from assumptions. Text only; no profiles, credentials or sources.
       - name: Record build inputs for cache diagnosis
         if: always()
+        # Evidence only: it must never fail the job or block the cache hand-over (run 44749921438).
+        continue-on-error: true
         shell: pwsh
         run: |
           $dir = Join-Path $env:RUNNER_TEMP 'chain-diagnostics'
@@ -145,7 +147,7 @@ jobs:
           try { $report.visualStudio = (& "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property catalog_productDisplayVersion) } catch {}
           try { $report.windowsSdks = @(Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/Include" -Directory | ForEach-Object Name) } catch {}
           try { $env:Path = "$env:AZWAH_DEPOT_TOOLS;$env:Path"
-            $report.sampleCommands = @('obj/base/base/values.obj', 'obj/v8/v8_base_without_compiler/objects.obj', 'obj/third_party/blink/renderer/core/core/dom.obj') |
+            $report.sampleCommands = @('obj/base/base/values.obj', 'obj/v8/v8_base_without_compiler/objects.obj') |
               ForEach-Object { $ninja = Join-Path $src 'third_party/ninja/ninja.exe'; if (!(Test-Path $ninja)) { $ninja = 'ninja.exe' }; (& $ninja -C $out -t commands $_ 2>$null | Select-Object -Last 1) } } catch {}
           foreach ($name in 'INCLUDE', 'LIB', 'LIBPATH') {
             $value = [Environment]::GetEnvironmentVariable($name)
@@ -154,15 +156,18 @@ jobs:
           $report | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $dir 'build-inputs.json')
           Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'sccache-stats.json') -Destination $dir -ErrorAction SilentlyContinue
           Get-Content -Raw (Join-Path $dir 'build-inputs.json')
+          $global:LASTEXITCODE = 0
       - name: Upload build-input diagnostics
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: azwah-chain-diagnostics-${{ github.run_id }}-${{ github.job }}
           path: ${{ runner.temp }}/chain-diagnostics
           retention-days: 14
       - name: Hand the compiler cache to the next job
-        if: steps.build.outputs.complete == 'false'
+        # Runs whenever the build stopped at its budget, whatever happened in later evidence steps.
+        if: ${{ !cancelled() && steps.build.outputs.complete == 'false' }}
         uses: actions/upload-artifact@v4
         with:
           name: azwah-sccache-${{ github.run_id }}
