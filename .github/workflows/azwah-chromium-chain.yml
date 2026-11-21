@@ -68,9 +68,11 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) ('azwah-chain-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_JOB)
-          $tools = Join-Path $root 'depot_tools'
-          $workspace = Join-Path $root 'chromium'
+          # Short paths: Chromium object paths reach 183 characters, and sccache cannot write an object whose
+          # full path reaches Windows' 260-character limit (run 44798415536 stage 2: exactly 260, os error 3).
+          $root = Join-Path ([IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE)) 'az'
+          $tools = Join-Path $root 't'
+          $workspace = Join-Path $root 'c'
           New-Item -ItemType Directory -Path $tools,$workspace | Out-Null
           git config --global core.autocrlf false
           git config --global core.longpaths true
@@ -80,7 +82,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Pinned depot_tools fetch failed.' }
           git -C $tools checkout --detach FETCH_HEAD
           if ($LASTEXITCODE -ne 0 -or (git -C $tools rev-parse HEAD) -ne $env:DEPOT_TOOLS_PIN) { throw 'depot_tools pin did not verify.' }
-          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_CACHE=$(Join-Path $root 'sccache')") | Add-Content -LiteralPath $env:GITHUB_ENV
+          @("AZWAH_BUILD_WORKSPACE=$workspace", "AZWAH_DEPOT_TOOLS=$tools", "AZWAH_CACHE=$(Join-Path $root 's')") | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Initialize and qualify pinned depot_tools
         shell: pwsh
         run: ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:DEPOT_TOOLS_PIN

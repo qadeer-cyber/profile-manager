@@ -275,6 +275,17 @@ symbol_level = 0
             return
         }
         if ($Sccache) {
+            # sccache writes cached objects with ordinary Windows paths, which stop at 260 characters
+            # (run 44798415536 stage 2 failed on an object whose full path was exactly 260). Check every
+            # build output now instead of failing hours into the build.
+            $outRoot = (Resolve-Path -LiteralPath $out).ProviderPath
+            $longest = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'targets', 'all') | ForEach-Object {
+                if ($_ -match '^(obj/[^:]+\.obj):') { $Matches[1] } } | Sort-Object Length -Descending | Select-Object -First 1
+            $longestPath = Join-Path $outRoot $longest
+            Write-Output "LONGEST_OUTPUT_PATH length=$($longestPath.Length) $longest"
+            if ($longestPath.Length -gt 250) {
+                throw "Build output path is $($longestPath.Length) characters; sccache needs under 260. Use a shorter workspace path."
+            }
             # Fail within minutes, not after a full job, if compiles still cannot be cached.
             Write-Output 'BEGIN cacheability check: compile //base through sccache.'
             Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", 'base') -Budgeted
