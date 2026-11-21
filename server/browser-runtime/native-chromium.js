@@ -64,7 +64,15 @@ export async function launchNativeChromium(plan) {
   if (!exe) throw Object.assign(new Error('Chromium executable path is missing'), { status: 503, code: 'CHROMIUM_MISSING' });
   const argv = nativeArgv(plan);
   const proc = spawn(exe, argv, { env: nativeChromiumEnv(plan), stdio: 'ignore', windowsHide: false, detached: false });
-  if (!proc.pid) throw Object.assign(new Error('Failed to spawn Chromium'), { status: 500, code: 'NATIVE_SPAWN_FAILED' });
+  // Without a listener, a spawn failure (for example ENOENT when the browser was removed after it was found)
+  // is an uncaught 'error' event that would take down the whole AZWAH server instead of failing one launch.
+  let spawnError = null;
+  proc.on('error', error => { spawnError = error; });
+  if (!proc.pid) {
+    await new Promise(resolve => setImmediate(resolve));
+    throw Object.assign(new Error(`Failed to start the browser${spawnError?.code ? ` (${spawnError.code})` : ''}. Check that it is installed.`),
+      { status: 503, code: 'NATIVE_SPAWN_FAILED' });
+  }
   const browserPid = await discoverOwnedBrowserPid(plan.dir, [proc.pid]);
   return { proc, browserPid, argv, spawnPid: proc.pid };
 }
