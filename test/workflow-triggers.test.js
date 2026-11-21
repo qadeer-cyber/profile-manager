@@ -8,7 +8,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const dir = new URL('../.github/workflows/', import.meta.url);
 const load = name => {
-  const text = fs.readFileSync(new URL(name, dir), 'utf8');
+  // Windows checkouts use CRLF line endings.
+  const text = fs.readFileSync(new URL(name, dir), 'utf8').replace(/\r\n/g, '\n');
   return { text };
 };
 const BRANCH = 'feature/azwah-ultimate-2';
