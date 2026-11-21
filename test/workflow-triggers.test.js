@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 const dir = new URL('../.github/workflows/', import.meta.url);
 const load = name => {
   const text = fs.readFileSync(new URL(name, dir), 'utf8');
@@ -43,7 +44,7 @@ test('evidence steps cannot fail a stage; the hand-over runs whenever the build 
 
 test('no workflow publishes a release on a push to this branch', () => {
   for (const file of fs.readdirSync(dir).filter(f => /\.ya?ml$/.test(f))) {
-    const text = fs.readFileSync(path.join(dir.pathname, file), 'utf8');
+    const text = fs.readFileSync(path.join(fileURLToPath(dir), file), 'utf8');
     if (!text.includes(BRANCH)) continue;
     assert.doesNotMatch(text, /softprops\/action-gh-release|gh release create|actions\/create-release/, `${file} would publish a release`);
   }

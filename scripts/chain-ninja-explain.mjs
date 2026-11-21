@@ -37,7 +37,7 @@ export function summarizeDeps(text, watched = WATCHED) {
   return summary;
 }
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1:')}`).href;
+const isMain = process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);

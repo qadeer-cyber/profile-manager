@@ -3,6 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { checkPaths, outputsFromTargets } from '../scripts/chain-path-preflight.mjs';
 
 const XNN = 'obj/third_party/xnnpack/f16-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-avx512fp16-amx-tile-amx-int8-amx-fp16/f16-igemm-16x64c2-minmax-avx512amxfp16.obj';
@@ -42,7 +43,7 @@ test('fails closed on an empty target list or a relative build directory', () =>
 });
 
 test('command line: prints LONGEST_OUTPUT_PATH and exits 1 when too long', () => {
-  const script = new URL('../scripts/chain-path-preflight.mjs', import.meta.url).pathname;
+  const script = fileURLToPath(new URL('../scripts/chain-path-preflight.mjs', import.meta.url));
   const bad = spawnSync(process.execPath, [script, OLD], { input: targets, encoding: 'utf8' });
   assert.equal(bad.status, 1);
   assert.match(bad.stdout, /^LONGEST_OUTPUT_PATH length=260 /m);

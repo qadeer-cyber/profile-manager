@@ -32,7 +32,7 @@ export function checkPaths(targetsText, outDir, limit = DEFAULT_LIMIT) {
     reason: ok ? null : `Build output path is ${longest.length} characters (limit ${limit}; Windows fails at 260): ${longest.path}. Use a shorter workspace path.` };
 }
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/').replace(/^([A-Za-z]):/, '/$1:')}`).href;
+const isMain = process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const chunks = [];
   for await (const chunk of process.stdin) chunks.push(chunk);

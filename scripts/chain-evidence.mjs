@@ -165,7 +165,7 @@ export function extractEvidence(logText) {
   return out.join('\n') + '\n';
 }
 
-const isMain = process.argv[1] && import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href;
+const isMain = process.argv[1] && import.meta.url === (await import('node:url')).pathToFileURL(process.argv[1]).href;
 if (isMain) {
   const fs = await import('node:fs');
   const args = process.argv.slice(2);

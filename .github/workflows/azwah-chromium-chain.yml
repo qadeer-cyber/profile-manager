@@ -211,6 +211,20 @@ jobs:
           foreach ($dir in 'locales', 'MEIPreload', 'resources') {
             if (Test-Path -LiteralPath (Join-Path $out $dir)) { Copy-Item -LiteralPath (Join-Path $out $dir) -Destination $stage -Recurse }
           }
+          # Provenance: every file with its SHA-256, source pins, toolchain and CI run; verified before zipping.
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          $clang = (& (Join-Path $env:AZWAH_BUILD_WORKSPACE 'src/third_party/llvm-build/Release+Asserts/bin/clang-cl.exe') --version | Select-Object -First 1)
+          $inputs = [ordered]@{ azwahCommit = $env:GITHUB_SHA; chromiumRevision = $pin.revision; chromiumVersion = $pin.version
+            patchSha256 = (Get-FileHash native-chromium/windows-source.patch).Hash.ToLowerInvariant()
+            gnArgsSha256 = (Get-FileHash (Join-Path $out 'args.gn')).Hash.ToLowerInvariant()
+            toolchain = @{ clang = "$clang"; visualStudio = $pin.visualStudioVersion; windowsSdk = $pin.windowsSdkVersion }
+            runId = $env:GITHUB_RUN_ID; stage = $env:GITHUB_JOB; runner = $env:ImageVersion
+            smoke = @{ result = 'passed'; by = 'scripts/test-native-chromium-build.ps1 on the build runner' } }
+          $inputsFile = Join-Path $env:RUNNER_TEMP 'native-inputs.json'
+          $inputs | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $inputsFile -Encoding utf8
+          node scripts/native-artifact.mjs manifest $stage $inputsFile | Set-Content -LiteralPath (Join-Path $stage 'AZWAH-NATIVE-MANIFEST.json') -Encoding utf8
+          node scripts/native-artifact.mjs verify $stage (Join-Path $stage 'AZWAH-NATIVE-MANIFEST.json')
+          if ($LASTEXITCODE -ne 0) { throw 'The packaged browser failed manifest verification.' }
           $zip = Join-Path $env:RUNNER_TEMP 'azwah-chromium-win64.zip'
           Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip
           $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -264,3 +278,35 @@ jobs:
     outputs:
       complete: ${{ steps.build.outputs.complete }}
     steps: *stage
+
+  # A clean runner, without the build tree: download the finished browser, verify its manifest and hashes,
+  # then start it, load a local page, close it gracefully and relaunch it (scripts/native-smoke.mjs).
+  fresh-runner-smoke:
+    needs: [stage-1, stage-2, stage-3, stage-4, stage-5, stage-6]
+    if: >-
+      ${{ always() && (needs.stage-1.outputs.complete == 'true' || needs.stage-2.outputs.complete == 'true' ||
+          needs.stage-3.outputs.complete == 'true' || needs.stage-4.outputs.complete == 'true' ||
+          needs.stage-5.outputs.complete == 'true' || needs.stage-6.outputs.complete == 'true') }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: azwah-chromium-win64-${{ github.sha }}
+          path: ${{ runner.temp }}/browser-zip
+      - name: Verify the archive and smoke-test the browser on a fresh runner
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'browser-zip') -Filter '*.zip' | Select-Object -First 1
+          Write-Output "ARCHIVE_SHA256 $((Get-FileHash -LiteralPath $zip.FullName).Hash.ToLowerInvariant()) bytes=$($zip.Length)"
+          $dir = Join-Path $env:RUNNER_TEMP 'browser'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $dir
+          node scripts/native-artifact.mjs verify $dir (Join-Path $dir 'AZWAH-NATIVE-MANIFEST.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed on the fresh runner.' }
+          $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
+          node scripts/native-smoke.mjs (Join-Path $dir 'chrome.exe') --expect-version $pin.version
+          if ($LASTEXITCODE -ne 0) { throw 'Fresh-runner smoke test failed.' }
