@@ -303,6 +303,17 @@ const get = id => {
 const getAny = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=?').get(id));
 const must = id => { const p = get(id); if (!p) throw err(404, 'not found'); return p; };
 
+// Proxy credentials: control characters cannot be part of working credentials and would corrupt logs or protocol
+// framing; SOCKS5 username/password authentication carries each value in at most 255 bytes (RFC 1929).
+// password === null means "unchanged" (library edits that do not send a password).
+function assertProxyCredentials(type, username, password) {
+  if (/[\u0000-\u001f\u007f]/.test(username) || (password != null && /[\u0000-\u001f\u007f]/.test(password))) {
+    throw err(400, 'Proxy username and password cannot contain control characters (line breaks, tabs or NUL).');
+  }
+  if (type === 'socks5' && (Buffer.byteLength(username) > 255 || (password != null && Buffer.byteLength(password) > 255))) {
+    throw err(400, 'SOCKS5 proxy username and password are limited to 255 bytes each.');
+  }
+}
 function cleanProxy(px, prev) {
   if (!px || !px.host) return null;
   if (!['http', 'https', 'socks5'].includes(px.type)) throw err(400, 'proxy.type must be http, https or socks5');
@@ -312,7 +323,10 @@ function cleanProxy(px, prev) {
   if (!/^[A-Za-z0-9.\-:\[\]]+$/.test(host)) throw err(400, 'invalid proxy.host');
   let password = px.password || '';
   if (password === '••••' && prev) password = prev.password || '';
-  return { type: px.type, host, port, username: String(px.username || ''), password: String(password) };
+  const username = String(px.username || '');
+  password = String(password);
+  assertProxyCredentials(px.type, username, password);
+  return { type: px.type, host, port, username, password };
 }
 function strictBool(v, name) { if (typeof v !== 'boolean') throw err(400, `${name} must be a boolean`); return v; }
 function validate(b, prev) {
@@ -1099,6 +1113,7 @@ function validType(t) { if (!PROXY_TYPES.includes(t)) throw err(400, 'proxy type
 function createProxyRow({ name, type, host, port, username = '', password = '', tags = [], provider = null, providerRef = null, providerMeta = {} }) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   type = validType(type); host = validHost(host); port = validPort(port);
+  assertProxyCredentials(type, String(username || ''), String(password || ''));
   name = String(name || '').trim() || `${type}://${host}:${port}`;
   if (name.length > 200) throw err(400, 'name too long');
   db.prepare('INSERT INTO proxies (id,name,type,host,port,username,password,tags,provider,provider_ref,provider_meta,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -1142,6 +1157,7 @@ function patchProxy(id, b) {
   if ('username' in b) next.username = String(b.username ?? '');
   if ('password' in b) next.password = encrypt(String(b.password ?? ''));
   if ('tags' in b) next.tags = cleanTags(b.tags);
+  assertProxyCredentials(next.type, next.username, 'password' in b ? String(b.password ?? '') : null);
   const endpointChanged = ['type', 'host', 'port', 'username'].some(k => next[k] !== r[k]) || 'password' in b;
   db.prepare(`UPDATE proxies SET name=?,type=?,host=?,port=?,username=?,password=?,tags=?,updated_at=?${endpointChanged ? ',last_test_status=NULL,last_test_ip=NULL,last_test_latency_ms=NULL,last_test_error=NULL,last_tested_at=NULL' : ''} WHERE id=?`)
     .run(next.name, next.type, next.host, next.port, next.username, next.password, JSON.stringify(next.tags), new Date().toISOString(), id);
