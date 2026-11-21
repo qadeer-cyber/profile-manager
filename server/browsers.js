@@ -85,7 +85,7 @@ export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()]
 export const liveContext = id => live.get(id)?.ctx || null;
 export const launchEvidence = id => {
   const entry = live.get(id);
-  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null, engineVersion: entry?.engineVersion ?? null, engineSource: entry?.engineSource ?? null, proxyTimezone: entry?.proxyTimezone ?? null, launchMode: entry?.launchMode ?? null, runtime: entry?.runtime ?? null };
+  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null, engineVersion: entry?.engineVersion ?? null, engineSource: entry?.engineSource ?? null, proxyTimezone: entry?.proxyTimezone ?? null, launchMode: entry?.launchMode ?? null, proxyPreflight: entry?.proxyPreflight ?? null, runtime: entry?.runtime ?? null };
 };
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 export function automationLaunch(id) {
@@ -454,6 +454,7 @@ async function doLaunch(p, opts = {}) {
         // A manual Chrome Stable session: the browser AZWAH started, without a control connection.
         engineVersion: launchPlan?.stable?.version || null, engineSource: launchPlan?.stable ? 'chrome-stable' : null,
         launchMode: launchPlan?.launchMode || null,
+        proxyPreflight: launchPlan?.proxyPreflight || null,
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, dir);

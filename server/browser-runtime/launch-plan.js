@@ -19,6 +19,7 @@ import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
 import { stableLaunchMode } from './stable-launch-mode.js';
+import { manualProxyPreflight } from './proxy-preflight.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
 const automationEnabled = opts => !!opts.automation || automationDefault();
@@ -54,6 +55,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   const dir = opts.userDataDir;
   if (!dir) throw httpErr(500, 'userDataDir required', 'INTERNAL');
   let locationOverride = null;
+  let proxyPreflight = null; // Manual proxy launches: verified / inconclusive (block throws)
   const advanced = p.advancedSettings || {};
   const geo = advanced.geolocation || {};
   // A Chrome Stable proxy profile set to Manual does not follow the proxy's location: the page keeps this
@@ -94,6 +96,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       // A slow exit-IP service or a missing location database does not. When no language is saved, the
       // proxy country's language is used (an ordinary startup setting). Capped at 8 seconds.
       let found = null;
+      let failure = null;
       try {
         let timer;
         found = await Promise.race([
@@ -101,9 +104,9 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
             read: () => getSetting('proxy-location:' + p.id, null), save: value => setSetting('proxy-location:' + p.id, value) }),
           new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('proxy check timed out')), 8000); }),
         ]).finally(() => clearTimeout(timer));
-      } catch (error) {
-        if (['PROXY_AUTH_REQUIRED', 'PROXY_DNS_FAILED', 'PROXY_UPSTREAM_UNAVAILABLE'].includes(error?.code)) throw error;
-      }
+      } catch (error) { failure = error; }
+      proxyPreflight = manualProxyPreflight(found, failure);
+      if (proxyPreflight.state === 'block') throw failure;
       if (found && /^[A-Z]{2}$/.test(found.country || '') && !regional.locale && !regional.languages.length) {
         const inferred = new Intl.Locale('und-' + found.country).maximize();
         regional.locale = inferred.language + '-' + found.country;
@@ -273,6 +276,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     nativeSession,
     rememberWindow,
     launchMode,
+    proxyPreflight,
     playwrightOpts,
     identity,
   };

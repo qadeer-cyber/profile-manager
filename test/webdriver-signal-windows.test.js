@@ -139,6 +139,10 @@ fetch('http://example.com/', { mode: 'no-cors', cache: 'no-store' }).then(() => 
       assert.ok(d1.args.some(arg => String(arg).startsWith('--host-resolver-rules=')), 'DNS leak protection stays on');
       assert.ok(proxied > 0, 'the page was loaded through the authenticated proxy');
       assert.equal(d1.report.webdriver, 'false', 'navigator.webdriver in a manual proxy profile');
+      // The proxy was checked outside the browser before launch; the outcome is recorded, never assumed.
+      const preflight = launchEvidence(D.id)?.proxyPreflight;
+      assert.ok(preflight && ['verified', 'inconclusive'].includes(preflight.state), JSON.stringify(preflight));
+      results.manualProxyPreflight = preflight.state;
       await api('POST', `/profiles/${D.id}/stop`);
     } finally {
       await proxy.close(true);
