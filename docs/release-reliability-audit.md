@@ -104,6 +104,17 @@ Not changed: clearing cookies deletes rows by host, name and path, which needs n
 
 - Stop telemetry race fixed and verified over 30 live Stop/restart cycles; `--host-resolver-rules` shown to be applied by Chrome 157; Chrome-missing message corrected; installer read-back retried once after a pause. Evidence and open items: `docs/release-candidate-evidence.md`.
 
+## Intermittent CI failures (classified 2026-11-21)
+
+| Symptom | Where | Cause | Handling |
+| --- | --- | --- | --- |
+| Installer read-back "Artifact not found" 0.3 s after a successful upload | Installer acceptance, `6cd3bb3` | Artifact service consistency delay | One retry after 30 s (`e9f980f`); the verification itself is unchanged |
+| `PROXY_BROWSER_IDENTITY_FAILED` after an upgrade, Controlled proxy profile | Installer acceptance, `61b6ff4` | One api64.ipify.org request through the proxy failed | In-browser exit-IP check retries one transient failure (`2b314d0`); a different IP still fails at once. Also a product fix |
+| socks5 `PROXY_PROBE_TIMEOUT` | Installer acceptance, `0602d40` | External exit-IP service timeout | Passed unchanged on the next run; server-side probe already retries once. Watch for recurrence |
+| Workflow trigger test failed on Windows only | Both workflows, `e793676` | Test assumed LF; Windows checkout is CRLF | Test normalises line endings (`9a1325f`). Deterministic, not a flake |
+
+No retry hides a deterministic failure: each retry is for one named transient condition and logs it.
+
 ## Open items
 
 - Manual Chrome Stable profiles (Option A): automation detection on Google, Walmart and Facebook must be re-tested by the owner on a physical Windows PC. A local `navigator.webdriver` check is a diagnostic, not proof of site acceptance.

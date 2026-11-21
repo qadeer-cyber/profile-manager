@@ -6,14 +6,16 @@ Chrome Stable stays the shipping engine until the owner approves a switch. Maski
 
 ## Parts
 
-| # | Part | Done when | Status |
+States: not started · design · implemented · locally tested · Windows CI verified · Windows 10/11 client verified · approved for shipping.
+
+| # | Part | Done when | State (2026-11-21) |
 | --- | --- | --- | --- |
-| 1 | Chained build makes real progress | Stage 2 reuses stage 1's work (sccache hits) and Ninja gets further | In progress: run 44706934362 failed (no cacheable compiles); fix in the next run |
-| 2 | Finished browser | `chrome.exe` + runtime files built, manifest with source/patch SHA-256, launches, navigates and exits cleanly on a Windows runner, archive hash read back | Not started |
-| 3 | Browser package in AZWAH | Experimental runtime option uses the built browser from the installer; own data folder; Chrome Stable profiles untouched | Not started |
-| 4 | Real-profile qualification | Two profiles isolated, authenticated HTTP/SOCKS5 proxy, proxy timezone without automation, 30 stop/restart cycles, no Crashed marker | Not started |
-| 5 | Canvas privacy (opt-in) | Readbacks differ across sites and sessions, stable within a site; charts and images render correctly; kill switch | Not started (design: `docs/privacy-threat-model.md`) |
-| 6 | Audio | Separate design review, then same checks | Not started |
+| 1 | Chained build makes real progress | A stage reuses the previous stage's cache (matching digest), then compiles new objects and hands the larger cache on | **Implemented; Windows CI partly verified:** cross-runner reuse and digest-checked hand-over proven (run 44798415536); fresh work after reuse not yet proven. Judge with `scripts/chain-evidence.mjs`. Run 44848736628 in progress |
+| 2 | Finished browser | `chrome.exe` + runtime files, manifest with SHA-256s, launches, navigates, exits cleanly on a fresh runner, archive hash read back | **Harness implemented and locally tested** (`native-artifact.mjs`, `native-smoke.mjs`, `fresh-runner-smoke` job); no browser built yet |
+| 3 | Browser package in AZWAH | Experimental runtime option uses the built browser from the installer; own data folder; Chrome Stable profiles untouched | **Not started.** Non-mutation of existing profiles is tested (`test/profile-non-mutation.test.js`) |
+| 4 | Real-profile qualification | Two profiles isolated, authenticated HTTP/SOCKS5 proxy, proxy timezone without automation, 30 stop/restart cycles, no Crashed marker | **Launcher contract locally tested with a fake executable** (`test/native-launcher-lifecycle.test.js`); same checks Windows CI verified for Chrome Stable |
+| 5 | Canvas privacy (opt-in) | Readbacks differ across sites and sessions, stable within a site; charts and images render correctly; kill switch | **Design** (`docs/privacy-threat-model.md`); unmodified baseline recorded (`npm run test:compat`) |
+| 6 | Audio | Separate design review, then same checks | Not started (baseline hash recorded) |
 | 7 | WebGL readback | Separate design review, then same checks | Not started |
 | 8 | Fonts | Separate design review, then same checks | Not started |
 | 9 | Combine | All passed parts enabled together in one build; full Windows qualification; owner decides on promotion | Not started |
