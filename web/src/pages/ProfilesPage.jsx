@@ -1,3 +1,4 @@
+import { launchMessage } from '../lib/launchMessage.js';
 import { PortableExportDialog } from '../components/PortableExportDialog.jsx';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
@@ -180,7 +181,11 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const showFilters = filtersOpen || filtersActive;
   const newProfile = () => setDialog({ kind: 'edit', data: { ...emptyForm, folder: folder === '__all' ? '' : folder } });
   const quickProfile = async () => { try { await api('/api/profiles/quick', { method: 'POST', body: { folder: folder === '__all' ? '' : folder } }); toast('Quick profile created', 'success'); load(); reloadMeta(); } catch (e) { toast(e.message, 'error'); } };
-  const launch = p => act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }));
+  const launch = p => act(p.id, null, async () => {
+    const r = await api(`/api/profiles/${p.id}/launch`, { method: 'POST' });
+    const m = launchMessage(p.name, r);
+    toast(m.text, m.kind);
+  });
   const stop = p => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }));
   const clone = p => act(p.id, `Cloned ${p.name}`, () => api(`/api/profiles/${p.id}/clone`, { method: 'POST', body: { mode: 'settings' } }));
   const rowHandlers = p => ({

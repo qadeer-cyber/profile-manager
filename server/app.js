@@ -441,7 +441,9 @@ const doLaunch = async (id, b = {}, { allowOverride = false } = {}) => {
   let automation = p.automationEnabled;
   if (allowOverride && b.automation !== undefined) automation = strictBool(b.automation, 'automation');
   await engine.launch(p, { headless: b.headless ?? headlessDefault(), url: b.url || getSetting('startUrl', '') || undefined, automation });
-  return publicP(get(id));
+  // Manual proxy launches: the proxy check outcome (verified / inconclusive), so the UI never implies more.
+  const proxyPreflight = engine.launchEvidence?.(id)?.proxyPreflight;
+  return { ...publicP(get(id)), ...(proxyPreflight && { proxyPreflight }) };
 };
 const doStop = async id => { must(id); await engine.stop(id); return publicP(get(id)); };
 configureCookieRobot({ launchProfile: id => doLaunch(id, { automation: true }, { allowOverride: true }) });
