@@ -21,7 +21,18 @@ const P = {
   up: 'M6 15l6-6 6 6', down: 'M6 9l6 6 6-6', bolt: 'M13 2L4 14h7l-1 8 9-12h-7z', upload: 'M12 16V4M6 10l6-6 6 6M4 20h16', download: 'M12 4v12M6 10l6 6 6-6M4 20h16', lock: 'M6 11h12v10H6zM8 11V7a4 4 0 018 0v4',
   star: 'M12 3.2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 15.8 7.2 18.1l.9-5.4L4.2 8.9l5.4-.8z',
   'license-admin': 'M7 11V8a5 5 0 019.6-2M6 11h12v9H6z',
+  activation: 'M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6zM9 12l2 2 4-4',
+  refresh: 'M20 11a8 8 0 00-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0014.3 4.9L20 16M20 20v-4h-4',
+  info: 'M12 21a9 9 0 100-18 9 9 0 000 18zM12 11v5M12 8h.01',
+  columns: 'M4 5h16v14H4zM9.3 5v14M14.7 5v14',
+  filter: 'M4 6h16M7 12h10M10 18h4',
+  window: 'M4 5h16v14H4zM4 9h16M7 7h.01',
+  left: 'M15 6l-6 6 6 6', right: 'M9 6l6 6-6 6', move: 'M3 6h6l2 2h10v11H3zM10 14h6M13 11l3 3-3 3',
+  user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM4 21a8 8 0 0116 0',
 };
+// Filled dots read better than stroked paths at 16px.
+const DOTS = { more: [[12, 5], [12, 12], [12, 19]], 'more-h': [[5, 12], [12, 12], [19, 12]] };
 export function Icon({ name, size = 16, className = '' }) {
+  if (DOTS[name]) return <svg className={'i ' + className} width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">{DOTS[name].map(([cx, cy]) => <circle key={cx + '-' + cy} cx={cx} cy={cy} r="1.9" />)}</svg>;
   return <svg className={'i ' + className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={P[name]} /></svg>;
 }

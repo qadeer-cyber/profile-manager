@@ -26,3 +26,32 @@ test('cancel before worker starts leaves job cancelled without launch', async ()
   assert.equal(state.status, 'cancelled');
   assert.equal(launched, false);
 });
+
+test('cancel during a pending navigation closes only the job tab and retains the task list', async t => {
+  const { chromium } = await import('playwright');
+  const { runCookieRobotTasksOverCdp } = await import('../server/cookie-robot-jobs.js');
+  const { EventEmitter } = await import('node:events');
+  const urls = [];
+  let tabsClosed = 0, disconnected = 0;
+  for (let i = 0; i < 2; i++) {
+    const started = Promise.withResolvers(), pending = Promise.withResolvers();
+    const page = Object.assign(new EventEmitter(), {
+      goto: url => { urls.push(url); started.resolve(); return pending.promise; },
+      close: async () => { tabsClosed++; pending.reject(new Error('tab closed')); },
+    });
+    const ctx = { newPage: async () => page };
+    const connection = t.mock.method(chromium, 'connectOverCDP', async () => ({
+      contexts: () => [ctx], close: async () => { disconnected++; },
+    }));
+    const controller = new AbortController();
+    const tasks = ['https://example.com/one', 'https://example.com/two'].map(url => ({ url, status: 'pending' }));
+    const run = runCookieRobotTasksOverCdp(1, tasks, { signal: controller.signal });
+    await started.promise;
+    controller.abort();
+    assert.deepEqual(await run, tasks);
+    connection.mock.restore();
+  }
+  assert.equal(tabsClosed, 2);
+  assert.equal(disconnected, 2);
+  assert.deepEqual(urls, Array(2).fill('https://example.com/one'));
+});

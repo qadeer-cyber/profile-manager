@@ -4,6 +4,10 @@ const CATALOG = Object.freeze({
     category: 'browser_install',
     action: 'Install Chromium from Settings → Browser, or run the bundled download helper on this machine.',
   },
+  NATIVE_SPAWN_FAILED: {
+    category: 'browser_install',
+    action: 'The browser program could not be started. Check that Google Chrome (or the selected browser) is still installed, then retry.',
+  },
   CHROMIUM_VERSION_MISMATCH: {
     category: 'browser_install',
     action: 'Clear the custom executable path or reinstall Chromium to the pinned build shown in Diagnostics.',

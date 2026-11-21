@@ -2,9 +2,86 @@ import React, { useEffect, useState } from 'react';
 import { SCREEN_PRESETS } from '../../../server/advanced-settings.js';
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED } from '../../../server/fingerprint-settings.js';
 import { api } from '../api.js';
+import { UnavailableOptions, CategoryNotes, FixedCategory, ModeSegment } from './FingerprintCatalog.jsx';
 
 const PERMISSIONS = [['notifications', 'Notifications'], ['microphone', 'Microphone'], ['camera', 'Camera'], ['clipboard', 'Clipboard'], ['midi', 'MIDI']];
 const STATES = [['default', 'Browser default'], ['ask', 'Ask'], ['allow', 'Allow'], ['deny', 'Deny']];
+
+// Device identity: presets this computer's real engine can present. Others are listed, disabled,
+// with the reason, and the server refuses them as well.
+// A random locally administered unicast MAC (first octet xxxxxx10), uppercase and colon-separated.
+export function randomMacLabel() {
+  const b = crypto.getRandomValues(new Uint8Array(6));
+  b[0] = (b[0] & 0xfc) | 0x02;
+  return [...b].map(x => x.toString(16).padStart(2, '0').toUpperCase()).join(':');
+}
+
+// Per-profile MAC address label. Random gives each profile its own generated value; Manual takes one the
+// owner types. The server refuses duplicates and malformed values. It is a saved label only.
+function MacAddressField({ settings, onChange, derivedMac }) {
+  const mode = settings.macLabelMode || (settings.macLabel ? 'manual' : 'random');
+  const value = settings.macLabel ?? derivedMac ?? '';
+  return <div className="mac-field">
+    <ModeSegment category="macAddress" label="MAC address" value={mode} options={[
+      { id: 'random', label: 'Random', title: 'A unique generated MAC for this profile' },
+      { id: 'manual', label: 'Manual', title: 'Type the MAC for this profile' },
+    ]} onChange={next => onChange({ ...settings, macLabelMode: next, macLabel: next === 'random' ? randomMacLabel() : value })} />
+    <div className="mac-row">
+      <input aria-label="MAC address value" className="mono" spellCheck={false} value={value} readOnly={mode === 'random'}
+        placeholder={mode === 'random' ? 'Generated when the profile is created' : '02:AB:CD:EF:01:23'}
+        onChange={e => onChange({ ...settings, macLabelMode: 'manual', macLabel: e.target.value })} />
+      {mode === 'random' && <button type="button" onClick={() => onChange({ ...settings, macLabelMode: 'random', macLabel: randomMacLabel() })}>Regenerate</button>}
+    </div>
+    <span className="muted hint">Saved with this profile; each profile’s MAC is unique. It is a label for your records: websites cannot read a MAC address, it is not sent to Chrome, and AZWAH does not change your network adapter.</span>
+  </div>;
+}
+
+// Chrome Stable proxy profiles: Controlled follows the proxy's timezone and location through the
+// automation connection (navigator.webdriver is true); Manual opens plain Chrome through the proxy with
+// this computer's timezone and location. Shown only in the Chrome Stable edition.
+export function ProxyLaunchFields({ settings, onChange, isNew = false }) {
+  const [edition, setEdition] = useState('');
+  useEffect(() => { api('/api/chromium-identity').then(r => setEdition(r.edition || '')).catch(() => {}); }, []);
+  const runtime = settings.runtime || 'compatibility';
+  if (edition !== 'chrome-stable' && runtime !== 'stable-chrome') return null;
+  if (['privacy', 'azwah-native', 'custom-native-chromium'].includes(runtime)) return null;
+  // New profiles are saved Manual; profiles saved before that choice existed behave Controlled.
+  const value = settings.proxyLaunch || (isNew ? 'manual' : 'controlled');
+  return <ModeSegment category="proxyLaunch" label="Proxy launch" value={value} onChange={next => onChange({ ...settings, proxyLaunch: next })} options={[
+    { id: 'controlled', label: 'Controlled — proxy timezone', title: 'Timezone and location follow the proxy. AZWAH keeps an automation connection, so navigator.webdriver is true.' },
+    { id: 'manual', label: 'Manual — no automation', title: 'Plain Chrome through the proxy. navigator.webdriver is false; timezone and location are this computer’s.' },
+  ]} note={value === 'manual'
+    ? 'Traffic still goes through the proxy, with DNS and WebRTC leak protection. The page shows this computer’s timezone and location, not the proxy’s, and AZWAH does not check the exit IP inside the browser. A custom timezone, coordinates, screen or user-agent emulation, or automation keep the profile controlled.'
+    : 'Timezone and location follow the proxy and the exit IP is checked inside the browser. The automation connection is visible to sites (navigator.webdriver is true).'} />;
+}
+
+export function DeviceIdentityFields({ settings, onChange, derivedMac = null }) {
+  const [info, setInfo] = useState(null);
+  const [error, setError] = useState('');
+  useEffect(() => { api('/api/device-identity').then(setInfo).catch(e => setError(e.message)); }, []);
+  const value = settings.deviceIdentity?.preset || 'host';
+  const presets = info?.presets || [];
+  const usable = presets.filter(p => p.state === 'supported');
+  const blocked = presets.filter(p => p.state !== 'supported');
+  const current = presets.find(p => p.id === value);
+  return <div className="form">
+    <div className="notice">A browser profile presents the computer it runs on. A preset declares that identity and Verify Profile Settings checks it against the live browser. It never changes this computer, and other devices need a matching computer.</div>
+    <label>Device preset<select aria-label="Device preset" data-category="deviceIdentity" value={value} disabled={!info} onChange={e => onChange({ ...settings, deviceIdentity: { preset: e.target.value } })}>
+      {!info && <option value={value}>{error ? 'Unavailable' : 'Checking this computer…'}</option>}
+      {usable.map(p => <option key={p.id} value={p.id}>{p.id === 'host' ? `${p.label} (${info.host.label})` : p.label}</option>)}
+      {current && current.state !== 'supported' && <option value={current.id} disabled>{current.label} — saved earlier, not available here</option>}
+      {blocked.length > 0 && <optgroup label="Not available on this computer">
+        {blocked.filter(p => p.id !== value).map(p => <option key={p.id} value={`unavailable:${p.id}`} disabled title={p.reason}>{p.label} — unavailable</option>)}
+      </optgroup>}
+    </select><span className="muted hint">{current?.reason || 'Detecting this computer\u2019s operating system.'}</span></label>
+    {error && <p className="err-text">{error}</p>}
+    {blocked.length > 0 && <details className="proxy-rules fp-notes" data-category="deviceIdentity">
+      <summary>Device identity: {blocked.length} unavailable preset{blocked.length === 1 ? '' : 's'}</summary>
+      <ul className="muted small">{blocked.map(p => <li key={p.id}><strong>{p.label}</strong>: {p.reason}</li>)}</ul>
+    </details>}
+    <MacAddressField settings={settings} onChange={onChange} derivedMac={derivedMac} />
+  </div>;
+}
 
 export function IdentityFields({ settings, onChange }) {
   const [identity, setIdentity] = useState(null);
@@ -16,13 +93,16 @@ export function IdentityFields({ settings, onChange }) {
     <p><span className="label">Installed Chromium</span><br /><strong className="mono">{identity?.version || (error ? 'Unavailable' : 'Checking…')}</strong>{identity?.source === 'executable' ? <span className="muted"> · observed from the executable</span> : identity ? <span className="muted"> · pinned manifest</span> : null}</p>
     {identity?.versionMismatch && <p className="err-text">The executable version differs from the pinned manifest. Presets follow the executable so the browser is not mislabeled.</p>}
     {error && <p className="err-text">{error}</p>}
-    <label>User-Agent preset<select value={mode} onChange={e => onChange({ ...settings, userAgent: { mode: e.target.value } })}>
+    <label>User-Agent preset<select data-category="userAgent" value={mode} onChange={e => onChange({ ...settings, userAgent: { mode: e.target.value } })}>
       <option value="default">Browser default</option>
       <option value="reduced">Reduced — major version only in the UA string</option>
       <option value="full">Full — exact Chromium version in the UA string</option>
+      <UnavailableOptions category="userAgent" />
     </select></label>
     {identity?.presets?.[mode] && <p className="mono muted">{identity.presets[mode]}</p>}
     <p className="muted hint">A free-form user agent is rejected. A string that names a different Chromium version would disagree with client hints.</p>
+    <CategoryNotes category="userAgent" />
+    <FixedCategory category="navigatorHardware" note="hardwareConcurrency, deviceMemory and platform are always this computer's values. Verification shows what the page observed." />
   </div>;
 }
 
@@ -32,15 +112,15 @@ export function LocationFields({ settings, onChange }) {
   const allow = geo.permission === 'allow';
   return <div className="form">
     <div className="notice">Chrome Stable on Windows applies location settings at launch. Proxy locations are approximate and require a configured GeoIP service. Restart the profile after changing its location or proxy.</div>
-    <label>Location mode<select value={geo.mode ?? ''} onChange={e => set({ mode: e.target.value || null })}>
-      <option value="">Default for this profile</option>
-      <option value="auto">Automatically follow proxy</option>
-      <option value="manual">Manual coordinates and timezone</option>
-      <option value="system">System/default location</option>
-    </select></label>
-    <label>Geolocation<select value={geo.permission} onChange={e => set({ permission: e.target.value, ...(e.target.value !== 'allow' ? { latitude: null, longitude: null, accuracy: null } : {}) })}>
-      {STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-    </select></label>
+    <ModeSegment category="geolocationData" label="Location mode" value={geo.mode ?? ''} onChange={value => set({ mode: value || null })} options={[
+      { id: '', label: 'Default', title: 'Default for this profile' },
+      { id: 'auto', label: 'Follow proxy', title: 'Automatically follow proxy (Chrome Stable or native runtime)' },
+      { id: 'manual', label: 'Manual', title: 'Manual coordinates and timezone' },
+      { id: 'system', label: 'System', title: 'System/default location' },
+    ]} />
+    <ModeSegment category="geolocationAccess" label="Geolocation" value={geo.permission}
+      onChange={value => set({ permission: value, ...(value !== 'allow' ? { latitude: null, longitude: null, accuracy: null } : {}) })}
+      options={STATES.map(([value, label]) => ({ id: value, label }))} />
     <div className="proxy-grid">
       <label>Latitude<input inputMode="decimal" disabled={!allow} value={geo.latitude ?? ''} onChange={e => set({ latitude: e.target.value })} placeholder="Optional" /></label>
       <label>Longitude<input inputMode="decimal" disabled={!allow} value={geo.longitude ?? ''} onChange={e => set({ longitude: e.target.value })} placeholder="Optional" /></label>
@@ -62,7 +142,7 @@ export function WindowFields({ settings, onChange, profileId }) {
   }, [profileId]);
   return <div className="form">
     <div className="notice">Window size presets apply on the next launch (Chromium <code>--window-size</code> / Firefox <code>-width</code> and <code>-height</code>). They do not spoof screen APIs or multi-monitor layout. On a headed Chromium launch, a position that sits fully outside known displays is moved to the primary origin. Firefox does not receive device scale or window position.</div>
-    <label>Screen preset<select value={screen.preset} onChange={e => {
+    <label>Screen preset<select data-category="screen" value={screen.preset} onChange={e => {
       const preset = e.target.value;
       const known = SCREEN_PRESETS[preset];
       set(known ? { preset, width: known.width, height: known.height, viewportWidth: known.width, viewportHeight: known.height }
@@ -72,7 +152,9 @@ export function WindowFields({ settings, onChange, profileId }) {
       <option value="native">Native window</option>
       {Object.entries(SCREEN_PRESETS).map(([id, size]) => <option key={id} value={id}>{size.width} × {size.height}</option>)}
       <option value="custom">Custom</option>
+      <UnavailableOptions category="screen" />
     </select></label>
+    <CategoryNotes category="screen" />
     {custom && <div className="proxy-grid">
       <label>Screen width<input inputMode="numeric" value={screen.width ?? ''} onChange={e => set({ width: e.target.value })} /></label>
       <label>Screen height<input inputMode="numeric" value={screen.height ?? ''} onChange={e => set({ height: e.target.value })} /></label>
@@ -100,28 +182,21 @@ export function FingerprintFields({ settings, onChange }) {
   const set = (key, value) => onChange({ ...settings, fingerprint: { ...fingerprint, [key]: value } });
   return <div className="form">
     <div className="notice">These controls use Chromium’s own switches and permissions. Default and Real leave the signal alone. Restricted turns a real feature off or denies a permission. Canvas, AudioContext, and WebGPU vendor masking are <strong>not</strong> available on stock Chromium (see <code>PHASE_TWO_STOCK_FINGERPRINT_FEASIBILITY.md</code> in the repo). Nothing here makes a profile undetectable.</div>
-    {FINGERPRINT_CONTROLS.map(control => <label key={control.id}>{control.label}<select aria-label={control.label} value={fingerprint[control.id]} onChange={e => set(control.id, e.target.value)}>
-      {control.modes.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
-    </select><span className="muted hint">{control.note}</span></label>)}
-    {FINGERPRINT_FIXED.map(item => <p key={item.id}><span className="label">{item.label}</span><br />{item.reason}</p>)}
-    <label>Canvas readback prototype<select aria-label="Canvas readback prototype" value={settings.experimental?.canvasReadback || 'off'} onChange={e => onChange({ ...settings, experimental: { canvasReadback: e.target.value } })}>
-      <option value="off">Off — real readback</option>
-      <option value="prototype">Opt-in page hook</option>
-    </select></label>
-    <p className="muted hint">Off by default. The page hook changes getImageData and toDataURL in the Playwright session only. It sets window.__pmCanvasPrototype with customEngine false. It does not qualify canvas noise, does not run on a native launch, and is not a CAPTCHA bypass.</p>
-    <label>WebGL readPixels prototype<select aria-label="WebGL readPixels prototype" value={settings.experimental?.webglReadback || 'off'} onChange={e => onChange({ ...settings, experimental: { ...settings.experimental, webglReadback: e.target.value } })}>
-      <option value="off">Off — real readPixels</option>
-      <option value="prototype">Opt-in page hook</option>
-    </select></label>
-    <p className="muted hint">Does not change GPU vendor or renderer strings. It only perturbs readPixels buffers in the Playwright session. window.__pmWebglReadPrototype.customEngine stays false. Restricted WebGL (--disable-webgl) turns the context off instead.</p>
+    {FINGERPRINT_CONTROLS.map(control => <React.Fragment key={control.id}>
+      <ModeSegment category={control.id} label={control.label} value={fingerprint[control.id]} note={control.note}
+        options={control.modes.map(mode => ({ id: mode.id, label: mode.label }))} onChange={value => set(control.id, value)} />
+      {control.id === 'webgl' && <FixedCategory category="webglMetadata" note="Vendor and renderer strings are this GPU's. Restricted WebGL above turns the context off instead." />}
+    </React.Fragment>)}
+    {FINGERPRINT_FIXED.filter(item => item.id !== 'portScan').map(item => <FixedCategory key={item.id} category={item.id} note={item.reason} />)}
   </div>;
 }
 
-export function PreferenceFields({ settings, onChange }) {
+export function PreferenceFields({ settings, onChange, section }) {
   const prefs = settings.preferences;
   const [urls, setUrls] = useState((prefs.startupUrls || []).join('\n'));
   const setPerm = (key, value) => onChange({ ...settings, preferences: { ...prefs, permissions: { ...prefs.permissions, [key]: value } } });
   return <div className="form">
+    {section !== 'extra' && <>
     <div className="notice">Startup options apply on the next manual launch (native Chromium or Firefox). They do not affect CookieRobot jobs, which use automation CDP with their own URL list.</div>
     <label>Startup URLs<textarea rows="4" value={urls} onChange={e => { setUrls(e.target.value); onChange({ ...settings, preferences: { ...prefs, startupUrls: e.target.value.split(/\s+/).map(s => s.trim()).filter(Boolean) } }); }} placeholder="https://example.com" /></label>
     <p className="muted hint">One http or https URL per line, at most 8. An explicit launch URL replaces them for that launch. Credentials in a URL are rejected.</p>
@@ -129,12 +204,15 @@ export function PreferenceFields({ settings, onChange }) {
       <option value="restore">Restore previous session</option><option value="fresh">Start fresh</option>
     </select></label>
     <label className="check"><input type="checkbox" checked={prefs.restoreTabs === true} onChange={e => onChange({ ...settings, preferences: { ...prefs, restoreTabs: e.target.checked } })} /> Restore previous tabs in other runtimes</label>
+    <p className="muted hint">Off unless you turn it on for this profile. A graceful stop or last-window close saves that profile’s http(s) tabs and opens them on the next launch. An explicit launch address or the startup URLs above are used instead for that launch, so the old tabs are not opened beside them. Diagnostic tabs, browser-internal pages, loopback addresses, and addresses that contain a password are not saved. A crash does not rewrite the list.</p>
+    </>}
+    {section !== 'startup' && <>
     <label className="check"><input type="checkbox" checked={prefs.rememberLastWindow === true} onChange={e => onChange({ ...settings, preferences: { ...prefs, rememberLastWindow: e.target.checked } })} /> Remember last window size/position</label>
     <p className="muted hint">When enabled, a graceful stop saves window bounds to a local file (`.pm-window.json`) and reapplies them on the next launch where the browser supports it (Chromium flags / Firefox -width/-height).</p>
-    <p className="muted hint">Off unless you turn it on for this profile. A graceful stop or last-window close saves that profile’s http(s) tabs and opens them on the next launch. An explicit launch address or the startup URLs above are used instead for that launch, so the old tabs are not opened beside them. Diagnostic tabs, browser-internal pages, loopback addresses, and addresses that contain a password are not saved. A crash does not rewrite the list.</p>
     {PERMISSIONS.map(([key, label]) => <label key={key}>{label}<select value={prefs.permissions[key]} onChange={e => setPerm(key, e.target.value)}>
       {STATES.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
     </select></label>)}
     <p className="muted hint">Notifications, camera, microphone, and MIDI are applied with Chromium's permission API when a page opens. Clipboard is stored in the profile preferences; Chromium does not expose a matching live permission call, so it is not described as enforced in the page.</p>
+    </>}
   </div>;
 }

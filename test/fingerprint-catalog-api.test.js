@@ -27,4 +27,8 @@ test('GET /api/fingerprint-catalog documents stock controls and fixed surfaces',
   assert.ok(body.controls?.length >= 1);
   assert.ok(body.fixed?.some(f => f.id === 'canvas'));
   assert.ok(body.rejected?.some(r => r.surface === 'canvas' && r.mode === 'noise'));
+  assert.equal(body.categories?.length, 17);
+  const canvas = body.categories.find(c => c.id === 'canvas');
+  assert.deepEqual(canvas.modes.filter(m => m.state === 'supported').map(m => m.id), ['real']);
+  assert.ok(canvas.modes.some(m => m.id === 'noise' && m.state === 'unsupported' && m.reason));
 });

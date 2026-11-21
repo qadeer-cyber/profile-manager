@@ -16,8 +16,10 @@ import { extensionLaunchPlan } from '../extensions.js';
 import { getSetting, setSetting } from '../db.js';
 import { assertProfileVersion, resolveWindowsChromeStable, stableProxyNetworkArgs } from './chrome-stable.js';
 import { geoIpCredentials } from '../geoip-settings.js';
-import { resolveProxyLocation } from '../proxy-location.js';
+import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { chromiumMissingError } from '../chromium.js';
+import { stableLaunchMode } from './stable-launch-mode.js';
+import { manualProxyPreflight } from './proxy-preflight.js';
 import { automationDefault, proxyLoopback, isPackaged } from '../testflags.js';
 
 const automationEnabled = opts => !!opts.automation || automationDefault();
@@ -53,9 +55,14 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
   const dir = opts.userDataDir;
   if (!dir) throw httpErr(500, 'userDataDir required', 'INTERNAL');
   let locationOverride = null;
+  let proxyPreflight = null; // Manual proxy launches: verified / inconclusive (block throws)
   const advanced = p.advancedSettings || {};
   const geo = advanced.geolocation || {};
-  const mode = requireStable && p.proxy ? 'auto' : geo.mode ?? (p.proxy ? 'auto' : 'manual');
+  // A Chrome Stable proxy profile set to Manual does not follow the proxy's location: the page keeps this
+  // computer's timezone and location, so no controlled connection is needed for them.
+  const proxyManual = Boolean(requireStable && p.proxy && advanced.proxyLaunch === 'manual');
+  const mode = proxyManual ? (geo.mode === 'manual' && geo.latitude != null && geo.longitude != null ? 'manual' : 'host')
+    : requireStable && p.proxy ? 'auto' : geo.mode ?? (p.proxy ? 'auto' : 'manual');
   if (stable) {
     const profileRoot = fs.realpathSync(dir);
     const defaultData = process.env.LOCALAPPDATA && process.env.LOCALAPPDATA + '\\Google\\Chrome\\User Data';
@@ -72,7 +79,7 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       const key = 'proxy-location:' + p.id;
       const cached = getSetting(key, null);
       if (requireStable) setSetting(key, null);
-      locationOverride = await resolveProxyLocation(p.proxy, { read: () => cached,
+      locationOverride = await resolveProxyLocationWithRetry(p.proxy, { read: () => cached,
         save: requireStable ? undefined : value => setSetting(key, value), credentials: geoIpCredentials });
       regional.timezoneId = locationOverride.timezone;
       if (/^[A-Z]{2}$/.test(locationOverride.country || '') && !regional.locale && !regional.languages.length) {
@@ -82,11 +89,35 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
       }
     } else if (mode === 'system') {
       regional.timezoneId = '';
+    } else if (mode === 'host') {
+      // Manual proxy profile: a timezone saved on purpose stays (and keeps the profile controlled).
+      // Before launch, check the proxy through the same route (outside the browser): wrong credentials, an
+      // unresolvable proxy host or an offline proxy refuse the launch with a clear error, as in Controlled.
+      // A slow exit-IP service or a missing location database does not. When no language is saved, the
+      // proxy country's language is used (an ordinary startup setting). Capped at 8 seconds.
+      let found = null;
+      let failure = null;
+      try {
+        let timer;
+        found = await Promise.race([
+          resolveProxyLocationWithRetry(p.proxy, { credentials: geoIpCredentials,
+            read: () => getSetting('proxy-location:' + p.id, null), save: value => setSetting('proxy-location:' + p.id, value) }),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('proxy check timed out')), 8000); }),
+        ]).finally(() => clearTimeout(timer));
+      } catch (error) { failure = error; }
+      proxyPreflight = manualProxyPreflight(found, failure);
+      if (proxyPreflight.state === 'block') throw failure;
+      if (found && /^[A-Z]{2}$/.test(found.country || '') && !regional.locale && !regional.languages.length) {
+        const inferred = new Intl.Locale('und-' + found.country).maximize();
+        regional.locale = inferred.language + '-' + found.country;
+        regional.languages = [regional.locale, inferred.language];
+      }
     } else if (geo.latitude != null && geo.longitude != null) {
       if (geo.accuracy == null) throw httpErr(409, 'Set a manual accuracy in meters before launching.', 'CHROME_MANUAL_ACCURACY_REQUIRED');
       locationOverride = geo;
     }
-    if (requireStable || locationOverride || regional.timezoneId) runtime = 'playwright';
+    // The Chrome Stable edition chooses manual or controlled below, once the advanced plan is known.
+    if (locationOverride || regional.timezoneId) runtime = 'playwright';
   }
   const contextSettings = browserContextSettings(regional);
 
@@ -132,6 +163,15 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     throw httpErr(500, 'Refusing to launch because the WebGL restriction does not match the saved fingerprint settings.', 'FINGERPRINT_LAUNCH_MISMATCH');
   }
   if (plan.launch.userAgent) args.push(`--user-agent=${plan.launch.userAgent}`);
+  // Option A: in the Chrome Stable edition an ordinary profile starts as a genuine manual browser
+  // (no automation pipe or remote debugging). Profiles that need the controlled path keep it.
+  let launchMode = null;
+  if (stable && requireStable) {
+    launchMode = stableLaunchMode({ proxy: p.proxy, proxyManual, timezoneId: regional.timezoneId, coordinates: locationOverride,
+      launch: plan.launch, automation, headless: !!headless });
+    runtime = launchMode.mode === 'manual' ? 'native' : 'playwright';
+    if (runtime === 'native') args.push('--no-first-run', '--no-default-browser-check');
+  }
   assertPrivateNetworkLaunchPolicy(args);
 
   if (policy.mode !== 'browser_default') applyWebRtcPreference(dir, policy.mode);
@@ -235,6 +275,8 @@ export async function buildProfileLaunchPlan(p, opts = {}) {
     restoreTabs,
     nativeSession,
     rememberWindow,
+    launchMode,
+    proxyPreflight,
     playwrightOpts,
     identity,
   };

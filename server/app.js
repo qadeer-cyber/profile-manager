@@ -1,5 +1,8 @@
+import { lookupDbipNetwork } from './dbip-location.js';
+import { deriveMacLabel, randomMacLabel } from './mac-label.js';
 import { publicIp, resolveProxyLocation } from './proxy-location.js';
 import { resolveWindowsChromeStable } from './browser-runtime/chrome-stable.js';
+import { predictStableLaunchMode } from './browser-runtime/stable-launch-mode.js';
 import { parseProxyLine } from './proxy-line.js';
 import { pushWorkspaceSnapshot, pullWorkspaceSnapshot } from './workspace-sync-client.js';
 import { installGeckoExtension, removeGeckoExtension } from './gecko-install.js';
@@ -65,12 +68,14 @@ import { normalizeAdvancedSettings, validateAdvancedSettings } from './advanced-
 import { buildUserAgent } from './advanced-launch.js';
 import { chromiumIdentity } from './chromium-identity.js';
 import { DEFAULT_WEBRTC_SETTINGS, validateWebRtcSettings } from './webrtc-policy.js';
-import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection } from './cookies.js';
+import { clearProfileCookies, cookiesFromContext, importProfileCookies, readProfileCookies, validateClearSelection, validateCookies } from './cookies.js';
+import { usesChromeStableCookieStore, writeCookiesWithChromeStable } from './browser-runtime/stable-cookies.js';
 import { readGeckoProfileCookies, exportGeckoCookiesPayload } from './gecko-cookies.js';
 import { geckoUserDataDir } from './browser-runtime/firefox-launch.js';
 import {
   assertProfileStoppedForDiskExport, exportStoppedProfileBookmarks, exportStoppedProfileHistory,
 } from './profile-browser-export.js';
+import { importBookmarksIntoProfile, bookmarksToNetscapeHtml, LIMITS as BOOKMARK_LIMITS } from './bookmark-import.js';
 import { focusRunningBrowserSession, locateRunningBrowserSession } from './browser-window-actions.js';
 import {
   adbAdapterReport, adbDiagnostics, connectAdbTarget, disconnectAdbTarget, getAdbDeviceInfo,
@@ -97,6 +102,16 @@ import { buildEndpoint, createAccount, deleteAccount, listAccounts, listWebshare
 import { hostHardware, observeBrowser, UNSUPPORTED_OVERRIDES } from './hardware.js';
 import { advancedLaunchPlan } from './advanced-launch.js';
 import { fingerprintFindings, readPreviousObservation } from './fingerprint-consistency.js';
+import { FINGERPRINT_CATEGORIES, verificationByCategory } from './fingerprint-catalog.js';
+import { assertDevicePresetSupported, describeHost, hostLabel, presetMatrix } from './device-identity.js';
+const HOST_DEVICE = describeHost(process.platform, os.release(), typeof os.version === 'function' ? os.version() : '');
+import { createActionSync } from './action-sync.js';
+const actionSync = createActionSync({
+  liveContext: id => engine.liveContext?.(id) || null,
+  isRunning: id => engine.isRunning(id),
+  profileName: id => db.prepare('SELECT name FROM profiles WHERE id=?').get(id)?.name || 'Profile',
+  emit: (type, id, extra) => engine.events.emit('event', { type, id, at: new Date().toISOString(), ...extra }),
+});
 import { FINGERPRINT_CONTROLS, FINGERPRINT_FIXED, FINGERPRINT_REJECTED } from './fingerprint-settings.js';
 import { processCommandLine } from './proc.js';
 import { copyProfileTree } from './profile-copy.js';
@@ -212,8 +227,35 @@ const row2p = r => {
   delete r.workspace_id;
   const purgeError = r.purge_error || null;
   delete r.purge_error;
-  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings, extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }) };
+  const chromeLaunchMode = process.env.AZWAH_STABLE_CHROME_EDITION === '1' || advancedSettings.runtime === 'stable-chrome'
+    ? predictStableLaunchMode({ browserEngine, advancedSettings, browserSettings, proxy, automationEnabled: !!r.automation_enabled }) : null;
+  return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings,
+    macLabel: advancedSettings.macLabel || deriveMacLabel(r.id), macLabelMode: advancedSettings.macLabel ? advancedSettings.macLabelMode || 'manual' : 'derived', extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
 };
+// Each profile's MAC label must be its own: refuse one that another profile already shows.
+function macLabelsInUse(selfId) {
+  const used = new Set();
+  for (const row of db.prepare('SELECT id, advanced_settings FROM profiles').all()) {
+    if (row.id === selfId) continue;
+    let saved = null;
+    try { saved = JSON.parse(row.advanced_settings || '{}').macLabel || null; } catch {}
+    used.add(saved || deriveMacLabel(row.id));
+  }
+  return used;
+}
+function assertMacLabelFree(label, selfId) {
+  if (macLabelsInUse(selfId).has(label)) throw Object.assign(err(409, 'Another profile already uses this MAC label.'), { code: 'MAC_LABEL_IN_USE' });
+}
+// A profile made from a template gets its own MAC, never the template's.
+function withoutMacLabel(v) {
+  if (!v?.advancedSettings) return v;
+  const { macLabel: _mac, macLabelMode: _mode, ...advancedSettings } = v.advancedSettings;
+  return { ...v, advancedSettings };
+}
+function freeRandomMacLabel() {
+  const used = macLabelsInUse(null);
+  for (;;) { const label = randomMacLabel(); if (!used.has(label)) return label; }
+}
 const publicP = p => {
   if (!p) return p;
   const { automation_enabled, proxy_id, ...rest } = p;
@@ -241,7 +283,8 @@ const publicP = p => {
   }
   out.tabRestore = tabRestore;
   const mode = proxy_id && p.browserEngine !== 'firefox' && (['azwah-native', 'custom-native-chromium', 'stable-chrome'].includes(p.advancedSettings?.runtime) ||
-    (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && p.advancedSettings?.runtime !== 'privacy'))
+    (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && p.advancedSettings?.runtime !== 'privacy')) &&
+    p.advancedSettings?.proxyLaunch !== 'manual'
     ? 'auto' : p.advancedSettings?.geolocation?.mode ?? (p.proxyId || proxy_id ? 'auto' : 'manual');
   if (mode === 'auto' && proxy_id) {
     const location = getSetting('proxy-location:' + p.id, null);
@@ -260,6 +303,17 @@ const get = id => {
 const getAny = id => row2p(db.prepare('SELECT * FROM profiles WHERE id=?').get(id));
 const must = id => { const p = get(id); if (!p) throw err(404, 'not found'); return p; };
 
+// Proxy credentials: control characters cannot be part of working credentials and would corrupt logs or protocol
+// framing; SOCKS5 username/password authentication carries each value in at most 255 bytes (RFC 1929).
+// password === null means "unchanged" (library edits that do not send a password).
+function assertProxyCredentials(type, username, password) {
+  if (/[\u0000-\u001f\u007f]/.test(username) || (password != null && /[\u0000-\u001f\u007f]/.test(password))) {
+    throw err(400, 'Proxy username and password cannot contain control characters (line breaks, tabs or NUL).');
+  }
+  if (type === 'socks5' && (Buffer.byteLength(username) > 255 || (password != null && Buffer.byteLength(password) > 255))) {
+    throw err(400, 'SOCKS5 proxy username and password are limited to 255 bytes each.');
+  }
+}
 function cleanProxy(px, prev) {
   if (!px || !px.host) return null;
   if (!['http', 'https', 'socks5'].includes(px.type)) throw err(400, 'proxy.type must be http, https or socks5');
@@ -269,7 +323,10 @@ function cleanProxy(px, prev) {
   if (!/^[A-Za-z0-9.\-:\[\]]+$/.test(host)) throw err(400, 'invalid proxy.host');
   let password = px.password || '';
   if (password === '••••' && prev) password = prev.password || '';
-  return { type: px.type, host, port, username: String(px.username || ''), password: String(password) };
+  const username = String(px.username || '');
+  password = String(password);
+  assertProxyCredentials(px.type, username, password);
+  return { type: px.type, host, port, username, password };
 }
 function strictBool(v, name) { if (typeof v !== 'boolean') throw err(400, `${name} must be a boolean`); return v; }
 function validate(b, prev) {
@@ -279,6 +336,15 @@ function validate(b, prev) {
   const browserSettings = validateBrowserSettings('browserSettings' in b ? b.browserSettings : {}, prev?.browserSettings);
   const webrtcSettings = validateWebRtcSettings('webrtcSettings' in b ? b.webrtcSettings : {}, prev?.webrtcSettings);
   const advancedSettings = validateAdvancedSettings('advancedSettings' in b ? b.advancedSettings : {}, prev?.advancedSettings);
+  // Only a request that sets a device preset is checked against this host, so a profile restored
+  // from another computer stays editable and shows the mismatch in verification instead.
+  if (b.advancedSettings && typeof b.advancedSettings === 'object' && 'deviceIdentity' in b.advancedSettings) assertDevicePresetSupported(advancedSettings.deviceIdentity, HOST_DEVICE);
+  // Owner decision 2026-11-20: new profiles launch proxies Manual (no automation connection) unless the
+  // request chose Controlled. Existing profiles keep what they have (see the one-time offer below).
+  if (!prev && !advancedSettings.proxyLaunch) advancedSettings.proxyLaunch = 'manual';
+  // Every profile has its own MAC label, saved with it: a new profile without one gets a random one.
+  if (!prev && !advancedSettings.macLabel) { advancedSettings.macLabel = freeRandomMacLabel(); advancedSettings.macLabelMode = 'random'; }
+  else if (advancedSettings.macLabel && (!prev || (b.advancedSettings && typeof b.advancedSettings === 'object' && 'macLabel' in b.advancedSettings))) assertMacLabelFree(advancedSettings.macLabel, prev?.id);
   const extensionAssignments = 'extensionAssignments' in b ? assertKnownAssignments(b.extensionAssignments) : null;
   const tags = Array.isArray(b.tags) ? b.tags : typeof b.tags === 'string' ? b.tags.split(',') : prev?.tags || [];
   let browserEngine = prev?.browserEngine ?? 'chromium';
@@ -335,7 +401,10 @@ function clone(id, body = {}) {
   const p = must(id);
   const copyData = cloneMode(body);
   if (copyData && engine.isRunning(id)) throw err(409, `Profile "${p.name}" is running. Stop it before cloning (browser data can't be copied consistently while in use), or pass {"copyData": false} to clone settings only.`);
-  const nid = insert({ ...p, proxyId: p.proxy_id || null, name: body.name || p.name + ' (copy)' });
+  // A clone gets its own MAC label (derived from its new id), never a copy of the source's.
+  const { macLabel: _sourceMac, macLabelMode: _sourceMode, ...cloneAdvanced } = p.advancedSettings || {};
+  Object.assign(cloneAdvanced, { macLabel: freeRandomMacLabel(), macLabelMode: 'random' });
+  const nid = insert({ ...p, advancedSettings: cloneAdvanced, proxyId: p.proxy_id || null, name: body.name || p.name + ' (copy)' });
   copyExtensionAssignments(id, nid);
   if (copyData) {
     const src = userDataDir(id);
@@ -372,7 +441,9 @@ const doLaunch = async (id, b = {}, { allowOverride = false } = {}) => {
   let automation = p.automationEnabled;
   if (allowOverride && b.automation !== undefined) automation = strictBool(b.automation, 'automation');
   await engine.launch(p, { headless: b.headless ?? headlessDefault(), url: b.url || getSetting('startUrl', '') || undefined, automation });
-  return publicP(get(id));
+  // Manual proxy launches: the proxy check outcome (verified / inconclusive), so the UI never implies more.
+  const proxyPreflight = engine.launchEvidence?.(id)?.proxyPreflight;
+  return { ...publicP(get(id)), ...(proxyPreflight && { proxyPreflight }) };
 };
 const doStop = async id => { must(id); await engine.stop(id); return publicP(get(id)); };
 configureCookieRobot({ launchProfile: id => doLaunch(id, { automation: true }, { allowOverride: true }) });
@@ -404,7 +475,10 @@ async function hardwareReport(id, { previous = null } = {}) {
     catch { permissions = null; }
   }
   const browser = id
-    ? (engine.isRunning(id) ? await observeBrowser(ctx, { permissions }) : { availability: 'unavailable', reason: 'not_running' })
+    ? (!engine.isRunning(id) ? { availability: 'unavailable', reason: 'not_running' }
+      // A manual Chrome Stable session has no control connection, so nothing is read from its pages.
+      : !ctx && engine.launchEvidence?.(id)?.launchMode?.mode === 'manual' ? { availability: 'unavailable', reason: 'manual_browser' }
+      : await observeBrowser(ctx, { permissions }))
     : { availability: 'unavailable', reason: 'no_profile' };
   const evidence = id && typeof engine.launchEvidence === 'function' ? engine.launchEvidence(id) : null;
   const commandLine = evidence?.browserPid ? await processCommandLine(evidence.browserPid) : null;
@@ -415,18 +489,22 @@ async function hardwareReport(id, { previous = null } = {}) {
     webrtc: profile?.webrtcSettings || { mode: 'browser_default' },
     observation: browser.availability === 'observed' ? browser : null,
     commandLine,
-    chromiumVersion: chromium.version,
+    chromiumVersion: evidence?.engineVersion || chromium.version,
     hostPlatform: process.platform,
+    deviceHost: HOST_DEVICE,
     hostTimezone: host.timezone?.value || null,
+    proxyTimezone: evidence?.proxyTimezone || null,
     previous,
   });
   return {
     chromium,
+    engine: evidence?.engineVersion ? { version: evidence.engineVersion, source: evidence.engineSource || 'chrome-stable' } : { version: chromium.version || null, source: 'bundled-chromium' },
+    launchMode: evidence?.launchMode || null,
     host,
     configured: profile ? { userAgent: profile.advancedSettings.userAgent, geolocation: profile.advancedSettings.geolocation, screen: profile.advancedSettings.screen, permissions: profile.advancedSettings.preferences.permissions, fingerprint: profile.advancedSettings.fingerprint } : null,
     browser,
     unsupported: UNSUPPORTED_OVERRIDES,
-    consistency: { ...consistency, interpretation: summarizeConsistency(consistency) },
+    consistency: { ...consistency, interpretation: summarizeConsistency(consistency), byCategory: verificationByCategory(consistency.findings) },
   };
 }
 function assertGeckoCookieWrite(profile) {
@@ -445,7 +523,20 @@ async function cookieList(id) {
     const geckoDir = geckoUserDataDir(profile.id, userDataDir);
     return { engine: 'firefox', readOnly: true, cookies: readGeckoProfileCookies(geckoDir) };
   }
-  return { engine: 'chromium', readOnly: false, cookies: readProfileCookies(userDataDir(profile.id)) };
+  return { engine: 'chromium', readOnly: false, cookies: readProfileCookies(userDataDir(profile.id), { basicKey: !usesChromeStableCookieStore(profile) }) };
+}
+// Chrome Stable on Windows cannot read values encrypted with the basic key and drops them, so its
+// profiles are written by Chrome itself (see browser-runtime/stable-cookies.js).
+function importCookiesInto(profile, cookies) {
+  const dir = userDataDir(profile.id);
+  if (!usesChromeStableCookieStore(profile)) return importProfileCookies(dir, cookies);
+  return writeCookiesWithChromeStable(dir, validateCookies(cookies));
+}
+function bookmarkDiskProfile(id) {
+  const profile = must(id);
+  if (profile.browserEngine === 'firefox') throw Object.assign(err(400, 'Bookmarks import and HTML export support Chromium-based profiles only.'), { code: 'BOOKMARKS_ENGINE_UNSUPPORTED' });
+  if (engine.isRunning(profile.id)) throw Object.assign(err(409, 'Stop the profile before importing or exporting its bookmarks. Chrome rewrites the Bookmarks file while it runs.'), { code: 'PROFILE_RUNNING' });
+  return profile;
 }
 function cookieMutation(id) {
   const profile = must(id);
@@ -526,7 +617,7 @@ function bulkFromTemplate(body, onItem) {
     try {
       const id = applyTemplate(templateId, {
         name: `${prefix} ${index + 1}`.slice(0, 200),
-        insertFn: v => insert(validate(folderOverride != null ? { ...v, folder: folderOverride } : v)),
+        insertFn: v => insert(validate(withoutMacLabel(folderOverride != null ? { ...v, folder: folderOverride } : v))),
         getTemplateSnapshot: getSnap,
       });
       const item = { index, ok: true, profile: publicP(get(id)) };
@@ -639,8 +730,27 @@ function batchHandlers(allowOverride) {
 }
 const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
-  router.get('/chromium-identity', wrap((req, res) => res.json(chromiumFacts())));
-  router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })) })));
+  router.get('/chromium-identity', wrap(async (req, res) => {
+    // The Chrome Stable edition runs the Chrome installed on this computer, not a bundled Chromium.
+    if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
+      try {
+        const stable = await resolveWindowsChromeStable();
+        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: stable.version, executable: stable.path });
+      } catch (error) {
+        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: null, error: error.message, code: error.code || null });
+      }
+    }
+    res.json(chromiumFacts());
+  }));
+  router.get('/fingerprint-catalog', wrap((req, res) => res.json({ controls: FINGERPRINT_CONTROLS, fixed: FINGERPRINT_FIXED, rejected: FINGERPRINT_REJECTED.map(([surface, mode, reason]) => ({ surface, mode, reason })), categories: FINGERPRINT_CATEGORIES })));
+  router.get('/sync', wrap((req, res) => res.json({ sessions: actionSync.list() })));
+  router.post('/sync/start', wrap(async (req, res) => res.status(201).json(await actionSync.start({ leaderId: req.body?.leaderId, followerIds: req.body?.followerIds }))));
+  router.post('/sync/:id/stop', wrap((req, res) => {
+    const result = actionSync.stop(req.params.id, 'stopped by user');
+    if (!result) throw err(404, 'Synchronization session not found');
+    res.json(result);
+  }));
+  router.get('/device-identity', wrap((req, res) => res.json({ host: { ...HOST_DEVICE, label: hostLabel(HOST_DEVICE) }, presets: presetMatrix(HOST_DEVICE) })));
   router.get('/fingerprint-capabilities', wrap((req, res) => res.json(fingerprintCapabilityReport({ platform: process.platform }))));
   router.get('/privacy-engine', wrap((req, res) => res.json(privacyEngineReport({ platform: process.platform }))));
   router.get('/privacy-acceptance', wrap((req, res) => {
@@ -726,11 +836,11 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     const body=encryptCookies({profileId:req.params.id,engine:data.engine,cookies:data.cookies,passphrase:req.body.passphrase,confirmSensitive:req.body.confirmSensitive});
     res.set({'Content-Type':'application/octet-stream','Cache-Control':'no-store','Content-Disposition':'attachment; filename="cookies.azwc"'});res.send(body);
   }));
-  router.post('/profiles/:id/cookies/import-encrypted',wrap((req,res)=>{
+  router.post('/profiles/:id/cookies/import-encrypted',wrap(async(req,res)=>{
     const profile=cookieMutation(req.params.id);rejectPassphraseQuery(req);
     if(typeof req.body.archive!=='string'||req.body.archive.length>410000||!/^[A-Za-z0-9+/]*={0,2}$/.test(req.body.archive))throw err(400,'Invalid bounded cookie archive');
     const cookies=decryptCookies({bytes:Buffer.from(req.body.archive,'base64'),passphrase:req.body.passphrase,profileId:profile.id,engine:profile.browserEngine||'chromium',confirm:req.body.confirm,confirmTransfer:req.body.confirmTransfer});
-    res.json(importProfileCookies(userDataDir(profile.id),cookies));
+    res.json(await importCookiesInto(profile,cookies));
   }));
   router.get('/geckodriver', wrap((req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -829,6 +939,17 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     res.set('Cache-Control', 'no-store');
     res.json(exportStoppedProfileBookmarks(userDataDir(profile.id)));
   }));
+  router.get('/profiles/:id/bookmarks/export.html', wrap((req, res) => {
+    const profile = bookmarkDiskProfile(req.params.id);
+    res.set('Cache-Control', 'no-store');
+    res.type('text/html').send(bookmarksToNetscapeHtml(userDataDir(profile.id)));
+  }));
+  // Body: { content: "<file text>" } — Chromium Bookmarks JSON, an AZWAH export or browser-export HTML.
+  router.post('/profiles/:id/bookmarks/import', wrap((req, res) => {
+    const profile = bookmarkDiskProfile(req.params.id);
+    if (typeof req.body?.content !== 'string') throw Object.assign(err(400, 'content must be the bookmarks file text'), { code: 'INVALID_BOOKMARKS' });
+    res.json(importBookmarksIntoProfile(userDataDir(profile.id), req.body.content));
+  }));
   router.get('/profiles/:id/history/export', wrap((req, res) => {
     const profile = must(req.params.id);
     assertProfileStoppedForDiskExport(engine.isRunning, profile.id);
@@ -889,10 +1010,10 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     const which = req.body?.driver === 'chromedriver' || req.body?.driver === 'geckodriver' ? req.body.driver : 'both';
     res.json(await installAutomationDrivers(which, { confirm: !!req.body?.confirm }));
   }));
-  router.post('/profiles/:id/cookies/import', wrap((req, res) => {
+  router.post('/profiles/:id/cookies/import', wrap(async (req, res) => {
     const profile = cookieMutation(req.params.id);
     const cookies = Array.isArray(req.body) ? req.body : req.body.cookies;
-    res.json(importProfileCookies(userDataDir(profile.id), cookies));
+    res.json(await importCookiesInto(profile, cookies));
   }));
   router.post('/profiles/:id/cookies/clear', wrap((req, res) => {
     const profile = cookieMutation(req.params.id);
@@ -994,6 +1115,7 @@ function validType(t) { if (!PROXY_TYPES.includes(t)) throw err(400, 'proxy type
 function createProxyRow({ name, type, host, port, username = '', password = '', tags = [], provider = null, providerRef = null, providerMeta = {} }) {
   const id = crypto.randomUUID(), now = new Date().toISOString();
   type = validType(type); host = validHost(host); port = validPort(port);
+  assertProxyCredentials(type, String(username || ''), String(password || ''));
   name = String(name || '').trim() || `${type}://${host}:${port}`;
   if (name.length > 200) throw err(400, 'name too long');
   db.prepare('INSERT INTO proxies (id,name,type,host,port,username,password,tags,provider,provider_ref,provider_meta,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -1037,6 +1159,7 @@ function patchProxy(id, b) {
   if ('username' in b) next.username = String(b.username ?? '');
   if ('password' in b) next.password = encrypt(String(b.password ?? ''));
   if ('tags' in b) next.tags = cleanTags(b.tags);
+  assertProxyCredentials(next.type, next.username, 'password' in b ? String(b.password ?? '') : null);
   const endpointChanged = ['type', 'host', 'port', 'username'].some(k => next[k] !== r[k]) || 'password' in b;
   db.prepare(`UPDATE proxies SET name=?,type=?,host=?,port=?,username=?,password=?,tags=?,updated_at=?${endpointChanged ? ',last_test_status=NULL,last_test_ip=NULL,last_test_latency_ms=NULL,last_test_error=NULL,last_tested_at=NULL' : ''} WHERE id=?`)
     .run(next.name, next.type, next.host, next.port, next.username, next.password, JSON.stringify(next.tags), new Date().toISOString(), id);
@@ -1182,13 +1305,21 @@ async function testLibraryProxy(id, previewLocation = false) {
     try { location = await resolveProxyLocation(proxy, { credentials: geoIpCredentials }); }
     catch (error) { locationError = error.message; }
   }
-  return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, location, locationError, proxy: publicProxy(proxyRow(id)) };
+  return { ok: res.ok, ip: res.ip, latencyMs: res.latencyMs, error: res.error, message: res.message, location, locationError,
+    network: await exitNetwork(res), proxy: publicProxy(proxyRow(id)) };
+}
+// Which network the exit IP belongs to (offline DB-IP ASN Lite). Diagnosis only.
+async function exitNetwork(res) {
+  if (!res.ok || !res.ip) return undefined;
+  try { return await lookupDbipNetwork(res.ip); }
+  catch (error) { return { ip: res.ip, error: error.code || 'PROXY_NETWORK_UNAVAILABLE' }; }
 }
 // Legacy ad-hoc test (inline proxy object, not saved)
 async function testProxy(px) {
   px = cleanProxy(px);
   if (!px) throw err(400, 'no proxy configured');
-  return runProxyTest(px);
+  const res = await runProxyTest(px);
+  return { ...res, network: await exitNetwork(res) };
 }
 
 // Routes shared by /api and /api/v1
@@ -1515,6 +1646,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
     const { status, body } = diagnosticsHttpError('UNAUTHORIZED');
     return res.status(status).json(body);
   });
+  // Bookmark files can exceed the default 1 MB body limit; bookmark-import.js enforces its own 5 MB cap.
+  app.use(/^\/api(\/v1)?\/profiles\/[^/]+\/bookmarks\/import$/, express.json({ limit: BOOKMARK_LIMITS.bytes * 2 }));
   app.use(express.json({ limit: '1mb' }));
   app.use((req, res, next) => { req.body ??= {}; next(); });
 
@@ -1530,7 +1663,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
-    const all = db.prepare('SELECT tags, folder, favorite, workspace_id FROM profiles WHERE deleted_at IS NULL').all()
+    const all = db.prepare('SELECT id, tags, folder, favorite, workspace_id, last_error FROM profiles WHERE deleted_at IS NULL').all()
       .filter(canAccessFolderProfile);
     const folderCounts = Object.create(null);
     for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
@@ -1543,6 +1676,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       profileCount: all.length,
       trashCount,
       running: engine.runningIds(),
+      // Stopped profiles whose last run ended in an error (for the fleet bar).
+      errorCount: all.filter(r => r.last_error && !engine.isRunning(r.id)).length,
       features: {
         proxyLibrary: true,
         cookieRobotChromiumOnly: true,
@@ -1587,12 +1722,44 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.post('/profiles/from-template/:templateId', wrap((req, res) => {
     const id = applyTemplate(req.params.templateId, {
       name: req.body?.name,
-      insertFn: v => insert(validate(v)),
+      insertFn: v => insert(validate(withoutMacLabel(v))),
       getTemplateSnapshot: row => JSON.parse(row.snapshot_json),
     });
     res.status(201).json(publicP(get(id)));
   }));
   ui.delete('/templates/:id', wrap((req, res) => { deleteTemplate(req.params.id); res.status(204).end(); }));
+  // One-time offer to switch existing Controlled Chrome proxy profiles to Manual. Nothing changes unless
+  // the owner chooses "switch"; either answer is remembered.
+  const controlledProxyProfiles = () => db.prepare("SELECT id, browser_engine, advanced_settings FROM profiles WHERE deleted_at IS NULL AND proxy_id IS NOT NULL").all()
+    .filter(row => {
+      if (row.browser_engine === 'firefox') return false;
+      let adv = {};
+      try { adv = JSON.parse(row.advanced_settings || '{}') || {}; } catch {}
+      return !['privacy', 'azwah-native', 'custom-native-chromium'].includes(adv.runtime) && adv.proxyLaunch !== 'manual';
+    });
+  ui.get('/profiles/proxy-launch-offer', wrap((req, res) => {
+    const controlled = controlledProxyProfiles().length;
+    res.json({ controlled, offered: controlled > 0 && getSetting('proxyLaunchOfferAnswered', false) !== true });
+  }));
+  ui.post('/profiles/proxy-launch-offer', wrap((req, res) => {
+    const action = req.body?.action;
+    if (action !== 'switch' && action !== 'keep') throw err(400, 'action must be "switch" or "keep"');
+    let switched = 0;
+    if (action === 'switch') {
+      const update = db.prepare('UPDATE profiles SET advanced_settings=? WHERE id=?');
+      db.transaction(rows => {
+        for (const row of rows) {
+          // Change only this field; never rewrite the rest of a stored profile.
+          let adv = {};
+          try { adv = JSON.parse(row.advanced_settings || '{}') || {}; } catch { continue; }
+          update.run(JSON.stringify({ ...adv, proxyLaunch: 'manual' }), row.id);
+          switched++;
+        }
+      })(controlledProxyProfiles());
+    }
+    setSetting('proxyLaunchOfferAnswered', true);
+    res.json({ switched });
+  }));
   ui.get('/profiles/:id', wrap((req, res) => res.json(publicP(must(req.params.id)))));
   ui.post('/profiles', wrap((req, res) => res.status(201).json(publicP(get(insert(validate(req.body)))))));
   ui.put('/profiles/:id', wrap(updateHandler));
@@ -1814,6 +1981,7 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const server = await new Promise((res, rej) => { const s = app.listen(port, host, () => res(s)).on('error', rej); });
   const onBrowserEvent = event => {
     if (event.type === 'profile:crashed' || event.type === 'profile:stopped') {
+      actionSync.profileStopped(event.id);
       automationBrowserEnded(event.id, engine.automationLaunch?.(event.id), event.type === 'profile:crashed' || Boolean(event.error));
     }
   };
@@ -1821,6 +1989,7 @@ export async function startServer({ port = Number(process.env.PORT || 3000), hos
   const actual = server.address().port;
   return { server, port: actual, url: `http://${host}:${actual}`, recovery, dataRecovery, purgeRecovery, reencrypted, scrubbed, migration, events: engine.events,
     close: async () => {
+      actionSync.shutdown();
       stopSampler?.();
       try { await engine.shutdown(); } finally { engine.events.off('event', onBrowserEvent); }
       const closed = new Promise(r => server.close(() => r()));

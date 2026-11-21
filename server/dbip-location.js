@@ -9,7 +9,6 @@ import { Reader } from 'mmdb-lib';
 import tzLookup from 'tz-lookup';
 
 export const DBIP_SOURCE = 'DB-IP City Lite';
-const releasePage = 'https://db-ip.com/db/download/ip-to-city-lite';
 const day = 86_400_000;
 const maxDatabaseBytes = 256 * 1024 * 1024;
 const caches = new Map();
@@ -18,8 +17,15 @@ const unavailable = () => Object.assign(new Error(
 ), { code: 'PROXY_LOCATION_UNAVAILABLE', status: 503 });
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 
-export function parseDbipRelease(html) {
-  const links = [...html.matchAll(/href=['"](https:\/\/download\.db-ip\.com\/free\/dbip-city-lite-(\d{4}-(?:0[1-9]|1[0-2]))\.mmdb\.gz)['"]/gi)];
+// The two free DB-IP Lite datasets AZWAH uses (CC BY 4.0): city (proxy location) and ASN (exit network owner).
+const DATASETS = {
+  city: { page: 'https://db-ip.com/db/download/ip-to-city-lite', prefix: 'dbip-city-lite', folder: 'geoip-dbip', type: t => t === 'DBIP-City-Lite' },
+  asn: { page: 'https://db-ip.com/db/download/ip-to-asn-lite', prefix: 'dbip-asn-lite', folder: 'geoip-dbip-asn', type: t => /^DBIP-ASN-Lite/.test(t) },
+};
+
+export function parseDbipRelease(html, prefix = 'dbip-city-lite') {
+  const pattern = new RegExp(`href=['"](https:\\/\\/download\\.db-ip\\.com\\/free\\/${prefix}-(\\d{4}-(?:0[1-9]|1[0-2]))\\.mmdb\\.gz)['"]`, 'gi');
+  const links = [...html.matchAll(pattern)];
   if (links.length !== 1) throw unavailable();
   const [link] = links;
   const previous = html.slice(Math.max(0, link.index - 2000), link.index);
@@ -43,9 +49,10 @@ async function readDatabase(directory) {
   return { ...manifest, reader: new Reader(bytes) };
 }
 
-export async function refreshDbipDatabase(directory, current) {
-  const page = await get(releasePage, 15_000);
-  const release = parseDbipRelease(await page.text());
+export async function refreshDbipDatabase(directory, current, kind = 'city') {
+  const dataset = DATASETS[kind];
+  const page = await get(dataset.page, 15_000);
+  const release = parseDbipRelease(await page.text(), dataset.prefix);
   if (current && release.month <= current.month) return current;
   await mkdir(directory, { recursive: true });
   const temporary = path.join(directory, randomUUID());
@@ -68,7 +75,7 @@ export async function refreshDbipDatabase(directory, current) {
     if (publishedHash.digest('hex') !== release.sha1) throw unavailable();
     const hash = localHash.digest('hex');
     const reader = new Reader(await readFile(temporary));
-    if (reader.metadata.databaseType !== 'DBIP-City-Lite') throw unavailable();
+    if (!dataset.type(reader.metadata.databaseType)) throw unavailable();
     await rename(temporary, path.join(directory, hash + '.mmdb'));
     const manifest = { month: release.month, sha256: hash };
     await writeFile(manifestFile, JSON.stringify(manifest), { flag: 'wx' });
@@ -103,24 +110,52 @@ export function dbipRecordLocation(record, ip, timezoneAt = tzLookup) {
   };
 }
 
-export async function lookupDbipLocation(ip) {
-  const directory = path.resolve(process.env.PM_DATA_DIR || 'data', 'geoip-dbip');
+// Loads a dataset from the data folder (refreshed monthly) or the copy shipped with the installer.
+async function currentDataset(kind) {
+  const { folder } = DATASETS[kind];
+  const directory = path.resolve(process.env.PM_DATA_DIR || 'data', folder);
   let state = caches.get(directory);
   if (!state) {
     state = { nextCheck: 0 };
     state.initial = readDatabase(directory).catch(() => process.resourcesPath
-      ? readDatabase(path.join(process.resourcesPath, 'geoip-dbip')).catch(() => null)
+      ? readDatabase(path.join(process.resourcesPath, folder)).catch(() => null)
       : null).then(value => { state.current = value; });
     caches.set(directory, state);
   }
   await state.initial;
   if (!state.refresh && Date.now() >= state.nextCheck) {
     state.nextCheck = Date.now() + day;
-    state.refresh = refreshDbipDatabase(directory, state.current).then(value => { state.current = value; })
+    state.refresh = refreshDbipDatabase(directory, state.current, kind).then(value => { state.current = value; })
       .catch(() => { if (!state.current) state.nextCheck = Date.now() + 60_000; })
       .finally(() => { state.refresh = null; });
   }
   if (!state.current) await state.refresh;
-  if (!state.current) throw unavailable();
-  return dbipRecordLocation(state.current.reader.get(ip), ip);
+  return state.current;
+}
+
+export async function lookupDbipLocation(ip) {
+  const current = await currentDataset('city');
+  if (!current) throw unavailable();
+  return dbipRecordLocation(current.reader.get(ip), ip);
+}
+
+// Network owners whose names say hosting, cloud or data center. A name match is evidence, not proof;
+// anything else is reported as unknown rather than guessed to be residential.
+const HOSTING = /\b(amazon|aws|google|microsoft|azure|digitalocean|ovh|hetzner|linode|akamai|vultr|constant company|choopa|m247|leaseweb|contabo|datacamp|cloudflare|oracle|alibaba|tencent|scaleway|online s\.?a\.?s|ionos|hostinger|godaddy|hostwinds|psychz|quadranet|colocrossing|servers\.com|g-core|gcore|cdn77|zenlayer|hosting|host|cloud|data ?cent(er|re)|datacenter|server|vps|colo)/i;
+export function classifyNetwork(organization) {
+  const match = typeof organization === 'string' ? HOSTING.exec(organization) : null;
+  return match ? { type: 'hosting', matched: match[0] } : { type: 'unknown' };
+}
+const networkUnavailable = () => Object.assign(new Error('The offline network database has no record for this exit IP.'),
+  { code: 'PROXY_NETWORK_UNAVAILABLE', status: 503 });
+export function dbipRecordNetwork(record, ip) {
+  const asn = record?.autonomous_system_number;
+  if (!Number.isInteger(asn)) throw networkUnavailable();
+  const organization = record.autonomous_system_organization || null;
+  return { ip, asn, organization, type: classifyNetwork(organization).type, source: 'DB-IP ASN Lite' };
+}
+export async function lookupDbipNetwork(ip) {
+  const current = await currentDataset('asn');
+  if (!current) throw networkUnavailable();
+  return dbipRecordNetwork(current.reader.get(ip), ip);
 }

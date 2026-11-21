@@ -26,7 +26,7 @@ export function assertLaunchResources(runningCount, { freeMemBytes = os.freemem(
   }
   const freeGiB = freeMemBytes / 1024 ** 3;
   if (freeGiB < limits.minFreeMemoryGiB) {
-    throw httpErr(503, `Free memory is about ${freeGiB.toFixed(2)} GiB, below the ${limits.minFreeMemoryGiB} GiB guard. Stop a profile or close other apps, then try again.`, 'LOW_MEMORY');
+    throw httpErr(503, `Free memory is about ${freeGiB.toFixed(2)} GiB, below the ${limits.minFreeMemoryGiB} GiB guard. Close other apps or stop a profile, then try again. The guard can be lowered in Settings → Minimum free host memory guard.`, 'LOW_MEMORY');
   }
   return limits;
 }

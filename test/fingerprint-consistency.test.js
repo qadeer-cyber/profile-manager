@@ -142,3 +142,35 @@ test('a comparison body cannot carry cookies or account data', () => {
   assert.throws(() => readPreviousObservation({ previous: { canvasSha256: 'abc', cookie: 'secret' } }), error => error.code === 'INVALID_FINGERPRINT_COMPARISON');
   assert.deepEqual(readPreviousObservation({ previous: { canvasSha256: 'abc' } }), { canvasSha256: 'abc', audioSha256: null, webglRenderer: null, fingerprintSettings: null });
 });
+
+test('follow-proxy launches are graded against the proxy location zone, not the computer zone', () => {
+  const offset = -new Date().getTimezoneOffset();
+  const run = (extra, seenZone) => fingerprintFindings({
+    browserSettings: { timezoneId: '' }, hostTimezone: 'UTC',
+    observation: { availability: 'observed', timezone: seenZone, timezoneOffset: offset },
+    ...extra,
+  }).findings.find(f => f.id === 'timezone');
+  // Before: a correct proxy-following browser was flagged for not matching the computer's UTC.
+  assert.equal(run({ proxyTimezone: 'America/Los_Angeles' }, 'America/Los_Angeles').status, 'pass');
+  assert.match(run({ proxyTimezone: 'America/Los_Angeles' }, 'America/Los_Angeles').summary, /proxy location/);
+  assert.equal(run({ proxyTimezone: 'America/Los_Angeles' }, 'UTC').status, 'warning', 'browser not following the proxy is flagged');
+  assert.equal(run({ proxyTimezone: 'America/Los_Angeles', browserSettings: { timezoneId: 'Asia/Tokyo' } }, 'Asia/Tokyo').status, 'pass', 'a manual zone still wins');
+  assert.equal(run({}, 'America/Los_Angeles').status, 'warning', 'without a proxy zone the computer zone is expected');
+  assert.equal(fingerprintFindings({ proxyTimezone: 'America/Los_Angeles', observation: null }).findings.find(f => f.id === 'timezone').status, 'unavailable');
+});
+
+test('port-scan protection passes only when every observed Local Network Access permission is denied', () => {
+  const lna = permissions => fingerprintFindings({ advanced: { fingerprint: { portScan: 'real' } }, observation: { availability: 'observed', permissions }, commandLine: 'chrome' })
+    .findings.find(f => f.id === 'local_network_access');
+  const obs = state => ({ availability: 'observed', state });
+  assert.equal(lna({ 'local-network-access': obs('denied'), 'local-network': obs('denied'), 'loopback-network': obs('denied') }).status, 'pass');
+  // Previously a pass: the legacy name was denied while loopback-network still prompted (first launch, old writer).
+  const loopbackOpen = lna({ 'local-network-access': obs('denied'), 'local-network': obs('denied'), 'loopback-network': obs('prompt') });
+  assert.equal(loopbackOpen.status, 'warning');
+  assert.match(loopbackOpen.summary, /loopback-network is prompt/);
+  // After relaunch with the old writer: everything back to prompt.
+  assert.equal(lna({ 'local-network-access': obs('prompt'), 'local-network': obs('prompt'), 'loopback-network': obs('prompt') }).status, 'warning');
+  // Older Chromium without the split permissions: the legacy name alone is the evidence.
+  assert.equal(lna({ 'local-network-access': obs('denied'), 'local-network': { availability: 'unavailable' }, 'loopback-network': { availability: 'unavailable' } }).status, 'pass');
+  assert.equal(lna({ 'local-network-access': { availability: 'unavailable' } }).status, 'unavailable', 'no pass without the permission observed');
+});

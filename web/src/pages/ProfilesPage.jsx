@@ -1,3 +1,4 @@
+import { launchMessage } from '../lib/launchMessage.js';
 import { PortableExportDialog } from '../components/PortableExportDialog.jsx';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api } from '../api.js';
@@ -7,13 +8,19 @@ import { ProfileDialog, emptyForm } from '../components/ProfileDialog.jsx';
 import { StorageDialog } from '../components/StorageDialog.jsx';
 import { ProfileAutomationDialog } from '../components/ProfileAutomationDialog.jsx';
 import { Icon } from '../components/Icon.jsx';
+import { ProfileRow } from '../components/ProfileRow.jsx';
+import { RowActionsMenu } from '../components/RowActionsMenu.jsx';
+import { ProfileDetailsDialog } from '../components/ProfileDetailsDialog.jsx';
 import { useSelection } from '../hooks/useSelection.js';
+import { useElementWidth } from '../hooks/useElementWidth.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
-import { rowStatus, crashSummary, plural, runAll } from '../lib.js';
+import { rowStatus, plural, runAll } from '../lib.js';
 import { assignableLibraryProxies, switchProfileProxy } from '../lib/proxySwitch.js';
 
 const COLUMN_DEFS = [['status', 'Status'], ['name', 'Profile name'], ['engine', 'Engine'], ['storage', 'Storage'], ['folder', 'Folder'], ['proxy', 'Proxy'], ['notes', 'Notes'], ['tags', 'Tags'], ['lastused', 'Last used']];
 const DEFAULT_COLUMNS = Object.fromEntries(COLUMN_DEFS.map(([key]) => [key, true]));
+// Icon button in the selection toolbar. The accessible name doubles as the tooltip.
+const Tool = ({ label, icon, title, disabled, onClick, danger }) => <button type="button" className={'tool' + (danger ? ' danger' : '')} aria-label={label} title={title || label} disabled={disabled} onClick={onClick}><Icon name={icon} size={16} /></button>;
 function loadTablePrefs() {
   try { return JSON.parse(localStorage.getItem('pm.profileTable') || '{}'); } catch { return {}; }
 }
@@ -25,11 +32,15 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const [sort, setSort] = useState({ k: 'updated_at', dir: -1 });
   const initialPrefs = loadTablePrefs();
   const [columns, setColumns] = useState({ ...DEFAULT_COLUMNS, ...(initialPrefs.columns || {}) });
-  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnsOpen, setColumnsOpen] = useState(false), [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(1), [pageSize, setPageSize] = useState(initialPrefs.pageSize || 10), [total, setTotal] = useState(0);
   const [views, setViews] = useState([]), [viewName, setViewName] = useState('');
   const [dialog, setDialog] = useState(null), [busy, setBusy] = useState({}), [bulkBusy, setBulkBusy] = useState(false), [bulkJob, setBulkJob] = useState(null);
   const loadGen = useRef(0);
+  const [syncSessions, setSyncSessions] = useState([]);
+  const loadSync = useCallback(() => api('/api/sync').then(r => setSyncSessions(r.sessions || [])).catch(() => {}), []);
+  useEffect(() => { loadSync(); }, [loadSync, meta]);
+  const [cardRef, cardWidth] = useElementWidth();
   useEffect(() => { if (workspaceFilter !== workspaceId) setWorkspaceId(workspaceFilter || ''); }, [workspaceFilter]);
   useEffect(() => { setPage(1); }, [scope, folder, workspaceId]);
   useEffect(() => { localStorage.setItem('pm.profileTable', JSON.stringify({ columns, pageSize })); }, [columns, pageSize]);
@@ -166,27 +177,85 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   const one = selected.length === 1 ? selected[0] : null;
   const from = total ? (page - 1) * pageSize + 1 : 0;
   const to = Math.min(total, page * pageSize);
+  const filtersActive = !!(tag || status || proxy || browserEngine || workspaceId);
+  const showFilters = filtersOpen || filtersActive;
+  const newProfile = () => setDialog({ kind: 'edit', data: { ...emptyForm, folder: folder === '__all' ? '' : folder } });
+  const quickProfile = async () => { try { await api('/api/profiles/quick', { method: 'POST', body: { folder: folder === '__all' ? '' : folder } }); toast('Quick profile created', 'success'); load(); reloadMeta(); } catch (e) { toast(e.message, 'error'); } };
+  const launch = p => act(p.id, null, async () => {
+    const r = await api(`/api/profiles/${p.id}/launch`, { method: 'POST' });
+    const m = launchMessage(p.name, r);
+    toast(m.text, m.kind);
+  });
+  const stop = p => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }));
+  const clone = p => act(p.id, `Cloned ${p.name}`, () => api(`/api/profiles/${p.id}/clone`, { method: 'POST', body: { mode: 'settings' } }));
+  const rowHandlers = p => ({
+    launch: () => launch(p), stop: () => stop(p),
+    focus: () => act(p.id, null, async () => { const r = await api(`/api/profiles/${p.id}/browser/focus`, { method: 'POST' }); if (!r.ok) throw new Error(r.reason || 'Could not focus browser window'); }),
+    favorite: () => act(p.id, null, () => api(`/api/profiles/${p.id}/favorite`, { method: 'PATCH', body: { favorite: !p.favorite } })),
+    details: () => setDialog({ kind: 'details', data: p }),
+    edit: () => setDialog({ kind: 'edit', data: toForm(p) }),
+    automation: () => setDialog({ kind: 'automation', data: p }),
+    proxy: () => setDialog({ kind: 'proxy-switch', data: p }),
+    storage: () => setDialog({ kind: 'storage', data: p }),
+    export: () => setDialog({ kind: 'portable', data: p }),
+    clone: () => clone(p),
+    saveRegular: () => act(p.id, `${p.name} saved as regular`, () => api(`/api/profiles/${p.id}/save-regular`, { method: 'POST' })),
+    template: () => setDialog({ kind: 'template', data: p }),
+    delete: () => setDialog({ kind: 'delete', data: p }),
+    folder: () => setFolder(p.folder),
+    tag: t => { setTag(t); setPage(1); },
+  });
+  // Below this card width the less-used selection actions move into the toolbar's overflow menu
+  // (same accessible names) so the toolbar stays on one line instead of clipping the search field.
+  const narrow = cardWidth < 960;
+  const restartOne = () => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); });
+  const lowPriorityActions = [
+    { key: 'restart', label: 'Restart selected', ariaLabel: 'Restart selected', icon: 'refresh', disabled: !one?.running || bulkBusy, onSelect: restartOne },
+    { key: 'proxy', label: 'Proxy for selected', ariaLabel: 'Proxy for selected', icon: 'proxies', disabled: !selected.length || bulkBusy, onSelect: () => setDialog({ kind: 'bulk-proxy' }) },
+    { key: 'export', label: 'Export selected', ariaLabel: 'Export selected', icon: 'download', disabled: !one || one.running, onSelect: () => setDialog({ kind: 'portable', data: one }) },
+    { key: 'dup', label: 'Duplicate selected', ariaLabel: 'Duplicate selected', icon: 'copy', disabled: !one || busy[one?.id], onSelect: () => clone(one) },
+    { key: 'clone', label: 'Clone selected settings', ariaLabel: 'Clone selected settings', icon: 'templates', disabled: !selected.length || bulkBusy, onSelect: () => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) }) },
+  ];
   return <>
     {dialog?.kind === 'portable' && <PortableExportDialog profile={dialog.data} busy={!!busy[dialog.data.id]} onClose={() => setDialog(null)} onExport={options => exportPortable(dialog.data, options)} />}
-    <div className="toolbar profile-toolbar">
-      <button className="primary" data-action="new-profile" aria-label="New profile" onClick={() => setDialog({ kind: 'edit', data: { ...emptyForm, folder: folder === '__all' ? '' : folder } })}><Icon name="plus" /> Create</button>
-      <button onClick={async () => { try { await api('/api/profiles/quick', { method: 'POST', body: { folder: folder === '__all' ? '' : folder } }); toast('Quick profile created', 'success'); load(); reloadMeta(); } catch (e) { toast(e.message, 'error'); } }}>Quick</button>
-      <button aria-label="Start selected" disabled={!selected.some(p => !p.running) || bulkBusy} onClick={() => serverBulk('Launched', { action: 'launch', ids: selected.filter(p => !p.running).map(p => p.id), concurrency: 2 })}><Icon name="play" /></button>
-      <button aria-label="Stop selected" disabled={!selected.some(p => p.running) || bulkBusy} onClick={() => serverBulk('Stopped', { action: 'stop', ids: selected.filter(p => p.running).map(p => p.id), concurrency: 4 })}><Icon name="stop" /></button>
-      <button aria-label="Restart selected" title="Restart stops the browser and launches it again" disabled={!one?.running || bulkBusy} onClick={() => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); })}><Icon name="bolt" /></button>
-      <button aria-label="Edit selected" disabled={!one} onClick={() => setDialog({ kind: 'edit', data: toForm(one) })}><Icon name="edit" /></button>
-      <button aria-label="Duplicate selected" disabled={!one || busy[one?.id]} onClick={() => act(one.id, `Cloned ${one.name}`, () => api(`/api/profiles/${one.id}/clone`, { method: 'POST', body: { mode: 'settings' } }))}><Icon name="copy" /></button>
-      <button aria-label="Clone selected settings" disabled={!selected.length || bulkBusy} onClick={() => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) })}>Clone settings</button>
-      <button aria-label="Move selected" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-move' })}><Icon name="folder" /></button>
-      <button aria-label="Tag selected" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-tag' })}><Icon name="tag" /></button>
-      <button onClick={() => setDialog({ kind: 'import' })}>Import</button>
-      <button aria-label="Export selected" disabled={!one || one.running} onClick={() => setDialog({ kind: 'portable', data: one })}>Export</button>
-      <button className="ghost-danger" aria-label="Delete selected" disabled={!selected.length || bulkBusy} onClick={() => selected.length === 1 ? setDialog({ kind: 'delete', data: selected[0] }) : setDialog({ kind: 'bulk-delete' })}><Icon name="trash" /></button>
-      <div className="search"><Icon name="search" /><input type="search" aria-label="Search profiles" placeholder="Search profiles…" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} /></div>
-      <button type="button" aria-expanded={columnsOpen} onClick={() => setColumnsOpen(v => !v)}>Columns</button>
+    <section ref={cardRef} className="profile-card" aria-label="Profiles table">
+    <div className="toolbar profile-toolbar" role="toolbar" aria-label="Profile actions">
+      <div className="split-btn">
+        <button className="primary" data-action="new-profile" aria-label="New profile" onClick={newProfile}><Icon name="plus" /> Create</button>
+        <RowActionsMenu label="More ways to create" icon="down" buttonClassName="primary split-caret" items={[
+          { key: 'new', label: 'New profile', icon: 'plus', onSelect: newProfile },
+          { key: 'quick', label: 'Quick profile', icon: 'bolt', onSelect: quickProfile },
+          { key: 'import', label: 'Import profiles (CSV / JSON)', icon: 'upload', onSelect: () => setDialog({ kind: 'import' }) },
+        ]} />
+      </div>
+      <button type="button" className="quick-btn" title="Create a temporary quick profile" onClick={quickProfile}><Icon name="bolt" size={15} /> Quick</button>
+      <div className="tool-group" role="group" aria-label={selected.length ? `${selected.length} selected` : 'Select profiles to enable these actions'}>
+        <Tool label="Start selected" icon="play" disabled={!selected.some(p => !p.running) || bulkBusy} onClick={() => serverBulk('Launched', { action: 'launch', ids: selected.filter(p => !p.running).map(p => p.id), concurrency: 2 })} />
+        <Tool label="Stop selected" icon="stop" disabled={!selected.some(p => p.running) || bulkBusy} onClick={() => serverBulk('Stopped', { action: 'stop', ids: selected.filter(p => p.running).map(p => p.id), concurrency: 4 })} />
+        {!narrow && <Tool label="Restart selected" icon="refresh" title="Restart stops the browser and launches it again" disabled={!one?.running || bulkBusy} onClick={() => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); })} />}
+        <Tool label="Edit selected" icon="edit" disabled={!one} onClick={() => setDialog({ kind: 'edit', data: toForm(one) })} />
+        <Tool label="Tag selected" icon="tag" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-tag' })} />
+        <Tool label="Move selected" icon="move" title="Move selected to folder" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-move' })} />
+        {!narrow && <Tool label="Proxy for selected" icon="proxies" disabled={!selected.length || bulkBusy} onClick={() => setDialog({ kind: 'bulk-proxy' })} />}
+        {!narrow && <Tool label="Export selected" icon="download" title="Export portable backup of the selected profile" disabled={!one || one.running} onClick={() => setDialog({ kind: 'portable', data: one })} />}
+        {!narrow && <Tool label="Duplicate selected" icon="copy" disabled={!one || busy[one?.id]} onClick={() => clone(one)} />}
+        {!narrow && <Tool label="Clone selected settings" icon="templates" title="Clone settings of all selected profiles" disabled={!selected.length || bulkBusy} onClick={() => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) })} />}
+        <Tool label="Delete selected" icon="trash" danger disabled={!selected.length || bulkBusy} onClick={() => selected.length === 1 ? setDialog({ kind: 'delete', data: selected[0] }) : setDialog({ kind: 'bulk-delete' })} />
+        <RowActionsMenu label="More profile actions" icon="more" buttonClassName="tool" items={[
+          ...(narrow ? lowPriorityActions : []),
+          { key: 'sync', label: 'Synchronize selected…', ariaLabel: 'Synchronize selected', icon: 'bolt', separatorBefore: narrow,
+            disabled: selected.filter(p => p.running).length < 2, title: 'Select at least two running profiles', onSelect: () => setDialog({ kind: 'sync' }) },
+          { key: 'import', label: 'Import profiles', icon: 'upload', onSelect: () => setDialog({ kind: 'import' }) },
+          { key: 'refresh', label: 'Refresh list', icon: 'refresh', onSelect: () => { load(); reloadMeta(); } },
+          { key: 'filters', label: showFilters ? 'Hide filters' : 'Show filters', icon: 'filter', onSelect: () => setFiltersOpen(v => !v) },
+        ]} />
+      </div>
+      <div className="search"><Icon name="search" /><input type="search" aria-label="Search profiles" placeholder="Search" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} />
+        <button type="button" className={'icon-btn filter-toggle' + (filtersActive ? ' on' : '')} aria-label="Filters" title="Filters and saved views" aria-expanded={showFilters} onClick={() => setFiltersOpen(v => !v)}><Icon name="filter" size={16} /></button>
+      </div>
+      <button type="button" className="tool" aria-label="Refresh profiles" title="Refresh" onClick={() => { load(); reloadMeta(); }}><Icon name="refresh" size={16} /></button>
     </div>
-    {columnsOpen && <div className="column-picker" role="group" aria-label="Visible columns">{COLUMN_DEFS.map(([key, label]) => <label key={key} className="check"><input type="checkbox" checked={columns[key] !== false} onChange={e => setColumns(current => ({ ...current, [key]: e.target.checked }))} />{label}</label>)}</div>}
-    <div className="toolbar filters">
+    {showFilters && <div className="toolbar filters" role="group" aria-label="Filters">
       <select value={effectiveStatus} disabled={scope === 'running'} onChange={e => { setStatus(e.target.value); setPage(1); }} aria-label="Status filter"><option value="">Any status</option><option value="running">Running</option><option value="stopped">Stopped</option><option value="error">Error</option></select>
       <select value={tag} onChange={e => { setTag(e.target.value); setPage(1); }} aria-label="Tag filter"><option value="">All tags</option>{meta.tags.map(t => <option key={t}>{t}</option>)}</select>
       <select value={proxy} onChange={e => { setProxy(e.target.value); setPage(1); }} aria-label="Proxy filter"><option value="">Any proxy</option><option value="none">Direct</option><option value="assigned">Assigned proxy</option></select>
@@ -195,11 +264,16 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <select aria-label="Saved view" value="" onChange={event => applyView(event.target.value)}>
         <option value="">Saved views</option>{views.map(view => <option key={view.id} value={view.id}>{view.name}</option>)}</select>
       {(q || tag || status || proxy || browserEngine) && <button className="ghost" onClick={() => { setQ(''); setTag(''); setStatus(''); setProxy(''); setBrowserEngine(''); setPage(1); }}>Clear filters</button>}
+      <span className="filters-spacer" />
       <input aria-label="View name" value={viewName} onChange={e => setViewName(e.target.value)} placeholder="Save view as…" />
       <button disabled={!viewName.trim()} onClick={async () => { try { const view = await api('/api/views', { method: 'POST', body: { name: viewName.trim(), query: { q, tag, folder, status: effectiveStatus, proxy, engine: browserEngine, workspaceId, favorite: scope === 'favorites', sort: serverSort, dir: sort.dir > 0 ? 'asc' : 'desc', pageSize } } }); setViews(items => [...items, view]); setViewName(''); toast('View saved', 'success'); } catch (e) { toast(e.message, 'error'); } }}>Save view</button>
-      <span className="muted">{scope === 'running' ? 'Running' : scope === 'favorites' ? 'Favorites' : folder === '__all' ? 'All profiles' : folder || 'No folder'} · {plural(total, 'profile')} · {meta.running.length} running</span>
-    </div>
+    </div>}
+    {columnsOpen && <div className="column-picker" role="group" aria-label="Visible columns">{COLUMN_DEFS.map(([key, label]) => <label key={key} className="check"><input type="checkbox" checked={columns[key] !== false} onChange={e => setColumns(current => ({ ...current, [key]: e.target.checked }))} />{label}</label>)}</div>}
     {loadError && <div className="notice warn" role="alert">{loadError}</div>}
+    {syncSessions.map(session => { const name = id => list.find(p => p.id === id)?.name || 'profile'; return <div key={session.id} className="notice sync-notice" role="status">
+      Synchronizing <strong>{name(session.leaderId)}</strong> → {session.followerIds.map(name).join(', ')}. Your input in the leader is repeated in these profiles (password fields excluded).{' '}
+      <button type="button" onClick={async () => { try { await api(`/api/sync/${session.id}/stop`, { method: 'POST' }); toast('Synchronization stopped', 'success'); } catch (e) { toast(e.message, 'error'); } loadSync(); }}>Stop</button>
+    </div>; })}
     {S.sel.size > 0 && <div className="bulkbar" role="toolbar" aria-label="Bulk actions">
       <strong>{S.sel.size} selected</strong>
       <button disabled={bulkBusy} onClick={() => serverBulk('Launched', { action: 'launch', ids: selected.filter(p => !p.running).map(p => p.id), concurrency: 2 })}><Icon name="play" /> Launch</button>
@@ -215,62 +289,24 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     {bulkJob?.items?.some(item => item.ok === false) && <ul className="import-results">{bulkJob.items.filter(item => item.ok === false).map((item, index) => <li key={item.id || item.index || index} className="bad">{item.id || `Row ${Number(item.index) + 1}`}: {item.message || item.error}</li>)}</ul>}
     <div className="table-wrap"><table className="grid profiles"><thead><tr>
       <th className="cb"><input type="checkbox" aria-label="Select all" checked={S.all} ref={el => el && (el.indeterminate = S.some)} onChange={S.toggleAll} /></th>
-      <th className="fav"></th>
+      <th className="fav"><span className="sr-only">Favorite</span></th>
+      <th className="col-run"><span className="sr-only">Launch</span></th>
       {shown.map(([k, l]) => <th key={k} className={'sortable col-' + k} onClick={() => sortBy(k)} aria-sort={sort.k === k ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>{l}{sort.k === k && <Icon name={sort.dir > 0 ? 'up' : 'down'} size={12} />}</th>)}
-      <th className="col-actions"></th></tr></thead><tbody>
-      {rows.map(p => { const st = rowStatus(p, busy[p.id]); return <tr key={p.id} className={S.sel.has(p.id) ? 'selected' : ''}>
-        <td className="cb"><input type="checkbox" aria-label={'Select ' + p.name} checked={S.sel.has(p.id)} onChange={() => S.toggle(p.id)} /></td>
-        <td className="fav"><button type="button" className="icon-btn" disabled={busy[p.id]} aria-label={`Favorite ${p.name}`} aria-pressed={p.favorite} title={p.favorite ? 'Remove favorite' : 'Add favorite'}
-          onClick={() => act(p.id, null, () => api(`/api/profiles/${p.id}/favorite`, { method: 'PATCH', body: { favorite: !p.favorite } }))}>
-          {p.favorite ? <span aria-hidden="true">★</span> : <Icon name="star" size={14} />}
-        </button><button type="button" className="icon-btn launch" title={p.running ? 'Stop profile' : 'Launch profile'} aria-label={(p.running ? 'Stop ' : 'Launch ') + p.name} disabled={busy[p.id]} onClick={() => p.running ? act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' })) : act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name={p.running ? 'stop' : 'play'} size={14} /></button></td>
-        {columns.status !== false && <td className="col-status"><span className={'status ' + st.key}><i />{st.label}</span></td>}
-        {columns.name !== false && <td className="col-name"><div className="name-line"><span className="name">{p.name}</span>{p.isQuick && <span className="tag" title="Quick profile">quick</span>}</div>
-          {st.showError && <div className="err-text small profile-error" title={p.last_error}>{crashSummary(p.last_error)}</div>}
-          {p.lastProxyLocation && <div className="proxy-evidence" title={`Last resolved proxy exit ${p.lastProxyLocation.ip}`}>
-            Proxy exit {p.lastProxyLocation.ip} · Approx.: {[p.lastProxyLocation.city, p.lastProxyLocation.region, p.lastProxyLocation.country].filter(Boolean).join(', ')} · {p.lastProxyLocation.timezone} · {Number.isFinite(p.lastProxyLocation.utcOffsetMinutes) ? 'UTC offset ' + (p.lastProxyLocation.utcOffsetMinutes >= 0 ? '+' : '') + p.lastProxyLocation.utcOffsetMinutes + ' min · ' : ''}{p.lastProxyLocation.latitude?.toFixed(2)}, {p.lastProxyLocation.longitude?.toFixed(2)} · {p.lastProxyLocation.radiusKm == null ? 'Provider accuracy radius unavailable' : p.lastProxyLocation.radiusKm + ' km provider radius'} · {p.lastProxyLocation.source} · {p.lastProxyLocation.browserVerifiedAt ? 'Browser exit, timezone and coordinates checked at launch' : p.lastProxyLocation.browserTimezoneVerifiedAt ? 'Browser exit and timezone checked at launch' : p.lastProxyLocation.browserExitVerifiedAt ? 'Browser exit checked at launch' : 'Proxy probe only'} · {new Date(p.lastProxyLocation.browserExitVerifiedAt || p.lastProxyLocation.expiresAt - 86_400_000).toLocaleString()}
-          </div>}
-          {['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime) && p.browserEngine !== 'firefox' && <div className="muted small">
-            {p.proxy && <>
-              Proxy exit: {p.running && p.lastProxyLocation?.browserExitVerifiedAt ? 'Verified at startup' : 'No current browser verification'} ·{' '}
-              Location: {p.running && p.lastProxyLocation ? 'Approximate GeoIP' : 'No current GeoIP result'} ·{' '}
-              Timezone: {p.running && p.lastProxyLocation?.nativeTimezoneVerifiedAt ? 'Native ICU checked at startup' : 'No current browser verification'}
-              {' · '}Geolocation API, DNS and WebRTC: Not verified
-            </>}
-            {' '}<span title="Azwah has no provisioned virtual network adapter for this profile.">MAC isolation: Unavailable</span>
-          </div>}
-          {p.automationEnabled && !p.running && <div className="muted">Automation enabled</div>}
-          {p.tabRestore?.enabled && <span className="tag" title={p.running ? 'Tab restore on — saved on graceful stop' : p.tabRestore.savedCount ? `${p.tabRestore.savedCount} tab(s) saved for next launch` : 'Tab restore on — no saved tabs yet'}>Tab restore{p.tabRestore.savedCount ? ` · ${p.tabRestore.savedCount}` : ''}</span>}
-          {p.cdp && <div className="mono" title="Automation endpoint">{p.cdp.wsEndpoint || p.cdp.debuggerAddress}</div>}</td>}
-        {columns.engine !== false && <td className="col-engine">{p.browserEngine === 'firefox' ? 'Firefox' : ['azwah-native', 'custom-native-chromium'].includes(p.advancedSettings?.runtime) ? 'Azwah Native Chromium (development)' : p.advancedSettings?.runtime === 'privacy' ? 'Azwah Privacy Engine (experimental)' : p.advancedSettings?.runtime === 'stable-chrome' ? 'Google Chrome Stable' : 'Chromium'}</td>}
-        {columns.storage !== false && <td className="col-storage" title="Stored in the local data folder">Local</td>}
-        {columns.folder !== false && <td className="col-folder">{p.folder ? <button className="link" onClick={() => setFolder(p.folder)}>{p.folder}</button> : <span className="muted">None</span>}</td>}
-        {columns.proxy !== false && <td className="col-proxy">{p.proxy ? <span className="mono-sm" title={`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`}>{p.proxy.name || `${p.proxy.host}:${p.proxy.port}`}{(p.proxy.username || p.proxy.hasPassword) && <Icon name="lock" size={12} />}</span> : <span className="muted">Direct</span>}</td>}
-        {columns.notes !== false && <td className="col-notes"><span className="clamp" title={p.notes || ''}>{p.notes || ''}</span></td>}
-        {columns.tags !== false && <td className="col-tags">{p.tags.map(t => <button key={t} className="tag" onClick={() => setTag(t)}>{t}</button>)}</td>}
-        {columns.lastused !== false && <td className="col-lastused muted">{p.last_launched_at ? new Date(p.last_launched_at).toLocaleString() : '—'}</td>}
-        <td className="actions col-actions">
-          {p.running ? <>
-            <button disabled={busy[p.id]} onClick={() => act(p.id, null, async () => {
-              const r = await api(`/api/profiles/${p.id}/browser/focus`, { method: 'POST' });
-              if (!r.ok) throw new Error(r.reason || 'Could not focus browser window');
-            })} title="Bring browser window to front">Focus</button>
-            <button disabled={busy[p.id]} onClick={() => act(p.id, `Stopped ${p.name}`, () => api(`/api/profiles/${p.id}/stop`, { method: 'POST' }))}><Icon name="stop" /> Stop</button>
-          </> : <button className="primary" disabled={busy[p.id]} onClick={() => act(p.id, `Launched ${p.name}`, () => api(`/api/profiles/${p.id}/launch`, { method: 'POST' }))}><Icon name="play" /> {busy[p.id] ? 'Starting…' : 'Launch'}</button>}
-          {p.automationEnabled && <button className="icon-btn" title="Automation (CDP / WebDriver)" aria-label={'Automation ' + p.name} onClick={() => setDialog({ kind: 'automation', data: p })}><Icon name="bolt" size={14} /></button>}
-          <button className="icon-btn" title="Proxy connection" aria-label={'Proxy ' + p.name} onClick={() => setDialog({ kind: 'proxy-switch', data: p })}><Icon name="proxies" size={14} /></button>
-          <button className="icon-btn" title="Storage" aria-label={'Storage ' + p.name} onClick={() => setDialog({ kind: 'storage', data: p })}><Icon name="storage" /></button>
-          <button className="icon-btn" title="Export portable .pmp backup" aria-label={'Export ' + p.name} disabled={busy[p.id] || p.running} onClick={() => setDialog({ kind: 'portable', data: p })}><Icon name="download" /></button>
-          <button className="icon-btn" title="Edit" aria-label={'Edit ' + p.name} onClick={() => setDialog({ kind: 'edit', data: toForm(p) })}><Icon name="edit" /></button>
-          <button className="icon-btn" title="Clone" aria-label={'Clone ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `Cloned ${p.name}`, () => api(`/api/profiles/${p.id}/clone`, { method: 'POST', body: { mode: 'settings' } }))}><Icon name="copy" /></button>
-          {p.isQuick && <button className="icon-btn" title="Save as regular profile" aria-label={'Save as regular ' + p.name} disabled={busy[p.id]} onClick={() => act(p.id, `${p.name} saved as regular`, () => api(`/api/profiles/${p.id}/save-regular`, { method: 'POST' }))}><Icon name="check" /></button>}
-          <button className="icon-btn" title="Save as template" aria-label={'Template from ' + p.name} disabled={busy[p.id]} onClick={() => setDialog({ kind: 'template', data: p })}><Icon name="templates" size={14} /></button>
-          <button className="icon-btn danger" title="Delete" aria-label={'Delete ' + p.name} onClick={() => setDialog({ kind: 'delete', data: p })}><Icon name="trash" /></button>
-        </td></tr>; })}
-      {!loaded && !rows.length && <tr><td colSpan={shown.length + 3} className="empty" aria-busy="true">Loading profiles…</td></tr>}
-      {loaded && !rows.length && <tr><td colSpan={shown.length + 3} className="empty">{total || q || tag || status || proxy ? 'No profiles match these filters.' : <>No profiles yet. <button className="link" onClick={() => setDialog({ kind: 'edit', data: emptyForm })}>Create your first profile</button></>}</td></tr>}
+      <th className="col-actions"><button type="button" className="icon-btn" aria-label="Columns" title="Choose columns" aria-expanded={columnsOpen} onClick={() => setColumnsOpen(v => !v)}><Icon name="columns" size={17} /></button></th></tr></thead><tbody>
+      {rows.map(p => <ProfileRow key={p.id} p={p} st={rowStatus(p, busy[p.id])} columns={columns} selected={S.sel.has(p.id)} busy={!!busy[p.id]} onToggle={() => S.toggle(p.id)} on={rowHandlers(p)} />)}
+      {!loaded && !rows.length && <tr><td colSpan={shown.length + 4} className="empty" aria-busy="true">Loading profiles…</td></tr>}
+      {loaded && !rows.length && <tr><td colSpan={shown.length + 4} className="empty">{total || q || tag || status || proxy ? 'No profiles match these filters.' : <>No profiles yet. <button className="link" onClick={() => setDialog({ kind: 'edit', data: emptyForm })}>Create your first profile</button></>}</td></tr>}
     </tbody></table></div>
-    <div className="pager"><span className="muted">Rows per page</span><select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }} aria-label="Page size"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select><span className="muted">{from}–{to} of {total}</span><button disabled={page <= 1} onClick={() => setPage(value => value - 1)}>Previous</button><button disabled={page * pageSize >= total} onClick={() => setPage(value => value + 1)}>Next</button></div>
+    <div className="pager">
+      <span className="pager-info" title="Current scope"><Icon name="info" size={15} /> {scope === 'running' ? 'Running' : scope === 'favorites' ? 'Favorites' : folder === '__all' ? 'All profiles' : folder || 'No folder'} · {plural(total, 'profile')} · {meta.running.length} running</span>
+      <span className="pager-spacer" />
+      <span className="muted">Rows per page</span><select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }} aria-label="Page size"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select>
+      <span className="muted">{from}–{to} of {total}</span>
+      <button type="button" className="icon-btn" aria-label="Previous page" disabled={page <= 1} onClick={() => setPage(value => value - 1)}><Icon name="left" /></button>
+      <button type="button" className="icon-btn" aria-label="Next page" disabled={page * pageSize >= total} onClick={() => setPage(value => value + 1)}><Icon name="right" /></button>
+    </div>
+    </section>
+    {dialog?.kind === 'details' && <ProfileDetailsDialog profile={rows.find(r => r.id === dialog.data.id) || dialog.data} status={rowStatus(rows.find(r => r.id === dialog.data.id) || dialog.data, busy[dialog.data.id])} onClose={() => setDialog(null)} onEdit={() => setDialog({ kind: 'edit', data: toForm(rows.find(r => r.id === dialog.data.id) || dialog.data) })} />}
     {dialog?.kind === 'edit' && <ProfileDialog initial={dialog.data} folders={meta.folders} onSave={save} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'delete' && <Confirm title="Move to trash" danger confirmLabel="Move to trash" message={`Move “${dialog.data.name}” to trash? You can restore it from the Trash page or delete it permanently later.`}
       onConfirm={() => act(dialog.data.id, `Deleted ${dialog.data.name}`, () => api(`/api/profiles/${dialog.data.id}`, { method: 'DELETE' }))} onClose={() => setDialog(null)} />}
@@ -286,9 +322,32 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       onApply={proxyId => bulkProxySwitch(proxyId || null)} />}
     {dialog?.kind === 'proxy-switch' && <ProfileProxySwitch profile={dialog.data} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'automation' && <ProfileAutomationDialog profile={dialog.data} onClose={() => setDialog(null)} />}
+    {dialog?.kind === 'sync' && <SyncDialog profiles={selected.filter(p => p.running)} onClose={() => setDialog(null)} onStarted={() => { loadSync(); toast('Synchronization started', 'success'); }} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}
   </>;
+}
+
+function SyncDialog({ profiles, onClose, onStarted }) {
+  const toast = useToast();
+  const [leaderId, setLeaderId] = useState(profiles[0]?.id || '');
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const followers = profiles.filter(p => p.id !== leaderId);
+  const start = async () => {
+    setBusy(true);
+    try {
+      await api('/api/sync/start', { method: 'POST', body: { leaderId, followerIds: followers.map(p => p.id) } });
+      onStarted(); onClose();
+    } catch (e) { toast(e.message, 'error'); }
+    setBusy(false);
+  };
+  return <Dialog title="Synchronize profiles" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="primary" disabled={!confirmed || busy || !followers.length} onClick={start}>{busy ? 'Starting…' : 'Start'}</button></>}>
+    <p className="muted">Clicks, scrolling, key presses and navigation in the leader are repeated in the followers. Typing into password fields is never repeated. Only the default Chromium and Chrome Stable runtimes are supported.</p>
+    <label>Leader<select value={leaderId} onChange={e => setLeaderId(e.target.value)}>{profiles.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+    <p className="muted">Followers: {followers.map(p => p.name).join(', ') || 'none'}</p>
+    <label className="check"><input type="checkbox" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} /> I want my actions in the leader repeated in {followers.length} profile{followers.length === 1 ? '' : 's'}.</label>
+  </Dialog>;
 }
 
 function SaveTemplateDialog({ profile, onClose, toast }) {

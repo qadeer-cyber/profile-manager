@@ -1,0 +1,63 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>AZWAH compatibility baseline</title>
+<!-- Offline checks of ordinary browser features. A privacy protection must keep every "ok" true; the hashes are
+     recorded so a protection's effect can be measured against this unmodified baseline. No external requests. -->
+<canvas id="c" width="64" height="32"></canvas>
+<script>
+const sha = async bytes => [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(b => b.toString(16).padStart(2, '0')).join('');
+async function run() {
+  const r = {};
+  // Canvas: what the page draws must read back exactly where it is a solid colour (charts depend on this).
+  try {
+    const ctx = document.getElementById('c').getContext('2d');
+    ctx.fillStyle = 'rgb(19,121,177)'; ctx.fillRect(0, 0, 32, 32);
+    ctx.fillStyle = 'rgb(240,80,40)'; ctx.fillRect(32, 0, 32, 32);
+    ctx.font = '14px sans-serif'; ctx.fillStyle = '#fff'; ctx.fillText('AZ', 4, 20);
+    const px = (x, y) => [...ctx.getImageData(x, y, 1, 1).data];
+    const solid = JSON.stringify(px(30, 30)) === '[19,121,177,255]' && JSON.stringify(px(60, 30)) === '[240,80,40,255]';
+    r.canvas = { ok: solid, hash: await sha(ctx.getImageData(0, 0, 64, 32).data.buffer), dataUrlLength: document.getElementById('c').toDataURL().length };
+  } catch (e) { r.canvas = { ok: false, error: String(e) }; }
+  // WebGL: available or cleanly unavailable; if available, a cleared colour reads back exactly.
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    if (!gl) r.webgl = { ok: true, available: false };
+    else {
+      gl.clearColor(0, 1, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+      const p = new Uint8Array(4); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, p);
+      r.webgl = { ok: p.join() === '0,255,0,255', available: true };
+    }
+  } catch (e) { r.webgl = { ok: false, error: String(e) }; }
+  // Audio: an offline oscillator renders a non-silent buffer.
+  try {
+    const ac = new OfflineAudioContext(1, 4410, 44100);
+    const o = ac.createOscillator(); o.frequency.value = 440; o.connect(ac.destination); o.start();
+    const buf = await ac.startRendering(); const d = buf.getChannelData(0);
+    let peak = 0; for (const v of d) peak = Math.max(peak, Math.abs(v));
+    r.audio = { ok: peak > 0.5, peak: Number(peak.toFixed(4)), hash: await sha(d.buffer.slice(0)) };
+  } catch (e) { r.audio = { ok: false, error: String(e) }; }
+  // Fonts: a generic family renders text with a measurable width.
+  try { const w = document.getElementById('c').getContext('2d').measureText('AZWAH').width; r.fonts = { ok: w > 0, width: Number(w.toFixed(2)) }; }
+  catch (e) { r.fonts = { ok: false, error: String(e) }; }
+  // Storage.
+  try { localStorage.setItem('azwah-compat', '1'); r.localStorage = { ok: localStorage.getItem('azwah-compat') === '1' }; }
+  catch (e) { r.localStorage = { ok: false, error: String(e) }; }
+  try {
+    r.indexedDB = await new Promise(resolve => {
+      const q = indexedDB.open('azwah-compat', 1);
+      q.onupgradeneeded = () => q.result.createObjectStore('s');
+      q.onsuccess = () => { const tx = q.result.transaction('s', 'readwrite'); tx.objectStore('s').put('v', 'k');
+        tx.oncomplete = () => { q.result.close(); resolve({ ok: true }); }; tx.onerror = () => resolve({ ok: false }); };
+      q.onerror = () => resolve({ ok: false, error: String(q.error) });
+    });
+  } catch (e) { r.indexedDB = { ok: false, error: String(e) }; }
+  // Downloads: a Blob URL can be created and fetched.
+  try { const u = URL.createObjectURL(new Blob(['azwah'])); r.download = { ok: (await (await fetch(u)).text()) === 'azwah' }; URL.revokeObjectURL(u); }
+  catch (e) { r.download = { ok: false, error: String(e) }; }
+  // Windows: window.open returns a window that can be closed.
+  try { const w = window.open('about:blank'); r.windowOpen = { ok: !!w }; w?.close(); } catch (e) { r.windowOpen = { ok: false, error: String(e) }; }
+  window.__azwahCompat = r;
+  document.title = 'done';
+}
+run();
+</script>

@@ -1,0 +1,43 @@
+2026-11-20T09:01:22.3602391Z ##[group]Run "AZWAH_JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Add-Content -LiteralPath $env:GITHUB_EN
+2026-11-20T09:01:22.8901699Z ##[group]Run actions/checkout@v4
+2026-11-20T09:01:29.5397538Z ##[group]Run ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+2026-11-20T09:03:17.2505005Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-20T09:03:20.1635936Z ##[group]Run ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:DEPOT_TOOL
+2026-11-20T09:03:36.8754876Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-20T09:03:37.9599908Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-20T09:20:21.1887165Z END gclient.bat elapsed_seconds=993 free_bytes=202434891776
+2026-11-20T09:20:21.2754374Z Synced Chromium revision: b0cbb99d9f0f9fbbb6c6780e73b17984e991c866; free_bytes=202434891776
+2026-11-20T13:56:37.7512006Z [28027/58933] CXX obj/third_party/blink/renderer/core/core/annotation_agent_impl.obj
+2026-11-20T13:56:38.8693091Z BUDGET reached for autoninja.bat; stopping so the next job can continue.
+2026-11-20T13:56:40.0020647Z INCOMPLETE the time budget ended before chrome finished; continue in the next job.
+2026-11-20T13:56:41.1790153Z ##[error]Process completed with exit code 1.
+2026-11-20T13:56:41.5465407Z ##[group]Run sccache.exe --show-stats
+2026-11-20T13:56:43.1609469Z Compile requests                  23303
+2026-11-20T13:56:43.1631947Z Compile requests executed             0
+2026-11-20T13:56:43.1632422Z Cache hits                            0
+2026-11-20T13:56:43.1632707Z Cache misses                          0
+2026-11-20T13:56:43.1633000Z Cache hits rate                       -
+2026-11-20T13:56:43.1633532Z Cache read errors                     0
+2026-11-20T13:56:43.1634037Z Cache write errors                    0
+2026-11-20T13:56:43.1634282Z Cache errors                          0
+2026-11-20T13:56:43.1634545Z Compilations                          0
+2026-11-20T13:56:43.1634795Z Compilation failures                  0
+2026-11-20T13:56:43.1635362Z Non-cacheable calls               23303
+2026-11-20T13:56:43.1637309Z Non-cacheable reasons:
+2026-11-20T13:56:43.1637555Z -fmodules-cache-path              23302
+2026-11-20T13:56:43.1637915Z -x                                    1
+2026-11-20T13:56:43.1770859Z Compile requests                  23303
+2026-11-20T13:56:43.1771852Z Compile requests executed             0
+2026-11-20T13:56:43.1772463Z Cache hits                            0
+2026-11-20T13:56:43.1772962Z Cache misses                          0
+2026-11-20T13:56:43.1773227Z Cache hits rate                       -
+2026-11-20T13:56:43.1773764Z Cache read errors                     0
+2026-11-20T13:56:43.1774268Z Cache write errors                    0
+2026-11-20T13:56:43.1775281Z Cache errors                          0
+2026-11-20T13:56:43.1778289Z Compilations                          0
+2026-11-20T13:56:43.1778713Z Compilation failures                  0
+2026-11-20T13:56:43.1779155Z Non-cacheable calls               23303
+2026-11-20T13:56:43.1783183Z Non-cacheable reasons:
+2026-11-20T13:56:43.1783536Z -fmodules-cache-path              23302
+2026-11-20T13:56:43.1783920Z -x                                    1
+2026-11-20T13:56:43.4752085Z CACHE_BYTES 

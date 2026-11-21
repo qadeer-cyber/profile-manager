@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { predictStableLaunchMode, launchModeReason } from '../../../server/browser-runtime/stable-launch-mode.js';
 import { api } from '../api.js';
 import { WEBRTC_CHOICES } from '../../../server/webrtc-policy.js';
 
@@ -9,17 +10,31 @@ function row(label, value, title) {
   return <div className="overview-row" title={title || (typeof value === 'string' ? value : label)}><span>{label}</span><strong>{empty ? '—' : value}</strong></div>;
 }
 
-export function ProfileOverview({ form, languageText }) {
+export function ProfileOverview({ form, languageText, warnings }) {
   const [version, setVersion] = useState('');
+  const [edition, setEdition] = useState('');
   const advanced = form.advancedSettings || {};
   const regional = form.browserSettings || {};
   const fingerprint = advanced.fingerprint || {};
   const screen = advanced.screen || {};
   const geo = advanced.geolocation || {};
-  const engine = form.browserEngine === 'firefox' ? 'Firefox' : 'Chromium';
+  const runtime = advanced.runtime;
+  const engine = form.browserEngine === 'firefox' ? 'Firefox'
+    : runtime === 'stable-chrome' ? 'Google Chrome Stable'
+    : runtime === 'azwah-native' || runtime === 'custom-native-chromium' ? 'Development Chromium'
+    : runtime === 'privacy' ? 'Experimental privacy engine' : 'Default Chromium runtime';
+  const usesProxy = form.proxyMode === 'library' ? Boolean(form.proxyId) : form.proxyMode === 'custom' && Boolean(form.proxy?.host);
+  // Chrome Stable edition: every Chromium profile runs the installed Google Chrome. Ordinary profiles
+  // open it as a manual browser; profiles that need the controlled connection say so and why.
+  const stableEdition = edition === 'chrome-stable' && form.browserEngine !== 'firefox' && !['privacy', 'azwah-native', 'custom-native-chromium'].includes(runtime);
+  const launchMode = stableEdition ? predictStableLaunchMode({ ...form, proxy: usesProxy ? {} : null }) : null;
+  const launchModeText = !launchMode ? null : launchMode.mode === 'manual' ? 'Manual (no remote control)'
+    : `Controlled: ${launchMode.reasons.map(r => ({ proxy: 'proxy', timezone: 'timezone', coordinates: 'coordinates', screen: 'screen', userAgent: 'user agent', automation: 'automation', headless: 'headless' })[r] || r).join(', ')}`;
+  const followsProxy = usesProxy && (!geo.mode || geo.mode === 'auto' || runtime === 'stable-chrome') && form.browserEngine !== 'firefox';
+
   useEffect(() => {
     if (form.browserEngine === 'firefox') { setVersion('Stock Firefox on this computer'); return; }
-    api('/api/chromium-identity').then(r => setVersion(r.version || 'Unavailable')).catch(() => setVersion('Unavailable'));
+    api('/api/chromium-identity').then(r => { setEdition(r.edition || ''); setVersion(r.version || (r.error ? 'Chrome Stable not found' : 'Unavailable')); }).catch(() => setVersion('Unavailable'));
   }, [form.browserEngine]);
   const proxy = form.proxyMode === 'none'
     ? 'Direct'
@@ -28,7 +43,7 @@ export function ProfileOverview({ form, languageText }) {
       : form.proxy?.host
         ? <span className="overview-proxy"><span>{(form.proxy.type || 'http').toUpperCase()}</span><span>{form.proxy.host}:{form.proxy.port}</span>{(form.proxy.username || form.proxy.password) && <span>Authentication set</span>}</span>
         : 'Custom proxy incomplete';
-  const languages = (languageText || '').trim() || (regional.languages || []).join(', ') || 'Host languages';
+  const languages = languageText.trim() || 'Host languages';
   const screenText = screen.preset === 'custom'
     ? `${screen.width || '—'}×${screen.height || '—'}`
     : screen.preset && screen.preset !== 'native' ? String(screen.preset).replace('x', '×') : 'Native window';
@@ -36,18 +51,21 @@ export function ProfileOverview({ form, languageText }) {
   return <aside className="profile-overview" aria-label="Profile overview">
     <h3>Profile overview</h3>
     {row('Name', form.name || 'Untitled')}
-    {row('Engine', engine)}
-    {row('Version', version || 'Checking…', 'The installed browser version. This is not a substituted user-agent version.')}
+    {row('Engine', stableEdition ? 'Google Chrome Stable' : engine)}
+    {launchModeText && row('Launch mode', launchModeText, launchMode.mode === 'manual' ? 'Chrome starts like you start it: no automation connection.' : launchMode.reasons.map(launchModeReason).join(' '))}
+    {row('Installed reference', version || 'Checking…', 'The installed browser version. This is not a substituted user-agent version.')}
+    {row('MAC address', form.advancedSettings?.macLabel || form.macLabel || 'Assigned when created', 'Saved label only. Websites cannot read a MAC address; AZWAH does not change your network adapter.')}
     {row('Storage', 'Local', 'Profiles are stored in this computer’s data folder.')}
     {row('Folder', form.folder || 'No folder')}
     {row('Proxy', proxy, 'The password is never shown here.')}
     {row('Operating system', 'This computer', 'Platform and OS strings are not replaced.')}
     {row('WebRTC', WEBRTC[form.webrtcSettings?.mode] || form.webrtcSettings?.mode || 'Browser default')}
-    {row('Timezone', regional.timezoneId || 'Host timezone')}
+    {row('Timezone', followsProxy ? 'Follow verified proxy at launch' : regional.timezoneId || 'Host timezone')}
     {row('Geolocation access', geo.permission || 'default')}
-    {row('Geolocation data', geoData)}
+    {row('Geolocation data', followsProxy ? 'Follow verified proxy at launch' : geoData)}
     {row('Languages', languages)}
     {row('Screen', screenText, 'Window size for the next launch. Screen APIs are not spoofed.')}
     {row('Fingerprint', `WebGL ${fingerprint.webgl || 'default'} · canvas ${fingerprint.canvas || 'real'} · audio ${fingerprint.audio || 'real'}`)}
+    {warnings?.length > 0 && <ul className="overview-warnings">{warnings.map(warning => <li key={warning.code}>{warning.message}</li>)}</ul>}
   </aside>;
 }

@@ -52,7 +52,9 @@ test('v18 upgrade preserves profile and recovery records; v19 applies once', () 
     assert.equal(currentVersion(d), 18);
     d.prepare("INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES ('legacy','Preserved','[]','','','now','now')").run();
     d.prepare("INSERT INTO pm_recovery_profile_locks VALUES ('legacy','pending-operation')").run();
-    assert.deepEqual(migrate(d).applied, [19]); assert.equal(currentVersion(d), 19);
+    // Every later migration applies once; the v19 recovery records survive them.
+    const later = migrations.filter(m => m.version > 18).map(m => m.version);
+    assert.deepEqual(migrate(d).applied, later); assert.equal(currentVersion(d), later.at(-1));
     assert.equal(d.prepare("SELECT name FROM profiles WHERE id='legacy'").get().name, 'Preserved');
     assert.equal(d.prepare('SELECT count(*) n FROM pm_recovery_profile_locks').get().n, 1);
     assert.deepEqual(migrate(d).applied, []);

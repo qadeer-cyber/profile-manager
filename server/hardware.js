@@ -90,7 +90,7 @@ async function observeInPage() {
   let clientHints = { availability: 'unavailable', reason: 'not_exposed' };
   if (navigator.userAgentData?.getHighEntropyValues) {
     try {
-      const high = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'uaFullVersion', 'platform', 'architecture', 'bitness', 'model', 'wow64']);
+      const high = await navigator.userAgentData.getHighEntropyValues(['fullVersionList', 'uaFullVersion', 'platform', 'platformVersion', 'architecture', 'bitness', 'model', 'wow64']);
       const chromium = Array.isArray(high.fullVersionList) ? high.fullVersionList.find(item => item.brand === 'Chromium') : null;
       const brands = Array.isArray(navigator.userAgentData.brands) ? navigator.userAgentData.brands.map(item => text(item.brand)).filter(Boolean).slice(0, 8) : [];
       clientHints = {
@@ -98,6 +98,7 @@ async function observeInPage() {
         uaFullVersion: text(high.uaFullVersion),
         chromiumVersion: text(chromium?.version),
         platform: text(high.platform || navigator.userAgentData.platform),
+        platformVersion: text(high.platformVersion),
         architecture: text(high.architecture),
         bitness: text(high.bitness),
         mobile: navigator.userAgentData.mobile === true ? true : navigator.userAgentData.mobile === false ? false : null,
@@ -105,34 +106,44 @@ async function observeInPage() {
       };
     } catch { clientHints = { availability: 'unavailable', reason: 'client_hints_failed' }; }
   }
-  let fontsQuery = { availability: 'unavailable', reason: 'queryLocalFonts_missing' };
-  if (typeof window.queryLocalFonts === 'function') {
-    try {
-      const list = await window.queryLocalFonts();
-      fontsQuery = { availability: 'observed', apiPresent: true, resolved: true, count: list.length };
-    } catch (error) {
-      fontsQuery = { availability: 'observed', apiPresent: true, resolved: false, errorName: error.name };
-    }
-  } else {
-    fontsQuery = { availability: 'observed', apiPresent: false, resolved: false };
-  }
-  let mediaCapture = { availability: 'unavailable', reason: 'getUserMedia_missing' };
-  if (navigator.mediaDevices?.getUserMedia) {
-    try {
-      await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-      mediaCapture = { availability: 'observed', errorName: 'granted' };
-    } catch (error) {
-      mediaCapture = { availability: 'observed', errorName: error.name || 'Error' };
-    }
-  }
+  // Permission states first: a call that would open a permission prompt in the user's browser is
+  // never made. A prompt waits for a person, so the probe would hang and the user would see it.
   const permissions = {
     geolocation: await permission('geolocation'),
     camera: await permission('camera'),
     microphone: await permission('microphone'),
     'local-fonts': await permission('local-fonts'),
     'local-network-access': await permission('local-network-access'),
+    // Newer Chromium splits Local Network Access into these two permissions.
+    'local-network': await permission('local-network'),
+    'loopback-network': await permission('loopback-network'),
     notifications: await permission('notifications'),
   };
+  const decided = name => permissions[name].availability === 'observed' && permissions[name].state !== 'prompt';
+  let fontsQuery = { availability: 'unavailable', reason: 'queryLocalFonts_missing' };
+  if (typeof window.queryLocalFonts !== 'function') fontsQuery = { availability: 'observed', apiPresent: false, resolved: false };
+  else if (!decided('local-fonts')) fontsQuery = { availability: 'unavailable', apiPresent: true, reason: 'permission_not_decided' };
+  else {
+    try {
+      const list = await window.queryLocalFonts();
+      fontsQuery = { availability: 'observed', apiPresent: true, resolved: true, count: list.length };
+    } catch (error) {
+      fontsQuery = { availability: 'observed', apiPresent: true, resolved: false, errorName: error.name };
+    }
+  }
+  let mediaCapture = { availability: 'unavailable', reason: 'getUserMedia_missing' };
+  if (navigator.mediaDevices?.getUserMedia) {
+    if (!decided('camera') || !decided('microphone')) mediaCapture = { availability: 'unavailable', reason: 'permission_not_decided' };
+    else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+        stream.getTracks().forEach(track => track.stop());
+        mediaCapture = { availability: 'observed', errorName: 'granted' };
+      } catch (error) {
+        mediaCapture = { availability: 'observed', errorName: error.name || 'Error' };
+      }
+    }
+  }
   let geolocation = null;
   if (permissions.geolocation.state === 'granted' && navigator.geolocation) {
     geolocation = await new Promise(resolve => {
@@ -160,6 +171,7 @@ async function observeInPage() {
     webgl, webgpu, canvas, audio, media, mediaCapture, fontsQuery, clientHints, permissions, geolocation,
     userAgent: text(navigator.userAgent),
     platform: text(navigator.platform),
+    maxTouchPoints: Number.isFinite(navigator.maxTouchPoints) ? navigator.maxTouchPoints : null,
     locale: text(navigator.language),
     languages: Array.isArray(navigator.languages) ? navigator.languages.slice(0, 10).map(tag => text(tag)).filter(Boolean) : [],
     timezone: text(timezone),
@@ -194,8 +206,14 @@ async function withObservationPage(ctx) {
   return {
     page, url,
     close: async () => {
-      await page.close().catch(() => {});
-      await new Promise(resolve => server.close(() => resolve()));
+      // Chrome keeps its keep-alive connection to this server open after the tab closes, and
+      // server.close() waits for every connection to end, so close the connections explicitly.
+      // Bounded so cleanup can never cost the observation that was already collected.
+      const bounded = (promise, ms) => Promise.race([promise, new Promise(resolve => setTimeout(resolve, ms).unref())]);
+      await bounded(page.close().catch(() => {}), 5000);
+      const closed = new Promise(resolve => server.close(() => resolve()));
+      server.closeAllConnections?.();
+      await bounded(closed, 2000);
     },
   };
 }
@@ -222,18 +240,32 @@ export const UNSUPPORTED_OVERRIDES = Object.freeze([
 ]);
 
 const OBSERVE_DEADLINE_MS = 35000;
+const ICE_STAGE_MS = 8000;
 
-async function collectBrowserObservation(ctx, permissions) {
+async function collectBrowserObservation(ctx, permissions, progress = {}) {
   let probe;
   try {
+    progress.stage = 'open_page';
     probe = await withObservationPage(ctx);
+    progress.stage = 'navigate';
     await probe.page.goto(probe.url, { timeout: 15000, waitUntil: 'domcontentloaded' });
+    progress.stage = 'permissions';
     if (permissions && Object.keys(permissions).length) await applyDocumentPermissions(probe.page, probe.url, permissions);
+    progress.stage = 'page_probe';
     const facts = summarize(await probe.page.evaluate(observeInPage));
-    const iceRaw = await gatherIceInPage(probe.page);
+    progress.stage = 'webrtc';
+    // ICE gathering can stall inside createOffer/setLocalDescription (for example when the STUN host
+    // is unreachable). Bound it here so the facts already observed are kept; ICE is then reported as
+    // not observed rather than failing the whole observation.
+    let iceTimer;
+    const iceRaw = await Promise.race([
+      gatherIceInPage(probe.page).catch(() => ({ availability: 'unavailable', reason: 'ice_gather_failed' })),
+      new Promise(resolve => { iceTimer = setTimeout(() => resolve({ availability: 'unavailable', reason: 'ice_timeout' }), ICE_STAGE_MS); }),
+    ]).finally(() => clearTimeout(iceTimer));
     facts.webrtcIce = iceRaw.availability === 'observed' ? summarizeIceCandidates(iceRaw.lines) : iceRaw;
     return { availability: 'observed', source: 'browser', ...facts };
   } finally {
+    progress.stage = 'close';
     await probe?.close();
   }
 }
@@ -244,11 +276,15 @@ export async function observeBrowser(ctx, { permissions } = {}) {
   const deadline = new Promise((_, reject) => {
     timer = setTimeout(() => reject(new Error('observe_deadline')), OBSERVE_DEADLINE_MS);
   });
-  const work = collectBrowserObservation(ctx, permissions);
+  const progress = { stage: 'start' };
+  const work = collectBrowserObservation(ctx, permissions, progress);
   try {
     return await Promise.race([work, deadline]);
-  } catch {
-    return { availability: 'unavailable', reason: 'collection_failed' };
+  } catch (error) {
+    // Which step failed, and the first line of the error (local probe URLs only; no page content).
+    const timedOut = error?.message === 'observe_deadline';
+    return { availability: 'unavailable', reason: timedOut ? 'deadline' : 'collection_failed', stage: progress.stage,
+      detail: timedOut ? null : String(error?.message || error).split('\n')[0].slice(0, 200) };
   } finally {
     clearTimeout(timer);
     work.catch(() => {});

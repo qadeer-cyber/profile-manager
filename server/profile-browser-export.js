@@ -42,9 +42,10 @@ export function readProfileBookmarks(userDataRoot) {
     return { availability: 'unavailable', reason: 'invalid_bookmarks_json', bookmarks: [] };
   }
   const out = [];
-  flattenBookmarkNodes(parsed.roots?.bookmark_bar, out, ['Bookmarks bar']);
-  flattenBookmarkNodes(parsed.roots?.other, out, ['Other']);
-  flattenBookmarkNodes(parsed.roots?.synced, out, ['Mobile']);
+  // Each root is labelled once ("Bookmarks bar / Work"), not with its own node name repeated.
+  for (const [key, label] of [['bookmark_bar', 'Bookmarks bar'], ['other', 'Other'], ['synced', 'Mobile']]) {
+    for (const child of parsed.roots?.[key]?.children || []) flattenBookmarkNodes(child, out, [label]);
+  }
   return { availability: 'available', bookmarks: out };
 }
 

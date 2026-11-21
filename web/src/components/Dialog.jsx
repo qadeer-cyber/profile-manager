@@ -1,10 +1,11 @@
 import { Icon } from './Icon.jsx';
+import { useDialogFocus } from '../hooks/useDialogFocus.js';
 import React, { useEffect, useState, useCallback, useRef, createContext, useContext } from 'react';
 
 export function Dialog({ title, children, footer, onClose, wide }) {
-  useEffect(() => { const k = e => e.key === 'Escape' && onClose(); addEventListener('keydown', k); return () => removeEventListener('keydown', k); }, [onClose]);
+  const ref = useDialogFocus(onClose);
   return <div className="modal" onMouseDown={e => e.target === e.currentTarget && onClose()}>
-    <div className={'card' + (wide ? ' wide' : '')} role="dialog" aria-label={title}>
+    <div ref={ref} className={'card' + (wide ? ' wide' : '')} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1}>
       <div className="card-head"><h3>{title}</h3><button className="icon-btn" onClick={onClose} aria-label="Close"><Icon name="x" /></button></div>
       <div className="card-body">{children}</div>
       <div className="card-foot">{footer}</div>

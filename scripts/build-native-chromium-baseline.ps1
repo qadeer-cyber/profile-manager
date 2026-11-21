@@ -24,13 +24,25 @@ param(
 
     [switch] $AzwahSource,
 
-    [switch] $CheckpointProbe
+    [switch] $CheckpointProbe,
+
+    # Chained free-runner build: compile through sccache and stop cleanly at the time budget so the
+    # next job can continue from the compiler cache. 0 means no budget.
+    [switch] $Sccache,
+
+    [ValidateRange(0, 360)]
+    [int] $TimeBudgetMinutes = 0
 )
 
 $ErrorActionPreference = 'Stop'
 if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
     throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
 }
+if ($Sccache -and !(Get-Command sccache.exe -ErrorAction SilentlyContinue)) {
+    throw 'The chained build requires the verified sccache executable on PATH.'
+}
+$deadline = if ($TimeBudgetMinutes -gt 0) { (Get-Date).AddMinutes($TimeBudgetMinutes) } else { $null }
+$script:BudgetReached = $false
 $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
 if ($AzwahSource) {
@@ -52,7 +64,7 @@ function Invoke-BuildTool {
 }
 
 function Invoke-BoundedBuildStage {
-    param([string] $Program, [string[]] $Arguments)
+    param([string] $Program, [string[]] $Arguments, [switch] $Budgeted)
     # An encoded command keeps path quoting in PowerShell and gives us an
     # owned process tree to stop if the build volume reaches its reserve.
     $words = (@($Program) + $Arguments) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
@@ -74,6 +86,14 @@ function Invoke-BoundedBuildStage {
             }
             if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) {
                 throw "Stopped $Program because the build volume reached its free-space reserve."
+            }
+            if ($Budgeted -and $deadline -and $now -ge $deadline) {
+                # Stop here; finished objects are already in the compiler cache for the next job.
+                Write-Output "BUDGET reached for $([IO.Path]::GetFileName($Program)); stopping so the next job can continue."
+                $script:BudgetReached = $true
+                & "$env:SystemRoot/System32/taskkill.exe" /PID $stage.Id /T /F | Out-Null
+                $stage.WaitForExit(30000) | Out-Null
+                return
             }
         }
         if ($stage.ExitCode -ne 0) { throw "$Program exited with code $($stage.ExitCode)." }
@@ -206,8 +226,14 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@
-        if ($CheckpointProbe) {
+        if ($CheckpointProbe -or $Sccache) {
             $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
+        }
+        if ($Sccache) {
+            # Precompiled headers and Clang header modules make compiles uncacheable for sccache. Measured on
+            # run 44706934362 stage 1: all 23,303 compile requests were non-cacheable (-fmodules-cache-path),
+            # from use_clang_modules (build/config/c++/c++.gni at the pinned revision).
+            $gnArgs += "`n" + 'enable_precompiled_headers = false' + "`n" + 'use_clang_modules = false'
         }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
@@ -248,6 +274,32 @@ symbol_level = 0
             if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
             return
         }
+        if ($Sccache) {
+            # sccache writes cached objects with ordinary Windows paths, which stop at 260 characters
+            # (run 44798415536 stage 2 failed on an object whose full path was exactly 260). Check every
+            # build output now instead of failing hours into the build.
+            # Every output of the build graph is measured by scripts/chain-path-preflight.mjs (unit-tested
+            # with the real failing object); it fails closed on an empty target list.
+            $outRoot = (Resolve-Path -LiteralPath $out).ProviderPath
+            $targets = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'targets', 'all')
+            $preflight = Join-Path $PSScriptRoot 'chain-path-preflight.mjs'
+            if (!(Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js is required for the path preflight.' }
+            $targets | & node $preflight $outRoot
+            if ($LASTEXITCODE -ne 0) { throw 'Path preflight failed: a build output path is too long for sccache (see above).' }
+            # Fail within minutes, not after a full job, if compiles still cannot be cached.
+            Write-Output 'BEGIN cacheability check: compile //base through sccache.'
+            Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", 'base') -Budgeted
+            $stats = (& sccache.exe --show-stats | Out-String)
+            Write-Output $stats
+            $requests = if ($stats -match '(?m)^Compile requests\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $uncacheable = if ($stats -match '(?m)^Non-cacheable calls\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $stored = if ($stats -match '(?m)^Cache misses\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $hits = if ($stats -match '(?m)^Cache hits\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            Write-Output "CACHEABILITY requests=$requests stored=$stored hits=$hits uncacheable=$uncacheable"
+            if ($requests -eq 0 -or ($stored + $hits) -eq 0 -or $uncacheable -gt [Math]::Floor($requests / 10)) {
+                throw "Compiles are not cacheable by sccache (requests=$requests, stored=$stored, hits=$hits, non-cacheable=$uncacheable). Stopping before the full build."
+            }
+        }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
@@ -255,7 +307,16 @@ symbol_level = 0
             $targets += 'mini_installer'
             $outputFiles += 'mini_installer.exe'
         }
-        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets)
+        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets) -Budgeted
+        if ($script:BudgetReached) {
+            if ($env:GITHUB_OUTPUT) { 'complete=false' | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
+            Write-Output 'INCOMPLETE the time budget ended before chrome finished; continue in the next job.'
+            # Stopping at the budget is the expected outcome; do not let taskkill's exit code fail the step
+            # (run 44706934362 stage 1 failed this way and skipped the cache hand-over).
+            $global:LASTEXITCODE = 0
+            return
+        }
+        if ($env:GITHUB_OUTPUT) { "complete=true`nout=$out" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
         $files = $outputFiles | ForEach-Object {
             $file = Get-Item -LiteralPath (Join-Path $out $_)
             @{

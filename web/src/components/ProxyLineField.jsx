@@ -4,7 +4,7 @@ import { PROXY_LINE_RULES, formatProxyLine, parseProxyLine } from '../../../serv
 export function ProxyLineField({ proxy, onChange, onValidity }) {
   const [line, setLine] = useState(() => formatProxyLine(proxy));
   const [error, setError] = useState('');
-  const [reveal, setReveal] = useState(true);
+  const [reveal, setReveal] = useState(false);
   const report = ok => onValidity?.(ok);
   useEffect(() => {
     if (!line.trim()) { report(false); return; }

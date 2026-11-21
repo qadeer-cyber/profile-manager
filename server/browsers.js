@@ -35,7 +35,7 @@ import { anonymizeProxy, closeAnonymizedProxy } from 'proxy-chain';
 import { geoIpCredentials } from './geoip-settings.js';
 import { isTransientProxyProbeError, resolveProxyLocation } from './proxy-location.js';
 import { db, userDataDir, getSetting, setSetting } from './db.js';
-import { acquireLock, releaseLock, updateLock, readLock, isStale, LOCK_NAME } from './lock.js';
+import { acquireLock, releaseLock, updateLock, readLock, recoverLock, LOCK_NAME } from './lock.js';
 import { isAlive, killTree, pidMatches, processParents } from './proc.js';
 import { chromiumMissingError } from './chromium.js';
 import { automationDefault, proxyLoopback, isPackaged } from './testflags.js';
@@ -58,6 +58,7 @@ let shuttingDown = false;
 const live = new Map();      // id -> { ctx, relayUrl, browserPid, stopping }
 const settling = new Map();  // removed from live; this launch is still being classified
 const launching = new Map(); // id -> Promise
+const admitted = new Set(); // Holds a browser slot from queue admission until launch completes.
 const launchAbort = new Map(); // id -> true when user cancelled during startup
 let healthTicks = 0;
 // Read-only, in-process evidence for the installed offline smoke; no HTTP surface.
@@ -84,7 +85,7 @@ export const runningIds = () => [...new Set([...live.keys(), ...settling.keys()]
 export const liveContext = id => live.get(id)?.ctx || null;
 export const launchEvidence = id => {
   const entry = live.get(id);
-  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null };
+  return { requestedArgs: entry?.requestedArgs || null, browserPid: entry?.browserPid ?? null, engineVersion: entry?.engineVersion ?? null, engineSource: entry?.engineSource ?? null, proxyTimezone: entry?.proxyTimezone ?? null, launchMode: entry?.launchMode ?? null, proxyPreflight: entry?.proxyPreflight ?? null, runtime: entry?.runtime ?? null };
 };
 export const runInfo = id => db.prepare('SELECT * FROM running WHERE id=?').get(id);
 export function automationLaunch(id) {
@@ -141,18 +142,10 @@ export function cdpBrowserPid(ws) {
 async function browserOwnedByProfile(pid, dir) {
   return !!(pid && isAlive(pid) && await pidMatches(pid, dir));
 }
-// Another process still holds the lock. isAlive can be a reused pid; the browser command-line
-// check below is what decides whether a recorded browser pid may be killed or the row dropped.
-function otherLiveOwner(lock) {
-  return !!(lock && !lock.corrupt && lock.ownerPid !== process.pid && !isStale(lock));
-}
-// A running row is stale when its pid is dead or fails the command-line check. A live matching
-// browser is never overwritten. An active lock held by another live owner is left untouched
-// (acquireLock reports 409). Returns true when the caller may insert a new row.
+// Caller owns the profile lock while checking and clearing a stale database row.
 async function dropStaleRunningRow(id, dir) {
   const row = db.prepare('SELECT * FROM running WHERE id=?').get(id);
   if (!row) return true;
-  if (otherLiveOwner(readLock(dir))) return false;
   if (await browserOwnedByProfile(row.pid, dir)) {
     throw httpErr(409, `Profile is already running (pid ${row.pid}).`, 'ALREADY_RUNNING');
   }
@@ -168,19 +161,21 @@ export async function recoverAfterRestart() {
   const report = { killed: 0, cleared: 0, staleLocks: 0, skipped: 0 };
   for (const r of db.prepare('SELECT * FROM running').all()) {
     let dir; try { dir = userDataDir(r.id); } catch { db.prepare('DELETE FROM running WHERE id=?').run(r.id); continue; }
-    const lock = readLock(dir);
-    if (otherLiveOwner(lock)) { report.skipped++; continue; }
-    const pid = r.pid || lock?.browserPid;
-    if (await browserOwnedByProfile(pid, dir)) {
-      if (await killTree(pid, { expect: dir })) report.killed++;
-      else if (await browserOwnedByProfile(pid, dir)) { report.skipped++; continue; }
-    }
-    clearChromeLocks(dir); releaseLock(dir, lock?.ownerPid);
-    db.prepare('DELETE FROM running WHERE id=?').run(r.id);
-    report.cleared++;
-    try {
+    const cleared = await recoverLock(dir, async lock => {
+      const current = db.prepare('SELECT * FROM running WHERE id=?').get(r.id);
+      if (!current || current.pid !== r.pid || current.started_at !== r.started_at) return false;
+      const pid = r.pid || lock?.browserPid;
+      if (await browserOwnedByProfile(pid, dir)) {
+        if (await killTree(pid, { expect: dir })) report.killed++;
+        else if (await browserOwnedByProfile(pid, dir)) return false;
+      }
+      clearChromeLocks(dir);
+      db.prepare('DELETE FROM running WHERE id=?').run(r.id);
       setStatus(r.id, { last_error: 'Previous browser session did not shut down cleanly. Storage was kept; launch again when ready.' });
-    } catch {}
+      return true;
+    });
+    if (cleared) report.cleared++;
+    else report.skipped++;
   }
   const abandoned = await sweepAbandonedLocks({ browserOwnedByProfile, killTree });
   report.staleLocks += abandoned.abandonedLocks;
@@ -198,7 +193,12 @@ export function launch(p, opts = {}) {
   const closing = settling.get(p.id);
   if (closing?.done) return closing.done.then(() => launch(p, opts));
   if (launching.has(p.id)) return launching.get(p.id);
-  const pr = runWithLaunchQueue(p.id, () => doLaunch(p, opts)).finally(() => {
+  const pr = runWithLaunchQueue(p.id, async () => {
+    assertLaunchResources(new Set([...live.keys(), ...admitted]).size);
+    admitted.add(p.id);
+    try { return await doLaunch(p, opts); }
+    finally { admitted.delete(p.id); }
+  }).finally(() => {
     launching.delete(p.id);
     launchAbort.delete(p.id);
   });
@@ -271,9 +271,13 @@ async function reconcileOrphanRunningRows() {
       continue;
     }
     if (!(await browserOwnedByProfile(row.pid, dir))) {
-      clearChromeLocks(dir);
-      releaseLock(dir);
-      db.prepare('DELETE FROM running WHERE id=?').run(row.id);
+      await recoverLock(dir, async lock => {
+        if (lock?.browserPid && await browserOwnedByProfile(lock.browserPid, dir)) return false;
+        const result = db.prepare('DELETE FROM running WHERE id=? AND pid IS ? AND started_at IS ?').run(row.id, row.pid, row.started_at);
+        if (!result.changes) return false;
+        clearChromeLocks(dir);
+        return true;
+      });
     }
   }
 }
@@ -366,7 +370,6 @@ async function doLaunch(p, opts = {}) {
   assertProfileOperationAvailable(p.id);
   const current = db.prepare('SELECT deleted_at,purge_error FROM profiles WHERE id=?').get(p.id);
   if (!current || current.deleted_at || current.purge_error) throw httpErr(409, 'Profile was deleted or requires recovery', 'PROFILE_RECOVERY_REQUIRED');
-  assertLaunchResources(live.size + launching.size + Math.max(0, pendingLaunchCount() - 1));
   const metricsHandle = beginLaunchMetrics(p.id);
   assertLaunchNotCancelled(p.id);
   const { headless, url } = opts, automation = automationEnabled(opts);
@@ -374,11 +377,11 @@ async function doLaunch(p, opts = {}) {
   if (fs.existsSync(dir) && fs.lstatSync(dir).isSymbolicLink()) throw httpErr(409, 'A browser profile directory cannot be a symbolic link or junction.', 'CHROME_PROFILE_LINK');
   if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory())
     throw httpErr(500, `Profile data directory is damaged (not a directory): ${dir}. Delete that file or remove the profile.`, 'CORRUPT_DIR');
-  await dropStaleRunningRow(p.id, dir);
   acquireLock(dir); // throws 409 if another live process holds it
   let relayUrl = null, ctx = null, entry = null;
   let launchPlan = null, azwahLaunch = null;
   try {
+    await dropStaleRunningRow(p.id, dir);
     if ((p.browserEngine || 'chromium') === 'firefox') {
       const adv = (await import('./advanced-settings.js')).validateAdvancedSettings(p.advancedSettings || {});
       const restoreTabs = adv.preferences.restoreTabs === true;
@@ -448,6 +451,10 @@ async function doLaunch(p, opts = {}) {
         exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
         launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: false, diagnosticStart: null,
         requestedArgs: native.argv, requestStop: native.requestStop, restoreTabs: launchPlan?.restoreTabs, rememberWindow: launchPlan?.rememberWindow, tabUrls: [],
+        // A manual Chrome Stable session: the browser AZWAH started, without a control connection.
+        engineVersion: launchPlan?.stable?.version || null, engineSource: launchPlan?.stable ? 'chrome-stable' : null,
+        launchMode: launchPlan?.launchMode || null,
+        proxyPreflight: launchPlan?.proxyPreflight || null,
       };
       captureTermination(entry, native.proc);
       const owned = await browserOwnedByProfile(native.browserPid, dir);
@@ -520,7 +527,14 @@ async function doLaunch(p, opts = {}) {
       exitType: null, exitTypeState: null, exitTypeFresh: false, preferencesBaseline, closeReason: null,
       // Sanitized launch-time proxy only. The classifier never reads this field.
       launchSnapshot: proxyLaunchSnapshot(p.proxy), diagnosticHeadless: headless !== false, diagnosticStart: null,
-      requestedArgs: [...args] };
+      requestedArgs: [...args],
+      // The browser this profile actually runs, so verification compares against it (Chrome Stable
+      // is a different version from the bundled Chromium).
+      engineVersion: launchPlan.stable?.version || null, engineSource: launchPlan.stable ? 'chrome-stable' : null,
+      // Timezone this launch applied from the proxy's verified location (follow-proxy mode), so
+      // verification expects the proxy's zone instead of this computer's.
+      proxyTimezone: launchPlan.locationMode === 'auto' && launchPlan.stableLocation?.timezone ? launchPlan.stableLocation.timezone : null,
+      launchMode: launchPlan.launchMode || null };
     const trackRenderer = page => page.on('crash', () => {
       entry.rendererCrashes = (entry.rendererCrashes || 0) + 1;
       const event = { profileId: p.id, launchId: entry.launchId, browserPid: entry.browserPid,
@@ -768,6 +782,14 @@ export function closeOutcome(entry) {
   const outcome = terminationOutcome(entry);
   return outcome === 'unknown' ? 'stopped' : outcome;
 }
+// What happened, for people reading the lifecycle export: AZWAH's own Stop (graceful or forced), the
+// user closing the window, a crash, or an exit with no usable evidence. A forced Stop is not a crash.
+export function terminationKind(entry, outcome) {
+  if (entry.stopping) return entry.stopEscalation === 'forced' ? 'ForcedTermination' : 'RequestedStop';
+  if (outcome === 'stopped') return 'NormalWindowClose';
+  if (outcome === 'error') return 'BrowserCrash';
+  return 'Unknown';
+}
 const lifecycleReports = [];
 function recordLifecycle(event) {
   lifecycleReports.push({ at: new Date().toISOString(), ...event });
@@ -799,6 +821,8 @@ function logClassifierEvidence(id, entry, chosen) {
     exitCodeApproach: byCode,
     prefsApproach: byPrefs,
     chosen,
+    terminationKind: terminationKind(entry, chosen),
+    stopEscalation: entry.stopEscalation ?? null,
     stopCause: entry.stopCause ?? (entry.stopping ? 'REQUESTED_STOP' : null),
     lastProxyHealthyAt: entry.lastProxyHealthyAt ?? null,
     rendererCrashes: entry.rendererCrashes ?? 0,
@@ -855,8 +879,12 @@ async function finishClose(id, e) {
   try { dir = userDataDir(id); } catch {}
   // App Stop used to release the row while the pid was still alive. Wait for the
   // process to exit first, and only then read Preferences.
-  if (e.stopping) await waitUntilDead(e, PID_WAIT_MS);
-  else await waitForCloseEvidence(e, dir);
+  if (e.stopping) {
+    await waitUntilDead(e, PID_WAIT_MS);
+    // The pid can be gone before Node delivers the child's exit event; wait for it (bounded) so a
+    // requested Stop is not recorded as "exit not seen".
+    await waitForTermination(e, PID_WAIT_MS);
+  } else await waitForCloseEvidence(e, dir);
   if (!browserDead(e) && e.browserPid && isAlive(e.browserPid)) {
     try { await killTree(e.browserPid, { expect: dir || userDataDir(id) }); } catch {}
     await waitUntilDead(e, 2000);
@@ -1026,6 +1054,10 @@ export async function stop(id, { timeoutMs = 5000, rotationEntry } = {}) {
     // SIGTERM is a fallback on Unix; Windows taskkill is forceful and is used
     // only after the graceful protocol/window-close request has failed to stop.
     if (e.engine === 'firefox' && e.runtime === 'native') Object.assign(killOpts, { graceMs: 8000, waitMs: 15000 });
+    // A manual (native) Chrome has no controlled connection to close: ask its windows to close first.
+    else if (e.runtime === 'native') Object.assign(killOpts, { gracefulWin32: true, graceMs: 8000 });
+    e.stopEscalation ??= 'graceful';
+    killOpts.onForce = () => { e.stopEscalation = 'forced'; };
     await killTree(e.browserPid, killOpts);
   }
   if (e.done) await e.done;

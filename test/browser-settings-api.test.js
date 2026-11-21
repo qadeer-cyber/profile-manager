@@ -62,10 +62,12 @@ test('M1 database upgrade is additive, backed up, idempotent and preserves profi
     migrate(db, migrations.filter(m => m.version <= 7));
     db.prepare("INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES ('legacy','Legacy','[]','Folder','Notes','t','t')").run();
     const previous = db.prepare('SELECT * FROM profiles').get();
-    const m = migrate(db); assert.deepEqual(m.applied, [8, 9, 10, 11, 12]); assert.ok(fs.existsSync(m.backup));
+    const m = migrate(db); assert.deepEqual(m.applied, migrations.filter(x => x.version > 7).map(x => x.version)); assert.ok(fs.existsSync(m.backup));
     const row = db.prepare('SELECT * FROM profiles').get();
-    const { browser_settings, webrtc_settings, advanced_settings, ...original } = row;
-    assert.deepEqual(original, previous);
+    const { browser_settings, webrtc_settings, advanced_settings } = row;
+    // Additive: every pre-existing column keeps its value; later migrations only add columns with defaults.
+    assert.deepEqual(Object.fromEntries(Object.keys(previous).map(k => [k, row[k]])), previous);
+    assert.deepEqual([row.browser_engine, row.deleted_at, row.favorite, row.is_quick, row.purge_error, row.workspace_id], ['chromium', null, 0, 0, null, null]);
     assert.deepEqual(JSON.parse(browser_settings), { locale: '', timezoneId: '', languages: [] });
     assert.deepEqual(JSON.parse(webrtc_settings), { mode: 'browser_default' });
     assert.deepEqual(JSON.parse(advanced_settings), DEFAULT_ADVANCED_SETTINGS);

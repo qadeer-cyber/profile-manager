@@ -1,0 +1,72 @@
+2026-11-20T19:04:19.6519601Z ##[group]Run "AZWAH_JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Add-Content -LiteralPath $env:GITHUB_EN
+2026-11-20T19:04:20.3398763Z ##[group]Run actions/checkout@v4
+2026-11-20T19:04:31.9698426Z ##[group]Run ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+2026-11-20T19:07:04.8417686Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-20T19:07:06.5712431Z ##[group]Run ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:DEPOT_TOOL
+2026-11-20T19:07:23.6404135Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-20T19:07:24.7198153Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-20T19:25:43.3125211Z END gclient.bat elapsed_seconds=1091 free_bytes=202446413824
+2026-11-20T19:25:43.4460631Z Synced Chromium revision: b0cbb99d9f0f9fbbb6c6780e73b17984e991c866; free_bytes=202446413824
+2026-11-20T19:26:12.6656093Z BEGIN cacheability check: compile //base through sccache.
+2026-11-20T19:54:52.6090131Z [2369/2369] LIB obj/base/base.lib
+2026-11-20T19:54:52.7574452Z Compile requests                   1999
+2026-11-20T19:54:52.7574933Z Compile requests executed          1999
+2026-11-20T19:54:52.7575235Z Cache hits                          212
+2026-11-20T19:54:52.7575861Z Cache hits (C/C++)                  212
+2026-11-20T19:54:52.7576146Z Cache misses                       1787
+2026-11-20T19:54:52.7576787Z Cache misses (C/C++)               1787
+2026-11-20T19:54:52.7577067Z Cache hits rate                   10.61 %
+2026-11-20T19:54:52.7577396Z Cache hits rate (C/C++)           10.61 %
+2026-11-20T19:54:52.7577919Z Cache read errors                     0
+2026-11-20T19:54:52.7578418Z Cache write errors                    0
+2026-11-20T19:54:52.7578661Z Cache errors                          0
+2026-11-20T19:54:52.7578900Z Compilations                       1787
+2026-11-20T19:54:52.7579159Z Compilation failures                  0
+2026-11-20T19:54:52.7579696Z Non-cacheable calls                   0
+2026-11-20T19:54:52.7649368Z CACHEABILITY requests=1999 stored=1787 hits=212 uncacheable=0
+2026-11-20T23:59:25.5441589Z [15084/56561] CXX obj/third_party/federated_compute/confidential_compute/client_payload.obj
+2026-11-20T23:59:25.5714581Z BUDGET reached for autoninja.bat; stopping so the next job can continue.
+2026-11-20T23:59:25.8258311Z [15085/56561] CXX obj/components/metrics/private_metrics/private_metrics/puma_histogram_encoder.obj
+2026-11-20T23:59:25.8394280Z FAILED: obj/components/metrics/private_metrics/private_metrics/puma_histogram_encoder.obj 
+2026-11-20T23:59:25.8690773Z [15086/56561] CXX obj/components/metrics/private_metrics/private_metrics/puma_service.obj
+2026-11-20T23:59:25.8769085Z FAILED: obj/components/metrics/private_metrics/private_metrics/puma_service.obj 
+2026-11-20T23:59:25.9411691Z INCOMPLETE the time budget ended before chrome finished; continue in the next job.
+2026-11-20T23:59:26.2812237Z ##[group]Run sccache.exe --show-stats
+2026-11-20T23:59:26.6795542Z Compile requests                  14343
+2026-11-20T23:59:26.6796085Z Compile requests executed         14343
+2026-11-20T23:59:26.6796564Z Cache hits                          263
+2026-11-20T23:59:26.6797090Z Cache hits (C/C++)                  263
+2026-11-20T23:59:26.6797431Z Cache misses                      14076
+2026-11-20T23:59:26.6797901Z Cache misses (C/C++)              14076
+2026-11-20T23:59:26.6798283Z Cache hits rate                    1.83 %
+2026-11-20T23:59:26.6798561Z Cache hits rate (C/C++)            1.83 %
+2026-11-20T23:59:26.6799158Z Cache read errors                     0
+2026-11-20T23:59:26.6799697Z Cache write errors                    0
+2026-11-20T23:59:26.6800030Z Cache errors                          0
+2026-11-20T23:59:26.6801090Z Compilations                      14076
+2026-11-20T23:59:26.6801537Z Compilation failures                  0
+2026-11-20T23:59:26.6802077Z Non-cacheable calls                   0
+2026-11-20T23:59:26.9257989Z Compile requests                  14343
+2026-11-20T23:59:26.9258660Z Compile requests executed         14343
+2026-11-20T23:59:26.9259029Z Cache hits                          263
+2026-11-20T23:59:26.9259369Z Cache hits (C/C++)                  263
+2026-11-20T23:59:26.9259645Z Cache misses                      14076
+2026-11-20T23:59:26.9259924Z Cache misses (C/C++)              14076
+2026-11-20T23:59:26.9260205Z Cache hits rate                    1.83 %
+2026-11-20T23:59:26.9262623Z Cache hits rate (C/C++)            1.83 %
+2026-11-20T23:59:26.9263353Z Cache read errors                     0
+2026-11-20T23:59:26.9263893Z Cache write errors                    0
+2026-11-20T23:59:26.9264297Z Cache errors                          0
+2026-11-20T23:59:26.9264570Z Compilations                      14076
+2026-11-20T23:59:26.9264842Z Compilation failures                  0
+2026-11-20T23:59:26.9265490Z Non-cacheable calls                   0
+2026-11-20T23:59:27.3154508Z CACHE_BYTES 339979000
+2026-11-20T23:59:27.3828122Z ##[group]Run $dir = Join-Path $env:RUNNER_TEMP 'chain-diagnostics'
+2026-11-20T23:59:38.8159675Z ##[group]Run actions/upload-artifact@v4
+2026-11-20T23:59:39.9732772Z SHA256 digest of uploaded artifact zip is b5bebd8ab2de5b7cddff932edba86496f44136f9360fff41b3195f42173a1ce7
+2026-11-20T23:59:40.3388664Z Artifact azwah-chain-diagnostics-44798415536-stage-1.zip successfully finalized. Artifact ID 14680597198
+2026-11-20T23:59:40.3389911Z Artifact azwah-chain-diagnostics-44798415536-stage-1 has been successfully uploaded! Final size is 4955 bytes. Artifact ID is 14680597198
+2026-11-20T23:59:40.3757852Z ##[group]Run actions/upload-artifact@v4
+2026-11-20T23:59:51.1904168Z SHA256 digest of uploaded artifact zip is 71adf8ac59bd977d7966626ea15ea83163b2bdfdbae619601569b252ff954fab
+2026-11-20T23:59:51.5933467Z Artifact azwah-sccache-44798415536.zip successfully finalized. Artifact ID 14680752122
+2026-11-20T23:59:51.5934366Z Artifact azwah-sccache-44798415536 has been successfully uploaded! Final size is 343182422 bytes. Artifact ID is 14680752122

@@ -1,13 +1,13 @@
 name: AZWAH Windows installer acceptance
 on:
   push:
-    branches: [main, release/azwah-windows, hardening/azwah-windows-reliability]
+    branches: [main, release/azwah-windows, hardening/azwah-windows-reliability, feature/azwah-ultimate-2]
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability' || github.ref == 'refs/heads/feature/azwah-ultimate-2'
     runs-on: windows-2022
     timeout-minutes: 65
     env:
@@ -53,7 +53,7 @@ jobs:
       - name: Stable Chrome and migration tests
         shell: pwsh
         run: |
-          node --test test/update-download.test.js test/release-updates.test.js test/tab-restore.test.js test/launch-memory-threshold.test.js test/dbip-location.test.js test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js test/termination-evidence.test.js test/m17-crash-recovery.test.js test/backup.test.js test/backup-encrypted.test.js
+          node --test test/update-download.test.js test/tab-restore.test.js test/launch-memory-threshold.test.js test/dbip-location.test.js test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js test/termination-evidence.test.js test/m17-crash-recovery.test.js test/backup.test.js test/backup-encrypted.test.js test/portable-purge-crash.test.js test/release-updates.test.js
           exit $LASTEXITCODE
       - name: Build Office payload and Ultimate NSIS without a Chrome binary
         shell: pwsh
@@ -82,7 +82,9 @@ jobs:
           $hash = (Get-FileHash -LiteralPath $exe.FullName).Hash.ToLowerInvariant()
           "$hash  $name" | Set-Content (Join-Path $dir 'SHA256SUMS.txt')
           $label = if ($env:GITHUB_REF -eq 'refs/heads/hardening/azwah-windows-reliability') { 'AZWAH Windows Beta — Reliability Hardening' } else { 'AZWAH Windows' }
-          $manifest = @($label, "Source: $env:GITHUB_SHA", "Bytes: $($exe.Length)", "SHA-256: $hash",
+          $version = node -p "require('./electron-builder.ultimate-stable.cjs').extraMetadata.version"
+          if ($LASTEXITCODE -ne 0 -or !$version) { throw 'Installer version metadata is missing.' }
+          $manifest = @($label, "Version: $version", "Source: $env:GITHUB_SHA", "Bytes: $($exe.Length)", "SHA-256: $hash",
             "Browser: external, signed Google Chrome Stable x64 $env:AZWAH_ACCEPTANCE_CHROME", 'Host: Windows Server 2022',
             'Windows 10/11 client acceptance: pending', 'Unsigned installer candidate')
           $manifest | Set-Content (Join-Path $dir 'BUILD-MANIFEST.txt')
@@ -114,6 +116,10 @@ jobs:
           if (!$uninstaller) { throw 'Uninstaller missing.' }
           $removed = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
           if ($removed.ExitCode -ne 0 -or (Test-Path $app) -or !(Test-Path $env:PM_USER_DATA)) { throw 'Uninstall or data retention check failed.' }
+      - name: Qualify installed first run, profile storage, recovery and working sets
+        shell: pwsh
+        timeout-minutes: 15
+        run: node scripts/windows-qualification/fresh-install.mjs
       - name: Test concurrent Chrome isolation, timezone, geolocation and failed proxy
         shell: pwsh
         run: |
@@ -198,6 +204,110 @@ jobs:
           $after = @(ProfileIds)
           if (Compare-Object $nextIds $after) { throw 'Uninstall changed the profile IDs.' }
           Write-Output 'PASS Windows Server 2022: both installer checksums, fresh install, in-place upgrade, Chrome launch/stop, uninstall, profile database retention.'
+      - name: Verify in-place upgrade on the default data location with populated data
+        shell: pwsh
+        timeout-minutes: 25
+        run: node scripts/windows-qualification/upgrade-in-place.mjs
+      - name: Build Beta B installer for the online update test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          npx electron-builder --config electron-builder.ultimate-update-test.cjs --win nsis --x64 --publish never
+          $b = Get-Item 'release-update-b/Azwah-Setup-x64.exe'
+          Write-Output "Beta B 2.0.0-beta.2 bytes=$($b.Length) SHA-256=$((Get-FileHash -LiteralPath $b.FullName).Hash.ToLowerInvariant())"
+      - name: Verify online update Beta A to Beta B with preserved profile data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PM_SMOKE = '1'
+          $env:PM_USER_DATA = Join-Path $env:RUNNER_TEMP 'azwah-update-data'
+          $dir = Join-Path $env:RUNNER_TEMP 'azwah-update-install'
+          $app = Join-Path $dir 'AZWAH.exe'
+          $db = Join-Path $env:PM_USER_DATA 'data/profiles.db'
+          $a = Resolve-Path 'release-ultimate-stable/Azwah-Setup-x64.exe'
+          $b = Resolve-Path 'release-update-b/Azwah-Setup-x64.exe'
+          $bHash = (Get-FileHash -LiteralPath $b).Hash.ToLowerInvariant()
+          function ProfileIds {
+            node --input-type=module -e "import {DatabaseSync} from 'node:sqlite'; const db=new DatabaseSync(process.argv[1],{readOnly:true}); for(const r of db.prepare('SELECT id FROM profiles ORDER BY id').all()) console.log(r.id)" $db
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect installed profile database.' }
+          }
+          function RunApp($name, [hashtable]$extra = @{}) {
+            $env:PM_SMOKE_RESULT = Join-Path $env:RUNNER_TEMP "$name.json"
+            if (Test-Path $env:PM_SMOKE_RESULT) { Remove-Item $env:PM_SMOKE_RESULT }
+            foreach ($k in $extra.Keys) { Set-Item "env:$k" $extra[$k] }
+            try {
+              $proc = Start-Process -FilePath $app -PassThru
+              if (!$proc.WaitForExit(180000)) { Stop-Process -Id $proc.Id -Force; throw "$name timed out." }
+              $result = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
+              if ($proc.ExitCode -ne 0) { throw "$name exited $($proc.ExitCode): $($result | ConvertTo-Json -Depth 5)" }
+              # Write-Host, not Write-Output: anything written to the output stream would become part
+              # of the return value and turn $result into an array, making -ne checks vacuous.
+              Write-Host "$name $($result | ConvertTo-Json -Depth 5 -Compress)"
+              return $result
+            } finally { foreach ($k in $extra.Keys) { Remove-Item "env:$k" -ErrorAction SilentlyContinue } }
+          }
+          function StartFeed($name, [switch]$Tamper) {
+            $info = Join-Path $env:RUNNER_TEMP "$name-feed.json"
+            $feedArgs = @('scripts/update-feed-fixture.mjs', '--installer', "$b", '--version', '2.0.0-beta.2', '--previous', '2.0.0-beta.1', '--port-file', $info)
+            if ($Tamper) { $feedArgs += '--tamper' }
+            $proc = Start-Process -FilePath node -ArgumentList $feedArgs -PassThru -NoNewWindow
+            for ($i = 0; $i -lt 100 -and !(Test-Path $info); $i++) { Start-Sleep -Milliseconds 100 }
+            if (!(Test-Path $info)) { throw "$name feed did not start." }
+            return @{ proc = $proc; info = (Get-Content -Raw $info | ConvertFrom-Json) }
+          }
+          function Need($object, [string[]]$paths) {
+            if ($object -is [array]) { throw 'Smoke result must be a single object.' }
+            foreach ($p in $paths) {
+              $value = $object
+              foreach ($part in $p.Split('.')) { $value = $value.$part }
+              if ($null -eq $value -or "$value" -eq '') { throw "Smoke result is missing $p." }
+            }
+          }
+          # 1. Install Beta A and create profile data with a real Chrome launch.
+          $setup = Start-Process -FilePath $a -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw 'Beta A install failed.' }
+          $smokeA = RunApp 'update-beta-a'
+          Need $smokeA @('chromeStable', 'version')
+          if (!$smokeA.chromeStable -or $smokeA.version -ne '2.0.0-beta.1') { throw 'Beta A smoke failed.' }
+          $idsA = @(ProfileIds)
+          if ($idsA.Count -lt 1) { throw 'Beta A created no profile.' }
+          # 2. A tampered release digest must be refused by Beta A's updater.
+          $bad = StartFeed 'tampered' -Tamper
+          try {
+            $refused = RunApp 'update-check-tampered' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $bad.info.origin }
+            Need $refused @('status', 'download.status', 'download.error')
+            if ($refused.status -ne 'available' -or $refused.download.status -ne 'failed' -or $refused.download.error -notmatch 'integrity') { throw 'Tampered installer was not refused.' }
+          } finally { Stop-Process -Id $bad.proc.Id -Force -ErrorAction SilentlyContinue }
+          # 3. Beta A's real updater finds Beta B, downloads it and verifies size and SHA-256.
+          $good = StartFeed 'good'
+          try {
+            $update = RunApp 'update-check' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $good.info.origin }
+          } finally { Stop-Process -Id $good.proc.Id -Force -ErrorAction SilentlyContinue }
+          Need $update @('installedVersion', 'status', 'latest.version', 'latest.sha256', 'download.status', 'download.file')
+          if ($update.installedVersion -ne '2.0.0-beta.1' -or $update.status -ne 'available' -or $update.latest.version -ne '2.0.0-beta.2') { throw 'Beta A did not offer Beta B.' }
+          if ($update.download.status -ne 'verified' -or $update.latest.sha256 -ne $bHash) { throw 'Beta B download was not verified.' }
+          $downloaded = $update.download.file
+          if ((Get-FileHash -LiteralPath $downloaded).Hash.ToLowerInvariant() -ne $bHash) { throw 'Downloaded installer differs from Beta B.' }
+          # 4. Run the downloaded, verified installer over Beta A, then launch Beta B.
+          $upgrade = Start-Process -FilePath $downloaded -ArgumentList @('/S', "/D=$dir") -Wait -PassThru
+          if ($upgrade.ExitCode -ne 0) { throw 'Upgrade with the downloaded installer failed.' }
+          $smokeB = RunApp 'update-beta-b'
+          Need $smokeB @('chromeStable', 'version')
+          if (!$smokeB.chromeStable -or $smokeB.version -ne '2.0.0-beta.2') { throw "Beta B did not start as 2.0.0-beta.2: $($smokeB.version)" }
+          $idsB = @(ProfileIds)
+          $lost = @($idsA | Where-Object { $_ -notin $idsB })
+          if ($lost.Count) { throw "Profiles lost during the online update: $($lost -join ', ')" }
+          # 5. Beta B sees no newer release in the same feed.
+          $good = StartFeed 'good-after'
+          try {
+            $after = RunApp 'update-check-after' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $good.info.origin }
+          } finally { Stop-Process -Id $good.proc.Id -Force -ErrorAction SilentlyContinue }
+          Need $after @('installedVersion', 'status')
+          if ($after.installedVersion -ne '2.0.0-beta.2' -or $after.status -ne 'current') { throw 'Beta B still offered an update.' }
+          $summary = "PASS online update: Beta A $($update.installedVersion) -> Beta B $($smokeB.version) via the shipping updater (loopback release fixture). Downloaded $($update.latest.size) bytes, SHA-256 $($update.latest.sha256); tampered digest refused ($($refused.download.error)); $($idsA.Count) of $($idsA.Count) profile id(s) preserved ($($idsB.Count) after B's own smoke); Beta B launched Chrome Stable and then reported status '$($after.status)'."
+          $summary | Add-Content $env:GITHUB_STEP_SUMMARY
+          Write-Output $summary
       - name: Upload installed layout evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -207,9 +317,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - uses: actions/upload-artifact@v4
-        if: success() && github.ref == 'refs/heads/release/azwah-windows'
+        if: success()
         with:
-          name: ${{ github.ref == 'refs/heads/hardening/azwah-windows-reliability' && 'azwah-windows-beta-reliability-x64' || 'azwah-windows-x64' }}-${{ github.sha }}
+          name: azwah-windows-x64-${{ github.sha }}
           path: |
             release-ultimate-stable/Azwah-Setup-x64.exe
             release-ultimate-stable/SHA256SUMS.txt
@@ -217,3 +327,31 @@ jobs:
           retention-days: 3
           compression-level: 0
           if-no-files-found: error
+
+      # The artifact service can report "not found" for a moment right after an upload finishes
+      # (seen on 6cd3bb3). Read back once more after a pause; the verification below is unchanged.
+      - name: Read back the uploaded installer
+        id: readback
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-windows-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/azwah-readback
+      - name: Wait before reading back again
+        if: steps.readback.outcome == 'failure'
+        shell: pwsh
+        run: Start-Sleep -Seconds 30
+      - name: Read back the uploaded installer (second attempt)
+        if: steps.readback.outcome == 'failure'
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-windows-x64-${{ github.sha }}
+          path: ${{ runner.temp }}/azwah-readback
+      - name: Verify distributed installer against build provenance
+        shell: pwsh
+        run: |
+          $file = Get-Item (Join-Path $env:RUNNER_TEMP 'azwah-readback/Azwah-Setup-x64.exe')
+          $built = Get-Item 'release-ultimate-stable/Azwah-Setup-x64.exe'
+          $hash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($file.Length -ne $built.Length -or $hash -ne (Get-FileHash $built.FullName).Hash.ToLowerInvariant()) { throw 'CI artifact differs from the tested installer.' }
+          Write-Output "INSTALLER_READBACK source=$env:GITHUB_SHA bytes=$($file.Length) sha256=$hash"
