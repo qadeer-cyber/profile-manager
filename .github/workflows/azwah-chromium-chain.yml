@@ -159,6 +159,23 @@ jobs:
           Copy-Item -LiteralPath (Join-Path $env:RUNNER_TEMP 'sccache-stats.json') -Destination $dir -ErrorAction SilentlyContinue
           Get-Content -Raw (Join-Path $dir 'build-inputs.json')
           $global:LASTEXITCODE = 0
+      # Read-only: why already-built //base objects are treated as dirty (run 44798415536 stage 2 rebuilt
+      # obj/base/base/atl_throw.obj). Bounded output; can never fail the stage.
+      - name: Explain dirty //base objects (diagnostic)
+        if: always()
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $src = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src'
+          $out = Join-Path $src 'out/azwah-native-development'
+          if (Test-Path (Join-Path $out 'build.ninja')) {
+            $ninja = Join-Path $src 'third_party/ninja/ninja.exe'
+            if (!(Test-Path $ninja)) { $ninja = 'ninja.exe' }
+            $watched = @('obj/base/base/atl_throw.obj', 'obj/base/base/values.obj', 'obj/base/base/page_size_win.obj', 'obj/base/base/byte_size.obj')
+            & $ninja -C $out -t deps @watched 2>&1 | node scripts/chain-ninja-explain.mjs deps
+            & $ninja -C $out -n -d explain chrome 2>&1 | node scripts/chain-ninja-explain.mjs explain
+          } else { Write-Output 'NINJA_EXPLAIN skipped: no build.ninja' }
+          $global:LASTEXITCODE = 0
       - name: Upload build-input diagnostics
         if: always()
         continue-on-error: true
