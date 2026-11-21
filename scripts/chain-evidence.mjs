@@ -74,6 +74,8 @@ export function assessStage(logText, { firstStage = false } = {}) {
   const restorePlan = find(/^- azwah-sccache-\S+ \(ID: (\d+), Size: (\d+), Expected Digest: sha256:([0-9a-f]{64})\)/);
   const restoreDigest = find(/^SHA256 digest of downloaded artifact is ([0-9a-f]{64})/);
   const restoreDone = find(/^Artifact download completed successfully/);
+  const outRestored = find(/^OUT_RESTORED files=(\d+) bytes=(\d+) seconds=(\d+)/);
+  const outPacked = find(/^OUT_PACKED bytes=(\d+) seconds=(\d+)/);
   const browserZip = find(/^AZWAH_CHROMIUM_ZIP bytes=(\d+) sha256=([0-9a-f]{64})/);
   const stats = lastStatsBlock(lines);
 
@@ -93,6 +95,8 @@ export function assessStage(logText, { firstStage = false } = {}) {
     restore: restorePlan ? { artifactId: m(restorePlan, /ID: (\d+)/)[1], bytes: Number(m(restorePlan, /Size: (\d+)/)[1]),
       expectedSha256: m(restorePlan, /sha256:([0-9a-f]{64})/)[1],
       downloadedSha256: restoreDigest ? /([0-9a-f]{64})/.exec(restoreDigest.text)[1] : null, completed: !!restoreDone } : null,
+    buildDirRestored: outRestored ? { files: Number(m(outRestored, /files=(\d+)/)[1]), bytes: Number(m(outRestored, /bytes=(\d+)/)[1]), seconds: Number(m(outRestored, /seconds=(\d+)/)[1]) } : null,
+    buildDirPacked: outPacked ? { bytes: Number(m(outPacked, /bytes=(\d+)/)[1]), seconds: Number(m(outPacked, /seconds=(\d+)/)[1]) } : null,
     browser: browserZip ? { zipBytes: Number(m(browserZip, /bytes=(\d+)/)[1]), sha256: m(browserZip, /sha256=([0-9a-f]{64})/)[1] } : null,
   };
 
@@ -147,7 +151,7 @@ export function assessStage(logText, { firstStage = false } = {}) {
 // Keeps only the lines the assessment reads, plus the last Ninja progress line of each build graph.
 // Drops anything that can carry a signed URL or token.
 export function extractEvidence(logText) {
-  const keep = /^(END gclient|Synced Chromium|BEGIN cacheability|CACHEABILITY|LONGEST_OUTPUT_PATH|BUDGET|INCOMPLETE|FAILED: |sccache: |ninja: build stopped|##\[error\]|##\[group\]Run |CACHE_BYTES|Artifact azwah-|SHA256 digest of|Preparing to download|- azwah-sccache-|Artifact download completed|Total of \d+ artifact|AZWAH_CHROMIUM_ZIP|(\x1b\[[0-9;]*m)*Exception:|Compile requests|Cache (hits|misses|errors|read errors|write errors)\s|Compilations\s|Compilation failures|Non-cacheable (calls|reasons)|-\S+\s{2,}\d+$)/;
+  const keep = /^(END gclient|Synced Chromium|BEGIN cacheability|CACHEABILITY|LONGEST_OUTPUT_PATH|BUDGET|INCOMPLETE|FAILED: |sccache: |ninja: build stopped|##\[error\]|##\[group\]Run |CACHE_BYTES|Artifact azwah-|SHA256 digest of|Preparing to download|- azwah-sccache-|Artifact download completed|Total of \d+ artifact|AZWAH_CHROMIUM_ZIP|OUT_RESTORED|OUT_PACKED|SOURCE_TIMESTAMPS|(\x1b\[[0-9;]*m)*Exception:|Compile requests|Cache (hits|misses|errors|read errors|write errors)\s|Compilations\s|Compilation failures|Non-cacheable (calls|reasons)|-\S+\s{2,}\d+$)/;
   const out = [];
   const lastProgress = new Map();
   for (const raw of String(logText).split(/\r?\n/)) {

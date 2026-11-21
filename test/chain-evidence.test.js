@@ -110,3 +110,9 @@ test('extraction drops signed URLs and tokens and keeps the evidence lines', () 
   assert.doesNotMatch(out, /\[1\/9\]/, 'only the last progress line of a graph is kept');
   assert.match(out, /CACHE_BYTES 5/);
 });
+
+test('synthetic: build-directory restore and pack lines are reported', () => {
+  const r = assessStage(['OUT_RESTORED files=41000 bytes=7000000000 seconds=180', 'OUT_PACKED bytes=7100000000 seconds=240'].join('\n'));
+  assert.deepEqual(r.evidence.buildDirRestored, { files: 41000, bytes: 7000000000, seconds: 180 });
+  assert.deepEqual(r.evidence.buildDirPacked, { bytes: 7100000000, seconds: 240 });
+});

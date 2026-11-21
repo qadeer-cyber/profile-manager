@@ -30,6 +30,12 @@ param(
     # next job can continue from the compiler cache. 0 means no budget.
     [switch] $Sccache,
 
+    # Chained build: a tar of the previous stage's Ninja build directory (outputs, .ninja_log, .ninja_deps).
+    # Restored after sync and patch, with the freshly synced sources set to a fixed old timestamp, so Ninja
+    # skips finished work instead of replaying it from sccache (run 44848736628: replay took ~3.9 of 4.5 h
+    # in stage 4).
+    [string] $RestoreOutArchive = '',
+
     [ValidateRange(0, 360)]
     [int] $TimeBudgetMinutes = 0
 )
@@ -213,6 +219,24 @@ try {
             & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -AlreadyApplied
         }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
+        if ($RestoreOutArchive) {
+            if (!(Test-Path -LiteralPath $RestoreOutArchive -PathType Leaf)) { throw "Build directory archive not found: $RestoreOutArchive" }
+            $started = Get-Date
+            # Sources from this fresh sync get one fixed, old timestamp; outputs keep their own (newer) times.
+            $fixed = [DateTime]::new(2001, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+            $root = (Get-Location).ProviderPath
+            $count = 0
+            foreach ($file in [IO.Directory]::EnumerateFiles($root, '*', [IO.SearchOption]::AllDirectories)) {
+                if ($file.StartsWith((Join-Path $root 'out') + '\', [StringComparison]::OrdinalIgnoreCase)) { continue }
+                try { [IO.File]::SetLastWriteTimeUtc($file, $fixed); $count++ } catch { }
+            }
+            Write-Output "SOURCE_TIMESTAMPS files=$count seconds=$([int]((Get-Date) - $started).TotalSeconds)"
+            $started = Get-Date
+            & tar -xf $RestoreOutArchive -C $root
+            if ($LASTEXITCODE -ne 0) { throw 'Could not extract the previous build directory.' }
+            $restored = (Get-ChildItem -LiteralPath (Join-Path $root $out) -Recurse -File | Measure-Object Length -Sum)
+            Write-Output "OUT_RESTORED files=$($restored.Count) bytes=$($restored.Sum) seconds=$([int]((Get-Date) - $started).TotalSeconds)"
+        }
         if ($CheckpointProbe) { $out = 'out/azwah-checkpoint-probe' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
         if (Test-Path -LiteralPath $manifest -PathType Leaf) {
@@ -286,7 +310,9 @@ symbol_level = 0
             if (!(Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js is required for the path preflight.' }
             $targets | & node $preflight $outRoot
             if ($LASTEXITCODE -ne 0) { throw 'Path preflight failed: a build output path is too long for sccache (see above).' }
-            # Fail within minutes, not after a full job, if compiles still cannot be cached.
+            # Fail within minutes, not after a full job, if compiles still cannot be cached. Skipped when the
+            # previous build directory was restored: //base is then already built and compiles nothing.
+            if (!$RestoreOutArchive) {
             Write-Output 'BEGIN cacheability check: compile //base through sccache.'
             Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", 'base') -Budgeted
             $stats = (& sccache.exe --show-stats | Out-String)
@@ -298,6 +324,7 @@ symbol_level = 0
             Write-Output "CACHEABILITY requests=$requests stored=$stored hits=$hits uncacheable=$uncacheable"
             if ($requests -eq 0 -or ($stored + $hits) -eq 0 -or $uncacheable -gt [Math]::Floor($requests / 10)) {
                 throw "Compiles are not cacheable by sccache (requests=$requests, stored=$stored, hits=$hits, non-cacheable=$uncacheable). Stopping before the full build."
+            }
             }
         }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'

@@ -106,6 +106,14 @@ jobs:
         with:
           name: azwah-sccache-${{ github.run_id }}
           path: ${{ env.AZWAH_CACHE }}
+      - name: Restore the previous Ninja build directory
+        if: github.job != 'stage-1'
+        # Without it the stage still works from the compiler cache, only slower.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-ninja-out-${{ github.run_id }}
+          path: ${{ runner.temp }}/ninja-out
       - name: Sync, patch and compile until the time budget
         id: build
         shell: pwsh
@@ -116,7 +124,9 @@ jobs:
           $elapsed = [int](([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64]$env:AZWAH_JOB_START) / 60)
           $budget = [Math]::Max(30, 355 - 35 - $elapsed - 25)
           Write-Output "Job ${env:GITHUB_JOB}: $elapsed minutes used before the build; Ninja budget after sync is about $budget minutes."
-          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Sccache -TimeBudgetMinutes $budget `
+          $outArchive = Join-Path $env:RUNNER_TEMP 'ninja-out/ninja-out.tar'
+          $restore = if (Test-Path -LiteralPath $outArchive) { @{ RestoreOutArchive = $outArchive } } else { @{} }
+          ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Sccache -TimeBudgetMinutes $budget @restore `
             -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision `
             -DepotToolsCommit $env:DEPOT_TOOLS_PIN -Jobs 4 -ReserveGiB 10
       - name: Compiler cache statistics
@@ -184,6 +194,29 @@ jobs:
           name: azwah-chain-diagnostics-${{ github.run_id }}-${{ github.job }}
           path: ${{ runner.temp }}/chain-diagnostics
           retention-days: 14
+      # The Ninja build directory goes on with the compiler cache, so the next stage skips finished work.
+      - name: Pack the Ninja build directory for the next job
+        id: packout
+        if: ${{ !cancelled() && steps.build.outputs.complete == 'false' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $src = Join-Path $env:AZWAH_BUILD_WORKSPACE 'src'
+          $tar = Join-Path $env:RUNNER_TEMP 'ninja-out.tar'
+          $started = Get-Date
+          & tar -cf $tar -C $src out/azwah-native-development
+          if ($LASTEXITCODE -ne 0) { throw 'Could not pack the build directory.' }
+          Write-Output "OUT_PACKED bytes=$((Get-Item $tar).Length) seconds=$([int]((Get-Date) - $started).TotalSeconds)"
+          "AZWAH_OUT_TAR=$tar" | Add-Content -LiteralPath $env:GITHUB_ENV
+      - name: Hand the Ninja build directory to the next job
+        if: ${{ !cancelled() && steps.build.outputs.complete == 'false' && steps.packout.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-ninja-out-${{ github.run_id }}
+          path: ${{ env.AZWAH_OUT_TAR }}
+          retention-days: 2
+          compression-level: 1
+          overwrite: true
       - name: Hand the compiler cache to the next job
         # Runs whenever the build stopped at its budget, whatever happened in later evidence steps.
         if: ${{ !cancelled() && steps.build.outputs.complete == 'false' }}
