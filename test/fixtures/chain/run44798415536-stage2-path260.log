@@ -1,0 +1,76 @@
+2026-11-20T23:59:59.8932403Z ##[group]Run "AZWAH_JOB_START=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())" | Add-Content -LiteralPath $env:GITHUB_EN
+2026-11-21T00:00:00.7399248Z ##[group]Run actions/checkout@v4
+2026-11-21T00:00:09.1866544Z ##[group]Run ./scripts/prepare-native-windows-sdk.ps1 -Workspace $env:GITHUB_WORKSPACE
+2026-11-21T00:02:00.9501205Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-21T00:02:02.7117383Z ##[group]Run ./scripts/qualify-native-depot-tools.ps1 -DepotTools $env:AZWAH_DEPOT_TOOLS -ExpectedCommit $env:DEPOT_TOOL
+2026-11-21T00:02:15.0746708Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-21T00:02:16.2300730Z ##[group]Run actions/download-artifact@v4
+2026-11-21T00:02:16.5507157Z Preparing to download the following artifacts:
+2026-11-21T00:02:16.5508817Z - azwah-sccache-44798415536 (ID: 14680752122, Size: 343182422, Expected Digest: sha256:71adf8ac59bd977d7966626ea15ea83163b2bdfdbae619601569b252ff954fab)
+2026-11-21T00:02:23.2800708Z SHA256 digest of downloaded artifact is 71adf8ac59bd977d7966626ea15ea83163b2bdfdbae619601569b252ff954fab
+2026-11-21T00:02:23.2801605Z Artifact download completed successfully.
+2026-11-21T00:02:23.2801993Z Total of 1 artifact(s) downloaded
+2026-11-21T00:02:23.3207997Z ##[group]Run $ErrorActionPreference = 'Stop'
+2026-11-21T00:17:43.8750340Z END gclient.bat elapsed_seconds=907 free_bytes=123827744768
+2026-11-21T00:17:43.9689152Z Synced Chromium revision: b0cbb99d9f0f9fbbb6c6780e73b17984e991c866; free_bytes=123827744768
+2026-11-21T00:18:21.6604718Z BEGIN cacheability check: compile //base through sccache.
+2026-11-21T00:26:48.1484233Z [2369/2369] LIB obj/base/base.lib
+2026-11-21T00:26:48.2895632Z Compile requests                    1999
+2026-11-21T00:26:48.2896214Z Compile requests executed           1999
+2026-11-21T00:26:48.2896572Z Cache hits                          1999
+2026-11-21T00:26:48.2896963Z Cache hits (C/C++)                  1999
+2026-11-21T00:26:48.2897474Z Cache misses                           0
+2026-11-21T00:26:48.2897991Z Cache hits rate                   100.00 %
+2026-11-21T00:26:48.2898386Z Cache hits rate (C/C++)           100.00 %
+2026-11-21T00:26:48.2899058Z Cache read errors                      0
+2026-11-21T00:26:48.2899737Z Cache write errors                     0
+2026-11-21T00:26:48.2900118Z Cache errors                           0
+2026-11-21T00:26:48.2900440Z Compilations                           0
+2026-11-21T00:26:48.2900771Z Compilation failures                   0
+2026-11-21T00:26:48.2901700Z Non-cacheable calls                    0
+2026-11-21T00:26:48.2965237Z CACHEABILITY requests=1999 stored=0 hits=1999 uncacheable=0
+2026-11-21T01:10:28.2823061Z [11196/58771] CC obj/third_party/xnnpack/f16-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-avx512fp16-amx-tile-amx-int8-amx-fp16/f16-igemm-16x
+2026-11-21T01:10:28.2828019Z FAILED: obj/third_party/xnnpack/f16-igemm_f16c-fma-avx512f-avx512cd-avx512bw-avx512dq-avx512vl-avx512vnni-gfni-avx512fp16-amx-tile-amx-int8-amx-fp16/f16-igemm-16x64c2-minmax-avx512amxfp16.obj 
+2026-11-21T01:10:28.3345836Z sccache: encountered fatal error
+2026-11-21T01:10:28.3346875Z sccache: error: failed to persist temporary file: The system cannot find the path specified. (os error 3)
+2026-11-21T01:10:28.3348729Z sccache: caused by: failed to persist temporary file: The system cannot find the path specified. (os error 3)
+2026-11-21T01:10:28.3349777Z sccache: caused by: The system cannot find the path specified. (os error 3)
+2026-11-21T01:10:28.3890887Z [11199/58771] CC obj/third_party/xnnpack/f16-maxpool_sse4.1-no-sse4.2/f16-maxpool-9p-minmax-sse41-u8.obj
+2026-11-21T01:10:28.3959018Z ninja: build stopped: subcommand failed.
+2026-11-21T01:10:28.7891071Z [31;1mException: [0mD:\a\profile-manager\profile-manager\scripts\build-native-chromium-baseline.ps1:99[0m
+2026-11-21T01:10:28.8683369Z ##[error]Process completed with exit code 1.
+2026-11-21T01:10:29.0156173Z ##[group]Run sccache.exe --show-stats
+2026-11-21T01:10:29.3847796Z Compile requests                   11116
+2026-11-21T01:10:29.3848381Z Compile requests executed          11116
+2026-11-21T01:10:29.3848856Z Cache hits                         11115
+2026-11-21T01:10:29.3849327Z Cache hits (C/C++)                 11115
+2026-11-21T01:10:29.3849752Z Cache misses                           0
+2026-11-21T01:10:29.3850189Z Cache hits rate                   100.00 %
+2026-11-21T01:10:29.3850604Z Cache hits rate (C/C++)           100.00 %
+2026-11-21T01:10:29.3851410Z Cache read errors                      0
+2026-11-21T01:10:29.3852273Z Cache write errors                     0
+2026-11-21T01:10:29.3852679Z Cache errors                           1
+2026-11-21T01:10:29.3853067Z Cache errors (C/C++)                   1
+2026-11-21T01:10:29.3853468Z Compilations                           0
+2026-11-21T01:10:29.3853890Z Compilation failures                   0
+2026-11-21T01:10:29.3854798Z Non-cacheable calls                    0
+2026-11-21T01:10:29.5071947Z Compile requests                   11116
+2026-11-21T01:10:29.5072552Z Compile requests executed          11116
+2026-11-21T01:10:29.5073046Z Cache hits                         11115
+2026-11-21T01:10:29.5073516Z Cache hits (C/C++)                 11115
+2026-11-21T01:10:29.5073984Z Cache misses                           0
+2026-11-21T01:10:29.5074453Z Cache hits rate                   100.00 %
+2026-11-21T01:10:29.5074915Z Cache hits rate (C/C++)           100.00 %
+2026-11-21T01:10:29.5078546Z Cache read errors                      0
+2026-11-21T01:10:29.5079478Z Cache write errors                     0
+2026-11-21T01:10:29.5079892Z Cache errors                           1
+2026-11-21T01:10:29.5080345Z Cache errors (C/C++)                   1
+2026-11-21T01:10:29.5080778Z Compilations                           0
+2026-11-21T01:10:29.5081226Z Compilation failures                   0
+2026-11-21T01:10:29.5082521Z Non-cacheable calls                    0
+2026-11-21T01:10:30.0139984Z CACHE_BYTES 339979000
+2026-11-21T01:10:30.0889874Z ##[group]Run $dir = Join-Path $env:RUNNER_TEMP 'chain-diagnostics'
+2026-11-21T01:10:42.3594443Z ##[group]Run actions/upload-artifact@v4
+2026-11-21T01:10:43.4705282Z SHA256 digest of uploaded artifact zip is d65272fc7c423df8d628584d3bedddaa647a1e6973a562923d8e446611a93b06
+2026-11-21T01:10:43.8285639Z Artifact azwah-chain-diagnostics-44798415536-stage-2.zip successfully finalized. Artifact ID 14683588683
+2026-11-21T01:10:43.8287748Z Artifact azwah-chain-diagnostics-44798415536-stage-2 has been successfully uploaded! Final size is 4933 bytes. Artifact ID is 14683588683
