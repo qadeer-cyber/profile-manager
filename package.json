@@ -62,7 +62,8 @@
     "test:unified": "node --test --experimental-test-module-mocks --test-timeout=30000 test/unified-integration.test.js test/advanced-privacy-acceptance.test.js",
     "license-admin": "node scripts/license-admin/admin.mjs",
     "test:office": "node --test --test-concurrency=1 test/office-license.test.js test/office-upgrade.test.js test/office-api.test.js test/office-cookie-transfer.test.js",
-    "test:office:browser": "npm run build && node --test --test-concurrency=1 test/office-browser.test.js"
+    "test:office:browser": "npm run build && node --test --test-concurrency=1 test/office-browser.test.js",
+    "test:compat": "node --test --test-timeout=180000 test/compat-baseline.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
