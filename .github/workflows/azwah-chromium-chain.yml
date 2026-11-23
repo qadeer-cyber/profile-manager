@@ -6,8 +6,15 @@ on:
   push:
     branches: [feature/azwah-ultimate-2]
   workflow_dispatch:
+    inputs:
+      resume_run_id:
+        description: 'Continue from the last hand-over of this earlier chain run (its run ID); empty starts from zero'
+        required: false
+        default: ''
 permissions:
   contents: read
+  # Needed only to download another run's hand-over artifacts when resuming.
+  actions: read
 env:
   DEPOT_TOOLS_PIN: 96a7c1418eedaa6bea333a8941e8a0078681b4d0
   SCCACHE_CACHE_SIZE: 40G
@@ -114,6 +121,30 @@ jobs:
         with:
           name: azwah-ninja-out-${{ github.run_id }}
           path: ${{ runner.temp }}/ninja-out
+      # Resume: stage 1 continues from the last hand-over of an earlier run instead of starting from zero.
+      - name: Resume - restore the compiler cache from the earlier run
+        if: github.job == 'stage-1' && inputs.resume_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-sccache-${{ inputs.resume_run_id }}
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ env.AZWAH_CACHE }}
+      - name: Resume - restore the Ninja build directory from the earlier run
+        if: github.job == 'stage-1' && inputs.resume_run_id != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: azwah-ninja-out-${{ inputs.resume_run_id }}
+          run-id: ${{ inputs.resume_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/ninja-out
+      - name: Resume - refuse to start from zero
+        if: github.job == 'stage-1' && inputs.resume_run_id != ''
+        shell: pwsh
+        run: |
+          $tar = Join-Path $env:RUNNER_TEMP 'ninja-out/ninja-out.tar'
+          if (!(Test-Path -LiteralPath $tar -PathType Leaf)) { throw "Resume requested but no build directory from run ${{ inputs.resume_run_id }}" }
+          Write-Output "RESUME_FROM run=${{ inputs.resume_run_id }} out_tar_bytes=$((Get-Item $tar).Length)"
       - name: Sync, patch and compile until the time budget
         id: build
         shell: pwsh
@@ -214,7 +245,7 @@ jobs:
         with:
           name: azwah-ninja-out-${{ github.run_id }}
           path: ${{ env.AZWAH_OUT_TAR }}
-          retention-days: 2
+          retention-days: 5
           compression-level: 1
           overwrite: true
       - name: Hand the compiler cache to the next job
@@ -224,7 +255,7 @@ jobs:
         with:
           name: azwah-sccache-${{ github.run_id }}
           path: ${{ env.AZWAH_CACHE }}
-          retention-days: 2
+          retention-days: 5
           compression-level: 0
           overwrite: true
       - name: Verify and smoke-test the finished browser
