@@ -49,7 +49,24 @@ $process = Start-Process @launch
 try {
     if (!$process.WaitForExit(45000)) { throw 'The native browser smoke test timed out.' }
     if ($process.ExitCode -ne 0 -or !(Select-String -LiteralPath $stdout -SimpleMatch '<title>AzwahNativeSmoke</title>' -Quiet)) {
-        Get-Content -LiteralPath $stderr -Tail 30
+        Write-Output "SMOKE_FAILED exit=$($process.ExitCode)"
+        Write-Output '--- stderr (first 80 lines) ---'; Get-Content -LiteralPath $stderr -TotalCount 80
+        Write-Output '--- stderr (last 40 lines) ---'; Get-Content -LiteralPath $stderr -Tail 40
+        Write-Output '--- stdout (first 20 lines) ---'; Get-Content -LiteralPath $stdout -TotalCount 20
+        # Diagnosis only: these variants never turn a failure into a pass.
+        $variants = [ordered]@{ 'headless-new' = @('--headless=new'); 'no-gpu' = @('--headless', '--disable-gpu');
+            'no-sandbox-diagnostic' = @('--headless', '--no-sandbox'); 'single-process-diagnostic' = @('--headless', '--single-process') }
+        foreach ($name in $variants.Keys) {
+            $dir = Join-Path $smoke $name; New-Item -ItemType Directory -Path $dir | Out-Null
+            $args2 = @($variants[$name]) + @('--no-first-run', ('"--user-data-dir=' + (Join-Path $dir 'profile') + '"'), '--enable-logging=stderr', '--v=0',
+                '--dump-dom', 'data:text/html,%3Ctitle%3EAzwahNativeSmoke%3C/title%3E')
+            $p2 = Start-Process -FilePath $exe.FullName -ArgumentList $args2 -PassThru -RedirectStandardOutput (Join-Path $dir 'out.txt') -RedirectStandardError (Join-Path $dir 'err.txt')
+            $ok = $p2.WaitForExit(45000)
+            if (!$ok) { & "$env:SystemRoot/System32/taskkill.exe" /PID $p2.Id /T /F | Out-Null }
+            $dom = Select-String -LiteralPath (Join-Path $dir 'out.txt') -SimpleMatch '<title>AzwahNativeSmoke</title>' -Quiet
+            Write-Output "SMOKE_VARIANT name=$name exited=$ok exit=$(if ($ok) { $p2.ExitCode }) dom=$dom"
+            Get-Content -LiteralPath (Join-Path $dir 'err.txt') -TotalCount 25 | Where-Object { $_ -match 'FATAL|ERROR|Check failed|NOTREACHED' } | Select-Object -First 8
+        }
         throw 'Native Chromium failed the headless DOM smoke test.'
     }
 } finally {

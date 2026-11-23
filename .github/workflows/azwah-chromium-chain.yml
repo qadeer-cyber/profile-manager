@@ -228,7 +228,8 @@ jobs:
       # The Ninja build directory goes on with the compiler cache, so the next stage skips finished work.
       - name: Pack the Ninja build directory for the next job
         id: packout
-        if: ${{ !cancelled() && steps.build.outputs.complete == 'false' }}
+        # Also when the build finished: a failed smoke test must not lose the finished build.
+        if: ${{ !cancelled() && (steps.build.outputs.complete == 'false' || steps.build.outputs.complete == 'true') }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -240,7 +241,7 @@ jobs:
           Write-Output "OUT_PACKED bytes=$((Get-Item $tar).Length) seconds=$([int]((Get-Date) - $started).TotalSeconds)"
           "AZWAH_OUT_TAR=$tar" | Add-Content -LiteralPath $env:GITHUB_ENV
       - name: Hand the Ninja build directory to the next job
-        if: ${{ !cancelled() && steps.build.outputs.complete == 'false' && steps.packout.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.packout.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: azwah-ninja-out-${{ github.run_id }}
@@ -249,8 +250,8 @@ jobs:
           compression-level: 1
           overwrite: true
       - name: Hand the compiler cache to the next job
-        # Runs whenever the build stopped at its budget, whatever happened in later evidence steps.
-        if: ${{ !cancelled() && steps.build.outputs.complete == 'false' }}
+        # Runs whenever the build stopped at its budget or finished, whatever happened in later evidence steps.
+        if: ${{ !cancelled() && (steps.build.outputs.complete == 'false' || steps.build.outputs.complete == 'true') }}
         uses: actions/upload-artifact@v4
         with:
           name: azwah-sccache-${{ github.run_id }}
