@@ -32,15 +32,21 @@ test('the Chromium chain starts only on its tag or a manual dispatch', () => {
   }
 });
 
-test('evidence steps cannot fail a stage; the hand-over runs whenever the build stopped at its budget', () => {
+test('evidence steps cannot fail a stage; the hand-over runs whenever the build stopped at its budget or finished', () => {
   const { text } = load('azwah-chromium-chain.yml');
   for (const name of ['Record build inputs for cache diagnosis', 'Upload build-input diagnostics']) {
     const at = text.indexOf(`- name: ${name}`);
     assert.ok(at > 0, name);
     assert.match(text.slice(at, at + 400), /continue-on-error: true/, name);
   }
-  const at = text.indexOf('- name: Hand the compiler cache to the next job');
-  assert.match(text.slice(at, at + 400), /if: \$\{\{ !cancelled\(\) && steps\.build\.outputs\.complete == 'false' \}\}/);
+  const both = /if: \$\{\{ !cancelled\(\) && \(steps\.build\.outputs\.complete == 'false' \|\| steps\.build\.outputs\.complete == 'true'\) \}\}/;
+  for (const name of ['Hand the compiler cache to the next job', 'Pack the Ninja build directory for the next job']) {
+    const at = text.indexOf(`- name: ${name}`);
+    assert.ok(at > 0, name);
+    assert.match(text.slice(at, at + 400), both, name);
+  }
+  const smoke = text.indexOf('- name: Verify and smoke-test the finished browser');
+  assert.ok(text.indexOf('- name: Hand the compiler cache to the next job') < smoke, 'hand-over happens before the smoke test can fail');
 });
 
 test('no workflow publishes a release on a push to this branch', () => {
