@@ -33,6 +33,13 @@ if ($exe.VersionInfo.ProductName -ne 'Azwah Browser') { throw "Unexpected produc
 foreach ($name in @('icudtl.dat', 'resources.pak')) {
     if (!(Test-Path -LiteralPath (Join-Path $out $name) -PathType Leaf)) { throw "Missing runtime file: $name" }
 }
+# Chromium's Windows sandbox starts renderers with restricted and AppContainer tokens, which must be able to read
+# the browser's folder (sandbox_win.cc: "Sandbox cannot access executable ... Access is denied"). Program Files grants
+# this by default; a build or temp folder does not. Grant read/execute to ALL APPLICATION PACKAGES (S-1-15-2-1) and
+# ALL RESTRICTED APPLICATION PACKAGES (S-1-15-2-2). This keeps the sandbox on; it does not disable anything.
+& "$env:SystemRoot/System32/icacls.exe" $out /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /C /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not grant sandbox read access to $out (icacls exit $LASTEXITCODE)." }
+Write-Output "SANDBOX_ACL granted on $out"
 $smoke = Join-Path $Workspace ('smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $smoke | Out-Null
 $stdout = Join-Path $smoke 'stdout.txt'

@@ -23,3 +23,12 @@ test('resume downloads both hand-overs from the named run, only in stage 1, and 
 test('hand-over artifacts live long enough to resume', () => {
   assert.doesNotMatch(wf, /retention-days: [12]\n/);
 });
+
+test('smoke tests keep the sandbox on and grant the sandbox read access to the browser folder', () => {
+  const smoke = fs.readFileSync(new URL('../scripts/test-native-chromium-build.ps1', import.meta.url), 'utf8');
+  const launch = smoke.slice(smoke.indexOf('$launch = @{'), smoke.indexOf('$process = Start-Process'));
+  assert.doesNotMatch(launch, /no-sandbox/, 'the pass/fail launch must not disable the sandbox');
+  for (const text of [smoke, wf]) {
+    assert.match(text, /icacls\.exe" \$\w+ \/grant '\*S-1-15-2-1:\(OI\)\(CI\)\(RX\)' '\*S-1-15-2-2:\(OI\)\(CI\)\(RX\)'/);
+  }
+});

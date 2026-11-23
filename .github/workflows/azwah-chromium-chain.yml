@@ -370,6 +370,9 @@ jobs:
           Write-Output "ARCHIVE_SHA256 $((Get-FileHash -LiteralPath $zip.FullName).Hash.ToLowerInvariant()) bytes=$($zip.Length)"
           $dir = Join-Path $env:RUNNER_TEMP 'browser'
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $dir
+          # Same sandbox folder access as on the build runner (see scripts/test-native-chromium-build.ps1).
+          & "$env:SystemRoot/System32/icacls.exe" $dir /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /C /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant sandbox read access to the unpacked browser.' }
           node scripts/native-artifact.mjs verify $dir (Join-Path $dir 'AZWAH-NATIVE-MANIFEST.json')
           if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed on the fresh runner.' }
           $pin = Get-Content -Raw native-chromium/upstream.json | ConvertFrom-Json
