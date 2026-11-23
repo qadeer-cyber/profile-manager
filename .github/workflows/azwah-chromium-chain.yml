@@ -162,6 +162,9 @@ jobs:
             -DepotToolsCommit $env:DEPOT_TOOLS_PIN -Jobs 4 -ReserveGiB 10
       - name: Compiler cache statistics
         if: always()
+        # Evidence only. With nothing to compile the sccache server may already have exited, so --stop-server fails;
+        # that must not skip the smoke test (run 45233749627).
+        continue-on-error: true
         shell: pwsh
         run: |
           sccache.exe --show-stats
@@ -169,6 +172,7 @@ jobs:
           sccache.exe --stop-server
           $bytes = (Get-ChildItem -LiteralPath $env:AZWAH_CACHE -Recurse -File | Measure-Object Length -Sum).Sum
           Write-Output "CACHE_BYTES $bytes"
+          $global:LASTEXITCODE = 0
       # Build inputs that decide sccache keys, recorded per stage so stages can be compared from evidence
       # rather than from assumptions. Text only; no profiles, credentials or sources.
       - name: Record build inputs for cache diagnosis

@@ -34,7 +34,7 @@ test('the Chromium chain starts only on its tag or a manual dispatch', () => {
 
 test('evidence steps cannot fail a stage; the hand-over runs whenever the build stopped at its budget or finished', () => {
   const { text } = load('azwah-chromium-chain.yml');
-  for (const name of ['Record build inputs for cache diagnosis', 'Upload build-input diagnostics']) {
+  for (const name of ['Compiler cache statistics', 'Record build inputs for cache diagnosis', 'Upload build-input diagnostics']) {
     const at = text.indexOf(`- name: ${name}`);
     assert.ok(at > 0, name);
     assert.match(text.slice(at, at + 400), /continue-on-error: true/, name);
