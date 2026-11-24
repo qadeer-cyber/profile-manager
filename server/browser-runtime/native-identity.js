@@ -16,16 +16,20 @@ export const WINDOWS_GPUS = Object.freeze([
   ['Google Inc. (AMD)', 'ANGLE (AMD, AMD Radeon RX 580 Series Direct3D11 vs_5_0 ps_5_0, D3D11)'],
 ].map(Object.freeze));
 const CORES = Object.freeze([4, 6, 8, 8, 12, 16]);
+// Common Windows desktop and laptop screens.
+const SCREENS = Object.freeze(['1920x1080', '1920x1080', '1366x768', '1536x864', '2560x1440', '1600x900', '1440x900']);
 const MEMORY = Object.freeze([4, 8, 8]);
 
 export function nativeIdentityFor(profileId) {
   const digest = createHash('sha256').update('azwah-native-identity\n' + String(profileId)).digest();
   const [webglVendor, webglRenderer] = WINDOWS_GPUS[digest[0] % WINDOWS_GPUS.length];
-  return { hardwareConcurrency: CORES[digest[1] % CORES.length], deviceMemory: MEMORY[digest[2] % MEMORY.length], webglVendor, webglRenderer };
+  return { hardwareConcurrency: CORES[digest[1] % CORES.length], deviceMemory: MEMORY[digest[2] % MEMORY.length], webglVendor, webglRenderer,
+    screen: SCREENS[digest[3] % SCREENS.length] };
 }
 
-export function nativeIdentityArgs(identity) {
+export function nativeIdentityArgs(identity, { screen = false } = {}) {
   return [
+    ...(screen && identity.screen ? [`--azwah-screen=${identity.screen}`] : []),
     `--azwah-hardware-concurrency=${identity.hardwareConcurrency}`,
     `--azwah-device-memory=${identity.deviceMemory}`,
     `--azwah-webgl-vendor=${identity.webglVendor}`,

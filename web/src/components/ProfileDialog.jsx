@@ -112,7 +112,8 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       const nativeRuntime = f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native';
       const canvasReadback = nativeRuntime && advanced.experimental?.canvasReadback === 'prototype' ? 'prototype' : 'off';
       const hardwareIdentity = nativeRuntime && advanced.experimental?.hardwareIdentity === 'prototype' ? 'prototype' : 'off';
-      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off', hardwareIdentity } });
+      const audioReadback = nativeRuntime && advanced.experimental?.audioReadback === 'prototype' ? 'prototype' : 'off';
+      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off', hardwareIdentity, audioReadback } });
       next = { ...f, browserSettings, webrtcSettings, advancedSettings };
     } catch (e) {
       const nextTab = e.code === 'INVALID_ADVANCED_SETTINGS' && e.tab === 'preferences' ? 'extra' : (e.code === 'INVALID_WEBRTC_SETTINGS' || e.code === 'INVALID_BROWSER_SETTINGS' || e.code === 'INVALID_ADVANCED_SETTINGS') ? 'fingerprint' : 'general';
@@ -179,7 +180,11 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             <label className="check toggle"><input type="checkbox" role="switch" aria-label="Hardware and graphics identity"
               checked={advanced.experimental?.hardwareIdentity === 'prototype'}
               onChange={e => setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), hardwareIdentity: e.target.checked ? 'prototype' : 'off', webglReadback: 'off' } })} /> Hardware and graphics identity (experimental)</label>
-            <p className="muted hint">This profile reports its own CPU core count, device memory and graphics card name (a realistic Windows desktop, the same on every launch). The real graphics card still draws the pages, so advanced sites can compare drawing results with the reported name. Needs an AZWAH Chromium build with this feature.</p>
+            <p className="muted hint">This profile reports its own CPU core count, device memory, graphics card name and screen size (a realistic Windows desktop, the same on every launch). The real graphics card still draws the pages, so advanced sites can compare drawing results with the reported name. Needs an AZWAH Chromium build with this feature.</p>
+            <label className="check toggle"><input type="checkbox" role="switch" aria-label="Audio protection"
+              checked={advanced.experimental?.audioReadback === 'prototype'}
+              onChange={e => setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), audioReadback: e.target.checked ? 'prototype' : 'off', webglReadback: 'off' } })} /> Audio protection (experimental)</label>
+            <p className="muted hint">Sites that read back generated audio get a tiny per-session change (inaudible), so the audio fingerprint differs between profiles and launches.</p>
             <p className="muted hint">Sites that read back canvas drawings get slightly changed pixels: the same within one site for this browser session, different between sites, profiles and launches. What you see on screen is not changed. Needs an AZWAH Chromium build with canvas protection; otherwise the launch stops and says so. It does not cover WebGL, audio or fonts, and some sites may detect it.</p>
           </>}
           {f.browserEngine !== 'firefox' && (advanced.runtime || 'compatibility') === 'compatibility' && <p className="muted hint">

@@ -78,3 +78,18 @@ test('AZWAH Chromium proxy profiles never send WebRTC UDP outside the proxy', ()
   assert.match(launcher, /proxy \? chromiumPolicyArgs\(\{ mode: 'disable_non_proxied_udp' \}\)/);
   assert.match(launcher, /args\.push\(\.\.\.webrtcArgs\)/);
 });
+
+test('audio-screen patch: additions only, four known files, audio once per buffer, screen bounded', () => {
+  const p = fs.readFileSync(new URL('../native-chromium/audio-screen.patch', import.meta.url), 'utf8');
+  const files = [...p.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/core/frame/screen.cc',
+    'third_party/blink/renderer/modules/webaudio/audio_buffer.cc',
+    'third_party/blink/renderer/modules/webaudio/audio_buffer.h',
+  ]);
+  assert.deepEqual(p.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---')), []);
+  assert.match(p, /\+  bool azwah_audio_noised_ = false;/);
+  assert.match(p, /azwah_width >= 800 && azwah_width <= 7680/);
+  assert.match(launcher, /AZWAH_NATIVE_AUDIO_UNSUPPORTED/);
+});

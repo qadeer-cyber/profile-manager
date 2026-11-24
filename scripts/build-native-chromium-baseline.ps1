@@ -61,6 +61,7 @@ $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
 $canvasPatchFile = Join-Path $sourceRoot 'canvas-noise.patch'
 $identityPatchFile = Join-Path $sourceRoot 'identity.patch'
+$audioScreenPatchFile = Join-Path $sourceRoot 'audio-screen.patch'
 if ($AzwahSource) {
     $upstream = Get-Content -LiteralPath (Join-Path $sourceRoot 'upstream.json') -Raw | ConvertFrom-Json
     if ($ChromiumCommit -ne $upstream.revision) {
@@ -230,7 +231,7 @@ try {
         }
         if ($AzwahSource -and $CanvasPatch) {
             # Fingerprint patches, in order (each is written against the source with the previous ones applied).
-            foreach ($fp in @($canvasPatchFile, $identityPatchFile)) {
+            foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile)) {
                 $name = Split-Path -Leaf $fp
                 & $git apply --reverse --check -- $fp 2>$null
                 if ($LASTEXITCODE -eq 0) {
@@ -391,6 +392,7 @@ symbol_level = 0
             dchecks = if ($Shipping) { 'off' } else { 'on' }
             canvasPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $canvasPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             identityPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $identityPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            audioScreenPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $audioScreenPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
     } finally {

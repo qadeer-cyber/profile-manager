@@ -62,7 +62,7 @@ function integerIn(value, min, max, tab, label) {
 function validateExperimental(value) {
   const base = { canvasReadback: 'off', webglReadback: 'off' };
   if (value == null) return base;
-  const input = section(value, ['canvasReadback', 'webglReadback', 'hardwareIdentity'], 'fingerprint');
+  const input = section(value, ['canvasReadback', 'webglReadback', 'hardwareIdentity', 'audioReadback'], 'fingerprint');
   const canvasReadback = input.canvasReadback ?? base.canvasReadback;
   const webglReadback = input.webglReadback ?? base.webglReadback;
   if (canvasReadback !== 'off' && canvasReadback !== 'prototype') invalid('experimental.canvasReadback must be off or prototype', 'fingerprint');
@@ -70,7 +70,9 @@ function validateExperimental(value) {
   // AZWAH Chromium only: per-profile CPU cores, device memory and WebGL graphics identity (stored only when on).
   const hardwareIdentity = input.hardwareIdentity ?? 'off';
   if (hardwareIdentity !== 'off' && hardwareIdentity !== 'prototype') invalid('experimental.hardwareIdentity must be off or prototype', 'fingerprint');
-  return hardwareIdentity === 'prototype' ? { canvasReadback, webglReadback, hardwareIdentity } : { canvasReadback, webglReadback };
+  const audioReadback = input.audioReadback ?? 'off';
+  if (audioReadback !== 'off' && audioReadback !== 'prototype') invalid('experimental.audioReadback must be off or prototype', 'fingerprint');
+  return { canvasReadback, webglReadback, ...(hardwareIdentity === 'prototype' && { hardwareIdentity }), ...(audioReadback === 'prototype' && { audioReadback }) };
 }
 function validateUserAgent(value) {
   const input = section(value, ['mode'], 'identity');

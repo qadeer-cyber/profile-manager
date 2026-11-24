@@ -1,0 +1,138 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 968616c2084190b4a114d6ffb4bd69c39b36c6c8..de4fb82c678284d4fa9f7efd33fccaab5e6e228c 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3917,6 +3917,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       "azwah-hardware-concurrency",
+       "azwah-webgl-renderer",
+       "azwah-webgl-vendor",
++      // AZWAH: audio readback protection seed and screen size.
++      "azwah-audio-seed",
++      "azwah-screen",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+       switches::kDisableDevShmUsage,
+ #endif
+diff --git a/third_party/blink/renderer/core/frame/screen.cc b/third_party/blink/renderer/core/frame/screen.cc
+index ed5028943e3d702f7332807f7fdff73c906dde51..ad5b1771df0d88a3bbea589d0726e88084bd2a40 100644
+--- a/third_party/blink/renderer/core/frame/screen.cc
++++ b/third_party/blink/renderer/core/frame/screen.cc
+@@ -28,7 +28,10 @@
+ 
+ #include "third_party/blink/renderer/core/frame/screen.h"
+ 
++#include "base/command_line.h"
+ #include "base/numerics/safe_conversions.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
+ #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+ #include "third_party/blink/renderer/core/event_target_names.h"
+@@ -175,6 +178,22 @@ gfx::Rect Screen::GetRect(bool available) const {
+   LocalFrame* frame = DomWindow()->GetFrame();
+   const display::ScreenInfo& screen_info = GetScreenInfo();
+   gfx::Rect rect = available ? screen_info.available_rect : screen_info.rect;
++  // AZWAH: per-profile screen size from --azwah-screen=WIDTHxHEIGHT; the
++  // available area leaves room for a 40 px taskbar, as on Windows.
++  const std::vector<std::string> azwah_screen = base::SplitString(
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "azwah-screen"),
++      "x", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  int azwah_width = 0;
++  int azwah_height = 0;
++  if (azwah_screen.size() == 2u &&
++      base::StringToInt(azwah_screen[0], &azwah_width) &&
++      base::StringToInt(azwah_screen[1], &azwah_height) &&
++      azwah_width >= 800 && azwah_width <= 7680 && azwah_height >= 600 &&
++      azwah_height <= 4320) {
++    return available ? gfx::Rect(0, 0, azwah_width, azwah_height - 40)
++                     : gfx::Rect(0, 0, azwah_width, azwah_height);
++  }
+   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk())
+     return gfx::ScaleToRoundedRect(rect, screen_info.device_scale_factor);
+   if (frame->GetDocument() && frame->GetDocument()->TextScaleMetaTagPresent()) {
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index 9a66186d8e6c2a4a164ecb9289f66d3e994d30af..8c17f968d11b41aa445500482cf5aa7e209cf1d9 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -31,6 +31,7 @@
+ #include <memory>
+ 
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
+@@ -212,9 +213,45 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
+     return NotShared<DOMFloat32Array>(nullptr);
+   }
+ 
++  AzwahApplyAudioNoise();
+   return getChannelData(channel_index);
+ }
+ 
++void AudioBuffer::AzwahApplyAudioNoise() {
++  if (azwah_audio_noised_) {
++    return;
++  }
++  azwah_audio_noised_ = true;
++  const std::string secret =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "azwah-audio-seed");
++  if (secret.empty()) {
++    return;
++  }
++  uint64_t seed = 1469598103934665603ull;
++  for (const char c : secret) {
++    seed = (seed ^ static_cast<uint8_t>(c)) * 1099511628211ull;
++  }
++  uint64_t channel = 0;
++  for (auto& member : channels_) {
++    ++channel;
++    DOMFloat32Array* array = member.Get();
++    if (!array) {
++      continue;
++    }
++    base::span<float> data = array->AsSpan();
++    for (size_t i = 0; i < data.size(); ++i) {
++      uint64_t hash = seed ^ ((channel << 40) + i);
++      hash ^= hash >> 33;
++      hash *= 0xff51afd7ed558ccdull;
++      hash ^= hash >> 33;
++      if (data[i] != 0.0f) {
++        data[i] += data[i] * ((hash & 1u) ? 1e-7f : -1e-7f);
++      }
++    }
++  }
++}
++
+ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(unsigned channel_index) {
+   if (channel_index >= channels_.size()) {
+     return NotShared<DOMFloat32Array>(nullptr);
+@@ -250,6 +287,7 @@ void AudioBuffer::copyFromChannel(NotShared<DOMFloat32Array> destination,
+     return;
+   }
+ 
++  AzwahApplyAudioNoise();
+   base::span<const float> src = channels_[channel_number].Get()->AsSpan();
+   base::span<float> dst = destination->AsSpan();
+ 
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.h b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+index 0dd11f830ee2829778b6c89ec51edeb1da839f74..dfae5a4cda35749537790375f14a551bb56a90f0 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.h
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.h
+@@ -118,11 +118,15 @@ class MODULES_EXPORT AudioBuffer final : public ScriptWrappable {
+ 
+  private:
+   bool CreatedSuccessfully(unsigned desired_number_of_channels) const;
++  // AZWAH: opt-in audio readback protection (--azwah-audio-seed), applied once
++  // per buffer before script reads it.
++  void AzwahApplyAudioNoise();
+ 
+   float sample_rate_;
+   uint32_t length_;
+ 
+   HeapVector<Member<DOMFloat32Array>> channels_;
++  bool azwah_audio_noised_ = false;
+ };
+ 
+ // Shared data that audio threads can hold onto.

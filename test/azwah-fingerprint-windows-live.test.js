@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
+const AUDIO_SCREEN = process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1';
 const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c width=220 height=60></canvas><script>
 (async () => {
   const c = document.getElementById('c'); const g = c.getContext('2d');
@@ -20,9 +21,13 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
   let renderer = null, vendor = null;
   try { const gl = document.createElement('canvas').getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
     if (ext) { renderer = gl.getParameter(ext.UNMASKED_RENDERER_WEBGL); vendor = gl.getParameter(ext.UNMASKED_VENDOR_WEBGL); } } catch {}
+  let audio = null;
+  try { const ctx = new OfflineAudioContext(1, 5000, 44100); const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
+    const comp = ctx.createDynamicsCompressor(); osc.connect(comp); comp.connect(ctx.destination); osc.start(0);
+    const buf = await ctx.startRendering(); audio = await digest(Array.from(buf.getChannelData(0).slice(4500)).join(',')); } catch {}
   const q = new URLSearchParams(location.search);
   await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
-    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor }) });
+    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height }) });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -73,7 +78,7 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
   try {
     const off = (await api('POST', '/profiles', { name: 'fp off', advancedSettings: { runtime: 'azwah-native' } }, 201)).id;
     const on = (await api('POST', '/profiles', { name: 'fp on', advancedSettings: { runtime: 'azwah-native',
-      experimental: { canvasReadback: 'prototype', hardwareIdentity: 'prototype' } } }, 201)).id;
+      experimental: { canvasReadback: 'prototype', hardwareIdentity: 'prototype', ...(AUDIO_SCREEN && { audioReadback: 'prototype' }) } } }, 201)).id;
 
     const base = await visit(off);
     console.log('# protection off ' + JSON.stringify(base));
@@ -97,6 +102,13 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
         assert.equal(r.renderer, expected.webglRenderer);
         assert.equal(r.vendor, expected.webglVendor);
       }
+      if (AUDIO_SCREEN) assert.equal(r.screen, expected.screen, 'screen size follows the profile');
+    }
+    if (AUDIO_SCREEN) {
+      assert.ok(base.a1.audio && run1.a1.audio, 'audio fingerprint measured');
+      assert.equal(base.a1.audio, base.b.audio, 'without protection the audio value is the same (control)');
+      assert.notEqual(run1.a1.audio, base.a1.audio, 'audio value differs from the unprotected value');
+      assert.notEqual(run2.a1.audio, run1.a1.audio, 'a new launch gives a new audio value');
     }
     console.log(`# AZWAH_FINGERPRINT_LIVE pass identity=${JSON.stringify(expected)} realRenderer=${JSON.stringify(base.a1.renderer)} realCores=${base.a1.cores}`);
   } finally {
