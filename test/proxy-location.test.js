@@ -144,17 +144,19 @@ test('launch retries one transient exit-probe failure and never retries a perman
   const reset = () => Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
   const sleeps = [];
   const sleep = async ms => { sleeps.push(ms); };
-  // One reset on the first exit probe (seen twice on Windows CI), then a healthy exit: the launch succeeds.
+  // One reset on the first exit service (seen on Windows CI): the next exit service answers at once, no retry needed.
   let probes = 0;
-  const flaky = { offlineLookup, credentials: () => ({}), request: async () => { if (++probes === 1) throw reset(); return { ip }; } };
+  const asked = [];
+  const flaky = { offlineLookup, credentials: () => ({}), request: async url => { asked.push(new URL(url).host); if (++probes === 1) throw reset(); return { ip }; } };
   const ok = await resolveProxyLocationWithRetry(proxy, flaky, { sleep });
   assert.equal(ok.ip, ip);
-  assert.deepEqual(sleeps, [1500]);
+  assert.deepEqual(asked.slice(0, 2), ['api64.ipify.org', 'api.ipify.org'], 'the next service answers after a reset');
+  assert.deepEqual(sleeps, []);
   // Still down on the retry: the transient code reaches the caller, after exactly one retry.
   probes = 0; sleeps.length = 0;
   await assert.rejects(resolveProxyLocationWithRetry(proxy, { offlineLookup, credentials: () => ({}), request: async () => { probes++; throw reset(); } }, { sleep }),
     e => e.code === 'PROXY_UPSTREAM_UNAVAILABLE');
-  assert.deepEqual([probes, sleeps.length], [2, 1]);
+  assert.deepEqual([probes, sleeps.length], [6, 1], 'all three exit services, twice');
   // Permanent failures (authentication, rotation) are not retried.
   probes = 0; sleeps.length = 0;
   await assert.rejects(resolveProxyLocationWithRetry(proxy, { offlineLookup, credentials: () => ({}), request: async () => { probes++; throw Object.assign(new Error('x'), { code: 'PROXY_AUTH_REQUIRED' }); } }, { sleep }),
