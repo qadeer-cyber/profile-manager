@@ -9,7 +9,7 @@ import { db, getSetting, setSetting } from '../db.js';
 import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
-import { isPackaged } from '../testflags.js';
+import { isPackaged, azwahNativeTestAvailable } from '../testflags.js';
 
 const error = (message, code = 'AZWAH_NATIVE_UNAVAILABLE') =>
   Object.assign(new Error(message), { status: 409, code });
@@ -58,6 +58,34 @@ function developmentBinary() {
   return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase() };
 }
 
+// True when this installation carries a provenance-checked AZWAH Chromium (packaged Windows build only).
+// Cheap: reads the manifest and checks file sizes; the full SHA-256 check still runs at every launch.
+export function azwahNativeAvailable() {
+  if (azwahNativeTestAvailable()) return true;
+  if (process.platform !== 'win32' || !isPackaged()) return false;
+  try { developmentBinary(); return true; } catch { return false; }
+}
+
+// Chromium's Windows sandbox starts page processes with restricted and AppContainer tokens that must be able to
+// read the browser folder ("Sandbox cannot access executable ... Access is denied", measured in CI run 45146948553).
+// Program Files grants this; a per-user install folder does not. Grant read/execute to ALL APPLICATION PACKAGES
+// and ALL RESTRICTED APPLICATION PACKAGES once per browser build. The sandbox stays on.
+export const SANDBOX_READ_SIDS = ['*S-1-15-2-1:(OI)(CI)(RX)', '*S-1-15-2-2:(OI)(CI)(RX)'];
+export function sandboxAccessArgs(directory) { return [directory, '/grant', ...SANDBOX_READ_SIDS, '/T', '/C', '/Q']; }
+async function ensureSandboxAccess(directory, buildHash) {
+  const key = 'azwah-native-sandbox-acl';
+  const marker = `${directory}|${buildHash}`;
+  if (getSetting(key, null) === marker) return;
+  const icacls = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'icacls.exe');
+  const code = await new Promise(resolve => {
+    const child = spawn(icacls, sandboxAccessArgs(directory), { stdio: 'ignore', windowsHide: true });
+    child.on('error', () => resolve(-1));
+    child.on('exit', resolve);
+  });
+  if (code !== 0) throw error(`Could not let the AZWAH browser's sandbox read its folder (icacls exit ${code}).`, 'AZWAH_NATIVE_SANDBOX_ACCESS');
+  setSetting(key, marker);
+}
+
 async function verifyBinary(binary, expected) {
   const hash = createHash('sha256');
   try {
@@ -89,6 +117,8 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
   const { exe, hash, dllHash } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
   await Promise.all([verifyBinary(exe, hash), verifyBinary(path.join(path.dirname(exe), 'chrome.dll'), dllHash)]);
+  checkCancelled();
+  if (isPackaged()) await ensureSandboxAccess(path.dirname(exe), hash);
   checkCancelled();
 
   const nativeDir = path.join(dir, 'azwah-native');

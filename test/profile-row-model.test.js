@@ -4,7 +4,8 @@ import { engineLabel, compactDate, proxyLabel, proxyVerificationLevel, proxyEvid
 
 test('engine labels keep the full honest label and a visible qualifier', () => {
   assert.deepEqual(engineLabel({ browserEngine: 'firefox', advancedSettings: { runtime: 'azwah-native' } }), { short: 'Firefox', full: 'Firefox', qualifier: '' });
-  assert.deepEqual(engineLabel({ advancedSettings: { runtime: 'azwah-native' } }), { short: 'Native Chromium', full: 'Azwah Native Chromium (development)', qualifier: 'dev' });
+  assert.deepEqual(engineLabel({ advancedSettings: { runtime: 'azwah-native' } }), { short: 'AZWAH Chromium', full: 'AZWAH Chromium (included with AZWAH, beta)', qualifier: 'beta' });
+  assert.deepEqual(engineLabel({ advancedSettings: { runtime: 'custom-native-chromium' } }), { short: 'Native Chromium', full: 'Custom native Chromium (development)', qualifier: 'dev' });
   assert.equal(engineLabel({ advancedSettings: { runtime: 'custom-native-chromium' } }).qualifier, 'dev');
   assert.deepEqual(engineLabel({ advancedSettings: { runtime: 'privacy' } }), { short: 'Privacy Engine', full: 'Azwah Privacy Engine (experimental)', qualifier: 'exp' });
   assert.equal(engineLabel({ advancedSettings: { runtime: 'stable-chrome' } }).full, 'Google Chrome Stable');

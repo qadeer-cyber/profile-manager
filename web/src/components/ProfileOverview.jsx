@@ -21,7 +21,7 @@ export function ProfileOverview({ form, languageText, warnings }) {
   const runtime = advanced.runtime;
   const engine = form.browserEngine === 'firefox' ? 'Firefox'
     : runtime === 'stable-chrome' ? 'Google Chrome Stable'
-    : runtime === 'azwah-native' || runtime === 'custom-native-chromium' ? 'Development Chromium'
+    : runtime === 'azwah-native' ? 'AZWAH Chromium' : runtime === 'custom-native-chromium' ? 'Development Chromium'
     : runtime === 'privacy' ? 'Experimental privacy engine' : 'Default Chromium runtime';
   const usesProxy = form.proxyMode === 'library' ? Boolean(form.proxyId) : form.proxyMode === 'custom' && Boolean(form.proxy?.host);
   // Chrome Stable edition: every Chromium profile runs the installed Google Chrome. Ordinary profiles

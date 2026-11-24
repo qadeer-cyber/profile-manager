@@ -22,3 +22,7 @@ export function proxyLoopback(env = process.env) {
 export function proxyTestInsecureTls(env = process.env) {
   return flag(env, 'PM_PROXY_TEST_INSECURE_TLS');
 }
+// Tests only: pretend this installation carries AZWAH Chromium (never honoured in a packaged app).
+export function azwahNativeTestAvailable(env = process.env) {
+  return flag(env, 'PM_TEST_AZWAH_NATIVE_AVAILABLE');
+}

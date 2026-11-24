@@ -381,8 +381,24 @@ async function runSmoke() {
     if (launch.s !== 200 || !launch.d?.pid || launch.d?.cdp) throw new Error('Installed Chrome launch failed: ' + JSON.stringify(launch));
     const stopped = await call('POST', endpoint + '/stop');
     if (stopped.s !== 200) throw new Error('Installed Chrome stop failed: ' + JSON.stringify(stopped));
+    // AZWAH Chromium (when this installation carries it): a plain new profile must default to it, start with the
+    // sandbox on, verify startup through the patched browser's ready receipt, and stop.
+    let azwahNative = null;
+    const identity = (await call('GET', '/api/chromium-identity')).d;
+    if (identity?.azwahNative) {
+      const created = await call('POST', '/api/profiles', { name: 'AZWAH Chromium installer smoke' });
+      if (created.s !== 201 || created.d?.advancedSettings?.runtime !== 'azwah-native') throw new Error('New profile did not default to AZWAH Chromium: ' + JSON.stringify(created));
+      const nativeEndpoint = '/api/profiles/' + created.d.id;
+      const started = await call('POST', nativeEndpoint + '/launch', { headless: false });
+      if (started.s !== 200 || !started.d?.pid) throw new Error('AZWAH Chromium launch failed: ' + JSON.stringify(started));
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const running = (await call('GET', nativeEndpoint)).d?.running === true;
+      const nativeStop = await call('POST', nativeEndpoint + '/stop');
+      if (!running || nativeStop.s !== 200) throw new Error('AZWAH Chromium did not stay running or stop: ' + JSON.stringify({ running, nativeStop }));
+      azwahNative = { defaulted: true, pid: started.d.pid, running, stopped: true };
+    }
     if (process.env.PM_SMOKE_VISUAL_DIR) await captureInstalledVisuals();
-    fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, userData, version: app.getVersion() }));
+    fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, azwahNative, userData, version: app.getVersion() }));
     app.quit();
     return;
   }

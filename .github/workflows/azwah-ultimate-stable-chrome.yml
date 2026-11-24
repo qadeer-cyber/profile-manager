@@ -3,17 +3,26 @@ on:
   push:
     branches: [main, release/azwah-windows, hardening/azwah-windows-reliability, feature/azwah-ultimate-2]
   workflow_dispatch:
+    inputs:
+      native_run_id:
+        description: 'Chromium chain run whose verified AZWAH Chromium archive goes into the installer'
+        required: false
+        default: '45238937503'
 permissions:
   contents: read
+  # Needed to download the AZWAH Chromium archive from the chain run.
+  actions: read
 jobs:
   build:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability' || github.ref == 'refs/heads/feature/azwah-ultimate-2'
     runs-on: windows-2022
-    timeout-minutes: 65
+    timeout-minutes: 110
     env:
       # Rebuild the pinned predecessor for the upgrade test so artifact expiry cannot break CI.
       AZWAH_UPGRADE_BASELINE: '4a45831209cbf603ff9328a086f8f5f7ad5dd118'
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      # Current installers (A and the update-test B) carry AZWAH Chromium; the rebuilt old baseline ignores this.
+      AZWAH_INCLUDE_NATIVE_CHROMIUM: '1'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,6 +64,33 @@ jobs:
         run: |
           node --test test/update-download.test.js test/tab-restore.test.js test/launch-memory-threshold.test.js test/dbip-location.test.js test/privacy-evidence.test.js test/chrome-stable.test.js test/proxy-location.test.js test/ultimate-migrate.test.js test/windows-owner-snapshot.test.js test/windows-owner-secrets.test.js test/termination-evidence.test.js test/m17-crash-recovery.test.js test/backup.test.js test/backup-encrypted.test.js test/portable-purge-crash.test.js test/release-updates.test.js
           exit $LASTEXITCODE
+      # Owner decision 2026-11-24: AZWAH Chromium is included and is the default browser for new profiles.
+      # Archive 4b771363…81e1 was built, smoke-tested with the sandbox on and re-tested on a fresh runner (run 45238937503).
+      - name: Download the verified AZWAH Chromium archive
+        uses: actions/download-artifact@v4
+        with:
+          pattern: azwah-chromium-win64-*
+          run-id: ${{ inputs.native_run_id || '45238937503' }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/azwah-chromium
+          merge-multiple: true
+      - name: Stage AZWAH Chromium for the installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'azwah-chromium') -Filter 'azwah-chromium-win64.zip' | Select-Object -First 1
+          if (!$zip) { throw 'AZWAH Chromium archive missing.' }
+          $hash = (Get-FileHash -LiteralPath $zip.FullName).Hash.ToLowerInvariant()
+          Write-Output "AZWAH_CHROMIUM_ARCHIVE bytes=$($zip.Length) sha256=$hash"
+          if ('${{ inputs.native_run_id || '45238937503' }}' -eq '45238937503' -and $hash -ne '4b7713638e174c44b7feebe686649bc370b3ffb3961549f9549ac6bdd13e81e1') { throw 'AZWAH Chromium archive SHA-256 differs from the tested build.' }
+          $stage = 'build/native-chromium-runtime'
+          if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $stage
+          node scripts/native-artifact.mjs verify $stage (Join-Path $stage 'AZWAH-NATIVE-MANIFEST.json')
+          if ($LASTEXITCODE -ne 0) { throw 'AZWAH Chromium manifest verification failed.' }
+          node scripts/verify-native-release-stage.mjs (Resolve-Path $stage).Path
+          if ($LASTEXITCODE -ne 0) { throw 'AZWAH Chromium provenance verification failed.' }
+          "AZWAH_CHROMIUM_ARCHIVE_SHA256=$hash" | Add-Content $env:GITHUB_ENV
       - name: Build Office payload and Ultimate NSIS without a Chrome binary
         shell: pwsh
         run: |
@@ -85,7 +121,7 @@ jobs:
           $version = node -p "require('./electron-builder.ultimate-stable.cjs').extraMetadata.version"
           if ($LASTEXITCODE -ne 0 -or !$version) { throw 'Installer version metadata is missing.' }
           $manifest = @($label, "Version: $version", "Source: $env:GITHUB_SHA", "Bytes: $($exe.Length)", "SHA-256: $hash",
-            "Browser: external, signed Google Chrome Stable x64 $env:AZWAH_ACCEPTANCE_CHROME", 'Host: Windows Server 2022',
+            "Browser: AZWAH Chromium 159.0.8153.0 (default for new profiles; archive SHA-256 $env:AZWAH_CHROMIUM_ARCHIVE_SHA256) and external, signed Google Chrome Stable x64 $env:AZWAH_ACCEPTANCE_CHROME", 'Host: Windows Server 2022',
             'Windows 10/11 client acceptance: pending', 'Unsigned installer candidate')
           $manifest | Set-Content (Join-Path $dir 'BUILD-MANIFEST.txt')
           $manifest | Add-Content $env:GITHUB_STEP_SUMMARY
@@ -108,6 +144,7 @@ jobs:
             if (!$process.WaitForExit(240000)) { throw 'Installed app smoke timed out.' }
             $result = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
             if ($process.ExitCode -ne 0 -or !$result.chromeStable -or !$result.stopped) { throw ($result | ConvertTo-Json) }
+            if (!$result.azwahNative.defaulted -or !$result.azwahNative.running -or !$result.azwahNative.stopped) { throw ('AZWAH Chromium installed smoke failed: ' + ($result | ConvertTo-Json -Depth 4)) }
             $result | ConvertTo-Json
           } finally {
             if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }

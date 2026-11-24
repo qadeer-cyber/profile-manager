@@ -16,7 +16,8 @@ export function engineLabel(p) {
       : `Google Chrome Stable · controlled for ${m.reasons.join(', ')}` };
   }
   const runtime = p?.advancedSettings?.runtime;
-  if (NATIVE_RUNTIMES.includes(runtime)) return { short: 'Native Chromium', full: 'Azwah Native Chromium (development)', qualifier: 'dev' };
+  if (runtime === 'azwah-native') return { short: 'AZWAH Chromium', full: 'AZWAH Chromium (included with AZWAH, beta)', qualifier: 'beta' };
+  if (NATIVE_RUNTIMES.includes(runtime)) return { short: 'Native Chromium', full: 'Custom native Chromium (development)', qualifier: 'dev' };
   if (runtime === 'privacy') return { short: 'Privacy Engine', full: 'Azwah Privacy Engine (experimental)', qualifier: 'exp' };
   if (runtime === 'stable-chrome') return { short: 'Chrome Stable', full: 'Google Chrome Stable', qualifier: '' };
   return { short: 'Chromium', full: 'Chromium', qualifier: '' };

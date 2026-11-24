@@ -41,6 +41,7 @@ import { geoIpCredentials, clearGeoIpCredentials, geoIpStatus, saveGeoIpCredenti
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
+import { azwahNativeAvailable } from './browser-runtime/azwah-native.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { buildEngineStockReport } from './engine-stock-report.js';
 import { readWindowState } from './window-state.js';
@@ -227,7 +228,8 @@ const row2p = r => {
   delete r.workspace_id;
   const purgeError = r.purge_error || null;
   delete r.purge_error;
-  const chromeLaunchMode = process.env.AZWAH_STABLE_CHROME_EDITION === '1' || advancedSettings.runtime === 'stable-chrome'
+  // AZWAH Chromium, custom native and Privacy Engine profiles do not run Chrome Stable even in the Chrome Stable edition.
+  const chromeLaunchMode = (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && !['azwah-native', 'custom-native-chromium', 'privacy'].includes(advancedSettings.runtime)) || advancedSettings.runtime === 'stable-chrome'
     ? predictStableLaunchMode({ browserEngine, advancedSettings, browserSettings, proxy, automationEnabled: !!r.automation_enabled }) : null;
   return { ...r, favorite: !!r.favorite, browserEngine, isQuick, deletedAt, workspaceId, purgeError, browserSettings, webrtcSettings, advancedSettings,
     macLabel: advancedSettings.macLabel || deriveMacLabel(r.id), macLabelMode: advancedSettings.macLabel ? advancedSettings.macLabelMode || 'manual' : 'derived', extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
@@ -352,6 +354,13 @@ function validate(b, prev) {
     if (b.browserEngine !== 'chromium' && b.browserEngine !== 'firefox') throw err(400, 'browserEngine must be chromium or firefox');
     browserEngine = b.browserEngine;
   }
+  const automationEnabled = 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false;
+  // Owner decision 2026-11-24: AZWAH's own Chromium is the default browser for NEW profiles when this installation
+  // carries it. Only "Default" is replaced; an explicit choice is kept. Existing profiles are never changed here.
+  // Automation profiles stay on the previous default: AZWAH Chromium launches are manual-only.
+  if (!prev && browserEngine === 'chromium' && !automationEnabled && advancedSettings.runtime === 'compatibility' && azwahNativeAvailable()) {
+    advancedSettings.runtime = 'azwah-native';
+  }
   let workspaceId = prev?.workspaceId ?? null;
   if ('workspaceId' in b) workspaceId = b.workspaceId == null || b.workspaceId === '' ? null : String(b.workspaceId);
   if (workspaceId) assertWorkspaceAccess(workspaceId);
@@ -359,7 +368,7 @@ function validate(b, prev) {
     folder: String(b.folder ?? prev?.folder ?? '').trim(), notes: String(b.notes ?? prev?.notes ?? ''),
     workspaceId,
     proxyId: 'proxy' in b ? resolveInlineProxy(b.proxy, prev) : 'proxyId' in b ? (b.proxyId == null || b.proxyId === '' ? null : mustProxy(b.proxyId).id) : prev?.proxy_id ?? null,
-    automationEnabled: 'automationEnabled' in b ? strictBool(b.automationEnabled, 'automationEnabled') : prev?.automationEnabled ?? false };
+    automationEnabled };
 }
 // Back-compat: inline `proxy` on profile create/update -> find-or-create a library entry.
 function resolveInlineProxy(inline, prev) {
@@ -735,9 +744,9 @@ function mountProfileOps(router, { allowOverride = false, managedSessions = allo
     if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
       try {
         const stable = await resolveWindowsChromeStable();
-        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: stable.version, executable: stable.path });
+        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: stable.version, executable: stable.path, azwahNative: azwahNativeAvailable() });
       } catch (error) {
-        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: null, error: error.message, code: error.code || null });
+        return res.json({ edition: 'chrome-stable', source: 'chrome-stable', version: null, error: error.message, code: error.code || null, azwahNative: azwahNativeAvailable() });
       }
     }
     res.json(chromiumFacts());
