@@ -32,3 +32,13 @@ test('smoke tests keep the sandbox on and grant the sandbox read access to the b
     assert.match(text, /icacls\.exe" \$\w+ \/grant '\*S-1-15-2-1:\(OI\)\(CI\)\(RX\)' '\*S-1-15-2-2:\(OI\)\(CI\)\(RX\)'/);
   }
 });
+
+test('a resumed fingerprint build recompiles the patched files and refuses a manifest without a relinked browser', () => {
+  const script = fs.readFileSync(new URL('../scripts/build-native-chromium-baseline.ps1', import.meta.url), 'utf8');
+  const restore = script.indexOf('OUT_RESTORED files=');
+  const touch = script.indexOf('FINGERPRINT_SOURCES_TOUCHED');
+  assert.ok(restore > 0 && touch > restore, 'patched sources are refreshed after the outputs are restored');
+  assert.match(script, /'\(\?m\)\^diff --git a\/\(\\S\+\) b\/'/);
+  assert.match(script, /chrome\.dll was not rebuilt; refusing to record them in the manifest/);
+  assert.ok(script.indexOf('refusing to record them in the manifest') < script.indexOf('canvasPatchSha256 = '), 'checked before the manifest is written');
+});

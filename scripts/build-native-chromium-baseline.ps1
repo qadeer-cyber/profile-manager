@@ -267,6 +267,22 @@ try {
             if ($LASTEXITCODE -ne 0) { throw 'Could not extract the previous build directory.' }
             $restored = (Get-ChildItem -LiteralPath (Join-Path $root $out) -Recurse -File | Measure-Object Length -Sum)
             Write-Output "OUT_RESTORED files=$($restored.Count) bytes=$($restored.Sum) seconds=$([int]((Get-Date) - $started).TotalSeconds)"
+            # Files changed by the fingerprint patches must look newer than the restored outputs, or Ninja keeps the
+            # previous objects (run 45427549124: all four patches applied, "ninja: no work to do", no feature compiled).
+            if ($CanvasPatch) {
+                $now = [DateTime]::UtcNow
+                $touched = 0
+                foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile)) {
+                    foreach ($match in [regex]::Matches((Get-Content -Raw -LiteralPath $fp), '(?m)^diff --git a/(\S+) b/')) {
+                        $path = Join-Path $root ($match.Groups[1].Value.Replace('/', [IO.Path]::DirectorySeparatorChar))
+                        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Patched file missing: $path" }
+                        [IO.File]::SetLastWriteTimeUtc($path, $now)
+                        $touched++
+                    }
+                }
+                Write-Output "FINGERPRINT_SOURCES_TOUCHED files=$touched"
+                $script:fingerprintRestoreTime = $now
+            }
         }
         if ($CheckpointProbe) { $out = 'out/azwah-checkpoint-probe' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
@@ -383,6 +399,12 @@ symbol_level = 0
                 bytes = $file.Length
                 sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             }
+        }
+        # A fingerprint build that resumed from older outputs must have relinked chrome.dll after the patched sources
+        # were refreshed; otherwise the manifest would claim features the binary does not have.
+        if ($CanvasPatch -and $script:fingerprintRestoreTime -and
+            (Get-Item -LiteralPath (Join-Path $out 'chrome.dll')).LastWriteTimeUtc -le $script:fingerprintRestoreTime) {
+            throw 'Fingerprint patches were applied but chrome.dll was not rebuilt; refusing to record them in the manifest.'
         }
         @{
             kind = $kind
