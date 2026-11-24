@@ -61,3 +61,9 @@ test('sandbox folder access grants read/execute only, to the two AppContainer gr
   const src = fs.readFileSync(new URL('../server/browser-runtime/azwah-native.js', import.meta.url), 'utf8');
   assert.doesNotMatch(src, /no-sandbox/);
 });
+
+test('sandbox folder access is re-applied on every launch (an update reinstalls the folder without it)', () => {
+  const src = fs.readFileSync(new URL('../server/browser-runtime/azwah-native.js', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('async function ensureSandboxAccess'), src.indexOf('async function verifyBinary'));
+  assert.doesNotMatch(fn, /getSetting|setSetting/, 'no remembered marker may skip the grant');
+});
