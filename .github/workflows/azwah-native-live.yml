@@ -71,4 +71,8 @@ jobs:
           AZWAH_NATIVE_CYCLES: ${{ inputs.cycles || '30' }}
         run: |
           node --test --test-force-exit test/azwah-native-windows-live.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:PM_TEST_SOCKS5 = '1'
+          $env:AZWAH_NATIVE_CYCLES = '10'
+          node --test --test-force-exit test/azwah-native-windows-live.test.js
           exit $LASTEXITCODE

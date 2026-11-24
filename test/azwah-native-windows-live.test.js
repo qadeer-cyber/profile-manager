@@ -7,12 +7,67 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import net from 'node:net';
 import { Server } from 'proxy-chain';
+
+// Minimal authenticated SOCKS5 (RFC 1928/1929) fixture: CONNECT to any domain or IPv4 address.
+function socks5Fixture(username, password, onAuth) {
+  const sockets = new Set();
+  const server = net.createServer(socket => {
+    sockets.add(socket);
+    socket.on('error', () => socket.destroy());
+    socket.on('close', () => sockets.delete(socket));
+    let phase = 0;
+    let bytes = Buffer.alloc(0);
+    socket.on('data', function handshake(chunk) {
+      bytes = Buffer.concat([bytes, chunk]);
+      if (phase === 0) {
+        if (bytes.length < 2 || bytes.length < 2 + bytes[1]) return;
+        if (bytes[0] !== 5 || !bytes.subarray(2, 2 + bytes[1]).includes(2)) return socket.end(Buffer.from([5, 255]));
+        bytes = bytes.subarray(2 + bytes[1]); phase = 1; socket.write(Buffer.from([5, 2]));
+      }
+      if (phase === 1) {
+        if (bytes.length < 2) return;
+        const ulen = bytes[1];
+        if (bytes.length < 3 + ulen) return;
+        const plen = bytes[2 + ulen];
+        const end = 3 + ulen + plen;
+        if (bytes.length < end) return;
+        const ok = bytes.subarray(2, 2 + ulen).toString() === username && bytes.subarray(3 + ulen, end).toString() === password;
+        onAuth(ok);
+        if (!ok) return socket.end(Buffer.from([1, 1]));
+        bytes = bytes.subarray(end); phase = 2; socket.write(Buffer.from([1, 0]));
+      }
+      if (phase !== 2 || bytes.length < 5) return;
+      let host, end;
+      if (bytes[3] === 3) { end = 5 + bytes[4] + 2; if (bytes.length < end) return; host = bytes.subarray(5, end - 2).toString(); }
+      else if (bytes[3] === 1) { end = 10; if (bytes.length < end) return; host = [...bytes.subarray(4, 8)].join('.'); }
+      else return socket.end(Buffer.from([5, 8, 0, 1, 0, 0, 0, 0, 0, 0]));
+      if (bytes[1] !== 1) return socket.end(Buffer.from([5, 7, 0, 1, 0, 0, 0, 0, 0, 0]));
+      const port = bytes.readUInt16BE(end - 2);
+      const extra = bytes.subarray(end);
+      socket.removeListener('data', handshake);
+      const upstream = net.connect({ host, port }, () => {
+        socket.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
+        if (extra.length) upstream.write(extra);
+        socket.pipe(upstream).pipe(socket);
+      });
+      upstream.on('error', () => { try { socket.end(Buffer.from([5, 5, 0, 1, 0, 0, 0, 0, 0, 0])); } catch {} });
+      socket.once('close', () => upstream.destroy());
+    });
+  });
+  return {
+    get port() { return server.address()?.port; },
+    listen: () => new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); }),
+    close: () => new Promise(resolve => { for (const socket of sockets) socket.destroy(); server.close(resolve); }),
+  };
+}
+const PROTOCOL = process.env.PM_TEST_SOCKS5 === '1' ? 'socks5' : 'http';
 
 const CYCLES = Number(process.env.AZWAH_NATIVE_CYCLES || 30);
 const exitTypeOf = file => { try { return JSON.parse(fs.readFileSync(file, 'utf8'))?.profile?.exit_type ?? null; } catch { return null; } };
 
-test('AZWAH Chromium: authenticated proxy with proxy timezone, isolation and ' + CYCLES + ' clean stop/restart cycles', { timeout: 1_500_000 }, async () => {
+test('AZWAH Chromium: authenticated ' + PROTOCOL + ' proxy with proxy timezone, isolation and ' + CYCLES + ' clean stop/restart cycles', { timeout: 1_500_000 }, async () => {
   assert.equal(process.platform, 'win32');
   for (const name of ['AZWAH_NATIVE_CHROMIUM_EXE', 'AZWAH_NATIVE_CHROMIUM_SHA256', 'AZWAH_NATIVE_CHROMIUM_DLL_SHA256']) assert.ok(process.env[name], name);
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-native-live-'));
@@ -24,11 +79,13 @@ test('AZWAH Chromium: authenticated proxy with proxy timezone, isolation and ' +
   const password = randomUUID();
   let authenticated = 0;
   let rejected = 0;
-  const proxy = new Server({ host: '127.0.0.1', port: 0, prepareRequestFunction: request => {
-    const ok = request.username === username && request.password === password;
-    if (ok) authenticated++; else rejected++;
-    return { requestAuthentication: !ok };
-  } });
+  const proxy = PROTOCOL === 'socks5'
+    ? socks5Fixture(username, password, ok => { if (ok) authenticated++; else rejected++; })
+    : new Server({ host: '127.0.0.1', port: 0, prepareRequestFunction: request => {
+      const ok = request.username === username && request.password === password;
+      if (ok) authenticated++; else rejected++;
+      return { requestAuthentication: !ok };
+    } });
   const { startServer } = await import('../server/app.js');
   const { getSetting, db, userDataDir } = await import('../server/db.js');
   const engine = await import('../server/browsers.js');
@@ -47,7 +104,7 @@ test('AZWAH Chromium: authenticated proxy with proxy timezone, isolation and ' +
     await proxy.listen();
     server = await startServer({ port: 0, staticDir: null });
     const proxied = await api('POST', '/profiles', { name: 'AZWAH proxy', advancedSettings: { runtime: 'azwah-native' },
-      proxy: { type: 'http', host: '127.0.0.1', port: proxy.port, username, password } }, 201);
+      proxy: { type: PROTOCOL, host: '127.0.0.1', port: proxy.port, username, password } }, 201);
     const direct = await api('POST', '/profiles', { name: 'AZWAH direct', advancedSettings: { runtime: 'azwah-native' } }, 201);
     ids.push(proxied.id, direct.id);
 
@@ -84,7 +141,7 @@ test('AZWAH Chromium: authenticated proxy with proxy timezone, isolation and ' +
       if (cycle % 10 === 0) console.log(`# cycle ${cycle}/${CYCLES} exit_type=${exitType} elapsed=${Math.round((Date.now() - started) / 1000)}s`);
     }
     assert.equal(JSON.stringify(getSetting('proxy-location:' + proxied.id, null) || {}).includes(password), false, 'no proxy password stored with the location');
-    console.log(`# AZWAH_NATIVE_LIVE pass cycles=${CYCLES} authenticated=${authenticated} rejected=${rejected}`);
+    console.log(`# AZWAH_NATIVE_LIVE pass protocol=${PROTOCOL} cycles=${CYCLES} authenticated=${authenticated} rejected=${rejected}`);
   } finally {
     for (const id of ids) await engine.stop(id).catch(() => {});
     await server?.close();
