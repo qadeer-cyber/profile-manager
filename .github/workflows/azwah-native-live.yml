@@ -26,6 +26,8 @@ jobs:
     timeout-minutes: 60
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      # Chain run whose archive a tag-triggered run tests (manual dispatch can name another).
+      NATIVE_RUN: '45238937503'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,7 +39,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: azwah-chromium-win64-*
-          run-id: ${{ inputs.native_run_id || '45238937503' }}
+          run-id: ${{ inputs.native_run_id || env.NATIVE_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/azwah-chromium
           merge-multiple: true
@@ -57,6 +59,11 @@ jobs:
           "AZWAH_NATIVE_CHROMIUM_EXE=$exe" | Add-Content $env:GITHUB_ENV
           "AZWAH_NATIVE_CHROMIUM_SHA256=$((Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant())" | Add-Content $env:GITHUB_ENV
           "AZWAH_NATIVE_CHROMIUM_DLL_SHA256=$((Get-FileHash -LiteralPath (Join-Path $dir 'chrome.dll')).Hash.ToLowerInvariant())" | Add-Content $env:GITHUB_ENV
+          # Fingerprint features are tested only when this build's own manifest says it has them.
+          $m = Get-Content -Raw (Join-Path $dir 'BASELINE-MANIFEST.json') | ConvertFrom-Json
+          Write-Output "BUILD_FEATURES dchecks=$($m.dchecks) canvas=$([bool]$m.canvasPatchSha256) identity=$([bool]$m.identityPatchSha256)"
+          if ($m.canvasPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_CANVAS=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.identityPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_IDENTITY=1' | Add-Content $env:GITHUB_ENV }
       - name: Install dependencies and proxy-location data
         shell: pwsh
         run: |
@@ -75,4 +82,10 @@ jobs:
           $env:PM_TEST_SOCKS5 = '1'
           $env:AZWAH_NATIVE_CYCLES = '10'
           node --test --test-force-exit test/azwah-native-windows-live.test.js
+          exit $LASTEXITCODE
+      - name: Canvas protection and hardware/graphics identity observed in the browser
+        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
+        shell: pwsh
+        run: |
+          node --test --test-force-exit test/azwah-fingerprint-windows-live.test.js
           exit $LASTEXITCODE

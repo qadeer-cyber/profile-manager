@@ -23,6 +23,8 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       # Current installers (A and the update-test B) carry AZWAH Chromium; the rebuilt old baseline ignores this.
       AZWAH_INCLUDE_NATIVE_CHROMIUM: '1'
+      # Chain run whose verified AZWAH Chromium archive a push build packages (manual dispatch can name another).
+      NATIVE_RUN: '45238937503'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,7 +72,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: azwah-chromium-win64-*
-          run-id: ${{ inputs.native_run_id || '45238937503' }}
+          run-id: ${{ inputs.native_run_id || env.NATIVE_RUN }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/azwah-chromium
           merge-multiple: true
@@ -82,7 +84,7 @@ jobs:
           if (!$zip) { throw 'AZWAH Chromium archive missing.' }
           $hash = (Get-FileHash -LiteralPath $zip.FullName).Hash.ToLowerInvariant()
           Write-Output "AZWAH_CHROMIUM_ARCHIVE bytes=$($zip.Length) sha256=$hash"
-          if ('${{ inputs.native_run_id || '45238937503' }}' -eq '45238937503' -and $hash -ne '4b7713638e174c44b7feebe686649bc370b3ffb3961549f9549ac6bdd13e81e1') { throw 'AZWAH Chromium archive SHA-256 differs from the tested build.' }
+          if ('${{ inputs.native_run_id || env.NATIVE_RUN }}' -eq '45238937503' -and $hash -ne '4b7713638e174c44b7feebe686649bc370b3ffb3961549f9549ac6bdd13e81e1') { throw 'AZWAH Chromium archive SHA-256 differs from the tested build.' }
           $stage = 'build/native-chromium-runtime'
           if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
           Expand-Archive -LiteralPath $zip.FullName -DestinationPath $stage
