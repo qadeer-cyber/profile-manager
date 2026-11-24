@@ -36,6 +36,10 @@ param(
     # in stage 4).
     [string] $RestoreOutArchive = '',
 
+    # Shipping build: Chromium's internal DCHECKs off (they are on by default in non-official builds and turn
+    # minor internal issues into crashes). Owner-approved 2026-11-24.
+    [switch] $Shipping,
+
     [ValidateRange(0, 360)]
     [int] $TimeBudgetMinutes = 0
 )
@@ -259,6 +263,7 @@ symbol_level = 0
             # from use_clang_modules (build/config/c++/c++.gni at the pinned revision).
             $gnArgs += "`n" + 'enable_precompiled_headers = false' + "`n" + 'use_clang_modules = false'
         }
+        if ($Shipping) { $gnArgs += "`n" + 'dcheck_always_on = false' }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
             ((Get-Content -LiteralPath $argsFile -Raw).TrimEnd() -cne $gnArgs.TrimEnd())) {
@@ -358,6 +363,7 @@ symbol_level = 0
             depotToolsCommit = $DepotToolsCommit
             buildHost = [Environment]::OSVersion.VersionString
             files = @($files)
+            dchecks = if ($Shipping) { 'off' } else { 'on' }
             sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
     } finally {

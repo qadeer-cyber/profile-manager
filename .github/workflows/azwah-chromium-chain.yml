@@ -11,6 +11,11 @@ on:
         description: 'Continue from the last hand-over of this earlier chain run (its run ID); empty starts from zero'
         required: false
         default: ''
+      shipping:
+        description: 'Shipping build: Chromium DCHECKs off'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   # Needed only to download another run's hand-over artifacts when resuming.
@@ -157,6 +162,7 @@ jobs:
           Write-Output "Job ${env:GITHUB_JOB}: $elapsed minutes used before the build; Ninja budget after sync is about $budget minutes."
           $outArchive = Join-Path $env:RUNNER_TEMP 'ninja-out/ninja-out.tar'
           $restore = if (Test-Path -LiteralPath $outArchive) { @{ RestoreOutArchive = $outArchive } } else { @{} }
+          if ('${{ inputs.shipping }}' -eq 'true') { $restore.Shipping = $true }
           ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Sccache -TimeBudgetMinutes $budget @restore `
             -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision `
             -DepotToolsCommit $env:DEPOT_TOOLS_PIN -Jobs 4 -ReserveGiB 10
