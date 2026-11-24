@@ -20,3 +20,10 @@ third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h
 third_party/blink/renderer/platform/graphics/static_bitmap_image.h
 third_party/blink/renderer/core/frame/frame.h
 third_party/blink/renderer/platform/runtime_enabled_features.json5
+third_party/blink/renderer/core/html/build.gni
+third_party/blink/renderer/platform/storage/blink_storage_key.h
+third_party/blink/renderer/platform/network/blink_schemeful_site.h
+third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h
+third_party/blink/renderer/platform/graphics/image_data_buffer.h
+third_party/blink/renderer/core/workers/worker_global_scope.h
+third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h
