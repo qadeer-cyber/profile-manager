@@ -1,6 +1,10 @@
-third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
-third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h
-third_party/blink/renderer/core/frame/navigator_device_memory.cc
-third_party/blink/renderer/core/frame/navigator_device_memory.h
-third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-third_party/blink/renderer/core/BUILD.gn
+third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+third_party/blink/renderer/modules/webaudio/audio_buffer.h
+third_party/blink/renderer/modules/webaudio/realtime_analyser.cc
+third_party/blink/renderer/core/frame/screen.cc
+third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
+third_party/blink/renderer/modules/webgpu/gpu_adapter.cc
+third_party/blink/renderer/platform/fonts/font_cache.cc
+third_party/blink/renderer/platform/fonts/win/font_cache_skia_win.cc
+third_party/blink/renderer/core/css/font_face_set_document.cc
+third_party/blink/renderer/platform/fonts/font_fallback_list.cc

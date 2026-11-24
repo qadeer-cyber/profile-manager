@@ -11,6 +11,8 @@ import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
 import { isPackaged, azwahNativeTestAvailable } from '../testflags.js';
 import { nativeIdentityArgs, nativeIdentityFor } from './native-identity.js';
+import { chromiumPolicyArgs } from '../webrtc-policy.js';
+import { applyWebRtcPreference } from '../webrtc-settings.js';
 
 export const RECEIPT_NOT_READY = new Set(['ENOENT', 'EBUSY', 'EPERM', 'EACCES']);
 const error = (message, code = 'AZWAH_NATIVE_UNAVAILABLE') =>
@@ -181,6 +183,12 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     // session and differ between sites, profiles and launches (docs/privacy-threat-model.md).
     if (canvasProtection) args.push(`--azwah-canvas-seed=${randomUUID().replace(/-/g, '')}`);
     if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id)));
+    // WebRTC must not open UDP outside the proxy (it would reveal the real IP). Proxy profiles always get
+    // disable_non_proxied_udp, like Chrome Stable proxy profiles; others keep their own WebRTC setting.
+    const webrtcArgs = proxy ? chromiumPolicyArgs({ mode: 'disable_non_proxied_udp' }) : chromiumPolicyArgs(profile.webrtcSettings || {});
+    args.push(...webrtcArgs);
+    const webrtcMode = webrtcArgs[0]?.split('=')[1];
+    if (webrtcMode) applyWebRtcPreference(nativeDir, webrtcMode);
     if (opts.url) {
       const url = new URL(opts.url);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw error('Enter an HTTP or HTTPS website URL.');

@@ -73,3 +73,8 @@ test('hardware identity setting: stored only when on, refused values rejected, l
   assert.match(launcher, /AZWAH_NATIVE_IDENTITY_UNSUPPORTED/);
   assert.match(launcher, /identityPatchSha256/);
 });
+
+test('AZWAH Chromium proxy profiles never send WebRTC UDP outside the proxy', () => {
+  assert.match(launcher, /proxy \? chromiumPolicyArgs\(\{ mode: 'disable_non_proxied_udp' \}\)/);
+  assert.match(launcher, /args\.push\(\.\.\.webrtcArgs\)/);
+});
