@@ -33,6 +33,16 @@ jobs:
               rm -f "$out.b64"; echo "MISSING $f" | tee -a excerpt/MISSING.txt
             fi
           done < native-chromium/source-excerpt.txt
+      - name: Print the files (artifact storage may be unreachable for the reader)
+        if: always()
+        run: |
+          cd excerpt
+          find . -type f ! -name MISSING.txt | sort | while read -r f; do
+            echo "=====FILE ${f#./}"
+            cat "$f"
+            echo
+            echo "=====END ${f#./}"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
