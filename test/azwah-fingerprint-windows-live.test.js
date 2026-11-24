@@ -10,6 +10,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 const AUDIO_SCREEN = process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1';
+const GPU_FONTS = process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1';
 const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c width=220 height=60></canvas><script>
 (async () => {
   const c = document.getElementById('c'); const g = c.getContext('2d');
@@ -25,9 +26,13 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
   try { const ctx = new OfflineAudioContext(1, 5000, 44100); const osc = ctx.createOscillator(); osc.type = 'triangle'; osc.frequency.value = 10000;
     const comp = ctx.createDynamicsCompressor(); osc.connect(comp); comp.connect(ctx.destination); osc.start(0);
     const buf = await ctx.startRendering(); audio = await digest(Array.from(buf.getChannelData(0).slice(4500)).join(',')); } catch {}
+  const fontProbe = f => document.fonts.check('12px "' + f + '"') && (() => { const x = document.createElement('canvas').getContext('2d');
+    x.font = '40px monospace'; const a = x.measureText('mmmmmlli1W').width; x.font = '40px "' + f + '", monospace'; return x.measureText('mmmmmlli1W').width !== a; })();
+  const fonts = { arial: fontProbe('Arial'), segoe: fontProbe('Segoe UI'), courier: fontProbe('Courier New'), notInList: fontProbe('Franklin Gothic Book') };
+  let gpuVendor = null; try { if (navigator.gpu) { const ad = await navigator.gpu.requestAdapter(); gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
   const q = new URLSearchParams(location.search);
   await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
-    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height }) });
+    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, gpuVendor }) });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -103,6 +108,12 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
         assert.equal(r.vendor, expected.webglVendor);
       }
       if (AUDIO_SCREEN) assert.equal(r.screen, expected.screen, 'screen size follows the profile');
+      if (GPU_FONTS) {
+        assert.equal(r.fonts.arial, true, 'a standard Windows font stays available');
+        // Proof only when the control profile shows that font as installed on this machine.
+        if (base.a1.fonts.notInList) assert.equal(r.fonts.notInList, false, 'a font outside the profile list behaves as not installed');
+        if (r.gpuVendor !== null) assert.equal(r.gpuVendor, expected.webgpuVendor, 'WebGPU vendor follows the profile');
+      }
     }
     if (AUDIO_SCREEN) {
       assert.ok(base.a1.audio && run1.a1.audio, 'audio fingerprint measured');

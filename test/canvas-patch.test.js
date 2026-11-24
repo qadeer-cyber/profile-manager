@@ -93,3 +93,24 @@ test('audio-screen patch: additions only, four known files, audio once per buffe
   assert.match(p, /azwah_width >= 800 && azwah_width <= 7680/);
   assert.match(launcher, /AZWAH_NATIVE_AUDIO_UNSUPPORTED/);
 });
+
+test('gpu-fonts patch: known files, font list only for named families, WebGPU follows the identity', async () => {
+  const p = fs.readFileSync(new URL('../native-chromium/gpu-fonts.patch', import.meta.url), 'utf8');
+  const files = [...p.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc',
+    'third_party/blink/renderer/platform/fonts/font_cache.cc',
+  ]);
+  const removed = p.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+  assert.deepEqual(removed, ['-      power_preference_(power_preference) {}'], 'only the empty constructor body is replaced');
+  assert.match(p, /creation_params\.Family\(\) != font_family_names::kSystemUi/);
+  const { nativeIdentityFor, nativeIdentityArgs, WINDOWS_BASE_FONTS } = await import('../server/browser-runtime/native-identity.js');
+  const id = nativeIdentityFor('fonts-profile');
+  for (const font of WINDOWS_BASE_FONTS) assert.ok(id.fonts.includes(font), font);
+  assert.ok(['nvidia', 'intel', 'amd'].includes(id.webgpuVendor));
+  assert.ok(id.webglVendor.toLowerCase().includes(id.webgpuVendor), 'WebGPU and WebGL name the same vendor');
+  const args = nativeIdentityArgs(id, { screen: true, gpuFonts: true });
+  assert.ok(args.some(a => a.startsWith('--azwah-font-allowlist=arial,')));
+  assert.equal(nativeIdentityArgs(id).length, 4, 'older builds get only the original four switches');
+});

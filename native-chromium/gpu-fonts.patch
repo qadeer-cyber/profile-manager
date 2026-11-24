@@ -1,0 +1,118 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index de4fb82c678284d4fa9f7efd33fccaab5e6e228c..1c331ce3b4b3f38f3ca31641d2393971d44277b7 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3920,6 +3920,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       // AZWAH: audio readback protection seed and screen size.
+       "azwah-audio-seed",
+       "azwah-screen",
++      // AZWAH: installed-font list and WebGPU identity.
++      "azwah-font-allowlist",
++      "azwah-webgpu-architecture",
++      "azwah-webgpu-vendor",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+       switches::kDisableDevShmUsage,
+ #endif
+diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
+index 9d155705c1350357cc82e5907ab376eb25a56140..8db96c067c3f1a3fa80264422ac01cd7d0120a5c 100644
+--- a/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
++++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/modules/webgpu/gpu_adapter_info.h"
+ 
++#include "base/command_line.h"
++
+ #include "third_party/blink/renderer/modules/webgpu/gpu_memory_heap_info.h"
+ #include "third_party/blink/renderer/modules/webgpu/gpu_subgroup_matrix_config.h"
+ 
+@@ -34,7 +36,20 @@ GPUAdapterInfo::GPUAdapterInfo(const String& vendor,
+       type_(type),
+       d3d_shader_model_(d3d_shader_model),
+       vk_driver_version_(vk_driver_version),
+-      power_preference_(power_preference) {}
++      power_preference_(power_preference) {
++  // AZWAH: keep WebGPU consistent with the per-profile graphics identity.
++  const base::CommandLine& command_line =
++      *base::CommandLine::ForCurrentProcess();
++  if (command_line.HasSwitch("azwah-webgpu-vendor")) {
++    vendor_ =
++        String::FromUTF8(command_line.GetSwitchValueASCII("azwah-webgpu-vendor"));
++    architecture_ = String::FromUTF8(
++        command_line.GetSwitchValueASCII("azwah-webgpu-architecture"));
++    device_ = String("");
++    description_ = String("");
++    driver_ = String("");
++  }
++}
+ 
+ void GPUAdapterInfo::AppendMemoryHeapInfo(GPUMemoryHeapInfo* info) {
+   memory_heaps_.push_back(info);
+diff --git a/third_party/blink/renderer/platform/fonts/font_cache.cc b/third_party/blink/renderer/platform/fonts/font_cache.cc
+index 36cc5f5ab5467bdeeae1405aeb0dd25c9a2cfc38..3ad368f8ad84fbf203c426e7a65a29ab0e74fc38 100644
+--- a/third_party/blink/renderer/platform/fonts/font_cache.cc
++++ b/third_party/blink/renderer/platform/fonts/font_cache.cc
+@@ -33,8 +33,14 @@
+ 
+ #include <limits>
+ #include <memory>
++#include <optional>
++#include <set>
++#include <string>
+ 
+ #include "base/byte_size.h"
++#include "base/command_line.h"
++#include "base/no_destructor.h"
++#include "base/strings/string_split.h"
+ #include "base/debug/alias.h"
+ #include "base/feature_list.h"
+ #include "base/notreached.h"
+@@ -153,12 +159,48 @@ const FontPlatformData* FontCache::SystemFontPlatformData(
+ }
+ #endif
+ 
++namespace {
++
++// AZWAH: per-profile installed-font list from --azwah-font-allowlist (comma
++// separated, lower case). Fonts outside the list behave as not installed.
++// Read once per process; std::string so it is safe on every font thread.
++const std::set<std::string>* AzwahFontAllowlist() {
++  static const base::NoDestructor<std::optional<std::set<std::string>>> list(
++      []() -> std::optional<std::set<std::string>> {
++        const std::string value =
++            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++                "azwah-font-allowlist");
++        if (value.empty()) {
++          return std::nullopt;
++        }
++        std::set<std::string> families;
++        for (const std::string& family :
++             base::SplitString(value, ",", base::TRIM_WHITESPACE,
++                               base::SPLIT_WANT_NONEMPTY)) {
++          families.insert(family);
++        }
++        return families;
++      }());
++  return list->has_value() ? &list->value() : nullptr;
++}
++
++}  // namespace
++
+ const FontPlatformData* FontCache::GetFontPlatformData(
+     const FontDescription& font_description,
+     const FontFaceCreationParams& creation_params,
+     AlternateFontName alternate_font_name) {
+   TRACE_EVENT0("fonts", "FontCache::GetFontPlatformData");
+ 
++  if (creation_params.CreationType() == FontFaceCreationType::kFamily &&
++      creation_params.Family() != font_family_names::kSystemUi) {
++    if (const std::set<std::string>* allowed = AzwahFontAllowlist()) {
++      if (!allowed->contains(creation_params.Family().LowerASCII().Utf8())) {
++        return nullptr;
++      }
++    }
++  }
++
+ #if !BUILDFLAG(IS_MAC)
+   if (creation_params.CreationType() == FontFaceCreationType::kFamily &&
+       creation_params.Family() == font_family_names::kSystemUi) {
