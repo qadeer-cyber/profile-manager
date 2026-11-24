@@ -249,7 +249,9 @@ await step('lifecycle events update status once', async () => {
   catch (e) { throw new Error('kill ' + e.message); }
   await pg.waitForSelector(row('Signal') + ' .status.error', { timeout: 20000 });
   const diag = await pg.locator(row('Signal') + ' .err-text').innerText();
-  if (!/unexpectedly|died|signal|exit code|Crashed/i.test(diag)) throw new Error('diagnostic: ' + diag);
+  // A killed browser is reported either from its exit event ("signal", "exit code") or, when the health monitor sees the
+  // exit first, as ended outside the app (web/src/lib.js). Both are correct for a process killed from outside.
+  if (!/unexpectedly|died|signal|exit code|Crashed|ended outside/i.test(diag)) throw new Error('diagnostic: ' + diag);
   await pg.waitForSelector('.toast.error', { timeout: 5000 });
   await pg.waitForTimeout(700);
   const texts = await pg.locator('.toast.error').allInnerTexts();
