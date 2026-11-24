@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      canvas:
+        description: 'Include opt-in canvas readback protection (native-chromium/canvas-noise.patch)'
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
   # Needed only to download another run's hand-over artifacts when resuming.
@@ -163,6 +168,7 @@ jobs:
           $outArchive = Join-Path $env:RUNNER_TEMP 'ninja-out/ninja-out.tar'
           $restore = if (Test-Path -LiteralPath $outArchive) { @{ RestoreOutArchive = $outArchive } } else { @{} }
           if ('${{ inputs.shipping }}' -eq 'true') { $restore.Shipping = $true }
+          if ('${{ inputs.canvas }}' -eq 'true') { $restore.CanvasPatch = $true }
           ./scripts/build-native-chromium-baseline.ps1 -AzwahSource -Sccache -TimeBudgetMinutes $budget @restore `
             -Workspace $env:AZWAH_BUILD_WORKSPACE -DepotTools $env:AZWAH_DEPOT_TOOLS -ChromiumCommit $pin.revision `
             -DepotToolsCommit $env:DEPOT_TOOLS_PIN -Jobs 4 -ReserveGiB 10

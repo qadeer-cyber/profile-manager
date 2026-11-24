@@ -107,9 +107,10 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
     try {
       const browserSettings = validateBrowserSettings({ ...regional, languages: languageText.trim() ? languageText.split(',').map(s => s.trim()) : [] });
       const webrtcSettings = validateWebRtcSettings(policy);
-      // The canvas/WebGL readback page hooks are not offered in the editor (owner Decision 3: no
-      // canvas or WebGL masking controls), so every editor save turns them off.
-      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback: 'off', webglReadback: 'off' } });
+      // WebGL readback controls are not offered (owner Decision 3). Canvas protection is offered only for AZWAH Chromium
+      // (owner approval 2026-11-24, opt-in); every other runtime saves it off.
+      const canvasReadback = f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && advanced.experimental?.canvasReadback === 'prototype' ? 'prototype' : 'off';
+      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off' } });
       next = { ...f, browserSettings, webrtcSettings, advancedSettings };
     } catch (e) {
       const nextTab = e.code === 'INVALID_ADVANCED_SETTINGS' && e.tab === 'preferences' ? 'extra' : (e.code === 'INVALID_WEBRTC_SETTINGS' || e.code === 'INVALID_BROWSER_SETTINGS' || e.code === 'INVALID_ADVANCED_SETTINGS') ? 'fingerprint' : 'general';
@@ -169,6 +170,12 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <p className="muted hint">
             AZWAH's own Chromium build, included with the installer. Manual browsing only (no automation). It keeps its own browser storage, separate from Chrome Stable, and follows the assigned proxy, its timezone and location automatically.
           </p>}
+          {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <>
+            <label className="check toggle"><input type="checkbox" role="switch" aria-label="Canvas protection"
+              checked={advanced.experimental?.canvasReadback === 'prototype'}
+              onChange={e => setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), canvasReadback: e.target.checked ? 'prototype' : 'off', webglReadback: 'off' } })} /> Canvas protection (experimental)</label>
+            <p className="muted hint">Sites that read back canvas drawings get slightly changed pixels: the same within one site for this browser session, different between sites, profiles and launches. What you see on screen is not changed. Needs an AZWAH Chromium build with canvas protection; otherwise the launch stops and says so. It does not cover WebGL, audio or fonts, and some sites may detect it.</p>
+          </>}
           {f.browserEngine !== 'firefox' && (advanced.runtime || 'compatibility') === 'compatibility' && <p className="muted hint">
             A new profile saved with Default uses AZWAH Chromium when this installation includes it (Chrome Stable for automation profiles or when it is missing). An existing profile with Default keeps Chrome Stable.
           </p>}

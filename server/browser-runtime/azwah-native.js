@@ -46,7 +46,9 @@ function developmentBinary() {
       }
       return entries[0].sha256.toLowerCase();
     };
-    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll') };
+    // Canvas protection exists only in builds made with native-chromium/canvas-noise.patch (recorded in the manifest).
+    const canvas = /^[a-f0-9]{64}$/i.test(manifest.canvasPatchSha256 || '');
+    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll'), canvas };
   }
   const exe = process.env.AZWAH_NATIVE_CHROMIUM_EXE;
   const hash = process.env.AZWAH_NATIVE_CHROMIUM_SHA256;
@@ -55,7 +57,7 @@ function developmentBinary() {
       !hash || !/^[a-f0-9]{64}$/i.test(hash) || !dllHash || !/^[a-f0-9]{64}$/i.test(dllHash)) {
     throw error('Native Azwah requires an explicitly qualified development build or a genuine packaged native runtime.');
   }
-  return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase() };
+  return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase(), canvas: process.env.AZWAH_NATIVE_CHROMIUM_CANVAS === '1' };
 }
 
 // True when this installation carries a provenance-checked AZWAH Chromium (packaged Windows build only).
@@ -112,8 +114,12 @@ function proxyRelay(proxy) {
 }
 
 export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
-  const { exe, hash, dllHash } = developmentBinary();
+  const { exe, hash, dllHash, canvas } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
+  const canvasProtection = profile.advancedSettings?.experimental?.canvasReadback === 'prototype';
+  if (canvasProtection && !canvas) {
+    throw error('This AZWAH Chromium build does not include canvas protection. Turn it off for this profile or update AZWAH.', 'AZWAH_NATIVE_CANVAS_UNSUPPORTED');
+  }
   await Promise.all([verifyBinary(exe, hash), verifyBinary(path.join(path.dirname(exe), 'chrome.dll'), dllHash)]);
   checkCancelled();
   if (isPackaged()) await ensureSandboxAccess(path.dirname(exe));
@@ -163,6 +169,9 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     checkCancelled();
     if (!assignmentCurrent()) throw error('The assigned proxy changed during native launch.', 'PROXY_BROWSER_IDENTITY_FAILED');
     const args = [`--user-data-dir=${nativeDir}`, '--no-first-run', '--no-default-browser-check'];
+    // Opt-in canvas readback protection: a new secret per launch, so values are stable within a site for this
+    // session and differ between sites, profiles and launches (docs/privacy-threat-model.md).
+    if (canvasProtection) args.push(`--azwah-canvas-seed=${randomUUID().replace(/-/g, '')}`);
     if (opts.url) {
       const url = new URL(opts.url);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw error('Enter an HTTP or HTTPS website URL.');
