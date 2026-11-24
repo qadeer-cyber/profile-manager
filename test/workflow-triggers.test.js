@@ -49,8 +49,8 @@ test('evidence steps cannot fail a stage; the hand-over runs whenever the build 
   assert.ok(text.indexOf('- name: Hand the compiler cache to the next job') < smoke, 'hand-over happens before the smoke test can fail');
 });
 
-// Exception (owner approval 2026-11-24): one tag-gated PRE-RELEASE of one fixed, already tested installer, under a tag
-// the in-app updater ignores (it only reads azwah-v* tags).
+// Exception (owner approval 2026-11-24): one tag-gated PRE-RELEASE of one fixed, already tested installer, published on
+// the beta update feed (owner: installed copies must be updated automatically).
 const PRERELEASE = 'azwah-branch-prerelease.yml';
 test('no workflow publishes a release on a push to this branch, except the owner-approved pre-release', () => {
   for (const file of fs.readdirSync(dir).filter(f => /\.ya?ml$/.test(f))) {
@@ -61,8 +61,7 @@ test('no workflow publishes a release on a push to this branch, except the owner
   const { text } = load(PRERELEASE);
   assert.match(text, /if: contains\(github\.event\.head_commit\.message, '\[azwah-prerelease\]'\)/);
   assert.match(text, /gh release create "\$TAG" --verify-tag --prerelease /);
-  assert.match(text, /\n  TAG: azwah-chromium-preview-/);
-  assert.doesNotMatch(text, /\n  TAG: azwah-v/, 'never an update-feed tag');
+  assert.match(text, /\n  VERSION: (\d+\.\d+\.\d+-beta\.\d+)\n  TAG: azwah-v\1\n/, 'a beta (pre-release) version, tag matches it');
   assert.match(text, /EXPECTED_SHA256: [a-f0-9]{64}\n/);
   assert.doesNotMatch(text, /workflow_dispatch|electron-builder/, 'no rebuild, no manual trigger');
 });

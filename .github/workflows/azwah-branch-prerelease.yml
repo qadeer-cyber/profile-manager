@@ -1,8 +1,8 @@
 name: AZWAH branch pre-release (owner-approved)
-# Owner approval 2026-11-24 ("Yes release now"): publish the already tested installer of installer acceptance run
-# 45324907733 (commit 3d69c6e) as a GitHub PRE-RELEASE. The tag deliberately does not start with "azwah-v", so the
-# in-app updater (electron/release-updates.js) never offers it to installed copies. Nothing is rebuilt: the exact
-# tested artifact is re-verified and uploaded. Starts only on a push whose message carries its tag.
+# Owner approval 2026-11-24 ("Yes release now", "They must be auto updated"): publish the already tested 2.0.0-beta.2
+# installer as GitHub PRE-RELEASE azwah-v2.0.0-beta.2, the update-feed tag that installed 2.0.0-beta.1 copies (beta
+# channel, electron/release-updates.js) are offered. Nothing is rebuilt: the exact tested artifact is re-verified and
+# uploaded. Starts only on a push whose message carries its tag. Needs repository Workflow permissions "Read and write".
 on:
   push:
     branches: [feature/azwah-ultimate-2]
@@ -12,10 +12,11 @@ permissions:
 concurrency:
   group: azwah-branch-prerelease
 env:
-  ACCEPTANCE_RUN: '45324907733'
-  SOURCE_SHA: 3d69c6ee7287ad382e5a748aaac38ce3f0fb5a42
-  EXPECTED_SHA256: 224833214e874651718b602b202faf018b7c8b1b6d0dc69ef8278dd2c9b82f19
-  TAG: azwah-chromium-preview-2.0.0-beta.1-3d69c6e
+  ACCEPTANCE_RUN: '45334113711'
+  SOURCE_SHA: ef81c943802be39dd383cacfcca63029ed444b75
+  EXPECTED_SHA256: TO_BE_FILLED_AFTER_ACCEPTANCE
+  VERSION: 2.0.0-beta.2
+  TAG: azwah-v2.0.0-beta.2
 jobs:
   prerelease:
     if: contains(github.event.head_commit.message, '[azwah-prerelease]')
@@ -41,23 +42,24 @@ jobs:
           cd candidate
           sed -i 's/\r$//' BUILD-MANIFEST.txt SHA256SUMS.txt
           grep -Fx "Source: $SOURCE_SHA" BUILD-MANIFEST.txt
+          grep -Fx "Version: $VERSION" BUILD-MANIFEST.txt
           grep -Fx "$EXPECTED_SHA256  Azwah-Setup-x64.exe" SHA256SUMS.txt
           sha256sum --strict --check SHA256SUMS.txt
           [[ "$(sha256sum Azwah-Setup-x64.exe | cut -d ' ' -f1)" == "$EXPECTED_SHA256" ]]
           if gh release view "$TAG" >/dev/null 2>&1; then echo "Release $TAG already exists."; exit 1; fi
           gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE_SHA" >/dev/null
           cat > notes.md <<'NOTES'
-          AZWAH 2.0.0-beta.1 with AZWAH Chromium (pre-release, owner-approved test build).
+          AZWAH 2.0.0-beta.2 with AZWAH Chromium (pre-release, owner-approved).
 
           - AZWAH Chromium 159.0.8153.0 is included and is the default browser for new profiles. Existing profiles keep Chrome Stable until you switch them.
           - Tested on GitHub-hosted Windows Server: install, upgrade, online update, uninstall; AZWAH Chromium with an authenticated proxy, proxy timezone, two profiles at once and 30 clean stop/restart cycles.
           - Not yet tested on a Windows 10/11 PC. Unsigned: Windows SmartScreen will warn.
           - This build still has Chromium's internal checks (DCHECKs) on; rare crashes are possible.
-          - Not offered by the in-app updater.
+          - Offered by the in-app updater to installed 2.0.0-beta.1 copies (beta channel). Profiles and data are kept.
 
           Verify: compare the SHA-256 of Azwah-Setup-x64.exe with SHA256SUMS.txt.
           NOTES
           sed -i 's/^          //' notes.md
-          gh release create "$TAG" --verify-tag --prerelease --title "AZWAH 2.0.0-beta.1 with AZWAH Chromium (preview, 3d69c6e)" \
+          gh release create "$TAG" --verify-tag --prerelease --title "AZWAH 2.0.0-beta.2 with AZWAH Chromium" \
             --notes-file notes.md Azwah-Setup-x64.exe SHA256SUMS.txt BUILD-MANIFEST.txt
           gh release view "$TAG" --json url,isPrerelease,assets --jq '{url, isPrerelease, assets: [.assets[] | {name, size, digest}]}'
