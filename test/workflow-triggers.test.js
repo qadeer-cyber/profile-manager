@@ -65,3 +65,10 @@ test('the chain tag does not appear in this repository\'s own workflow descripti
     assert.ok(!fs.readFileSync(new URL(`../docs/${f}`, import.meta.url), 'utf8').includes(TAG), `docs/${f} contains the chain tag`);
   }
 });
+
+test('the AZWAH Chromium live qualification starts only on its tag or a manual dispatch', () => {
+  const { text } = load('azwah-native-live.yml');
+  const job = text.slice(text.indexOf('  live:'));
+  assert.match(job, /github\.event_name == 'workflow_dispatch'/);
+  assert.ok(job.includes("contains(github.event.head_commit.message, '[" + "azwah-native-live]')"), 'tag gate');
+});

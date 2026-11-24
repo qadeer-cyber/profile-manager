@@ -1,7 +1,9 @@
 name: AZWAH Chromium live qualification
 # Part 4: the tested AZWAH Chromium archive with an authenticated proxy, proxy timezone, two concurrent profiles and
-# repeated stop/restart cycles. Manual dispatch only.
+# repeated stop/restart cycles. Starts only on a manual dispatch or a push whose message carries its tag.
 on:
+  push:
+    branches: [feature/azwah-ultimate-2]
   workflow_dispatch:
     inputs:
       native_run_id:
@@ -17,6 +19,9 @@ permissions:
   actions: read
 jobs:
   live:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, '[azwah-native-live]') }}
     runs-on: windows-2022
     timeout-minutes: 60
     env:
@@ -32,7 +37,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: azwah-chromium-win64-*
-          run-id: ${{ inputs.native_run_id }}
+          run-id: ${{ inputs.native_run_id || '45238937503' }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/azwah-chromium
           merge-multiple: true
@@ -63,7 +68,7 @@ jobs:
       - name: Proxy, timezone, isolation and stop/restart cycles
         shell: pwsh
         env:
-          AZWAH_NATIVE_CYCLES: ${{ inputs.cycles }}
+          AZWAH_NATIVE_CYCLES: ${{ inputs.cycles || '30' }}
         run: |
           node --test --test-force-exit test/azwah-native-windows-live.test.js
           exit $LASTEXITCODE
