@@ -26,10 +26,15 @@ jobs:
           while read -r f; do
             [ -z "$f" ] && continue
             out="excerpt/$f"; mkdir -p "$(dirname "$out")"
-            curl -fsS --retry 3 "https://chromium.googlesource.com/chromium/src/+/$rev/$f?format=TEXT" | base64 -d > "$out"
-            echo "$(sha256sum "$out" | cut -c1-16) $(wc -l < "$out") $f"
+            if curl -fsS --retry 5 --retry-all-errors "https://chromium.googlesource.com/chromium/src/+/$rev/$f?format=TEXT" -o "$out.b64"; then
+              base64 -d "$out.b64" > "$out"; rm "$out.b64"
+              echo "$(sha256sum "$out" | cut -c1-16) $(wc -l < "$out") $f"
+            else
+              rm -f "$out.b64"; echo "MISSING $f" | tee -a excerpt/MISSING.txt
+            fi
           done < native-chromium/source-excerpt.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: chromium-source-excerpt
           path: excerpt

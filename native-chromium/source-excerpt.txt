@@ -6,7 +6,6 @@ third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
 third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.h
 third_party/blink/renderer/core/html/canvas/canvas_async_blob_creator.cc
 third_party/blink/renderer/core/html/canvas/image_data.h
-third_party/blink/renderer/core/html/canvas/BUILD.gn
 third_party/blink/renderer/core/BUILD.gn
 third_party/blink/renderer/core/execution_context/execution_context.h
 third_party/blink/renderer/core/frame/local_dom_window.h
@@ -16,3 +15,8 @@ third_party/blink/public/common/switches.h
 content/public/common/content_switches.cc
 content/browser/renderer_host/render_process_host_impl.cc
 chrome/browser/chrome_content_browser_client.cc
+third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.cc
+third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h
+third_party/blink/renderer/platform/graphics/static_bitmap_image.h
+third_party/blink/renderer/core/frame/frame.h
+third_party/blink/renderer/platform/runtime_enabled_features.json5
