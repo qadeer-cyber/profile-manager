@@ -252,7 +252,7 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $true
           npx electron-builder --config electron-builder.ultimate-update-test.cjs --win nsis --x64 --publish never
           $b = Get-Item 'release-update-b/Azwah-Setup-x64.exe'
-          Write-Output "Beta B 2.0.0-beta.3 bytes=$($b.Length) SHA-256=$((Get-FileHash -LiteralPath $b.FullName).Hash.ToLowerInvariant())"
+          Write-Output "Beta B 2.0.0-beta.2 bytes=$($b.Length) SHA-256=$((Get-FileHash -LiteralPath $b.FullName).Hash.ToLowerInvariant())"
       - name: Verify online update Beta A to Beta B with preserved profile data
         shell: pwsh
         run: |
@@ -286,7 +286,7 @@ jobs:
           }
           function StartFeed($name, [switch]$Tamper) {
             $info = Join-Path $env:RUNNER_TEMP "$name-feed.json"
-            $feedArgs = @('scripts/update-feed-fixture.mjs', '--installer', "$b", '--version', '2.0.0-beta.3', '--previous', '2.0.0-beta.2', '--port-file', $info)
+            $feedArgs = @('scripts/update-feed-fixture.mjs', '--installer', "$b", '--version', '2.0.0-beta.2', '--previous', '2.0.0-beta.1', '--port-file', $info)
             if ($Tamper) { $feedArgs += '--tamper' }
             $proc = Start-Process -FilePath node -ArgumentList $feedArgs -PassThru -NoNewWindow
             for ($i = 0; $i -lt 100 -and !(Test-Path $info); $i++) { Start-Sleep -Milliseconds 100 }
@@ -306,7 +306,7 @@ jobs:
           if ($setup.ExitCode -ne 0) { throw 'Beta A install failed.' }
           $smokeA = RunApp 'update-beta-a'
           Need $smokeA @('chromeStable', 'version')
-          if (!$smokeA.chromeStable -or $smokeA.version -ne '2.0.0-beta.2') { throw 'Beta A smoke failed.' }
+          if (!$smokeA.chromeStable -or $smokeA.version -ne '2.0.0-beta.1') { throw 'Beta A smoke failed.' }
           $idsA = @(ProfileIds)
           if ($idsA.Count -lt 1) { throw 'Beta A created no profile.' }
           # 2. A tampered release digest must be refused by Beta A's updater.
@@ -322,7 +322,7 @@ jobs:
             $update = RunApp 'update-check' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $good.info.origin }
           } finally { Stop-Process -Id $good.proc.Id -Force -ErrorAction SilentlyContinue }
           Need $update @('installedVersion', 'status', 'latest.version', 'latest.sha256', 'download.status', 'download.file')
-          if ($update.installedVersion -ne '2.0.0-beta.2' -or $update.status -ne 'available' -or $update.latest.version -ne '2.0.0-beta.3') { throw 'Beta A did not offer Beta B.' }
+          if ($update.installedVersion -ne '2.0.0-beta.1' -or $update.status -ne 'available' -or $update.latest.version -ne '2.0.0-beta.2') { throw 'Beta A did not offer Beta B.' }
           if ($update.download.status -ne 'verified' -or $update.latest.sha256 -ne $bHash) { throw 'Beta B download was not verified.' }
           $downloaded = $update.download.file
           if ((Get-FileHash -LiteralPath $downloaded).Hash.ToLowerInvariant() -ne $bHash) { throw 'Downloaded installer differs from Beta B.' }
@@ -331,7 +331,7 @@ jobs:
           if ($upgrade.ExitCode -ne 0) { throw 'Upgrade with the downloaded installer failed.' }
           $smokeB = RunApp 'update-beta-b'
           Need $smokeB @('chromeStable', 'version')
-          if (!$smokeB.chromeStable -or $smokeB.version -ne '2.0.0-beta.3') { throw "Beta B did not start as 2.0.0-beta.3: $($smokeB.version)" }
+          if (!$smokeB.chromeStable -or $smokeB.version -ne '2.0.0-beta.2') { throw "Beta B did not start as 2.0.0-beta.2: $($smokeB.version)" }
           $idsB = @(ProfileIds)
           $lost = @($idsA | Where-Object { $_ -notin $idsB })
           if ($lost.Count) { throw "Profiles lost during the online update: $($lost -join ', ')" }
@@ -341,7 +341,7 @@ jobs:
             $after = RunApp 'update-check-after' @{ PM_SMOKE_UPDATE = '1'; PM_SMOKE_UPDATE_ORIGIN = $good.info.origin }
           } finally { Stop-Process -Id $good.proc.Id -Force -ErrorAction SilentlyContinue }
           Need $after @('installedVersion', 'status')
-          if ($after.installedVersion -ne '2.0.0-beta.3' -or $after.status -ne 'current') { throw 'Beta B still offered an update.' }
+          if ($after.installedVersion -ne '2.0.0-beta.2' -or $after.status -ne 'current') { throw 'Beta B still offered an update.' }
           $summary = "PASS online update: Beta A $($update.installedVersion) -> Beta B $($smokeB.version) via the shipping updater (loopback release fixture). Downloaded $($update.latest.size) bytes, SHA-256 $($update.latest.sha256); tampered digest refused ($($refused.download.error)); $($idsA.Count) of $($idsA.Count) profile id(s) preserved ($($idsB.Count) after B's own smoke); Beta B launched Chrome Stable and then reported status '$($after.status)'."
           $summary | Add-Content $env:GITHUB_STEP_SUMMARY
           Write-Output $summary
