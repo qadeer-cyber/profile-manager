@@ -76,18 +76,19 @@ index 05fa33e4568e8eea926a0d97c1d83a4000fa6b3f..b5365cfdd2eb558d9908c307400398c5
  }
  
 diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-index 02cd342f94e88d2b2eee797403eb2c62d4019013..4fbecac868bf984c3c42cea30d16d5882b9be4e4 100644
+index 02cd342f94e88d2b2eee797403eb2c62d4019013..534bc58fa976b1eb51578a75ce4daa875b2cd1be 100644
 --- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
 +++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
-@@ -32,6 +32,7 @@
+@@ -32,6 +32,8 @@
  
  #include "base/bit_cast.h"
  #include "base/byte_size.h"
 +#include "base/command_line.h"
++#include "base/containers/span.h"
  #include "base/compiler_specific.h"
  #include "base/feature_list.h"
  #include "base/memory/scoped_refptr.h"
-@@ -4320,6 +4321,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4320,6 +4322,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -96,12 +97,12 @@ index 02cd342f94e88d2b2eee797403eb2c62d4019013..4fbecac868bf984c3c42cea30d16d588
 +            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
 +                "azwah-webgl-renderer");
 +        if (!azwah_renderer.empty()) {
-+          return WebGLAny(script_state, String::FromUTF8(azwah_renderer));
++          return WebGLAny(script_state, String::FromUtf8(base::as_byte_span(azwah_renderer)));
 +        }
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_RENDERER)));
        }
-@@ -4329,6 +4337,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+@@ -4329,6 +4338,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
        return ScriptValue::CreateNull(script_state->GetIsolate());
      case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
        if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
@@ -110,7 +111,7 @@ index 02cd342f94e88d2b2eee797403eb2c62d4019013..4fbecac868bf984c3c42cea30d16d588
 +            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
 +                "azwah-webgl-vendor");
 +        if (!azwah_vendor.empty()) {
-+          return WebGLAny(script_state, String::FromUTF8(azwah_vendor));
++          return WebGLAny(script_state, String::FromUtf8(base::as_byte_span(azwah_vendor)));
 +        }
          return WebGLAny(script_state,
                          String(ContextGL()->GetString(GL_VENDOR)));

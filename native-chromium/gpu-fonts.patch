@@ -14,19 +14,20 @@ index de4fb82c678284d4fa9f7efd33fccaab5e6e228c..1c331ce3b4b3f38f3ca31641d2393971
        switches::kDisableDevShmUsage,
  #endif
 diff --git a/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc b/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
-index 9d155705c1350357cc82e5907ab376eb25a56140..8db96c067c3f1a3fa80264422ac01cd7d0120a5c 100644
+index 9d155705c1350357cc82e5907ab376eb25a56140..fd62469cd4c62d6a4fdf0ccc3ed34f40a3d745cf 100644
 --- a/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
 +++ b/third_party/blink/renderer/modules/webgpu/gpu_adapter_info.cc
-@@ -4,6 +4,8 @@
+@@ -4,6 +4,9 @@
  
  #include "third_party/blink/renderer/modules/webgpu/gpu_adapter_info.h"
  
 +#include "base/command_line.h"
++#include "base/containers/span.h"
 +
  #include "third_party/blink/renderer/modules/webgpu/gpu_memory_heap_info.h"
  #include "third_party/blink/renderer/modules/webgpu/gpu_subgroup_matrix_config.h"
  
-@@ -34,7 +36,20 @@ GPUAdapterInfo::GPUAdapterInfo(const String& vendor,
+@@ -34,7 +37,19 @@ GPUAdapterInfo::GPUAdapterInfo(const String& vendor,
        type_(type),
        d3d_shader_model_(d3d_shader_model),
        vk_driver_version_(vk_driver_version),
@@ -37,9 +38,8 @@ index 9d155705c1350357cc82e5907ab376eb25a56140..8db96c067c3f1a3fa80264422ac01cd7
 +      *base::CommandLine::ForCurrentProcess();
 +  if (command_line.HasSwitch("azwah-webgpu-vendor")) {
 +    vendor_ =
-+        String::FromUTF8(command_line.GetSwitchValueASCII("azwah-webgpu-vendor"));
-+    architecture_ = String::FromUTF8(
-+        command_line.GetSwitchValueASCII("azwah-webgpu-architecture"));
++        String::FromUtf8(base::as_byte_span(command_line.GetSwitchValueASCII("azwah-webgpu-vendor")));
++    architecture_ = String::FromUtf8(base::as_byte_span(command_line.GetSwitchValueASCII("azwah-webgpu-architecture")));
 +    device_ = String("");
 +    description_ = String("");
 +    driver_ = String("");
