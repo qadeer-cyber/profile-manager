@@ -72,3 +72,9 @@ test('the AZWAH Chromium live qualification starts only on its tag or a manual d
   assert.match(job, /github\.event_name == 'workflow_dispatch'/);
   assert.ok(job.includes("contains(github.event.head_commit.message, '[" + "azwah-native-live]')"), 'tag gate');
 });
+
+test('the source excerpt workflow starts only on its tag or a manual dispatch', () => {
+  const { text } = load('azwah-chromium-source-excerpt.yml');
+  const job = text.slice(text.indexOf('  excerpt:'));
+  assert.ok(job.includes("contains(github.event.head_commit.message, '[" + "chromium-source-excerpt]')"), 'tag gate');
+});
