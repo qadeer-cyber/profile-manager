@@ -184,9 +184,17 @@ try {
 
   // ---------- 2. interrupted upgrade ----------
   const interrupted = runInstaller(newInstaller);
+  // Listen before waiting: an installer that already exited would otherwise never resolve.
+  const interruptedExit = waitExit(interrupted);
   await delay(4000);
-  execFileSync('taskkill', ['/PID', String(interrupted.pid), '/T', '/F'], { stdio: 'ignore' });
-  await waitExit(interrupted);
+  // The force-stop can find the installer already gone (taskkill exit 255, CI run 45434050937); record that instead
+  // of failing, and still require the data check below.
+  let killed = false;
+  if (interrupted.exitCode === null) {
+    try { execFileSync('taskkill', ['/PID', String(interrupted.pid), '/T', '/F'], { stdio: 'ignore' }); killed = true; } catch {}
+  }
+  const interruptedCode = await interruptedExit;
+  report.interruptedKill = { killed, installerExitCode: interruptedCode };
   await delay(2000);
   const filesAfterInterrupt = dataManifest();
   assert.deepEqual(filesAfterInterrupt, filesBefore, 'an interrupted install did not change user data');
