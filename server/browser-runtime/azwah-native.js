@@ -11,6 +11,7 @@ import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
 import { isPackaged, azwahNativeTestAvailable } from '../testflags.js';
 
+export const RECEIPT_NOT_READY = new Set(['ENOENT', 'EBUSY', 'EPERM', 'EACCES']);
 const error = (message, code = 'AZWAH_NATIVE_UNAVAILABLE') =>
   Object.assign(new Error(message), { status: 409, code });
 
@@ -193,7 +194,9 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
       try {
         if (fs.readFileSync(receipt, 'utf8') === expected) break;
       } catch (err) {
-        if (err.code !== 'ENOENT') throw err;
+        // Not written yet, or the browser still holds it open while writing (Windows: EBUSY/EPERM/EACCES,
+        // measured in the live qualification run 45323301364). Both mean "not ready yet"; the deadline still applies.
+        if (!RECEIPT_NOT_READY.has(err.code)) throw err;
       }
       await delay(100);
     }

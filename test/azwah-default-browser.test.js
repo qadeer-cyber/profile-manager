@@ -67,3 +67,9 @@ test('sandbox folder access is re-applied on every launch (an update reinstalls 
   const fn = src.slice(src.indexOf('async function ensureSandboxAccess'), src.indexOf('async function verifyBinary'));
   assert.doesNotMatch(fn, /getSetting|setSetting/, 'no remembered marker may skip the grant');
 });
+
+test('a startup receipt the browser still holds open counts as not ready, not as a failed launch', async () => {
+  const { RECEIPT_NOT_READY } = await import('../server/browser-runtime/azwah-native.js');
+  for (const code of ['ENOENT', 'EBUSY', 'EPERM', 'EACCES']) assert.ok(RECEIPT_NOT_READY.has(code), code);
+  assert.equal(RECEIPT_NOT_READY.has('EISDIR'), false);
+});
