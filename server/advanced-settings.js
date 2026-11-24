@@ -62,12 +62,15 @@ function integerIn(value, min, max, tab, label) {
 function validateExperimental(value) {
   const base = { canvasReadback: 'off', webglReadback: 'off' };
   if (value == null) return base;
-  const input = section(value, ['canvasReadback', 'webglReadback'], 'fingerprint');
+  const input = section(value, ['canvasReadback', 'webglReadback', 'hardwareIdentity'], 'fingerprint');
   const canvasReadback = input.canvasReadback ?? base.canvasReadback;
   const webglReadback = input.webglReadback ?? base.webglReadback;
   if (canvasReadback !== 'off' && canvasReadback !== 'prototype') invalid('experimental.canvasReadback must be off or prototype', 'fingerprint');
   if (webglReadback !== 'off' && webglReadback !== 'prototype') invalid('experimental.webglReadback must be off or prototype', 'fingerprint');
-  return { canvasReadback, webglReadback };
+  // AZWAH Chromium only: per-profile CPU cores, device memory and WebGL graphics identity (stored only when on).
+  const hardwareIdentity = input.hardwareIdentity ?? 'off';
+  if (hardwareIdentity !== 'off' && hardwareIdentity !== 'prototype') invalid('experimental.hardwareIdentity must be off or prototype', 'fingerprint');
+  return hardwareIdentity === 'prototype' ? { canvasReadback, webglReadback, hardwareIdentity } : { canvasReadback, webglReadback };
 }
 function validateUserAgent(value) {
   const input = section(value, ['mode'], 'identity');

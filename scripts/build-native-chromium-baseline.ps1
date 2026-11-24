@@ -60,6 +60,7 @@ $script:BudgetReached = $false
 $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
 $canvasPatchFile = Join-Path $sourceRoot 'canvas-noise.patch'
+$identityPatchFile = Join-Path $sourceRoot 'identity.patch'
 if ($AzwahSource) {
     $upstream = Get-Content -LiteralPath (Join-Path $sourceRoot 'upstream.json') -Raw | ConvertFrom-Json
     if ($ChromiumCommit -ne $upstream.revision) {
@@ -228,17 +229,21 @@ try {
             & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -AlreadyApplied
         }
         if ($AzwahSource -and $CanvasPatch) {
-            & $git apply --reverse --check -- $canvasPatchFile 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Output 'CANVAS_PATCH already applied (reverse check passed).'
-            } else {
-                & $git apply --check -- $canvasPatchFile
-                if ($LASTEXITCODE -ne 0) { throw 'Canvas patch does not apply to the pinned, patched source.' }
-                & $git apply -- $canvasPatchFile
-                if ($LASTEXITCODE -ne 0) { throw 'Canvas patch application failed.' }
-                & $git apply --reverse --check -- $canvasPatchFile
-                if ($LASTEXITCODE -ne 0) { throw 'Applied canvas patch reverse verification failed.' }
-                Write-Output "CANVAS_PATCH applied sha256=$((Get-FileHash -LiteralPath $canvasPatchFile -Algorithm SHA256).Hash.ToLowerInvariant())"
+            # Fingerprint patches, in order (each is written against the source with the previous ones applied).
+            foreach ($fp in @($canvasPatchFile, $identityPatchFile)) {
+                $name = Split-Path -Leaf $fp
+                & $git apply --reverse --check -- $fp 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Output "FINGERPRINT_PATCH $name already applied (reverse check passed)."
+                } else {
+                    & $git apply --check -- $fp
+                    if ($LASTEXITCODE -ne 0) { throw "$name does not apply to the pinned, patched source." }
+                    & $git apply -- $fp
+                    if ($LASTEXITCODE -ne 0) { throw "$name application failed." }
+                    & $git apply --reverse --check -- $fp
+                    if ($LASTEXITCODE -ne 0) { throw "Applied $name reverse verification failed." }
+                    Write-Output "FINGERPRINT_PATCH $name applied sha256=$((Get-FileHash -LiteralPath $fp -Algorithm SHA256).Hash.ToLowerInvariant())"
+                }
             }
             $global:LASTEXITCODE = 0
         }
@@ -385,6 +390,7 @@ symbol_level = 0
             files = @($files)
             dchecks = if ($Shipping) { 'off' } else { 'on' }
             canvasPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $canvasPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            identityPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $identityPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
     } finally {

@@ -36,3 +36,40 @@ test('AZWAH passes a fresh secret only when the profile opts in, and refuses a b
   assert.match(launcher, /if \(canvasProtection\) args\.push\(`--azwah-canvas-seed=\$\{randomUUID\(\)/);
   assert.match(launcher, /canvasPatchSha256/);
 });
+
+test('identity patch: additions only, four known files, switches passed to renderers', () => {
+  const identity = fs.readFileSync(new URL('../native-chromium/identity.patch', import.meta.url), 'utf8');
+  const files = [...identity.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc',
+    'third_party/blink/renderer/core/frame/navigator_device_memory.cc',
+    'third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc',
+  ]);
+  assert.deepEqual(identity.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---')), []);
+  for (const s of ['azwah-device-memory', 'azwah-hardware-concurrency', 'azwah-webgl-renderer', 'azwah-webgl-vendor']) assert.ok(identity.includes(`+      "${s}",`), s);
+});
+
+test('per-profile identity is stable for a profile, differs between profiles and stays within real values', async () => {
+  const { nativeIdentityFor, nativeIdentityArgs, WINDOWS_GPUS } = await import('../server/browser-runtime/native-identity.js');
+  assert.deepEqual(nativeIdentityFor('profile-a'), nativeIdentityFor('profile-a'));
+  const many = Array.from({ length: 40 }, (_, i) => nativeIdentityFor('p' + i));
+  assert.ok(new Set(many.map(x => JSON.stringify(x))).size > 10, 'profiles differ');
+  for (const x of many) {
+    assert.ok([4, 6, 8, 12, 16].includes(x.hardwareConcurrency));
+    assert.ok([4, 8].includes(x.deviceMemory));
+    assert.ok(WINDOWS_GPUS.some(([v, r]) => v === x.webglVendor && r === x.webglRenderer));
+  }
+  const args = nativeIdentityArgs(nativeIdentityFor('profile-a'));
+  assert.equal(args.length, 4);
+  assert.ok(args.every(a => a.startsWith('--azwah-')));
+});
+
+test('hardware identity setting: stored only when on, refused values rejected, launcher refuses a build without it', async () => {
+  const { validateAdvancedSettings } = await import('../server/advanced-settings.js');
+  assert.equal(validateAdvancedSettings({ experimental: { hardwareIdentity: 'prototype' } }).experimental.hardwareIdentity, 'prototype');
+  assert.equal('hardwareIdentity' in validateAdvancedSettings({ experimental: { hardwareIdentity: 'off' } }).experimental, false);
+  assert.throws(() => validateAdvancedSettings({ experimental: { hardwareIdentity: 'yes' } }));
+  assert.match(launcher, /AZWAH_NATIVE_IDENTITY_UNSUPPORTED/);
+  assert.match(launcher, /identityPatchSha256/);
+});
