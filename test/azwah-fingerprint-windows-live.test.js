@@ -143,6 +143,12 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
     if (RECTS_UA) {
       assert.equal(base.a1.rects, base.b.rects, 'without protection element sizes are the same (control)');
       assert.notEqual(run1.a1.rects, base.a1.rects, 'ClientRects differ from the unprotected values');
+      // Each API separately: getBoundingClientRect (first four values) and getClientRects (last value) must both change,
+      // or the two would contradict each other (run 45714781031 caught getClientRects unchanged).
+      const parts = x => x.split(',').map(Number);
+      assert.notEqual(parts(run1.a1.rects)[2], parts(base.a1.rects)[2], 'getBoundingClientRect width changed');
+      assert.notEqual(parts(run1.a1.rects)[4], parts(base.a1.rects)[4], 'getClientRects width changed');
+      assert.equal(parts(run1.a1.rects)[2], parts(run1.a1.rects)[4], 'both APIs report the same width');
       assert.equal(run1.a1.rects, run1.a2.rects, 'ClientRects are stable within a session');
       assert.notEqual(run2.a1.rects, run1.a1.rects, 'a new launch gives new ClientRects');
       if (base.a1.webglPixels) {

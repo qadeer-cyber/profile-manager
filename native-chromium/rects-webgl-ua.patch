@@ -44,7 +44,7 @@ index 1c331ce3b4b3f38f3ca31641d2393971d44277b7..0baf8177a7066b683415859019cb3625
        "azwah-webgpu-vendor",
  #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
 diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
-index 9fa5d9596fc11657b05c7f69a299bb23da4d1a5d..06cbda07ae5597fa27cde01760fa3c7712de6afe 100644
+index 9fa5d9596fc11657b05c7f69a299bb23da4d1a5d..4d7681f8ef107f9cee9bb83720814c43a0705308 100644
 --- a/third_party/blink/renderer/core/dom/element.cc
 +++ b/third_party/blink/renderer/core/dom/element.cc
 @@ -33,6 +33,7 @@
@@ -55,8 +55,8 @@ index 9fa5d9596fc11657b05c7f69a299bb23da4d1a5d..06cbda07ae5597fa27cde01760fa3c77
  #include "base/feature_list.h"
  #include "cc/input/snap_selection_strategy.h"
  #include "components/viz/common/surfaces/tracked_element_rects.h"
-@@ -3575,10 +3576,40 @@ gfx::RectF Element::GetBoundingClientRectNoLifecycleUpdate() const {
-   return result;
+@@ -3478,6 +3479,35 @@ void Element::ClientQuads(Vector<gfx::QuadF>& quads) const {
+   }
  }
  
 +namespace {
@@ -88,6 +88,18 @@ index 9fa5d9596fc11657b05c7f69a299bb23da4d1a5d..06cbda07ae5597fa27cde01760fa3c77
 +
 +}  // namespace
 +
+ DOMRectList* Element::getClientRects() {
+   Vector<gfx::RectF> rects = GetClientRectsNoAdjustment();
+   if (rects.empty()) {
+@@ -3488,6 +3518,7 @@ DOMRectList* Element::getClientRects() {
+   for (auto& rect : rects) {
+     GetDocument().AdjustRectForScrollAndAbsoluteZoom(rect,
+                                                      *element_layout_object);
++    rect = AzwahScaleClientRect(rect);
+   }
+   return MakeGarbageCollected<DOMRectList>(rects);
+ }
+@@ -3578,7 +3609,8 @@ gfx::RectF Element::GetBoundingClientRectNoLifecycleUpdate() const {
  DOMRect* Element::GetBoundingClientRect() {
    GetDocument().UpdateStyleAndLayoutForNode(this,
                                              DocumentUpdateReason::kJavaScript);
