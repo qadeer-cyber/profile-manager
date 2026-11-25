@@ -27,7 +27,7 @@ jobs:
     env:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       # Chain run whose archive a tag-triggered run tests (manual dispatch can name another).
-      NATIVE_RUN: '45708978792'
+      NATIVE_RUN: '45719091368'
     steps:
       - uses: actions/checkout@v4
         with:
