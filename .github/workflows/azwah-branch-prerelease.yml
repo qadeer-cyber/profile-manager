@@ -1,0 +1,64 @@
+name: AZWAH branch pre-release (owner-approved)
+# Owner approval 2026-11-25 ("han github release pe daal do"): publish the already tested installer of installer
+# acceptance run 45630508653 (commit d401317, shipping AZWAH Chromium with fingerprint protections) as a GitHub
+# PRE-RELEASE, because the temporary artifact download link expires during large downloads. The tag deliberately does not start with "azwah-v", so the
+# in-app updater (electron/release-updates.js) never offers it to installed copies. Nothing is rebuilt: the exact
+# tested artifact is re-verified and uploaded. Starts only on a push whose message carries its tag.
+on:
+  push:
+    branches: [feature/azwah-ultimate-2]
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: azwah-branch-prerelease
+env:
+  ACCEPTANCE_RUN: '45630508653'
+  SOURCE_SHA: d4013178fd50c682e385c35864ae16e34714f4ee
+  EXPECTED_SHA256: bcfbea283609139493a8f8013c6cfa3ee99cba5016f88c6a6aacaa8df27f029a
+  TAG: azwah-chromium-preview-2.0.0-beta.1-d401317
+jobs:
+  prerelease:
+    if: contains(github.event.head_commit.message, '[azwah-prerelease]')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Verify the tested installer run
+        run: |
+          set -euo pipefail
+          gh api "repos/$GH_REPO/actions/runs/$ACCEPTANCE_RUN" | jq -e --arg sha "$SOURCE_SHA" \
+            '.head_sha == $sha and .path == ".github/workflows/azwah-ultimate-stable-chrome.yml" and .conclusion == "success"' >/dev/null
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ env.ACCEPTANCE_RUN }}
+          name: azwah-windows-x64-${{ env.SOURCE_SHA }}
+          path: candidate
+      - name: Verify the installer and publish the pre-release
+        run: |
+          set -euo pipefail
+          cd candidate
+          sed -i 's/\r$//' BUILD-MANIFEST.txt SHA256SUMS.txt
+          grep -Fx "Source: $SOURCE_SHA" BUILD-MANIFEST.txt
+          grep -Fx "$EXPECTED_SHA256  Azwah-Setup-x64.exe" SHA256SUMS.txt
+          sha256sum --strict --check SHA256SUMS.txt
+          [[ "$(sha256sum Azwah-Setup-x64.exe | cut -d ' ' -f1)" == "$EXPECTED_SHA256" ]]
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "Release $TAG already exists."; exit 1; fi
+          gh api --method POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$SOURCE_SHA" >/dev/null
+          cat > notes.md <<'NOTES'
+          AZWAH 2.0.0-beta.1 with AZWAH Chromium shipping build and opt-in fingerprint protections (pre-release, owner-approved).
+
+          - AZWAH Chromium 159.0.8153.0 is included and is the default browser for new profiles. Existing profiles keep Chrome Stable until you switch them.
+          - Tested on GitHub-hosted Windows Server: install, upgrade, online update, uninstall; AZWAH Chromium with an authenticated proxy, proxy timezone, two profiles at once and 30 clean stop/restart cycles.
+          - Not yet tested on a Windows 10/11 PC. Unsigned: Windows SmartScreen will warn.
+          - Chromium internal checks (DCHECKs) are off (shipping build). Opt-in per profile: Canvas protection, Hardware and graphics identity, Audio protection.
+          - Not offered by the in-app updater.
+
+          Verify: compare the SHA-256 of Azwah-Setup-x64.exe with SHA256SUMS.txt.
+          NOTES
+          sed -i 's/^          //' notes.md
+          gh release create "$TAG" --verify-tag --prerelease --title "AZWAH 2.0.0-beta.1 with AZWAH Chromium (preview, d401317)" \
+            --notes-file notes.md Azwah-Setup-x64.exe SHA256SUMS.txt BUILD-MANIFEST.txt
+          gh release view "$TAG" --json url,isPrerelease,assets --jq '{url, isPrerelease, assets: [.assets[] | {name, size, digest}]}'
