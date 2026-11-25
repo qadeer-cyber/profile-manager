@@ -55,7 +55,8 @@ function developmentBinary() {
     const identity = /^[a-f0-9]{64}$/i.test(manifest.identityPatchSha256 || '');
     const audioScreen = /^[a-f0-9]{64}$/i.test(manifest.audioScreenPatchSha256 || '');
     const gpuFonts = /^[a-f0-9]{64}$/i.test(manifest.gpuFontsPatchSha256 || '');
-    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll'), canvas, identity, audioScreen, gpuFonts };
+    const rectsUa = /^[a-f0-9]{64}$/i.test(manifest.rectsUaPatchSha256 || '');
+    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll'), canvas, identity, audioScreen, gpuFonts, rectsUa };
   }
   const exe = process.env.AZWAH_NATIVE_CHROMIUM_EXE;
   const hash = process.env.AZWAH_NATIVE_CHROMIUM_SHA256;
@@ -66,7 +67,7 @@ function developmentBinary() {
   }
   return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase(), canvas: process.env.AZWAH_NATIVE_CHROMIUM_CANVAS === '1',
     identity: process.env.AZWAH_NATIVE_CHROMIUM_IDENTITY === '1', audioScreen: process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1',
-    gpuFonts: process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1' };
+    gpuFonts: process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1', rectsUa: process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1' };
 }
 
 // True when this installation carries a provenance-checked AZWAH Chromium (packaged Windows build only).
@@ -123,7 +124,7 @@ function proxyRelay(proxy) {
 }
 
 export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
-  const { exe, hash, dllHash, canvas, identity, audioScreen, gpuFonts } = developmentBinary();
+  const { exe, hash, dllHash, canvas, identity, audioScreen, gpuFonts, rectsUa } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
   const canvasProtection = profile.advancedSettings?.experimental?.canvasReadback === 'prototype';
   if (canvasProtection && !canvas) {
@@ -189,8 +190,10 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     // Opt-in canvas readback protection: a new secret per launch, so values are stable within a site for this
     // session and differ between sites, profiles and launches (docs/privacy-threat-model.md).
     if (canvasProtection) args.push(`--azwah-canvas-seed=${randomUUID().replace(/-/g, '')}`);
+    // ClientRects protection travels with canvas protection (new value each launch) when the build has it.
+    if (canvasProtection && rectsUa) args.push(`--azwah-rects-seed=${randomUUID().replace(/-/g, '')}`);
     // The screen size is part of the hardware identity once the build supports it.
-    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id), { screen: audioScreen, gpuFonts }));
+    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id), { screen: audioScreen, gpuFonts, clientHints: rectsUa }));
     if (audioProtection) args.push(`--azwah-audio-seed=${randomUUID().replace(/-/g, '')}`);
     // WebRTC must not open UDP outside the proxy (it would reveal the real IP). Proxy profiles always get
     // disable_non_proxied_udp, like Chrome Stable proxy profiles; others keep their own WebRTC setting.
@@ -205,6 +208,8 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     } else if (profile.advancedSettings?.preferences?.restoreTabs) {
       args.push('--restore-last-session');
     }
+    // Tests only (ignored in a packaged app): extra switches, e.g. software WebGL on a CI runner without a GPU.
+    if (!isPackaged() && process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS) args.push(...process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS.split(' ').filter(Boolean));
     child = spawn(exe, args, { env, stdio: 'ignore', windowsHide: false });
     let spawnFailed = false;
     child.on('error', () => { spawnFailed = true; });

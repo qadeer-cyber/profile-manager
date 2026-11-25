@@ -66,6 +66,7 @@ jobs:
           if ($m.identityPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_IDENTITY=1' | Add-Content $env:GITHUB_ENV }
           if ($m.audioScreenPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN=1' | Add-Content $env:GITHUB_ENV }
           if ($m.gpuFontsPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_GPU_FONTS=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.rectsUaPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_RECTS_UA=1' | Add-Content $env:GITHUB_ENV }
       - name: Install dependencies and proxy-location data
         shell: pwsh
         run: |
@@ -88,6 +89,9 @@ jobs:
       - name: Canvas protection and hardware/graphics identity observed in the browser
         if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
         shell: pwsh
+        env:
+          # The runner has no GPU: software WebGL (test only; never passed by the app itself).
+          AZWAH_NATIVE_TEST_EXTRA_ARGS: '--use-angle=swiftshader --enable-unsafe-swiftshader'
         run: |
           node --test --test-force-exit test/azwah-fingerprint-windows-live.test.js
           exit $LASTEXITCODE

@@ -114,3 +114,29 @@ test('gpu-fonts patch: known files, font list only for named families, WebGPU fo
   assert.ok(args.some(a => a.startsWith('--azwah-font-allowlist=arial,')));
   assert.equal(nativeIdentityArgs(id).length, 4, 'older builds get only the original four switches');
 });
+
+test('rects-webgl-ua patch: known files, ClientRects scaled, WebGL readback uses the canvas seed, client hints from switches', async () => {
+  const p = fs.readFileSync(new URL('../native-chromium/rects-webgl-ua.patch', import.meta.url), 'utf8');
+  const files = [...p.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'components/embedder_support/user_agent_utils.cc',
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/core/dom/element.cc',
+    'third_party/blink/renderer/core/dom/range.cc',
+    'third_party/blink/renderer/core/geometry/dom_rect_list.cc',
+    'third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc',
+  ]);
+  const removed = p.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+  assert.equal(removed.length, 3, 'only the three rect return lines are replaced');
+  assert.match(p, /\+      "azwah-rects-seed",/);
+  assert.match(p, /HTMLCanvasElement::AzwahCanvasNoiseSeed\(Host\(\)->GetTopExecutionContext\(\)\)/);
+  assert.match(p, /"azwah-ua-platform-version"/);
+  const { nativeIdentityFor, nativeIdentityArgs } = await import('../server/browser-runtime/native-identity.js');
+  const id = nativeIdentityFor('hints-profile');
+  assert.ok(['10.0.0', '15.0.0', '19.0.0'].includes(id.platformVersion));
+  const args = nativeIdentityArgs(id, { clientHints: true });
+  assert.ok(args.includes(`--azwah-ua-platform-version=${id.platformVersion}`));
+  assert.ok(args.includes('--azwah-ua-chrome-brand'));
+  assert.match(launcher, /if \(canvasProtection && rectsUa\) args\.push\(`--azwah-rects-seed=/);
+  assert.match(launcher, /!isPackaged\(\) && process\.env\.AZWAH_NATIVE_TEST_EXTRA_ARGS/, 'test-only switches never in a packaged app');
+});

@@ -11,6 +11,7 @@ import test from 'node:test';
 
 const AUDIO_SCREEN = process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1';
 const GPU_FONTS = process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1';
+const RECTS_UA = process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1';
 const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c width=220 height=60></canvas><script>
 (async () => {
   const c = document.getElementById('c'); const g = c.getContext('2d');
@@ -29,10 +30,25 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
   const fontProbe = f => document.fonts.check('12px "' + f + '"') && (() => { const x = document.createElement('canvas').getContext('2d');
     x.font = '40px monospace'; const a = x.measureText('mmmmmlli1W').width; x.font = '40px "' + f + '", monospace'; return x.measureText('mmmmmlli1W').width !== a; })();
   const fonts = { arial: fontProbe('Arial'), segoe: fontProbe('Segoe UI'), courier: fontProbe('Courier New'), notInList: fontProbe('Franklin Gothic Book') };
+  // Candidate fonts that a Windows machine may have; the test keeps those this machine really has.
+  const candidates = ['Arial Narrow', 'Book Antiqua', 'Bookman Old Style', 'Century', 'Century Gothic', 'Garamond', 'Gill Sans MT',
+    'Lucida Bright', 'Monotype Corsiva', 'Rockwell', 'Tw Cen MT', 'Sitka Text', 'Calibri Light', 'Franklin Gothic Book', 'Haettenschweiler'];
+  const fontList = Object.fromEntries(candidates.map(f => [f, fontProbe(f)]));
+  const box = document.createElement('div'); box.style.cssText = 'position:absolute;left:13.3px;top:7.7px;width:101.1px;height:33.3px;font:15px Arial';
+  box.textContent = 'AZWAH rect probe'; document.body.appendChild(box);
+  const r = box.getBoundingClientRect(); const list = box.getClientRects()[0];
+  const rects = [r.x, r.y, r.width, r.height, list.width].join(',');
+  let webglPixels = null;
+  try { const gc = document.createElement('canvas'); gc.width = 32; gc.height = 32; const gl = gc.getContext('webgl', { preserveDrawingBuffer: true });
+    if (gl) { gl.clearColor(0.2, 0.5, 0.7, 1); gl.clear(gl.COLOR_BUFFER_BIT); const px = new Uint8Array(32 * 32 * 4);
+      gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, px); webglPixels = await digest(Array.from(px).join(',')); } } catch {}
+  let hints = null;
+  try { if (navigator.userAgentData) { const h = await navigator.userAgentData.getHighEntropyValues(['platformVersion']);
+    hints = { platformVersion: h.platformVersion, brands: navigator.userAgentData.brands.map(b => b.brand).sort() }; } } catch {}
   let gpuVendor = null; try { if (navigator.gpu) { const ad = await navigator.gpu.requestAdapter(); gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
   const q = new URLSearchParams(location.search);
   await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
-    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, gpuVendor }) });
+    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints }) });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -114,6 +130,29 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
         if (base.a1.fonts.notInList) assert.equal(r.fonts.notInList, false, 'a font outside the profile list behaves as not installed');
         if (r.gpuVendor !== null) assert.equal(r.gpuVendor, expected.webgpuVendor, 'WebGPU vendor follows the profile');
       }
+    }
+    if (GPU_FONTS) {
+      // Fonts this machine has (control) that are outside the profile's list must behave as not installed.
+      const hidden = Object.keys(base.a1.fontList).filter(f => base.a1.fontList[f] && !expected.fonts.includes(f.toLowerCase()));
+      const kept = Object.keys(base.a1.fontList).filter(f => base.a1.fontList[f] && expected.fonts.includes(f.toLowerCase()));
+      console.log(`# fonts: installed outside list=${JSON.stringify(hidden)} installed inside list=${JSON.stringify(kept)}`);
+      for (const f of hidden) assert.equal(run1.a1.fontList[f], false, `${f} is outside the profile list and must look not installed`);
+      for (const f of kept) assert.equal(run1.a1.fontList[f], true, `${f} is in the profile list and must stay available`);
+      if (base.a1.renderer !== null) assert.notEqual(run1.a1.renderer, base.a1.renderer, 'the real GPU name is not shown');
+    }
+    if (RECTS_UA) {
+      assert.equal(base.a1.rects, base.b.rects, 'without protection element sizes are the same (control)');
+      assert.notEqual(run1.a1.rects, base.a1.rects, 'ClientRects differ from the unprotected values');
+      assert.equal(run1.a1.rects, run1.a2.rects, 'ClientRects are stable within a session');
+      assert.notEqual(run2.a1.rects, run1.a1.rects, 'a new launch gives new ClientRects');
+      if (base.a1.webglPixels) {
+        assert.equal(base.a1.webglPixels, base.b.webglPixels, 'WebGL readback identical without protection (control)');
+        assert.notEqual(run1.a1.webglPixels, run1.b.webglPixels, 'WebGL readback differs between sites');
+        assert.equal(run1.a1.webglPixels, run1.a2.webglPixels, 'WebGL readback stable within a site');
+      }
+      assert.ok(run1.a1.hints, 'client hints measured');
+      assert.equal(run1.a1.hints.platformVersion, expected.platformVersion, 'client-hint Windows version follows the profile');
+      assert.ok(run1.a1.hints.brands.includes('Google Chrome'), 'Google Chrome brand reported');
     }
     if (AUDIO_SCREEN) {
       assert.ok(base.a1.audio && run1.a1.audio, 'audio fingerprint measured');
