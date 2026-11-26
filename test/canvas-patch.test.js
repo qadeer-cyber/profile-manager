@@ -160,3 +160,21 @@ test('voices-battery patch: known files, additions only; voices and window size 
   assert.ok(args.some(a => a.startsWith('--window-size=')));
   assert.match(launcher, /--accept-lang=/, 'language follows the profile or the proxy country');
 });
+
+test('native identities are internally consistent across many profiles', async () => {
+  const { nativeIdentityFor } = await import('../server/browser-runtime/native-identity.js');
+  const seen = new Set();
+  for (let i = 0; i < 2000; i += 1) {
+    const id = nativeIdentityFor(`profile-${i}`);
+    seen.add(id.webglRenderer);
+    assert.doesNotMatch(id.webglRenderer, /UHD Graphics 620|Iris|Radeon\(TM\) Graphics/, 'desktop GPUs only');
+    if (id.platformVersion === '10.0.0') assert.ok(!id.fonts.includes('segoe ui variable'), 'no Win11 font on Win10');
+    if (id.hardwareConcurrency >= 6) assert.equal(id.deviceMemory, 8);
+    assert.ok([4, 8].includes(id.deviceMemory));
+    assert.equal(id.webgpuVendor, /\((NVIDIA|Intel|AMD)\)/.exec(id.webglVendor)[1].toLowerCase());
+    assert.ok(id.webgpuArchitecture && id.voices.length >= 1);
+    assert.doesNotMatch(id.screen, /^(1366x768|1536x864)$/);
+    assert.deepEqual(nativeIdentityFor(`profile-${i}`), id, 'stable per profile');
+  }
+  assert.equal(seen.size, 7);
+});

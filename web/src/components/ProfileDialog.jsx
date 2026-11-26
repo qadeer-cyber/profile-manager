@@ -166,9 +166,10 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
             onChange={event => setAdvanced({ ...advanced, runtime: event.target.value })}>
             <option value="compatibility">Default (new profiles: AZWAH Chromium when installed)</option>
             <option value="stable-chrome">Installed Google Chrome Stable</option>
-            <option value="custom-native-chromium">Custom native Chromium (development)</option>
+            {/* Retired engines stay selectable only for profiles that already use them, so they are never changed silently. */}
+            {initial.advancedSettings?.runtime === 'custom-native-chromium' && <option value="custom-native-chromium">Custom native Chromium (development)</option>}
             <option value="azwah-native">AZWAH Chromium (included with AZWAH, beta)</option>
-            <option value="privacy">Azwah Privacy Engine (experimental)</option>
+            {initial.advancedSettings?.runtime === 'privacy' && <option value="privacy">Azwah Privacy Engine (experimental)</option>}
           </select></label>}
           {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <p className="muted hint">
             AZWAH's own Chromium build, included with the installer. Manual browsing only (no automation). It keeps its own browser storage, separate from Chrome Stable, and follows the assigned proxy, its timezone and location automatically.
