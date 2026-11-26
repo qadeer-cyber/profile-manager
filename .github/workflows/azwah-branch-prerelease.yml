@@ -1,5 +1,5 @@
 name: AZWAH branch pre-release (owner-approved)
-# Owner approval 2026-11-25 ("han github release pe daal do"): publish the already tested installer of installer
+# Owner approval 2026-11-26 ("han pre release par daal do"): publish the already tested installer of installer
 # acceptance run 45630508653 (commit d401317, shipping AZWAH Chromium with fingerprint protections) as a GitHub
 # PRE-RELEASE, because the temporary artifact download link expires during large downloads. The tag deliberately does not start with "azwah-v", so the
 # in-app updater (electron/release-updates.js) never offers it to installed copies. Nothing is rebuilt: the exact
@@ -13,10 +13,10 @@ permissions:
 concurrency:
   group: azwah-branch-prerelease
 env:
-  ACCEPTANCE_RUN: '45630508653'
-  SOURCE_SHA: d4013178fd50c682e385c35864ae16e34714f4ee
-  EXPECTED_SHA256: bcfbea283609139493a8f8013c6cfa3ee99cba5016f88c6a6aacaa8df27f029a
-  TAG: azwah-chromium-preview-2.0.0-beta.1-d401317
+  ACCEPTANCE_RUN: '45723355177'
+  SOURCE_SHA: 96a91be4aeb5ecc135fc96f209da58ec16d3eb9b
+  EXPECTED_SHA256: ccaedace62b2512b18e4df5d30c36d194033e417b5ed9d1ff1c6fca5e1249ad5
+  TAG: azwah-chromium-preview-2.0.0-beta.1-96a91be
 jobs:
   prerelease:
     if: contains(github.event.head_commit.message, '[azwah-prerelease]')
@@ -53,12 +53,12 @@ jobs:
           - AZWAH Chromium 159.0.8153.0 is included and is the default browser for new profiles. Existing profiles keep Chrome Stable until you switch them.
           - Tested on GitHub-hosted Windows Server: install, upgrade, online update, uninstall; AZWAH Chromium with an authenticated proxy, proxy timezone, two profiles at once and 30 clean stop/restart cycles.
           - Not yet tested on a Windows 10/11 PC. Unsigned: Windows SmartScreen will warn.
-          - Chromium internal checks (DCHECKs) are off (shipping build). Opt-in per profile: Canvas protection, Hardware and graphics identity, Audio protection.
+          - Chromium internal checks (DCHECKs) are off (shipping build). Opt-in per profile: Canvas protection (canvas, WebGL readback, ClientRects), Hardware and graphics identity (CPU, memory, GPU name, WebGPU, screen, fonts, client hints), Audio protection.
           - Not offered by the in-app updater.
 
           Verify: compare the SHA-256 of Azwah-Setup-x64.exe with SHA256SUMS.txt.
           NOTES
           sed -i 's/^          //' notes.md
-          gh release create "$TAG" --verify-tag --prerelease --title "AZWAH 2.0.0-beta.1 with AZWAH Chromium (preview, d401317)" \
+          gh release create "$TAG" --verify-tag --prerelease --title "AZWAH 2.0.0-beta.1 with AZWAH Chromium (preview, 96a91be)" \
             --notes-file notes.md Azwah-Setup-x64.exe SHA256SUMS.txt BUILD-MANIFEST.txt
           gh release view "$TAG" --json url,isPrerelease,assets --jq '{url, isPrerelease, assets: [.assets[] | {name, size, digest}]}'
