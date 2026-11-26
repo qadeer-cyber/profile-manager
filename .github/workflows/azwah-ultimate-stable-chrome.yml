@@ -24,7 +24,7 @@ jobs:
       # Current installers (A and the update-test B) carry AZWAH Chromium; the rebuilt old baseline ignores this.
       AZWAH_INCLUDE_NATIVE_CHROMIUM: '1'
       # Chain run whose verified AZWAH Chromium archive a push build packages (manual dispatch can name another).
-      NATIVE_RUN: '45719091368'
+      NATIVE_RUN: '45767883842'
     steps:
       - uses: actions/checkout@v4
         with:
