@@ -109,9 +109,11 @@ function record(kind, profileIds, targets) {
 function savePlan(id, plan, state) {
   db.prepare('UPDATE pm_recovery_operations SET plan_json=?,state=?,updated_at=? WHERE id=?').run(JSON.stringify(plan), state, new Date().toISOString(), id);
 }
-function validFingerprint(value) {
+function validFingerprint(value, allowRootFile = false) {
   if (value === null) return true;
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value['/'] !== 'directory') return false;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  if (allowRootFile && Object.keys(value).length === 1 && /^[0-9a-f]{64}$/.test(value[''] || '')) return true;
+  if (value['/'] !== 'directory') return false;
   const entries = Object.entries(value);
   return entries.length <= 200000 && entries.every(([name, digest]) => name.length <= 4096 && (digest === 'directory' || /^[0-9a-f]{64}$/.test(digest)));
 }
@@ -133,7 +135,7 @@ function readOperation(id) {
     if (!m || !/^(profiles|extensions|gecko-extensions)\/[0-9a-f-]{36}$/i.test(m.target) || m.stage !== `recovery-operations/${id}/stage/${index}` || m.park !== `recovery-operations/${id}/park/${index}`) throw fail('Recovery plan is invalid');
     if (targets.has(m.target.toLowerCase())) throw fail('Recovery journal repeats a destination');
     targets.add(m.target.toLowerCase());
-    if (!validFingerprint(m.before) || !validFingerprint(m.after)) throw fail('Recovery fingerprints are invalid');
+    if (!validFingerprint(m.before, row.kind === 'purge') || !validFingerprint(m.after)) throw fail('Recovery fingerprints are invalid');
     if (row.kind === 'restore' && ['prepared', 'committed'].includes(row.state) && m.after === null) throw fail('Prepared restore fingerprint is missing');
     if (m.target.startsWith('profiles/') && !plan.profileIds.includes(m.target.slice(9))) throw fail('Recovery journal profile mapping is invalid');
     if (row.kind === 'purge' && m.target !== `profiles/${plan.profileIds[0]}`) throw fail('Purge target is invalid');
@@ -265,7 +267,14 @@ export function runRecoverablePurge(profileId, { remove = fs.rmSync, fault = () 
   const m = op.plan.moves[0];
   if (op.state === 'committed') { cleanup(op); return { id: profileId, purged: true }; }
   if (op.state === 'prepared') {
-    if (fs.existsSync(safePath(m.target))) move(m.target, m.park);
+    const live = safePath(m.target);
+    const parked = safePath(m.park);
+    if (fs.existsSync(parked)) {
+      if (fs.existsSync(live) || !same(treeFingerprint(parked), m.before)) throw fail('Purge found unexpected retained data');
+    } else {
+      if (!same(treeFingerprint(live), m.before)) throw fail('Profile data changed before purge');
+      if (m.before !== null) move(m.target, m.park);
+    }
     fault('purge-parked');
     db.transaction(() => {
       db.prepare('UPDATE profiles SET purge_error=? WHERE id=?').run('Purge staged; retained data requires explicit recovery or retry', profileId);
@@ -274,7 +283,7 @@ export function runRecoverablePurge(profileId, { remove = fs.rmSync, fault = () 
   }
   fault('purge-before-delete');
   try {
-    remove(safePath(m.park), { recursive: true, force: true });
+    remove(safePath(m.park), { recursive: m.before?.['/'] === 'directory', force: true });
     if (fs.existsSync(safePath(m.park))) throw fail('Profile data remains locked', 'PURGE_FS_FAILED');
     fault('purge-after-delete');
     db.transaction(() => { db.prepare('DELETE FROM profiles WHERE id=?').run(profileId); setState(op.id, 'committed'); })();

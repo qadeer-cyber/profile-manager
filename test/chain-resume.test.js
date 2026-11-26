@@ -1,0 +1,44 @@
+// The chain can continue from an earlier run's last hand-over instead of starting from zero.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const wf = fs.readFileSync(new URL('../.github/workflows/azwah-chromium-chain.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+
+test('resume input exists and defaults to starting from zero', () => {
+  assert.match(wf, /workflow_dispatch:\n    inputs:\n      resume_run_id:/);
+  assert.match(wf, /default: ''/);
+});
+
+test('resume downloads both hand-overs from the named run, only in stage 1, and refuses a missing build directory', () => {
+  for (const kind of ['sccache', 'ninja-out']) {
+    assert.ok(wf.includes(`name: azwah-${kind}-\${{ inputs.resume_run_id }}\n          run-id: \${{ inputs.resume_run_id }}`), kind);
+  }
+  const conds = wf.match(/if: github\.job == 'stage-1' && inputs\.resume_run_id != ''/g) || [];
+  assert.equal(conds.length, 3);
+  assert.match(wf, /Resume requested but no build directory/);
+  assert.match(wf, /actions: read/);
+});
+
+test('hand-over artifacts live long enough to resume', () => {
+  assert.doesNotMatch(wf, /retention-days: [12]\n/);
+});
+
+test('smoke tests keep the sandbox on and grant the sandbox read access to the browser folder', () => {
+  const smoke = fs.readFileSync(new URL('../scripts/test-native-chromium-build.ps1', import.meta.url), 'utf8');
+  const launch = smoke.slice(smoke.indexOf('$launch = @{'), smoke.indexOf('$process = Start-Process'));
+  assert.doesNotMatch(launch, /no-sandbox/, 'the pass/fail launch must not disable the sandbox');
+  for (const text of [smoke, wf]) {
+    assert.match(text, /icacls\.exe" \$\w+ \/grant '\*S-1-15-2-1:\(OI\)\(CI\)\(RX\)' '\*S-1-15-2-2:\(OI\)\(CI\)\(RX\)'/);
+  }
+});
+
+test('a resumed fingerprint build recompiles the patched files and refuses a manifest without a relinked browser', () => {
+  const script = fs.readFileSync(new URL('../scripts/build-native-chromium-baseline.ps1', import.meta.url), 'utf8');
+  const restore = script.indexOf('OUT_RESTORED files=');
+  const touch = script.indexOf('FINGERPRINT_SOURCES_TOUCHED');
+  assert.ok(restore > 0 && touch > restore, 'patched sources are refreshed after the outputs are restored');
+  assert.match(script, /'\(\?m\)\^diff --git a\/\(\\S\+\) b\/'/);
+  assert.match(script, /chrome\.dll was not rebuilt; refusing to record them in the manifest/);
+  assert.ok(script.indexOf('refusing to record them in the manifest') < script.indexOf('canvasPatchSha256 = '), 'checked before the manifest is written');
+});

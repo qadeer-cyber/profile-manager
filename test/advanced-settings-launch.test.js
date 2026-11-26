@@ -13,6 +13,8 @@ mock.module(new URL('../node_modules/playwright/index.mjs', import.meta.url).hre
   executablePath: () => process.execPath,
 } } });
 const { db, setSetting, userDataDir } = await import('../server/db.js');
+// launch() refuses ids without a live profile row (deleted/recovery guard), so each test id is registered.
+const newId = () => { const id = randomUUID(), now = new Date().toISOString(); db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id, 'launch test', '[]', '', '', now, now); return id; };
 const { launch } = await import('../server/browsers.js');
 const { MANIFEST } = await import('../server/chromium.js');
 setSetting('executablePath', process.execPath);
@@ -26,7 +28,7 @@ function prefs(id) {
   return file;
 }
 test('default advanced settings add no arguments and do not rewrite preferences', async () => {
-  const id = randomUUID();
+  const id = newId();
   const file = prefs(id);
   await assert.rejects(launch({ id, ...base }, { automation: false }), /intentional launch boundary/);
   assert.deepEqual(calls.at(-1).opts.args, []);
@@ -35,10 +37,11 @@ test('default advanced settings add no arguments and do not rewrite preferences'
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   assert.equal(saved.profile.exit_type, 'Normal');
   assert.equal(saved.webrtc.ip_handling_policy, 'leave-me');
-  assert.equal(saved.profile.default_content_setting_values, undefined);
+  // Port-scan protection is on by default: local-network-access is denied (2) and nothing else is written.
+  assert.deepEqual(saved.profile.default_content_setting_values, { local_network_access: 2, local_network: 2, loopback_network: 2 });
 });
 test('a coherent full user agent and window preset reach Chromium with the real version', async () => {
-  const id = randomUUID();
+  const id = newId();
   const file = prefs(id);
   await assert.rejects(launch({ id, ...base, advancedSettings: {
     userAgent: { mode: 'full' },
@@ -63,6 +66,6 @@ test('a coherent full user agent and window preset reach Chromium with the real 
 });
 test('invalid advanced settings never reach Chromium', async () => {
   const before = calls.length;
-  await assert.rejects(launch({ id: randomUUID(), ...base, advancedSettings: { userAgent: { mode: 'Chrome/99.0.0.0' } } }), error => error.code === 'INVALID_ADVANCED_SETTINGS');
+  await assert.rejects(launch({ id: newId(), ...base, advancedSettings: { userAgent: { mode: 'Chrome/99.0.0.0' } } }), error => error.code === 'INVALID_ADVANCED_SETTINGS');
   assert.equal(calls.length, before);
 });

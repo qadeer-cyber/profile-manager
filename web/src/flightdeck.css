@@ -1,0 +1,117 @@
+/* AZWAH "flight deck" visual system.
+   Cool paper and ink for the work surface, an ink rail for navigation, cobalt for actions and teal
+   reserved for one meaning only: a browser that is running now. Loaded after the other stylesheets. */
+@import '@fontsource-variable/schibsted-grotesk/index.css';
+
+:root,[data-theme=light],.app.shell{
+  --paper:#f3f5f7;--ink:#1a2233;--cobalt:#2b4acb;--live:#0f8f86;--brick:#c2412d;--steel:#8a94a6;
+  --bg:var(--paper);--surface:#fff;--surface-2:#f7f8fa;--hover:#eef1f5;
+  --border:#e2e6ec;--border-strong:#c9d0da;
+  --text:var(--ink);--text-2:#4d5869;--text-3:#6b7587;
+  --accent:var(--cobalt);--accent-hover:#213baa;--accent-soft:#e8ecfa;--accent-text:#2a44b8;
+  --ok:var(--live);--ok-soft:#ddf3f1;--warn:#9a5b00;--warn-soft:#fff3dc;--bad:var(--brick);--bad-soft:#fbe9e5;
+  --rail:#1a2233;--rail-2:#222c40;--rail-text:#b7c0d0;--rail-strong:#fff;--rail-line:#2c374d;
+  --shadow:0 1px 0 #1a22330a,0 1px 3px #1a22330d;--shadow-lg:0 24px 64px #1a223333;
+  --glass:var(--surface);--highlight:transparent;--glow:transparent;
+  --r:8px;--r-lg:12px;
+  --font:"Schibsted Grotesk Variable","Segoe UI Variable","Segoe UI",system-ui,sans-serif;
+}
+[data-theme=dark],[data-theme=dark] .app.shell{
+  --bg:#141b2d;--surface:#1a2338;--surface-2:#172034;--hover:#222d45;
+  --border:#2a3550;--border-strong:#3a4766;
+  --text:#e8ecf4;--text-2:#aeb8cb;--text-3:#8792a8;
+  --accent:#4b66de;--accent-hover:#5d76e4;--accent-soft:#22305a;--accent-text:#b9c6fa;
+  --live:#2ec4b6;--ok:#2ec4b6;--ok-soft:#12363a;--warn:#e3a43b;--warn-soft:#33270f;--bad:#f0715c;--bad-soft:#3a1d19;
+  --rail:#0f1524;--rail-2:#19213a;--rail-text:#9aa5bb;--rail-strong:#fff;--rail-line:#222b42;
+  --shadow:0 1px 0 #0006,0 2px 6px #0004;--shadow-lg:0 24px 70px #000a;
+}
+
+/* ---------- type ---------- */
+body,.app.shell{font-family:var(--font);font-size:14px;line-height:1.45;font-feature-settings:"tnum" 0}
+.app.shell{background:var(--bg)}
+[data-theme=dark] .app.shell{background:var(--bg)}
+.app.shell :is(h1,h2,h3){font-weight:700;letter-spacing:-.02em;color:var(--text)}
+.app.shell :is(strong,.count,.pager-info){font-variant-numeric:tabular-nums}
+.app.shell .page-head h1,.app.shell .profile-heading h1{font-size:28px;font-weight:720;letter-spacing:-.035em;line-height:1.1}
+
+/* ---------- top bar ---------- */
+.app.shell .topbar{height:52px;padding:0 18px 0 0;gap:14px;background:var(--surface);border-bottom:1px solid var(--border);backdrop-filter:none}
+.app.shell .brand{width:200px;height:100%;padding-left:18px;gap:10px;background:var(--rail);color:var(--rail-strong);font-size:15px;font-weight:760;letter-spacing:.2em;align-items:center}
+.app.shell .logo{width:28px;height:28px;border-radius:8px;background:#ffffff14}
+.top-live{display:inline-flex;align-items:center;gap:8px;height:30px;padding:0 12px;border-radius:999px;border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);font-weight:600;font-size:13px}
+.top-live .live-dot{width:8px;height:8px;border-radius:50%;background:var(--steel)}
+.top-live.on{color:var(--live);border-color:color-mix(in srgb,var(--live) 35%,transparent);background:var(--ok-soft)}
+.top-live.on .live-dot{background:var(--live);box-shadow:0 0 0 3px color-mix(in srgb,var(--live) 22%,transparent)}
+.app.shell .top-updates{margin-left:auto;color:var(--text-2)}
+.app.shell .edition-pill{background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);font-weight:600;font-size:12px}
+
+/* ---------- navigation rail ---------- */
+.app.shell .side{width:200px;background:var(--rail);border-right:0;box-shadow:none;backdrop-filter:none;padding:10px 10px 12px;color:var(--rail-text)}
+.app.shell .side-section{color:var(--rail-text);opacity:.7;text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;margin:16px 10px 6px}
+.app.shell .side .nav{color:var(--rail-text);border-radius:8px;min-height:34px;font-weight:550}
+.app.shell .side .nav .i{color:inherit;opacity:.85}
+.app.shell .side .nav:hover{background:var(--rail-2);color:var(--rail-strong)}
+.app.shell .side .nav.sel{background:var(--rail-2);color:var(--rail-strong);box-shadow:inset 3px 0 var(--accent)}
+[data-theme=dark] .app.shell .side .nav.sel{box-shadow:inset 3px 0 var(--accent)}
+.app.shell .side .nav .count{color:var(--rail-text);opacity:.8}
+.app.shell .profile-scopes{border-color:var(--rail-line)}
+.app.shell .profile-scopes summary{color:var(--rail-text)}
+.app.shell .side :is(.side-empty,.side-foot){color:var(--rail-text)}
+.app.shell .side .folder-tools input{background:var(--rail-2);border-color:var(--rail-line);color:var(--rail-strong)}
+.app.shell .side .folder-tools input::placeholder{color:var(--rail-text)}
+.app.shell .side .icon-btn,.app.shell .side-foot .ghost{background:transparent;border-color:var(--rail-line);color:var(--rail-text)}
+.app.shell .side .icon-btn:hover,.app.shell .side-foot .ghost:hover{background:var(--rail-2);color:var(--rail-strong)}
+.app.shell .side :focus-visible{outline-color:#9fb0ff}
+
+/* ---------- profiles heading and fleet bar ---------- */
+.app.shell .profile-heading{background:none;border:0;box-shadow:none;border-radius:0;padding:6px 2px 14px;margin-bottom:14px;align-items:flex-end;gap:24px}
+.app.shell .profile-heading p{font-size:13.5px;color:var(--text-2);margin-top:5px}
+.fleet{flex:0 1 360px;min-width:220px;display:grid;gap:8px}
+.fleet-bar{display:flex;height:8px;border-radius:99px;background:var(--border);overflow:hidden}
+.fleet-bar span{display:block;height:100%;transition:width .4s ease}
+.fleet-run{background:var(--live)}
+.fleet-err{background:var(--bad)}
+.fleet-legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12.5px;color:var(--text-2)}
+.fleet-key{display:inline-flex;align-items:baseline;gap:4px;white-space:nowrap}
+.fleet-key strong{color:var(--text);font-size:14px}
+.fleet-key.run strong{color:var(--live)}
+.fleet-key.err strong{color:var(--bad)}
+.fleet-key.total{margin-left:auto}
+button.fleet-key{all:unset;display:inline-flex;align-items:baseline;gap:4px;cursor:pointer;white-space:nowrap}
+button.fleet-key:hover{color:var(--text)}
+button.fleet-key:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+
+/* ---------- controls ---------- */
+.app.shell button{font-family:inherit}
+.app.shell .primary{background:var(--accent);border-color:var(--accent);box-shadow:none;font-weight:650}
+.app.shell .primary:hover{background:var(--accent-hover);border-color:var(--accent-hover)}
+.app.shell .seg{background:var(--surface-2);border-color:var(--border)}
+.app.shell .seg button.sel{background:var(--surface);color:var(--accent-text);box-shadow:0 1px 2px #1a223322}
+.app.shell .notice{background:var(--accent-soft);border-color:color-mix(in srgb,var(--accent) 25%,transparent)}
+.app.shell .notice.warn{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 30%,transparent)}
+.app.shell .tag{background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);border-radius:6px}
+
+/* ---------- profile table ---------- */
+.app.shell .profile-card{border-color:var(--border);box-shadow:var(--shadow);border-radius:var(--r-lg)}
+.app.shell .profiles thead th{background:var(--surface-2);color:var(--text-3);font-size:12px;font-weight:600}
+.app.shell .profiles tbody tr{border-bottom:1px solid var(--border)}
+.app.shell .profiles tbody tr:hover{background:var(--hover)}
+.app.shell .profiles tbody tr.selected{background:var(--accent-soft)}
+.app.shell .profiles .run-btn{background:var(--accent-soft);color:var(--accent-text)}
+.app.shell .profiles .run-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.app.shell .profile-card .pager .pager-info{background:var(--surface-2);color:var(--text-2)}
+
+/* The one moment of motion: a running browser shows a live edge and a breathing status dot. */
+.app.shell .profiles tbody tr.is-running>td:first-child{box-shadow:inset 3px 0 var(--live)}
+.app.shell .profiles tbody tr.is-running .name{color:var(--text)}
+.app.shell .status.running{color:var(--live);background:var(--ok-soft)}
+.app.shell .status.running>i{background:var(--live);animation:fd-breathe 2.4s ease-in-out infinite}
+@keyframes fd-breathe{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 4px transparent}}
+@media (prefers-reduced-motion: reduce){.app.shell .status.running>i{animation:none}.fleet-bar span{transition:none}}
+
+@media (max-width:1100px){.app.shell .brand{width:192px}.app.shell .side{width:192px}}
+@media (max-width:900px){.app.shell .brand{width:168px;letter-spacing:.12em}.app.shell .side{width:168px}.fleet{flex-basis:260px}}
+.app.shell .top-meta{margin-left:0}
+.app.shell a.btn-link{display:inline-flex;align-items:center;padding:7px 14px;border-radius:var(--r);text-decoration:none;color:#fff}
+.network-note{color:var(--text-2)}.network-note.warn{color:var(--warn)}
+.proxy-offer{justify-content:space-between}.proxy-offer-actions{display:inline-flex;gap:8px;flex:none}

@@ -13,7 +13,8 @@ export function Toasts({ children }) {
     setTimeout(() => setItems(i => i.filter(t => t.id !== id)), kind === 'error' ? 7000 : 3500);
   }, []);
   return <ToastCtx.Provider value={push}>{children}
-    <div className="toasts">{items.map(t => <div key={t.id} className={`toast ${t.kind}`} onClick={() => setItems(i => i.filter(x => x.id !== t.id))}>{t.msg}</div>)}</div>
+    {/* Always-mounted polite live region so screen readers announce toasts; errors interrupt. */}
+    <div className="toasts" role="status" aria-live="polite" aria-relevant="additions">{items.map(t => <div key={t.id} className={`toast ${t.kind}`} role={t.kind === 'error' ? 'alert' : undefined} title="Click to dismiss" onClick={() => setItems(i => i.filter(x => x.id !== t.id))}>{t.msg}</div>)}</div>
   </ToastCtx.Provider>;
 }
 

@@ -7,10 +7,14 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Server } from 'proxy-chain';
 import { db, getSetting, setSetting } from '../db.js';
 import { geoIpCredentials } from '../geoip-settings.js';
-import { resolveProxyLocation } from '../proxy-location.js';
+import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
-import { isPackaged } from '../testflags.js';
+import { isPackaged, azwahNativeTestAvailable } from '../testflags.js';
+import { nativeIdentityArgs, nativeIdentityFor } from './native-identity.js';
+import { chromiumPolicyArgs } from '../webrtc-policy.js';
+import { applyWebRtcPreference } from '../webrtc-settings.js';
 
+export const RECEIPT_NOT_READY = new Set(['ENOENT', 'EBUSY', 'EPERM', 'EACCES']);
 const error = (message, code = 'AZWAH_NATIVE_UNAVAILABLE') =>
   Object.assign(new Error(message), { status: 409, code });
 
@@ -46,7 +50,13 @@ function developmentBinary() {
       }
       return entries[0].sha256.toLowerCase();
     };
-    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll') };
+    // Canvas protection exists only in builds made with native-chromium/canvas-noise.patch (recorded in the manifest).
+    const canvas = /^[a-f0-9]{64}$/i.test(manifest.canvasPatchSha256 || '');
+    const identity = /^[a-f0-9]{64}$/i.test(manifest.identityPatchSha256 || '');
+    const audioScreen = /^[a-f0-9]{64}$/i.test(manifest.audioScreenPatchSha256 || '');
+    const gpuFonts = /^[a-f0-9]{64}$/i.test(manifest.gpuFontsPatchSha256 || '');
+    const rectsUa = /^[a-f0-9]{64}$/i.test(manifest.rectsUaPatchSha256 || '');
+    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll'), canvas, identity, audioScreen, gpuFonts, rectsUa };
   }
   const exe = process.env.AZWAH_NATIVE_CHROMIUM_EXE;
   const hash = process.env.AZWAH_NATIVE_CHROMIUM_SHA256;
@@ -55,7 +65,35 @@ function developmentBinary() {
       !hash || !/^[a-f0-9]{64}$/i.test(hash) || !dllHash || !/^[a-f0-9]{64}$/i.test(dllHash)) {
     throw error('Native Azwah requires an explicitly qualified development build or a genuine packaged native runtime.');
   }
-  return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase() };
+  return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase(), canvas: process.env.AZWAH_NATIVE_CHROMIUM_CANVAS === '1',
+    identity: process.env.AZWAH_NATIVE_CHROMIUM_IDENTITY === '1', audioScreen: process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1',
+    gpuFonts: process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1', rectsUa: process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1' };
+}
+
+// True when this installation carries a provenance-checked AZWAH Chromium (packaged Windows build only).
+// Cheap: reads the manifest and checks file sizes; the full SHA-256 check still runs at every launch.
+export function azwahNativeAvailable() {
+  if (azwahNativeTestAvailable()) return true;
+  if (process.platform !== 'win32' || !isPackaged()) return false;
+  try { developmentBinary(); return true; } catch { return false; }
+}
+
+// Chromium's Windows sandbox starts page processes with restricted and AppContainer tokens that must be able to
+// read the browser folder ("Sandbox cannot access executable ... Access is denied", measured in CI run 45146948553).
+// Program Files grants this; a per-user install folder does not. Grant read/execute to ALL APPLICATION PACKAGES
+// and ALL RESTRICTED APPLICATION PACKAGES. The sandbox stays on.
+export const SANDBOX_READ_SIDS = ['*S-1-15-2-1:(OI)(CI)(RX)', '*S-1-15-2-2:(OI)(CI)(RX)'];
+export function sandboxAccessArgs(directory) { return [directory, '/grant', ...SANDBOX_READ_SIDS, '/T', '/C', '/Q']; }
+// Applied before every launch (idempotent, about a second): an update or repair reinstalls the folder without these
+// entries even when the browser build is unchanged (measured: installer run 45306804506, Beta A -> Beta B).
+async function ensureSandboxAccess(directory) {
+  const icacls = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'icacls.exe');
+  const code = await new Promise(resolve => {
+    const child = spawn(icacls, sandboxAccessArgs(directory), { stdio: 'ignore', windowsHide: true });
+    child.on('error', () => resolve(-1));
+    child.on('exit', resolve);
+  });
+  if (code !== 0) throw error(`Could not let the AZWAH browser's sandbox read its folder (icacls exit ${code}).`, 'AZWAH_NATIVE_SANDBOX_ACCESS');
 }
 
 async function verifyBinary(binary, expected) {
@@ -86,9 +124,23 @@ function proxyRelay(proxy) {
 }
 
 export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
-  const { exe, hash, dllHash } = developmentBinary();
+  const { exe, hash, dllHash, canvas, identity, audioScreen, gpuFonts, rectsUa } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
+  const canvasProtection = profile.advancedSettings?.experimental?.canvasReadback === 'prototype';
+  if (canvasProtection && !canvas) {
+    throw error('This AZWAH Chromium build does not include canvas protection. Turn it off for this profile or update AZWAH.', 'AZWAH_NATIVE_CANVAS_UNSUPPORTED');
+  }
+  const hardwareIdentity = profile.advancedSettings?.experimental?.hardwareIdentity === 'prototype';
+  if (hardwareIdentity && !identity) {
+    throw error('This AZWAH Chromium build does not include hardware and graphics identity. Turn it off for this profile or update AZWAH.', 'AZWAH_NATIVE_IDENTITY_UNSUPPORTED');
+  }
+  const audioProtection = profile.advancedSettings?.experimental?.audioReadback === 'prototype';
+  if (audioProtection && !audioScreen) {
+    throw error('This AZWAH Chromium build does not include audio protection. Turn it off for this profile or update AZWAH.', 'AZWAH_NATIVE_AUDIO_UNSUPPORTED');
+  }
   await Promise.all([verifyBinary(exe, hash), verifyBinary(path.join(path.dirname(exe), 'chrome.dll'), dllHash)]);
+  checkCancelled();
+  if (isPackaged()) await ensureSandboxAccess(path.dirname(exe));
   checkCancelled();
 
   const nativeDir = path.join(dir, 'azwah-native');
@@ -97,7 +149,7 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
   const receipt = path.join(nativeDir, `.ready-${randomUUID()}`);
   const proxy = profile.proxy;
   const locationKey = 'proxy-location:' + profile.id;
-  const resolveLocation = () => resolveProxyLocation(proxy, {
+  const resolveLocation = () => resolveProxyLocationWithRetry(proxy, {
     read: () => getSetting(locationKey, null), credentials: geoIpCredentials,
   });
   const assignmentCurrent = () => {
@@ -135,6 +187,20 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     checkCancelled();
     if (!assignmentCurrent()) throw error('The assigned proxy changed during native launch.', 'PROXY_BROWSER_IDENTITY_FAILED');
     const args = [`--user-data-dir=${nativeDir}`, '--no-first-run', '--no-default-browser-check'];
+    // Opt-in canvas readback protection: a new secret per launch, so values are stable within a site for this
+    // session and differ between sites, profiles and launches (docs/privacy-threat-model.md).
+    if (canvasProtection) args.push(`--azwah-canvas-seed=${randomUUID().replace(/-/g, '')}`);
+    // ClientRects protection travels with canvas protection (new value each launch) when the build has it.
+    if (canvasProtection && rectsUa) args.push(`--azwah-rects-seed=${randomUUID().replace(/-/g, '')}`);
+    // The screen size is part of the hardware identity once the build supports it.
+    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id), { screen: audioScreen, gpuFonts, clientHints: rectsUa }));
+    if (audioProtection) args.push(`--azwah-audio-seed=${randomUUID().replace(/-/g, '')}`);
+    // WebRTC must not open UDP outside the proxy (it would reveal the real IP). Proxy profiles always get
+    // disable_non_proxied_udp, like Chrome Stable proxy profiles; others keep their own WebRTC setting.
+    const webrtcArgs = proxy ? chromiumPolicyArgs({ mode: 'disable_non_proxied_udp' }) : chromiumPolicyArgs(profile.webrtcSettings || {});
+    args.push(...webrtcArgs);
+    const webrtcMode = webrtcArgs[0]?.split('=')[1];
+    if (webrtcMode) applyWebRtcPreference(nativeDir, webrtcMode);
     if (opts.url) {
       const url = new URL(opts.url);
       if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw error('Enter an HTTP or HTTPS website URL.');
@@ -142,6 +208,8 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     } else if (profile.advancedSettings?.preferences?.restoreTabs) {
       args.push('--restore-last-session');
     }
+    // Tests only (ignored in a packaged app): extra switches, e.g. software WebGL on a CI runner without a GPU.
+    if (!isPackaged() && process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS) args.push(...process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS.split(' ').filter(Boolean));
     child = spawn(exe, args, { env, stdio: 'ignore', windowsHide: false });
     let spawnFailed = false;
     child.on('error', () => { spawnFailed = true; });
@@ -156,7 +224,9 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
       try {
         if (fs.readFileSync(receipt, 'utf8') === expected) break;
       } catch (err) {
-        if (err.code !== 'ENOENT') throw err;
+        // Not written yet, or the browser still holds it open while writing (Windows: EBUSY/EPERM/EACCES,
+        // measured in the live qualification run 45323301364). Both mean "not ready yet"; the deadline still applies.
+        if (!RECEIPT_NOT_READY.has(err.code)) throw err;
       }
       await delay(100);
     }

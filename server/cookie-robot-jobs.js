@@ -1,5 +1,6 @@
 // CookieRobot-local: user-authorized URL batches only (no CAPTCHA/abuse automation).
 import crypto from 'crypto';
+import { setTimeout as delay } from 'node:timers/promises';
 import { chromium } from 'playwright';
 import { db } from './db.js';
 import * as engine from './browsers.js';
@@ -8,7 +9,6 @@ import { validateCookieRobotUrlList, validateCookieRobotUrl } from './cookie-rob
 const fail = (status, message, code) => Object.assign(new Error(message), { status, code });
 const CDP_WAIT_MS = 45000;
 
-/** @type {Map<string, { control: { cancel: boolean }, gen: number }>} */
 const runners = new Map();
 let launchProfileFn = null;
 
@@ -56,15 +56,13 @@ function rowToJob(row) {
   };
 }
 
-function attachRunner(id, control) {
-  const gen = (runners.get(id)?.gen ?? 0) + 1;
-  runners.set(id, { control, gen });
-  return gen;
-}
-
-function runnerActive(id, gen) {
-  const r = runners.get(id);
-  return r && r.gen === gen;
+function scheduleJob(id) {
+  const controller = new AbortController();
+  runners.set(id, controller);
+  setImmediate(async () => {
+    try { if (db.open) await runCookieRobotJob(id, controller.signal); }
+    finally { runners.delete(id); }
+  });
 }
 
 export function createCookieRobotJob({ profileId, urls, delayMs = 1500 }) {
@@ -76,9 +74,7 @@ export function createCookieRobotJob({ profileId, urls, delayMs = 1500 }) {
   const tasks = list.map(url => ({ url, status: 'pending', error: null, at: null }));
   db.prepare('INSERT INTO cookie_robot_jobs (id,profile_id,status,tasks_json,delay_ms,error,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)')
     .run(id, profileId, 'queued', JSON.stringify(tasks), delay, null, now, now);
-  const control = { cancel: false };
-  const gen = attachRunner(id, control);
-  setImmediate(() => runCookieRobotJob(id, control, gen).catch(() => {}));
+  scheduleJob(id);
   return getCookieRobotJob(id);
 }
 
@@ -100,7 +96,7 @@ function persistTasks(id, tasks, status, error = null) {
 
 export function cancelCookieRobotJob(id) {
   const r = runners.get(id);
-  if (r) r.control.cancel = true;
+  r?.abort();
   const job = getCookieRobotJob(id);
   if (job.status === 'running' || job.status === 'queued') persistTasks(id, job.tasks, 'cancelled');
   return getCookieRobotJob(id);
@@ -108,85 +104,88 @@ export function cancelCookieRobotJob(id) {
 
 export function retryCookieRobotJob(id, { failedOnly = false } = {}) {
   const job = getCookieRobotJob(id);
-  if (job.status === 'running') throw fail(409, 'job is still running', 'JOB_RUNNING');
+  if (runners.has(id) || job.status === 'running') throw fail(409, 'job is still running', 'JOB_RUNNING');
   const tasks = job.tasks.map(t => {
     if (t.status === 'ok') return t;
     if (failedOnly && t.status !== 'failed') return t;
     return { ...t, status: 'pending', error: null, at: null };
   });
   persistTasks(id, tasks, 'queued');
-  const control = { cancel: false };
-  const gen = attachRunner(id, control);
-  setImmediate(() => runCookieRobotJob(id, control, gen).catch(() => {}));
+  scheduleJob(id);
   return getCookieRobotJob(id);
 }
 
-async function waitForCdpPort(profileId, timeoutMs, control) {
+async function waitForCdpPort(profileId, timeoutMs, signal) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (control.cancel) throw fail(409, 'Job cancelled', 'JOB_CANCELLED');
+    signal.throwIfAborted();
     const info = engine.runInfo(profileId);
     if (info?.cdp_port) return info.cdp_port;
     if (!engine.isRunning(profileId)) break;
-    await new Promise(r => setTimeout(r, 200));
+    await delay(200, undefined, { signal });
   }
   throw fail(409, 'Timed out waiting for automation CDP on the profile. Enable automation on the profile or retry.', 'NO_CDP');
 }
 
-async function gotoCookieRobotUrl(page, url) {
+async function gotoCookieRobotUrl(page, url, signal) {
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
+    signal.throwIfAborted();
     try {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
       return;
     } catch (e) {
       lastErr = e;
       if (!String(e.message || e).includes('ERR_ABORTED') || attempt === 2) throw e;
-      await new Promise(r => setTimeout(r, 250 * (attempt + 1)));
+      await delay(250 * (attempt + 1), undefined, { signal });
     }
   }
   throw lastErr;
 }
 
 /** Testable CDP task runner (real Chromium CDP when port is live). */
-export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500, signal = {}, validateFinalUrl = true } = {}) {
+export async function runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs = 500, signal = new AbortController().signal, validateFinalUrl = true, onProgress = () => {} } = {}) {
   const browser = await connectCdpWithRetry(cdpPort, signal);
   try {
-    const context = browser.contexts()[0] || await browser.newContext();
-    const out = [];
-    for (let i = 0; i < tasks.length; i++) {
-      if (signal.cancel) break;
-      if (tasks[i].status === 'ok') { out.push(tasks[i]); continue; }
-      let page;
-      let openedNewPage = false;
+    const context = browser.contexts()[0];
+    if (!context) throw fail(409, 'Profile context closed', 'NO_CDP');
+    const out = [...tasks];
+    for (let i = 0; i < tasks.length && !signal.aborted; i++) {
+      if (tasks[i].status === 'ok') continue;
+      let page, closing;
+      const closePage = () => { if (page) closing ??= page.close().catch(() => {}); };
       try {
-        const live = context.pages().filter(p => !p.isClosed());
-        if (live.length) {
-          page = live.find(p => p.url() === 'about:blank' || p.url() === 'chrome://newtab/') || live[0];
-        } else {
-          page = await context.newPage();
-          openedNewPage = true;
-        }
-        let redirectBlocked = null;
+        page = await context.newPage();
+        signal.addEventListener('abort', closePage, { once: true });
+        signal.throwIfAborted();
+        let redirectBlocked;
         page.on('framenavigated', frame => {
           if (frame !== page.mainFrame()) return;
           try { validateCookieRobotUrl(frame.url(), { afterRedirect: true }); }
           catch (e) { redirectBlocked = e.message; }
         });
-        await gotoCookieRobotUrl(page, tasks[i].url);
+        await gotoCookieRobotUrl(page, tasks[i].url, signal);
+        signal.throwIfAborted();
         if (redirectBlocked) throw fail(400, redirectBlocked, 'URL_NOT_ALLOWED');
         if (validateFinalUrl) validateCookieRobotUrl(page.url(), { afterRedirect: true });
-        out.push({ ...tasks[i], status: 'ok', error: null, at: new Date().toISOString() });
+        out[i] = { ...tasks[i], status: 'ok', error: null, at: new Date().toISOString() };
       } catch (error) {
-        out.push({ ...tasks[i], status: 'failed', error: error.message, at: new Date().toISOString() });
+        if (signal.aborted) break;
+        out[i] = { ...tasks[i], status: 'failed', error: error.message, at: new Date().toISOString() };
       } finally {
-        if (openedNewPage) try { await page?.close(); } catch {}
+        signal.removeEventListener('abort', closePage);
+        closePage();
+        await closing;
       }
-      if (i < tasks.length - 1 && !signal.cancel) await new Promise(r => setTimeout(r, delayMs));
+      if (!signal.aborted) onProgress(out);
+      if (i < tasks.length - 1) {
+        try { await delay(delayMs, undefined, { signal }); }
+        catch (e) { if (!signal.aborted) throw e; }
+      }
     }
     return out;
   } finally {
-    try { await browser.close(); } catch {}
+    await browser.close().catch(() => {});
   }
 }
 
@@ -194,24 +193,22 @@ async function connectCdpWithRetry(cdpPort, signal) {
   const url = `http://127.0.0.1:${cdpPort}`;
   let lastErr;
   for (let attempt = 0; attempt < 3; attempt++) {
-    if (signal?.cancel) throw fail(409, 'Job cancelled', 'JOB_CANCELLED');
+    signal.throwIfAborted();
     try {
-      return await chromium.connectOverCDP(url);
+      return await chromium.connectOverCDP(url, { timeout: 5000 });
     } catch (e) {
       lastErr = e;
-      await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+      await delay(300 * (attempt + 1), undefined, { signal });
     }
   }
   throw fail(503, `CDP connect failed: ${lastErr?.message || lastErr}`, 'CDP_CONNECT_FAILED');
 }
 
-async function runCookieRobotJob(id, control, gen) {
+async function runCookieRobotJob(id, signal) {
   const row = db.prepare('SELECT * FROM cookie_robot_jobs WHERE id=?').get(id);
   if (!row) return;
-  if (!runnerActive(id, gen)) return;
-  if (control.cancel) {
+  if (signal.aborted) {
     persistTasks(id, JSON.parse(row.tasks_json || '[]'), 'cancelled');
-    runners.delete(id);
     return;
   }
   let tasks = JSON.parse(row.tasks_json || '[]');
@@ -220,13 +217,13 @@ async function runCookieRobotJob(id, control, gen) {
   const delayMs = Number(row.delay_ms) || 1500;
   let launchedByJob = false;
   try {
-    if (control.cancel || !runnerActive(id, gen)) {
+    if (signal.aborted) {
       persistTasks(id, tasks, 'cancelled');
       return;
     }
     assertChromiumProfile(profileId);
     if (!engine.isRunning(profileId)) {
-      if (control.cancel) { persistTasks(id, tasks, 'cancelled'); return; }
+      if (signal.aborted) { persistTasks(id, tasks, 'cancelled'); return; }
       if (!launchProfileFn) throw fail(500, 'CookieRobot launch is not configured', 'INTERNAL');
       await launchProfileFn(profileId);
       launchedByJob = true;
@@ -236,24 +233,23 @@ async function runCookieRobotJob(id, control, gen) {
         throw fail(409, 'Profile is running without automation (CDP). Stop it and start a job again to launch with automation, or enable automation on the profile.', 'NO_CDP');
       }
     }
-    const cdpPort = await waitForCdpPort(profileId, CDP_WAIT_MS, control);
-    if (control.cancel || !runnerActive(id, gen)) {
+    const cdpPort = await waitForCdpPort(profileId, CDP_WAIT_MS, signal);
+    if (signal.aborted) {
       persistTasks(id, tasks, 'cancelled');
       return;
     }
-    tasks = await runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs, signal: control });
-    if (control.cancel || !runnerActive(id, gen)) {
+    tasks = await runCookieRobotTasksOverCdp(cdpPort, tasks, { delayMs, signal, onProgress: progress => persistTasks(id, progress, 'running') });
+    if (signal.aborted) {
       persistTasks(id, tasks, 'cancelled');
       return;
     }
     const failed = tasks.some(t => t.status === 'failed');
     persistTasks(id, tasks, failed ? 'failed' : 'done', failed ? 'one or more URLs failed' : null);
   } catch (error) {
-    if (error.code === 'JOB_CANCELLED' || control.cancel) persistTasks(id, tasks, 'cancelled');
+    if (error.code === 'JOB_CANCELLED' || signal.aborted) persistTasks(id, tasks, 'cancelled');
     else persistTasks(id, tasks, 'failed', error.message || 'job failed');
   } finally {
-    if (runnerActive(id, gen)) runners.delete(id);
-    if (launchedByJob && control.cancel) {
+    if (launchedByJob && signal.aborted) {
       try { await engine.stop(profileId, { timeoutMs: 15000 }); } catch { /* best effort */ }
     }
   }

@@ -24,15 +24,46 @@ param(
 
     [switch] $AzwahSource,
 
-    [switch] $CheckpointProbe
+    [switch] $CheckpointProbe,
+
+    # Chained free-runner build: compile through sccache and stop cleanly at the time budget so the
+    # next job can continue from the compiler cache. 0 means no budget.
+    [switch] $Sccache,
+
+    # Chained build: a tar of the previous stage's Ninja build directory (outputs, .ninja_log, .ninja_deps).
+    # Restored after sync and patch, with the freshly synced sources set to a fixed old timestamp, so Ninja
+    # skips finished work instead of replaying it from sccache (run 44848736628: replay took ~3.9 of 4.5 h
+    # in stage 4).
+    [string] $RestoreOutArchive = '',
+
+    # Shipping build: Chromium's internal DCHECKs off (they are on by default in non-official builds and turn
+    # minor internal issues into crashes). Owner-approved 2026-11-24.
+    [switch] $Shipping,
+
+    # Opt-in canvas readback protection (native-chromium/canvas-noise.patch, original AZWAH code). Applied after the
+    # main patch; its SHA-256 is recorded in the manifest so AZWAH offers the setting only for builds that have it.
+    [switch] $CanvasPatch,
+
+    [ValidateRange(0, 360)]
+    [int] $TimeBudgetMinutes = 0
 )
 
 $ErrorActionPreference = 'Stop'
 if ($CheckpointProbe -and (!$AzwahSource -or !(Get-Command sccache.exe -ErrorAction SilentlyContinue))) {
     throw 'The checkpoint probe requires Azwah source and the verified sccache executable on PATH.'
 }
+if ($Sccache -and !(Get-Command sccache.exe -ErrorAction SilentlyContinue)) {
+    throw 'The chained build requires the verified sccache executable on PATH.'
+}
+$deadline = if ($TimeBudgetMinutes -gt 0) { (Get-Date).AddMinutes($TimeBudgetMinutes) } else { $null }
+$script:BudgetReached = $false
 $sourceRoot = Join-Path (Split-Path -Parent $PSScriptRoot) 'native-chromium'
 $sourcePatch = Join-Path $sourceRoot 'windows-source.patch'
+$canvasPatchFile = Join-Path $sourceRoot 'canvas-noise.patch'
+$identityPatchFile = Join-Path $sourceRoot 'identity.patch'
+$audioScreenPatchFile = Join-Path $sourceRoot 'audio-screen.patch'
+$gpuFontsPatchFile = Join-Path $sourceRoot 'gpu-fonts.patch'
+$rectsUaPatchFile = Join-Path $sourceRoot 'rects-webgl-ua.patch'
 if ($AzwahSource) {
     $upstream = Get-Content -LiteralPath (Join-Path $sourceRoot 'upstream.json') -Raw | ConvertFrom-Json
     if ($ChromiumCommit -ne $upstream.revision) {
@@ -52,7 +83,7 @@ function Invoke-BuildTool {
 }
 
 function Invoke-BoundedBuildStage {
-    param([string] $Program, [string[]] $Arguments)
+    param([string] $Program, [string[]] $Arguments, [switch] $Budgeted)
     # An encoded command keeps path quoting in PowerShell and gives us an
     # owned process tree to stop if the build volume reaches its reserve.
     $words = (@($Program) + $Arguments) | ForEach-Object { "'" + $_.Replace("'", "''") + "'" }
@@ -74,6 +105,14 @@ function Invoke-BoundedBuildStage {
             }
             if ($drive.AvailableFreeSpace -le $ReserveGiB * 1GB) {
                 throw "Stopped $Program because the build volume reached its free-space reserve."
+            }
+            if ($Budgeted -and $deadline -and $now -ge $deadline) {
+                # Stop here; finished objects are already in the compiler cache for the next job.
+                Write-Output "BUDGET reached for $([IO.Path]::GetFileName($Program)); stopping so the next job can continue."
+                $script:BudgetReached = $true
+                & "$env:SystemRoot/System32/taskkill.exe" /PID $stage.Id /T /F | Out-Null
+                $stage.WaitForExit(30000) | Out-Null
+                return
             }
         }
         if ($stage.ExitCode -ne 0) { throw "$Program exited with code $($stage.ExitCode)." }
@@ -192,7 +231,60 @@ try {
         if ($AzwahSource -and $patchApplied) {
             & (Join-Path $PSScriptRoot 'qualify-native-chromium-patch.ps1') -Source (Get-Location).ProviderPath -Patch $sourcePatch -AlreadyApplied
         }
+        if ($AzwahSource -and $CanvasPatch) {
+            # Fingerprint patches, in order (each is written against the source with the previous ones applied).
+            foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile, $rectsUaPatchFile)) {
+                $name = Split-Path -Leaf $fp
+                & $git apply --reverse --check -- $fp 2>$null
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Output "FINGERPRINT_PATCH $name already applied (reverse check passed)."
+                } else {
+                    & $git apply --check -- $fp
+                    if ($LASTEXITCODE -ne 0) { throw "$name does not apply to the pinned, patched source." }
+                    & $git apply -- $fp
+                    if ($LASTEXITCODE -ne 0) { throw "$name application failed." }
+                    & $git apply --reverse --check -- $fp
+                    if ($LASTEXITCODE -ne 0) { throw "Applied $name reverse verification failed." }
+                    Write-Output "FINGERPRINT_PATCH $name applied sha256=$((Get-FileHash -LiteralPath $fp -Algorithm SHA256).Hash.ToLowerInvariant())"
+                }
+            }
+            $global:LASTEXITCODE = 0
+        }
         $out = if ($AzwahSource) { 'out/azwah-native-development' } else { 'out/azwah-baseline' }
+        if ($RestoreOutArchive) {
+            if (!(Test-Path -LiteralPath $RestoreOutArchive -PathType Leaf)) { throw "Build directory archive not found: $RestoreOutArchive" }
+            $started = Get-Date
+            # Sources from this fresh sync get one fixed, old timestamp; outputs keep their own (newer) times.
+            $fixed = [DateTime]::new(2001, 1, 1, 0, 0, 0, [DateTimeKind]::Utc)
+            $root = (Get-Location).ProviderPath
+            $count = 0
+            foreach ($file in [IO.Directory]::EnumerateFiles($root, '*', [IO.SearchOption]::AllDirectories)) {
+                if ($file.StartsWith((Join-Path $root 'out') + '\', [StringComparison]::OrdinalIgnoreCase)) { continue }
+                try { [IO.File]::SetLastWriteTimeUtc($file, $fixed); $count++ } catch { }
+            }
+            Write-Output "SOURCE_TIMESTAMPS files=$count seconds=$([int]((Get-Date) - $started).TotalSeconds)"
+            $started = Get-Date
+            & tar -xf $RestoreOutArchive -C $root
+            if ($LASTEXITCODE -ne 0) { throw 'Could not extract the previous build directory.' }
+            $restored = (Get-ChildItem -LiteralPath (Join-Path $root $out) -Recurse -File | Measure-Object Length -Sum)
+            Write-Output "OUT_RESTORED files=$($restored.Count) bytes=$($restored.Sum) seconds=$([int]((Get-Date) - $started).TotalSeconds)"
+            # Files changed by the fingerprint patches must look newer than the restored outputs, or Ninja keeps the
+            # previous objects (run 45427549124: all four patches applied, "ninja: no work to do", no feature compiled).
+            if ($CanvasPatch) {
+                $now = [DateTime]::UtcNow
+                $touched = 0
+                foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile, $rectsUaPatchFile)) {
+                    foreach ($match in [regex]::Matches((Get-Content -Raw -LiteralPath $fp), '(?m)^diff --git a/(\S+) b/')) {
+                        $path = Join-Path $root ($match.Groups[1].Value.Replace('/', [IO.Path]::DirectorySeparatorChar))
+                        if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Patched file missing: $path" }
+                        [IO.File]::SetLastWriteTimeUtc($path, $now)
+                        $touched++
+                    }
+                }
+                Write-Output "FINGERPRINT_SOURCES_TOUCHED files=$touched"
+                $script:fingerprintRestoreTime = $now
+            }
+        }
         if ($CheckpointProbe) { $out = 'out/azwah-checkpoint-probe' }
         $manifest = Join-Path $out 'BASELINE-MANIFEST.json'
         if (Test-Path -LiteralPath $manifest -PathType Leaf) {
@@ -206,9 +298,16 @@ is_chrome_branded = false
 target_cpu = "x64"
 symbol_level = 0
 '@
-        if ($CheckpointProbe) {
+        if ($CheckpointProbe -or $Sccache) {
             $gnArgs += "`n" + 'cc_wrapper = "sccache"' + "`n" + 'use_siso = false'
         }
+        if ($Sccache) {
+            # Precompiled headers and Clang header modules make compiles uncacheable for sccache. Measured on
+            # run 44706934362 stage 1: all 23,303 compile requests were non-cacheable (-fmodules-cache-path),
+            # from use_clang_modules (build/config/c++/c++.gni at the pinned revision).
+            $gnArgs += "`n" + 'enable_precompiled_headers = false' + "`n" + 'use_clang_modules = false'
+        }
+        if ($Shipping) { $gnArgs += "`n" + 'dcheck_always_on = false' }
         $argsFile = Join-Path $out 'args.gn'
         if (!(Test-Path -LiteralPath $argsFile -PathType Leaf) -or
             ((Get-Content -LiteralPath $argsFile -Raw).TrimEnd() -cne $gnArgs.TrimEnd())) {
@@ -248,6 +347,35 @@ symbol_level = 0
             if ($env:GITHUB_OUTPUT) { "object_sha256=$probeHash" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
             return
         }
+        if ($Sccache) {
+            # sccache writes cached objects with ordinary Windows paths, which stop at 260 characters
+            # (run 44798415536 stage 2 failed on an object whose full path was exactly 260). Check every
+            # build output now instead of failing hours into the build.
+            # Every output of the build graph is measured by scripts/chain-path-preflight.mjs (unit-tested
+            # with the real failing object); it fails closed on an empty target list.
+            $outRoot = (Resolve-Path -LiteralPath $out).ProviderPath
+            $targets = Invoke-BuildTool $autoninja @('-C', $out, '-t', 'targets', 'all')
+            $preflight = Join-Path $PSScriptRoot 'chain-path-preflight.mjs'
+            if (!(Get-Command node -ErrorAction SilentlyContinue)) { throw 'Node.js is required for the path preflight.' }
+            $targets | & node $preflight $outRoot
+            if ($LASTEXITCODE -ne 0) { throw 'Path preflight failed: a build output path is too long for sccache (see above).' }
+            # Fail within minutes, not after a full job, if compiles still cannot be cached. Skipped when the
+            # previous build directory was restored: //base is then already built and compiles nothing.
+            if (!$RestoreOutArchive) {
+            Write-Output 'BEGIN cacheability check: compile //base through sccache.'
+            Invoke-BoundedBuildStage $autoninja @('-C', $out, '-j', "$Jobs", 'base') -Budgeted
+            $stats = (& sccache.exe --show-stats | Out-String)
+            Write-Output $stats
+            $requests = if ($stats -match '(?m)^Compile requests\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $uncacheable = if ($stats -match '(?m)^Non-cacheable calls\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $stored = if ($stats -match '(?m)^Cache misses\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            $hits = if ($stats -match '(?m)^Cache hits\s+(\d+)') { [int]$Matches[1] } else { 0 }
+            Write-Output "CACHEABILITY requests=$requests stored=$stored hits=$hits uncacheable=$uncacheable"
+            if ($requests -eq 0 -or ($stored + $hits) -eq 0 -or $uncacheable -gt [Math]::Floor($requests / 10)) {
+                throw "Compiles are not cacheable by sccache (requests=$requests, stored=$stored, hits=$hits, non-cacheable=$uncacheable). Stopping before the full build."
+            }
+            }
+        }
         Write-Output 'BEGIN real Azwah Chromium native chrome target compilation.'
         $targets = @('chrome')
         $outputFiles = @('chrome.exe', 'chrome.dll')
@@ -255,7 +383,16 @@ symbol_level = 0
             $targets += 'mini_installer'
             $outputFiles += 'mini_installer.exe'
         }
-        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets)
+        Invoke-BoundedBuildStage $autoninja (@('-C', $out, '-j', "$Jobs") + $targets) -Budgeted
+        if ($script:BudgetReached) {
+            if ($env:GITHUB_OUTPUT) { 'complete=false' | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
+            Write-Output 'INCOMPLETE the time budget ended before chrome finished; continue in the next job.'
+            # Stopping at the budget is the expected outcome; do not let taskkill's exit code fail the step
+            # (run 44706934362 stage 1 failed this way and skipped the cache hand-over).
+            $global:LASTEXITCODE = 0
+            return
+        }
+        if ($env:GITHUB_OUTPUT) { "complete=true`nout=$out" | Add-Content -LiteralPath $env:GITHUB_OUTPUT }
         $files = $outputFiles | ForEach-Object {
             $file = Get-Item -LiteralPath (Join-Path $out $_)
             @{
@@ -264,12 +401,24 @@ symbol_level = 0
                 sha256 = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             }
         }
+        # A fingerprint build that resumed from older outputs must have relinked chrome.dll after the patched sources
+        # were refreshed; otherwise the manifest would claim features the binary does not have.
+        if ($CanvasPatch -and $script:fingerprintRestoreTime -and
+            (Get-Item -LiteralPath (Join-Path $out 'chrome.dll')).LastWriteTimeUtc -le $script:fingerprintRestoreTime) {
+            throw 'Fingerprint patches were applied but chrome.dll was not rebuilt; refusing to record them in the manifest.'
+        }
         @{
             kind = $kind
             chromiumCommit = $ChromiumCommit
             depotToolsCommit = $DepotToolsCommit
             buildHost = [Environment]::OSVersion.VersionString
             files = @($files)
+            dchecks = if ($Shipping) { 'off' } else { 'on' }
+            canvasPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $canvasPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            identityPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $identityPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            rectsUaPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $rectsUaPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            gpuFontsPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $gpuFontsPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            audioScreenPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $audioScreenPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }
         } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $manifest -Encoding utf8
     } finally {

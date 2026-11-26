@@ -28,3 +28,21 @@ test('resourceLimitsSummary includes queue pending', () => {
   assert.equal(s.queuePending, 2);
   assert.match(s.concurrencyNote, /maxConcurrentLaunches/);
 });
+
+test('one allowed profile reaches preflight even with queued requests and releases its slot on failure', async () => {
+  const { randomUUID } = await import('node:crypto');
+  const { userDataDir } = await import('../server/db.js');
+  const { launch } = await import('../server/browsers.js');
+  setSetting('maxRunningProfiles', 1);
+  setSetting('maxConcurrentLaunches', 1);
+  setSetting('minFreeMemoryGiB', 0);
+  const profiles = Array.from({ length: 3 }, () => {
+    const id = randomUUID(), now = new Date().toISOString();
+    db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)')
+      .run(id, 'Preflight', '[]', '', '', now, now);
+    fs.writeFileSync(userDataDir(id), 'disposable non-directory');
+    return { id };
+  });
+  const outcomes = await Promise.allSettled(profiles.map(p => launch(p)));
+  assert.deepEqual(outcomes.map(r => r.reason?.code), Array(3).fill('CORRUPT_DIR'));
+});

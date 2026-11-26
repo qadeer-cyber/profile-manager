@@ -1,0 +1,118 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 57a212f65edda5323126be0250c19ca960bbbe53..968616c2084190b4a114d6ffb4bd69c39b36c6c8 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3912,6 +3912,11 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       sandbox::policy::switches::kNoSandbox,
+       // AZWAH: opt-in canvas readback protection seed (per browser session).
+       "azwah-canvas-seed",
++      // AZWAH: per-profile hardware and graphics identity.
++      "azwah-device-memory",
++      "azwah-hardware-concurrency",
++      "azwah-webgl-renderer",
++      "azwah-webgl-vendor",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+       switches::kDisableDevShmUsage,
+ #endif
+diff --git a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc b/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
+index f5c0db2d1b58de1fb54aa6545de8ac0fb177319e..7d2ea3dcd5df9729d8ecd3fa9c052dc0a26a6cf9 100644
+--- a/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
++++ b/third_party/blink/renderer/core/frame/navigator_concurrent_hardware.cc
+@@ -4,11 +4,23 @@
+ 
+ #include "third_party/blink/renderer/core/frame/navigator_concurrent_hardware.h"
+ 
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "base/system/sys_info.h"
+ 
+ namespace blink {
+ 
+ unsigned NavigatorConcurrentHardware::hardwareConcurrency() const {
++  // AZWAH: per-profile value from --azwah-hardware-concurrency (1-128), else
++  // the real processor count.
++  unsigned azwah_value = 0;
++  if (base::StringToUint(
++          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++              "azwah-hardware-concurrency"),
++          &azwah_value) &&
++      azwah_value >= 1 && azwah_value <= 128) {
++    return azwah_value;
++  }
+   return static_cast<unsigned>(base::SysInfo::NumberOfProcessors());
+ }
+ 
+diff --git a/third_party/blink/renderer/core/frame/navigator_device_memory.cc b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+index 05fa33e4568e8eea926a0d97c1d83a4000fa6b3f..b5365cfdd2eb558d9908c307400398c53e612edd 100644
+--- a/third_party/blink/renderer/core/frame/navigator_device_memory.cc
++++ b/third_party/blink/renderer/core/frame/navigator_device_memory.cc
+@@ -4,6 +4,8 @@
+ 
+ #include "third_party/blink/renderer/core/frame/navigator_device_memory.h"
+ 
++#include "base/command_line.h"
++#include "base/strings/string_number_conversions.h"
+ #include "third_party/blink/public/common/device_memory/approximated_device_memory.h"
+ #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom-shared.h"
+ #include "third_party/blink/renderer/core/dom/document.h"
+@@ -12,6 +14,19 @@
+ namespace blink {
+ 
+ float NavigatorDeviceMemory::deviceMemory() const {
++  // AZWAH: per-profile value from --azwah-device-memory, limited to the values
++  // a real browser reports (0.25 to 8 GiB in powers of two).
++  double azwah_value = 0;
++  if (base::StringToDouble(
++          base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++              "azwah-device-memory"),
++          &azwah_value)) {
++    for (const double allowed : {0.25, 0.5, 1.0, 2.0, 4.0, 8.0}) {
++      if (azwah_value == allowed) {
++        return static_cast<float>(allowed);
++      }
++    }
++  }
+   return ApproximatedDeviceMemory::GetApproximatedDeviceMemory();
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 02cd342f94e88d2b2eee797403eb2c62d4019013..534bc58fa976b1eb51578a75ce4daa875b2cd1be 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -32,6 +32,8 @@
+ 
+ #include "base/bit_cast.h"
+ #include "base/byte_size.h"
++#include "base/command_line.h"
++#include "base/containers/span.h"
+ #include "base/compiler_specific.h"
+ #include "base/feature_list.h"
+ #include "base/memory/scoped_refptr.h"
+@@ -4320,6 +4322,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedRendererWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        // AZWAH: per-profile graphics identity from --azwah-webgl-renderer.
++        const std::string azwah_renderer =
++            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++                "azwah-webgl-renderer");
++        if (!azwah_renderer.empty()) {
++          return WebGLAny(script_state, String::FromUtf8(base::as_byte_span(azwah_renderer)));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_RENDERER)));
+       }
+@@ -4329,6 +4338,13 @@ ScriptValue WebGLRenderingContextBase::getParameter(ScriptState* script_state,
+       return ScriptValue::CreateNull(script_state->GetIsolate());
+     case WebGLDebugRendererInfo::kUnmaskedVendorWebgl:
+       if (ExtensionEnabled(kWebGLDebugRendererInfoName)) {
++        // AZWAH: per-profile graphics identity from --azwah-webgl-vendor.
++        const std::string azwah_vendor =
++            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++                "azwah-webgl-vendor");
++        if (!azwah_vendor.empty()) {
++          return WebGLAny(script_state, String::FromUtf8(base::as_byte_span(azwah_vendor)));
++        }
+         return WebGLAny(script_state,
+                         String(ContextGL()->GetString(GL_VENDOR)));
+       }

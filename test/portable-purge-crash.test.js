@@ -42,3 +42,18 @@ test('SQLite purge error retains the trash row and explicit retry is idempotent'
   assert.equal(run(dir, { mode: 'status' }).value.profiles.some(p => p.id === ids.chromium), false);
 });
 
+
+test('explicit purge removes a regular file at the corrupt profile root and preserves its neighbor', t => {
+  const dir = path.join(sandbox(t), 'purge');
+  const ids = run(dir, { mode: 'seed' }).value;
+  const corrupt = path.join(dir, 'profiles', ids.chromium);
+  const neighbor = path.join(dir, 'profiles', ids.firefox);
+  fs.rmSync(corrupt, { recursive: true });
+  fs.writeFileSync(corrupt, 'corrupt root');
+  const marker = path.join(neighbor, 'purge-sentinel');
+  fs.writeFileSync(marker, 'keep');
+  assert.equal(run(dir, { mode: 'purge' }).ok, true);
+  assert.equal(fs.existsSync(corrupt), false);
+  assert.equal(fs.readFileSync(marker, 'utf8'), 'keep');
+  assert.equal(run(dir, { mode: 'status' }).value.profiles.some(row => row.id === ids.chromium), false);
+});

@@ -1,0 +1,97 @@
+name: AZWAH Chromium live qualification
+# Part 4: the tested AZWAH Chromium archive with an authenticated proxy, proxy timezone, two concurrent profiles and
+# repeated stop/restart cycles. Starts only on a manual dispatch or a push whose message carries its tag.
+on:
+  push:
+    branches: [feature/azwah-ultimate-2]
+  workflow_dispatch:
+    inputs:
+      native_run_id:
+        description: 'Chromium chain run whose AZWAH Chromium archive is tested'
+        required: false
+        default: '45238937503'
+      cycles:
+        description: 'Stop/restart cycles'
+        required: false
+        default: '30'
+permissions:
+  contents: read
+  actions: read
+jobs:
+  live:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, '[azwah-native-live]') }}
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      # Chain run whose archive a tag-triggered run tests (manual dispatch can name another).
+      NATIVE_RUN: '45719091368'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download the AZWAH Chromium archive
+        uses: actions/download-artifact@v4
+        with:
+          pattern: azwah-chromium-win64-*
+          run-id: ${{ inputs.native_run_id || env.NATIVE_RUN }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/azwah-chromium
+          merge-multiple: true
+      - name: Unpack, verify and let the sandbox read the browser folder
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP 'azwah-chromium') -Filter 'azwah-chromium-win64.zip' | Select-Object -First 1
+          Write-Output "AZWAH_CHROMIUM_ARCHIVE bytes=$($zip.Length) sha256=$((Get-FileHash -LiteralPath $zip.FullName).Hash.ToLowerInvariant())"
+          $dir = Join-Path $env:RUNNER_TEMP 'azwah-browser'
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath $dir
+          node scripts/native-artifact.mjs verify $dir (Join-Path $dir 'AZWAH-NATIVE-MANIFEST.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest verification failed.' }
+          & "$env:SystemRoot/System32/icacls.exe" $dir /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /C /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant sandbox read access.' }
+          $exe = Join-Path $dir 'chrome.exe'
+          "AZWAH_NATIVE_CHROMIUM_EXE=$exe" | Add-Content $env:GITHUB_ENV
+          "AZWAH_NATIVE_CHROMIUM_SHA256=$((Get-FileHash -LiteralPath $exe).Hash.ToLowerInvariant())" | Add-Content $env:GITHUB_ENV
+          "AZWAH_NATIVE_CHROMIUM_DLL_SHA256=$((Get-FileHash -LiteralPath (Join-Path $dir 'chrome.dll')).Hash.ToLowerInvariant())" | Add-Content $env:GITHUB_ENV
+          # Fingerprint features are tested only when this build's own manifest says it has them.
+          $m = Get-Content -Raw (Join-Path $dir 'BASELINE-MANIFEST.json') | ConvertFrom-Json
+          Write-Output "BUILD_FEATURES dchecks=$($m.dchecks) canvas=$([bool]$m.canvasPatchSha256) identity=$([bool]$m.identityPatchSha256)"
+          if ($m.canvasPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_CANVAS=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.identityPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_IDENTITY=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.audioScreenPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.gpuFontsPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_GPU_FONTS=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.rectsUaPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_RECTS_UA=1' | Add-Content $env:GITHUB_ENV }
+      - name: Install dependencies and proxy-location data
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          npm ci --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/fetch-dbip-lite.mjs
+          exit $LASTEXITCODE
+      - name: Proxy, timezone, isolation and stop/restart cycles
+        shell: pwsh
+        env:
+          AZWAH_NATIVE_CYCLES: ${{ inputs.cycles || '30' }}
+        run: |
+          node --test --test-force-exit test/azwah-native-windows-live.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:PM_TEST_SOCKS5 = '1'
+          $env:AZWAH_NATIVE_CYCLES = '10'
+          node --test --test-force-exit test/azwah-native-windows-live.test.js
+          exit $LASTEXITCODE
+      - name: Canvas protection and hardware/graphics identity observed in the browser
+        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
+        shell: pwsh
+        env:
+          # The runner has no GPU: software WebGL (test only; never passed by the app itself).
+          AZWAH_NATIVE_TEST_EXTRA_ARGS: '--use-angle=swiftshader --enable-unsafe-swiftshader'
+        run: |
+          node --test --test-force-exit test/azwah-fingerprint-windows-live.test.js
+          exit $LASTEXITCODE

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyProxyProbeError, isTransientProxyProbeError, publicIp, probeProxyExit, resolveProxyLocation, validateProxyLocation } from '../server/proxy-location.js';
+import { classifyProxyProbeError, isTransientProxyProbeError, publicIp, probeProxyExit, resolveProxyLocation, resolveProxyLocationWithRetry, validateProxyLocation } from '../server/proxy-location.js';
 
 const ip = '8.8.8.8';
 const fixture = {
@@ -137,4 +137,29 @@ test('proxy transport diagnostics are distinct, bounded-retry eligible only for 
     assert.equal(isTransientProxyProbeError(error), retry);
     assert.ok(!error.message.includes('secret-marker'));
   }
+});
+
+test('launch retries one transient exit-probe failure and never retries a permanent one', async () => {
+  const offlineLookup = async seen => ({ ...validateProxyLocation(fixture, seen) });
+  const reset = () => Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+  const sleeps = [];
+  const sleep = async ms => { sleeps.push(ms); };
+  // One reset on the first exit service (seen on Windows CI): the next exit service answers at once, no retry needed.
+  let probes = 0;
+  const asked = [];
+  const flaky = { offlineLookup, credentials: () => ({}), request: async url => { asked.push(new URL(url).host); if (++probes === 1) throw reset(); return { ip }; } };
+  const ok = await resolveProxyLocationWithRetry(proxy, flaky, { sleep });
+  assert.equal(ok.ip, ip);
+  assert.deepEqual(asked.slice(0, 2), ['api64.ipify.org', 'api.ipify.org'], 'the next service answers after a reset');
+  assert.deepEqual(sleeps, []);
+  // Still down on the retry: the transient code reaches the caller, after exactly one retry.
+  probes = 0; sleeps.length = 0;
+  await assert.rejects(resolveProxyLocationWithRetry(proxy, { offlineLookup, credentials: () => ({}), request: async () => { probes++; throw reset(); } }, { sleep }),
+    e => e.code === 'PROXY_UPSTREAM_UNAVAILABLE');
+  assert.deepEqual([probes, sleeps.length], [6, 1], 'all three exit services, twice');
+  // Permanent failures (authentication, rotation) are not retried.
+  probes = 0; sleeps.length = 0;
+  await assert.rejects(resolveProxyLocationWithRetry(proxy, { offlineLookup, credentials: () => ({}), request: async () => { probes++; throw Object.assign(new Error('x'), { code: 'PROXY_AUTH_REQUIRED' }); } }, { sleep }),
+    e => e.code === 'PROXY_AUTH_REQUIRED');
+  assert.deepEqual([probes, sleeps.length], [1, 0]);
 });

@@ -1,0 +1,7 @@
+third_party/blink/renderer/core/dom/element.cc
+third_party/blink/renderer/core/dom/range.cc
+third_party/blink/renderer/core/geometry/dom_rect.cc
+third_party/blink/renderer/core/geometry/dom_rect_list.cc
+third_party/blink/renderer/core/frame/navigator_ua.cc
+third_party/blink/renderer/core/frame/navigator_ua_data.cc
+components/embedder_support/user_agent_utils.cc

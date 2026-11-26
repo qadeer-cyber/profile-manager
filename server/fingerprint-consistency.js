@@ -7,6 +7,7 @@ import { classifyMediaCaptureError } from './media-capture.js';
 import { FONT_ACCESS_DISABLE_FEATURE } from './fingerprint-settings.js';
 import { chromiumPolicyArgs } from './webrtc-policy.js';
 import { iceConsistencyFinding } from './webrtc-observe.js';
+import { deviceIdentityFinding, describeHost } from './device-identity.js';
 
 const STATUSES = new Set(['pass', 'warning', 'unsupported', 'unavailable']);
 const HOST_PLATFORM = {
@@ -39,6 +40,8 @@ export function fingerprintFindings({
   chromiumVersion = null,
   hostPlatform = process.platform,
   hostTimezone = null,
+  proxyTimezone = null,
+  deviceHost = null,
   previous = null,
 } = {}) {
   const fingerprint = advanced.fingerprint || {};
@@ -104,13 +107,20 @@ export function fingerprintFindings({
   else if (seen.platform === expectedPlatform) findings.push(finding('host_platform', 'pass', `navigator.platform is ${seen.platform}, which is this computer.`));
   else findings.push(finding('host_platform', 'warning', `navigator.platform is ${seen.platform}. This computer expects ${expectedPlatform}.`));
 
+  const device = deviceIdentityFinding(advanced.deviceIdentity, deviceHost || describeHost(hostPlatform), seen);
+  findings.push(finding('device_identity', device.status, device.summary));
+
   findings.push(finding('navigator_custom', 'unsupported', 'hardwareConcurrency, deviceMemory, and OSCPU are not per-profile settings. Observed numbers are this computer’s, not a chosen device.'));
 
-  const timezone = browserSettings.timezoneId || '';
+  // A manual zone wins; otherwise a launch that followed the proxy expects the proxy location's zone
+  // (resolved and browser-verified at launch). The page value is still what is graded.
+  const fromProxy = !browserSettings.timezoneId && !!proxyTimezone;
+  const timezone = browserSettings.timezoneId || proxyTimezone || '';
+  const zoneLabel = fromProxy ? `the proxy location's zone ${timezone}` : `the configured zone ${timezone}`;
   if (!seen?.timezone) findings.push(finding('timezone', 'unavailable', 'The page timezone was not collected.'));
   else if (timezone) findings.push(finding('timezone', seen.timezone === timezone ? 'pass' : 'warning', seen.timezone === timezone
-    ? `The page timezone is the configured zone ${timezone}.`
-    : `The page timezone is ${seen.timezone}. The profile is set to ${timezone}.`));
+    ? `The page timezone is ${zoneLabel}.`
+    : `The page timezone is ${seen.timezone}. The profile expects ${zoneLabel}.`));
   else if (!hostTimezone) findings.push(finding('timezone', 'unavailable', 'No timezone is configured, and the computer timezone was not available to compare.'));
   else findings.push(finding('timezone', seen.timezone === hostTimezone ? 'pass' : 'warning', seen.timezone === hostTimezone
     ? `No timezone override is set. The page matches this computer (${hostTimezone}).`
@@ -228,6 +238,8 @@ export function fingerprintFindings({
     : `The local-fonts permission is ${seen.permissions['local-fonts'].state}, not denied.`));
   if (fingerprint.fonts !== 'restricted') findings.push(finding('fonts_query_api', 'unavailable', 'Local font access is not restricted on this profile.'));
   else if (!seen?.fontsQuery) findings.push(finding('fonts_query_api', 'unavailable', 'queryLocalFonts was not collected.'));
+  else if (seen.fontsQuery.availability !== 'observed') findings.push(finding('fonts_query_api', 'unavailable', seen.fontsQuery.reason === 'permission_not_decided'
+    ? 'queryLocalFonts was not called because it would open a permission prompt.' : 'queryLocalFonts was not collected.'));
   else if (seen.fontsQuery.apiPresent === false) {
     findings.push(finding('fonts_query_api', 'pass', `queryLocalFonts is unavailable because ${FONT_ACCESS_DISABLE_FEATURE} is disabled for this profile. Canvas measureText is not blocked.`));
   } else if (seen.fontsQuery.resolved) {
@@ -244,7 +256,8 @@ export function fingerprintFindings({
       : `Camera is ${seen.permissions.camera.state} and microphone is ${seen.permissions.microphone.state}. Restricted expected both to be denied.`));
   }
   if (fingerprint.mediaDevices !== 'restricted') findings.push(finding('media_capture', 'unavailable', 'Media devices are Real. No capture classification is graded.'));
-  else if (seen?.mediaCapture?.availability !== 'observed') findings.push(finding('media_capture', 'unavailable', 'getUserMedia was not exercised.'));
+  else if (seen?.mediaCapture?.availability !== 'observed') findings.push(finding('media_capture', 'unavailable', seen?.mediaCapture?.reason === 'permission_not_decided'
+    ? 'getUserMedia was not called because it would open a camera or microphone prompt.' : 'getUserMedia was not exercised.'));
   else {
     const classified = classifyMediaCaptureError(seen.mediaCapture.errorName, {
       cameraState: seen.permissions?.camera?.state,
@@ -266,9 +279,17 @@ export function fingerprintFindings({
   if (fingerprint.portScan !== 'real') findings.push(finding('local_network_access', 'unavailable', 'Port scan is not in the default real mode.'));
   else if (seen?.permissions?.['local-network-access']?.availability !== 'observed') {
     findings.push(finding('local_network_access', 'unavailable', 'The local-network-access permission was not collected.'));
-  } else findings.push(finding('local_network_access', seen.permissions['local-network-access'].state === 'denied' ? 'pass' : 'warning', seen.permissions['local-network-access'].state === 'denied'
-    ? 'local-network-access is denied through profile preferences (local_network_access). Private-network weakening flags are still refused on launch.'
-    : `local-network-access is ${seen.permissions['local-network-access'].state}, not denied.`));
+  } else {
+    // Every observed Local Network Access permission must be denied: the legacy name and, on newer
+    // Chromium, the split local-network and loopback-network permissions.
+    const observed = ['local-network-access', 'local-network', 'loopback-network']
+      .filter(name => seen.permissions[name]?.availability === 'observed')
+      .map(name => [name, seen.permissions[name].state]);
+    const open = observed.filter(([, state]) => state !== 'denied');
+    findings.push(finding('local_network_access', open.length ? 'warning' : 'pass', open.length
+      ? `${open.map(([name, state]) => `${name} is ${state}`).join('; ')}, not denied.`
+      : `${observed.map(([name]) => name).join(', ')} denied through profile preferences. Private-network weakening flags are still refused on launch.`));
+  }
 
   const restart = (id, key, label) => {
     if (!previous || previous[key] == null || previous[key] === '') return finding(id, 'unavailable', `No previous ${label} was supplied.`);

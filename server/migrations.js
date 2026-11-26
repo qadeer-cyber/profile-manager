@@ -229,6 +229,14 @@ export function currentVersion(db) {
 }
 
 export function migrate(db, list = migrations) {
+  // Downgrade guard: a schema written by a newer AZWAH is not ours to interpret or change.
+  const known = Math.max(0, ...list.map(m => m.version));
+  const found = currentVersion(db);
+  if (found > known) {
+    throw Object.assign(new Error(`This data was written by a newer version of AZWAH (database schema version ${found}). `
+      + `This version supports up to database schema version ${known}. Install the newer AZWAH again to use this data; nothing was changed.`),
+    { code: 'SCHEMA_TOO_NEW', found, known });
+  }
   const backup = backupBeforeMigrate(db, list);
   const from = currentVersion(db);
   const applied = [];

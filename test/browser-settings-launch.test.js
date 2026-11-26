@@ -13,11 +13,13 @@ mock.module(new URL('../node_modules/playwright/index.mjs', import.meta.url).hre
   launchPersistentContext: async (dir, opts) => { calls.push({ dir, opts }); throw new Error('intentional launch boundary'); },
 } } });
 const { db, setSetting } = await import('../server/db.js');
+// launch() refuses ids without a live profile row (deleted/recovery guard), so each test id is registered.
+const newId = () => { const id = randomUUID(), now = new Date().toISOString(); db.prepare('INSERT INTO profiles (id,name,tags,folder,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)').run(id, 'launch test', '[]', '', '', now, now); return id; };
 const { launch } = await import('../server/browsers.js');
 setSetting('executablePath', process.execPath);
 after(() => { db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 test('locale/timezone propagate; automation remains off and failed launch releases lock', async () => {
-  const id = randomUUID();
+  const id = newId();
   await assert.rejects(launch({ id, browserSettings: { locale: 'de-DE', timezoneId: 'Europe/Berlin', languages: [] } }, { headless: true, automation: false }), /intentional launch boundary/);
   const opts = calls.at(-1).opts;
   assert.equal(opts.locale, 'de-DE'); assert.equal(opts.timezoneId, 'Europe/Berlin');
@@ -26,16 +28,16 @@ test('locale/timezone propagate; automation remains off and failed launch releas
   assert.ok(!fs.existsSync(path.join(dir, 'profiles', id, '.pm-lock')));
 });
 test('ordered languages use native Chromium flags and avoid single-language override', async () => {
-  await assert.rejects(launch({ id: randomUUID(), browserSettings: { locale: 'en-US', timezoneId: 'UTC', languages: ['en-US', 'ur-PK'] } }, { automation: false }), /intentional launch boundary/);
+  await assert.rejects(launch({ id: newId(), browserSettings: { locale: 'en-US', timezoneId: 'UTC', languages: ['en-US', 'ur-PK'] } }, { automation: false }), /intentional launch boundary/);
   const opts = calls.at(-1).opts;
   assert.equal(opts.locale, undefined); assert.equal(opts.timezoneId, 'UTC');
   assert.ok(opts.args.includes('--accept-lang=en-US,ur-PK')); assert.ok(opts.args.includes('--lang=en-US'));
 });
 test('host defaults add no regional overrides; invalid settings never reach Chromium', async () => {
-  await assert.rejects(launch({ id: randomUUID() }, { automation: false }), /intentional launch boundary/);
+  await assert.rejects(launch({ id: newId() }, { automation: false }), /intentional launch boundary/);
   assert.equal(calls.at(-1).opts.locale, undefined); assert.equal(calls.at(-1).opts.timezoneId, undefined);
   assert.deepEqual(calls.at(-1).opts.args, []);
   const n = calls.length;
-  await assert.rejects(launch({ id: randomUUID(), browserSettings: { timezoneId: 'invalid' } }), e => e.status === 400);
+  await assert.rejects(launch({ id: newId(), browserSettings: { timezoneId: 'invalid' } }), e => e.status === 400);
   assert.equal(calls.length, n);
 });

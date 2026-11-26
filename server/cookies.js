@@ -71,8 +71,10 @@ function openDb(file, { create = false } = {}) {
   return db;
 }
 
-function rowToCookie(row) {
-  const decoded = row.value ? { state: 'available', value: String(row.value) } : decryptCookieValue(row.host_key, row.encrypted_value);
+function rowToCookie(row, { basicKey = true } = {}) {
+  const decoded = row.value ? { state: 'available', value: String(row.value) }
+    : basicKey || !row.encrypted_value?.length ? decryptCookieValue(row.host_key, row.encrypted_value)
+      : { state: 'unavailable', reason: 'unsupported_encryption' };
   const session = !row.has_expires || !row.is_persistent;
   const cookie = {
     name: row.name,
@@ -91,13 +93,15 @@ function rowToCookie(row) {
   return cookie;
 }
 
-export function readProfileCookies(dir) {
+// basicKey: false for a Chrome Stable store, whose values are encrypted with Chrome's own key:
+// they are reported unavailable instead of being trial-decrypted with the basic key.
+export function readProfileCookies(dir, { basicKey = true } = {}) {
   const file = cookieDbPath(dir);
   if (!fs.existsSync(file)) return [];
   const db = openDb(file);
   try {
     if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='cookies'").get()) return [];
-    return db.prepare('SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, has_expires, is_persistent, samesite FROM cookies ORDER BY host_key, name').all().map(rowToCookie);
+    return db.prepare('SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, has_expires, is_persistent, samesite FROM cookies ORDER BY host_key, name').all().map(row => rowToCookie(row, { basicKey }));
   } finally { db.close(); }
 }
 
@@ -184,9 +188,15 @@ function withStore(dir, fn) {
   } finally { releaseLock(dir); }
 }
 
-export function importProfileCookies(dir, cookies) {
+export function validateCookies(cookies) {
   if (!Array.isArray(cookies) || cookies.length > MAX_COOKIES) throw fail(400, `cookies must be an array of at most ${MAX_COOKIES} items`, 'INVALID_COOKIE');
-  const valid = cookies.map((cookie, index) => validateCookie(cookie, index));
+  return cookies.map((cookie, index) => validateCookie(cookie, index));
+}
+
+// Bundled Chromium only: values use the fixed basic key. Chrome Stable profiles on Windows go
+// through server/browser-runtime/stable-cookies.js so Chrome encrypts them with its own key.
+export function importProfileCookies(dir, cookies) {
+  const valid = validateCookies(cookies);
   return withStore(dir, db => {
     const columns = columnMap(db);
     const write = db.transaction(items => { for (const cookie of items) insertCookie(db, columns, cookie); });

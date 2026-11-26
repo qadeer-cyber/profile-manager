@@ -1,0 +1,251 @@
+diff --git a/components/embedder_support/user_agent_utils.cc b/components/embedder_support/user_agent_utils.cc
+index 833293873f5e82151264c849bae2230c0b94904c..3948a062a937e06a0df57241dab10a96a29bd4f1 100644
+--- a/components/embedder_support/user_agent_utils.cc
++++ b/components/embedder_support/user_agent_utils.cc
+@@ -522,6 +522,12 @@ blink::UserAgentBrandList GenerateBrandVersionList(
+ 
+   blink::UserAgentBrandList brand_version_list = {std::move(greasey_bv),
+                                                   std::move(chromium_bv)};
++  // AZWAH: --azwah-ua-chrome-brand reports the "Google Chrome" brand that
++  // regular Chrome sends, so the brand list matches the Chrome user agent.
++  if (!brand && base::CommandLine::ForCurrentProcess()->HasSwitch(
++                    "azwah-ua-chrome-brand")) {
++    brand = std::string("Google Chrome");
++  }
+   if (brand) {
+     brand_version_list.emplace_back(brand.value(), version);
+   }
+@@ -668,6 +674,14 @@ blink::UserAgentMetadata GetUserAgentMetadata(bool only_low_entropy_ch) {
+   metadata.bitness = GetCpuBitness();
+   metadata.wow64 = IsWoW64();
+   metadata.platform_version = GetPlatformVersion();
++  // AZWAH: per-profile Windows version for client hints (10.0.0 = Windows 10,
++  // 13.0.0 and later = Windows 11), from --azwah-ua-platform-version.
++  const std::string azwah_platform_version =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "azwah-ua-platform-version");
++  if (!azwah_platform_version.empty()) {
++    metadata.platform_version = azwah_platform_version;
++  }
+   return metadata;
+ }
+ 
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 1c331ce3b4b3f38f3ca31641d2393971d44277b7..0baf8177a7066b683415859019cb362530f922e5 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3922,6 +3922,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       "azwah-screen",
+       // AZWAH: installed-font list and WebGPU identity.
+       "azwah-font-allowlist",
++      // AZWAH: ClientRects protection seed.
++      "azwah-rects-seed",
+       "azwah-webgpu-architecture",
+       "azwah-webgpu-vendor",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+diff --git a/third_party/blink/renderer/core/dom/element.cc b/third_party/blink/renderer/core/dom/element.cc
+index 9fa5d9596fc11657b05c7f69a299bb23da4d1a5d..4d7681f8ef107f9cee9bb83720814c43a0705308 100644
+--- a/third_party/blink/renderer/core/dom/element.cc
++++ b/third_party/blink/renderer/core/dom/element.cc
+@@ -33,6 +33,7 @@
+ #include <ranges>
+ #include <utility>
+ 
++#include "base/command_line.h"
+ #include "base/feature_list.h"
+ #include "cc/input/snap_selection_strategy.h"
+ #include "components/viz/common/surfaces/tracked_element_rects.h"
+@@ -3478,6 +3479,35 @@ void Element::ClientQuads(Vector<gfx::QuadF>& quads) const {
+   }
+ }
+ 
++namespace {
++
++// AZWAH: opt-in ClientRects protection (--azwah-rects-seed). Every rect is
++// scaled by one per-session factor within 1e-6, so layout stays consistent
++// while measured values differ between sessions and profiles.
++gfx::RectF AzwahScaleClientRect(const gfx::RectF& rect) {
++  static const double factor = []() {
++    const std::string secret =
++        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++            "azwah-rects-seed");
++    if (secret.empty()) {
++      return 1.0;
++    }
++    uint64_t hash = 1469598103934665603ull;
++    for (const char c : secret) {
++      hash = (hash ^ static_cast<uint8_t>(c)) * 1099511628211ull;
++    }
++    const double step = static_cast<double>(hash % 2000u) - 999.5;
++    return 1.0 + step * 1e-9;
++  }();
++  if (factor == 1.0) {
++    return rect;
++  }
++  return gfx::RectF(rect.x() * factor, rect.y() * factor,
++                    rect.width() * factor, rect.height() * factor);
++}
++
++}  // namespace
++
+ DOMRectList* Element::getClientRects() {
+   Vector<gfx::RectF> rects = GetClientRectsNoAdjustment();
+   if (rects.empty()) {
+@@ -3488,6 +3518,7 @@ DOMRectList* Element::getClientRects() {
+   for (auto& rect : rects) {
+     GetDocument().AdjustRectForScrollAndAbsoluteZoom(rect,
+                                                      *element_layout_object);
++    rect = AzwahScaleClientRect(rect);
+   }
+   return MakeGarbageCollected<DOMRectList>(rects);
+ }
+@@ -3578,7 +3609,8 @@ gfx::RectF Element::GetBoundingClientRectNoLifecycleUpdate() const {
+ DOMRect* Element::GetBoundingClientRect() {
+   GetDocument().UpdateStyleAndLayoutForNode(this,
+                                             DocumentUpdateReason::kJavaScript);
+-  return DOMRect::FromRectF(GetBoundingClientRectNoLifecycleUpdate());
++  return DOMRect::FromRectF(
++      AzwahScaleClientRect(GetBoundingClientRectNoLifecycleUpdate()));
+ }
+ 
+ DOMRect* Element::GetBoundingClientRectForBinding() {
+diff --git a/third_party/blink/renderer/core/dom/range.cc b/third_party/blink/renderer/core/dom/range.cc
+index 4b6baabc2af84ed69ff782818ab805118c2bb212..e4f8fd7f762d04c5b2bba9dcfb3bcc5f2657e188 100644
+--- a/third_party/blink/renderer/core/dom/range.cc
++++ b/third_party/blink/renderer/core/dom/range.cc
+@@ -26,6 +26,7 @@
+ #include "third_party/blink/renderer/core/dom/range.h"
+ 
+ #include "base/check.h"
++#include "base/command_line.h"
+ #include "third_party/blink/renderer/core/display_lock/display_lock_document_state.h"
+ #include "third_party/blink/renderer/core/display_lock/display_lock_utilities.h"
+ #include "third_party/blink/renderer/core/dom/character_data.h"
+@@ -1671,11 +1672,40 @@ DOMRectList* Range::getClientRects() const {
+   return MakeGarbageCollected<DOMRectList>(quads);
+ }
+ 
++namespace {
++
++// AZWAH: opt-in ClientRects protection (--azwah-rects-seed). Every rect is
++// scaled by one per-session factor within 1e-6, so layout stays consistent
++// while measured values differ between sessions and profiles.
++gfx::RectF AzwahScaleClientRect(const gfx::RectF& rect) {
++  static const double factor = []() {
++    const std::string secret =
++        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++            "azwah-rects-seed");
++    if (secret.empty()) {
++      return 1.0;
++    }
++    uint64_t hash = 1469598103934665603ull;
++    for (const char c : secret) {
++      hash = (hash ^ static_cast<uint8_t>(c)) * 1099511628211ull;
++    }
++    const double step = static_cast<double>(hash % 2000u) - 999.5;
++    return 1.0 + step * 1e-9;
++  }();
++  if (factor == 1.0) {
++    return rect;
++  }
++  return gfx::RectF(rect.x() * factor, rect.y() * factor,
++                    rect.width() * factor, rect.height() * factor);
++}
++
++}  // namespace
++
+ DOMRect* Range::getBoundingClientRect() const {
+   // TODO(crbug.com/1499981): This should be removed once synchronized scrolling
+   // impact is understood.
+   SyncScrollAttemptHeuristic::DidAccessScrollOffset();
+-  return DOMRect::FromRectF(BoundingRect());
++  return DOMRect::FromRectF(AzwahScaleClientRect(BoundingRect()));
+ }
+ 
+ // TODO(editing-dev): We should make
+diff --git a/third_party/blink/renderer/core/geometry/dom_rect_list.cc b/third_party/blink/renderer/core/geometry/dom_rect_list.cc
+index c7721bfdef286a47bf4edc2ee6886de5eec755d5..34a769d788135211f7b606777d74b7e510953b00 100644
+--- a/third_party/blink/renderer/core/geometry/dom_rect_list.cc
++++ b/third_party/blink/renderer/core/geometry/dom_rect_list.cc
+@@ -26,14 +26,47 @@
+ 
+ #include "third_party/blink/renderer/core/geometry/dom_rect_list.h"
+ 
++#include <string>
++
++#include "base/command_line.h"
++
+ namespace blink {
+ 
++namespace {
++
++// AZWAH: opt-in ClientRects protection (--azwah-rects-seed). Every rect is
++// scaled by one per-session factor within 1e-6, so layout stays consistent
++// while measured values differ between sessions and profiles.
++gfx::RectF AzwahScaleClientRect(const gfx::RectF& rect) {
++  static const double factor = []() {
++    const std::string secret =
++        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++            "azwah-rects-seed");
++    if (secret.empty()) {
++      return 1.0;
++    }
++    uint64_t hash = 1469598103934665603ull;
++    for (const char c : secret) {
++      hash = (hash ^ static_cast<uint8_t>(c)) * 1099511628211ull;
++    }
++    const double step = static_cast<double>(hash % 2000u) - 999.5;
++    return 1.0 + step * 1e-9;
++  }();
++  if (factor == 1.0) {
++    return rect;
++  }
++  return gfx::RectF(rect.x() * factor, rect.y() * factor,
++                    rect.width() * factor, rect.height() * factor);
++}
++
++}  // namespace
++
+ DOMRectList::DOMRectList() = default;
+ 
+ DOMRectList::DOMRectList(const Vector<gfx::QuadF>& quads) {
+   list_.ReserveInitialCapacity(quads.size());
+   for (const auto& quad : quads)
+-    list_.push_back(DOMRect::FromRectF(quad.BoundingBox()));
++    list_.push_back(DOMRect::FromRectF(AzwahScaleClientRect(quad.BoundingBox())));
+ }
+ 
+ unsigned DOMRectList::length() const {
+diff --git a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+index 534bc58fa976b1eb51578a75ce4daa875b2cd1be..06b225bd1756b18853b4c178cc7ed8e7951a17ca 100644
+--- a/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
++++ b/third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+@@ -85,6 +85,7 @@
+ #include "third_party/blink/renderer/core/geometry/dom_rect_read_only.h"
+ #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context_host.h"
+ #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
++#include "third_party/skia/include/core/SkPixmap.h"
+ #include "third_party/blink/renderer/core/html/canvas/image_data.h"
+ #include "third_party/blink/renderer/core/html/canvas/predefined_color_space.h"
+ #include "third_party/blink/renderer/core/html/html_image_element.h"
+@@ -5494,6 +5495,20 @@ void WebGLRenderingContextBase::ReadPixelsHelper(GLint x,
+     }
+     ContextGL()->ReadPixels(x, y, width, height, format, type, data);
+   }
++  // AZWAH: WebGL readbacks follow the opt-in canvas protection (same per-site
++  // session seed); only RGBA bytes are changed.
++  if (data && !buffer && format == GL_RGBA && type == GL_UNSIGNED_BYTE &&
++      width > 0 && height > 0) {
++    const uint64_t seed =
++        HTMLCanvasElement::AzwahCanvasNoiseSeed(Host()->GetTopExecutionContext());
++    if (seed) {
++      const SkPixmap pixmap(
++          SkImageInfo::Make(width, height, kRGBA_8888_SkColorType,
++                            kUnpremul_SkAlphaType),
++          data, static_cast<size_t>(width) * 4u);
++      HTMLCanvasElement::AzwahApplyCanvasNoise(pixmap, seed, x, y);
++    }
++  }
+ }
+ 
+ void WebGLRenderingContextBase::RenderbufferStorageImpl(

@@ -77,7 +77,8 @@ for (const engine of ['chromium', 'firefox']) test(`M8 real ${engine}: create/co
     await context.addInitScript(() => { Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined }); });
     uiPage = await context.newPage(); await uiPage.goto(a.url);
     await uiPage.locator('[data-nav="profiles"]').click();
-    await uiPage.getByRole('button', { name: 'Export ' + profile.name, exact: true }).click();
+    await uiPage.getByRole('button', { name: 'More actions for ' + profile.name, exact: true }).click();
+    await uiPage.getByRole('menuitem', { name: 'Export ' + profile.name, exact: true }).click();
     const dialog = uiPage.getByRole('dialog', { name: 'Export ' + profile.name });
     await dialog.getByLabel('Passphrase', { exact: true }).fill('disposable browser passphrase');
     await dialog.getByLabel('Repeat passphrase').fill('disposable browser passphrase');

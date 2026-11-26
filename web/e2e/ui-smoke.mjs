@@ -27,6 +27,132 @@ for (const [name, folder, tags] of [['Alpha', 'Work', 'a, shop'], ['Bravo', 'Wor
     await editor.getByRole('button', { name: 'Create profile', exact: true }).click();
     await pg.waitForSelector(`td.col-name >> text=${name}`);
   });
+if (process.env.OUT_DIR) {
+  for (const [width, height] of [[1280, 720], [1366, 768], [1920, 1080]]) {
+    await step(`profile workspace at ${width}×${height}`, async () => {
+      await pg.setViewportSize({ width, height });
+      await pg.screenshot({ path: OUT + `profiles-${width}.png` });
+      await pg.getByRole('button', { name: 'Edit Alpha', exact: true }).click();
+      for (const tab of ['General', 'Proxy', 'Fingerprint', 'Extra']) {
+        await editor.getByRole('tab', { name: tab, exact: true }).click();
+        await editor.getByRole('button', { name: 'Save changes' }).waitFor();
+        await pg.screenshot({ path: OUT + `profile-${tab.toLowerCase()}-${width}.png` });
+      }
+      await pg.keyboard.press('Escape');
+      await editor.waitFor({ state: 'hidden' });
+    });
+  }
+  await pg.setViewportSize({ width: 1360, height: 820 });
+}
+const activeLabel = () => pg.evaluate(() => document.activeElement?.getAttribute('aria-label') || document.activeElement?.tagName);
+await step('keyboard: / focuses search, n opens the editor, Escape closes it', async () => {
+  await pg.locator('body').click({ position: { x: 5, y: 5 } });
+  await pg.keyboard.press('/');
+  if (await activeLabel() !== 'Search profiles') throw new Error('/ focused ' + await activeLabel());
+  await pg.keyboard.type('n');
+  if (await editor.count()) throw new Error('typing n in search opened the editor');
+  await pg.fill('.search input', ''); await pg.locator('body').click({ position: { x: 5, y: 5 } });
+  await pg.keyboard.press('n'); await editor.waitFor();
+  await pg.keyboard.press('Escape'); await editor.waitFor({ state: 'hidden' });
+  await pg.keyboard.press('Shift+N'); await editor.waitFor();
+  await pg.keyboard.press('Escape'); await editor.waitFor({ state: 'hidden' });
+});
+await step('keyboard: row menu arrows, Details dialog focus trap and focus return', async () => {
+  const more = pg.getByRole('button', { name: 'More actions for Alpha', exact: true });
+  await more.focus(); await pg.keyboard.press('Enter');
+  await pg.waitForSelector('[role=menu]');
+  if (await activeLabel() !== 'Details for Alpha') throw new Error('menu focus ' + await activeLabel());
+  await pg.keyboard.press('ArrowDown');
+  if (await activeLabel() !== 'Edit profile Alpha') throw new Error('ArrowDown focus ' + await activeLabel());
+  await pg.keyboard.press('ArrowUp'); await pg.keyboard.press('Enter');
+  const dialog = pg.getByRole('dialog', { name: 'Details · Alpha' }); await dialog.waitFor();
+  if (!(await dialog.evaluate(d => d.contains(document.activeElement)))) throw new Error('focus not moved into dialog');
+  await pg.keyboard.press('n');
+  if (await editor.count()) throw new Error('n opened the editor behind an open dialog');
+  for (let i = 0; i < 6; i++) await pg.keyboard.press('Tab');
+  if (!(await dialog.evaluate(d => d.contains(document.activeElement)))) throw new Error('Tab escaped the dialog');
+  await pg.keyboard.press('Escape'); await dialog.waitFor({ state: 'hidden' });
+  if (await activeLabel() !== 'More actions for Alpha') throw new Error('focus returned to ' + await activeLabel());
+});
+await step('Escape closes the profile editor and returns focus to its trigger', async () => {
+  await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
+  await pg.keyboard.press('Escape'); await editor.waitFor({ state: 'hidden' });
+  if (await activeLabel() !== 'Edit Alpha') throw new Error('focus returned to ' + await activeLabel());
+});
+await step('narrow toolbar keeps search visible and moves low-priority actions to overflow', async () => {
+  await pg.setViewportSize({ width: 1024, height: 768 });
+  await pg.waitForFunction(() => { const c = document.querySelector('.profile-card').getBoundingClientRect(), s = document.querySelector('.profile-toolbar .search').getBoundingClientRect(); return s.width > 150 && s.right <= c.right + 0.5; }, null, { timeout: 3000 })
+    .catch(async () => { throw new Error('search clipped at 1024: ' + JSON.stringify(await pg.evaluate(() => ({ card: document.querySelector('.profile-card').getBoundingClientRect().right, search: document.querySelector('.profile-toolbar .search').getBoundingClientRect().toJSON() })))); });
+  if (await pg.getByRole('button', { name: 'Duplicate selected', exact: true }).count()) throw new Error('low-priority action still inline at 1024');
+  await pg.check('tbody tr:nth-child(1) .cb input');
+  await pg.getByRole('button', { name: 'More profile actions' }).click();
+  const dup = pg.getByRole('menuitem', { name: 'Duplicate selected', exact: true });
+  if (!(await pg.getByRole('menuitem', { name: 'Synchronize selected', exact: true }).isDisabled())) throw new Error('synchronize enabled without two running profiles');
+  if (await dup.isDisabled()) throw new Error('Duplicate selected disabled with one selection');
+  await pg.keyboard.press('Escape');
+  await pg.uncheck('tbody tr:nth-child(1) .cb input');
+  await pg.setViewportSize({ width: 1366, height: 768 });
+  await pg.getByRole('button', { name: 'Duplicate selected', exact: true }).waitFor();
+  await pg.setViewportSize({ width: 1360, height: 820 });
+});
+await step('fingerprint tab shows every category with unavailable modes disabled, and saves supported modes', async () => {
+  const alphaId = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha').id);
+  const seeded = await pg.evaluate(async id => (await fetch('/api/profiles/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ advancedSettings: { experimental: { canvasReadback: 'prototype', webglReadback: 'prototype' } } }) })).status, alphaId);
+  if (seeded !== 200) throw new Error('seed prototype ' + seeded);
+  await pg.reload(); await rows(3);
+  await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
+  await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
+  if (await editor.getByText(/readback prototype|readPixels prototype/i).count()) { await pg.keyboard.press('Escape'); throw new Error('prototype controls still in the editor'); }
+  // Every mode stock Chrome cannot apply stays visible and disabled: per category, the disabled
+  // segmented pills (or <option>s for value lists) must match the catalog's unsupported modes exactly.
+  const catalog = await pg.evaluate(async () => (await (await fetch('/api/fingerprint-catalog')).json()).categories);
+  const info = await editor.evaluate(root => {
+    const perCategory = {};
+    for (const field of root.querySelectorAll('.fp-field[data-category]')) {
+      const pills = [...field.querySelectorAll('button[data-unavailable]')];
+      perCategory[field.dataset.category] = { count: pills.length, allDisabled: pills.every(b => b.disabled) };
+    }
+    for (const sel of root.querySelectorAll('select[data-category]')) {
+      const opts = [...sel.querySelectorAll('option[value^="unavailable:"]')];
+      perCategory[sel.dataset.category] = { count: opts.length, allDisabled: opts.every(o => o.disabled) };
+    }
+    return { perCategory, categories: [...new Set([...root.querySelectorAll('[data-category]')].map(e => e.dataset.category))].sort() };
+  });
+  const device = await pg.evaluate(async () => (await (await fetch('/api/device-identity')).json()));
+  const blockedPresets = device.presets.filter(p => p.state !== 'supported');
+  for (const [id, seen] of Object.entries(info.perCategory)) {
+    const expected = id === 'deviceIdentity' ? blockedPresets.length : (catalog.find(c => c.id === id)?.modes ?? []).filter(m => m.state === 'unsupported').length;
+    if (seen.count !== expected || !seen.allDisabled) { await pg.keyboard.press('Escape'); throw new Error('unavailable modes ' + id + ' ' + JSON.stringify({ seen, expected })); }
+  }
+  for (const c of ['audio', 'canvas', 'deviceIdentity', 'macAddress', 'fonts', 'geolocationData', 'languages', 'mediaDevices', 'navigatorHardware', 'portScan', 'screen', 'timezone', 'userAgent', 'webgl', 'webglMetadata', 'webgpu', 'webrtc'])
+    if (!info.categories.includes(c)) throw new Error('category not shown: ' + c + ' in ' + info.categories.join(','));
+  const canvasNoise = await editor.getByRole('radiogroup', { name: 'Canvas', exact: true }).locator('button[data-unavailable="noise"]').evaluate(b => ({ disabled: b.disabled, label: b.textContent }));
+  if (!canvasNoise?.disabled) { await pg.keyboard.press('Escape'); throw new Error('canvas noise option ' + JSON.stringify(canvasNoise)); }
+  await editor.getByRole('radiogroup', { name: 'WebGL', exact: true }).getByRole('radio', { name: /^Restricted/ }).click();
+  const explicit = device.presets.find(p => p.state === 'supported' && p.id !== 'host');
+  if (explicit) await editor.getByRole('combobox', { name: 'Device preset', exact: true }).selectOption(explicit.id);
+  const macInput = editor.getByRole('textbox', { name: 'MAC address value', exact: true });
+  const macBefore = await macInput.inputValue();
+  if (!/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(macBefore)) throw new Error('derived MAC label not shown: ' + macBefore);
+  await editor.locator('.mac-field').getByRole('button', { name: 'Regenerate' }).click();
+  const macAfter = await macInput.inputValue();
+  if (macAfter === macBefore || !/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(macAfter)) throw new Error('regenerate ' + macBefore + ' -> ' + macAfter);
+  await saveProfile();
+  const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Alpha'));
+  if (p.advancedSettings.fingerprint.webgl !== 'restricted' || p.advancedSettings.fingerprint.canvas !== 'real') throw new Error('saved ' + JSON.stringify(p.advancedSettings.fingerprint));
+  if (p.macLabel !== macAfter || p.macLabelMode !== 'random') throw new Error('MAC not saved ' + JSON.stringify([p.macLabel, p.macLabelMode, macAfter]));
+  if (explicit && p.advancedSettings.deviceIdentity?.preset !== explicit.id) throw new Error('device preset not saved ' + JSON.stringify(p.advancedSettings.deviceIdentity));
+  if (p.advancedSettings.experimental.canvasReadback !== 'off' || p.advancedSettings.experimental.webglReadback !== 'off') throw new Error('editor save kept readback prototypes ' + JSON.stringify(p.advancedSettings.experimental));
+  await pg.click('[aria-label="Edit Alpha"]'); await editor.waitFor();
+  await editor.getByRole('tab', { name: 'Fingerprint', exact: true }).click();
+  await editor.getByRole('button', { name: 'Verify Profile Settings' }).click();
+  const section = editor.getByRole('region', { name: 'Verification by category' }); await section.waitFor();
+  const pills = await section.locator('.fact .pill').allInnerTexts();
+  if (pills.length !== 17) throw new Error('category rows ' + pills.length);
+  if (pills.some(t => t === 'pass' || t === 'partial')) throw new Error('stopped profile reported verification pass: ' + pills.join(','));
+  await editor.getByRole('radiogroup', { name: 'WebGL', exact: true }).getByRole('radio', { name: /^Default/ }).click();
+  await saveProfile();
+});
 await step('sidebar lists folders', async () => {
   await pg.locator('.profile-scopes summary').click();
   await pg.waitForSelector('.folders >> text=Work');
@@ -64,11 +190,11 @@ await step('custom proxy in profile editor', async () => { await pg.click('[aria
   await saveProfile();
   await pg.waitForSelector('tr:has-text("Bravo") td.col-proxy >> text=/10.9.9.9/'); });
 await step('automationEnabled toggle saves', async () => { await pg.click('[aria-label="Edit Charlie"]'); await pg.check('.drawer [role=switch]'); await saveProfile();
-  await pg.waitForSelector('tr:has-text("Charlie") >> text=Automation enabled');
+  await pg.waitForSelector('tr:has-text("Charlie") [data-badge="automation"]');
   const p = await pg.evaluate(async () => (await (await fetch('/api/profiles')).json()).find(x => x.name === 'Charlie'));
   if (p.automationEnabled !== true) throw new Error('server has ' + p.automationEnabled);
   await pg.click('[aria-label="Edit Charlie"]'); if (!(await pg.isChecked('.drawer [role=switch]'))) throw new Error('not reloaded as checked'); await pg.uncheck('.drawer [role=switch]'); await saveProfile();
-  await pg.waitForFunction(() => !document.body.innerText.includes('Automation enabled')); });
+  await pg.waitForFunction(() => !document.querySelector('[data-badge="automation"]')); });
 await step('editor validates empty name', async () => { await newProfile(); await editor.getByRole('button', { name: 'Create profile', exact: true }).click(); await pg.waitForSelector('.toast >> text=Name is required'); await pg.keyboard.press('Escape'); });
 await pg.screenshot({ path: OUT + 'light.png' });
 await step('dark theme persists', async () => { await pg.click('[title="Dark theme"]'); await pg.reload(); await pg.waitForSelector('.side'); if (await pg.evaluate(() => document.documentElement.dataset.theme) !== 'dark') throw new Error('not dark'); });
@@ -123,7 +249,9 @@ await step('lifecycle events update status once', async () => {
   catch (e) { throw new Error('kill ' + e.message); }
   await pg.waitForSelector(row('Signal') + ' .status.error', { timeout: 20000 });
   const diag = await pg.locator(row('Signal') + ' .err-text').innerText();
-  if (!/unexpectedly|died|signal|exit code|Crashed/i.test(diag)) throw new Error('diagnostic: ' + diag);
+  // A killed browser is reported either from its exit event ("signal", "exit code") or, when the health monitor sees the
+  // exit first, as ended outside the app (web/src/lib.js). Both are correct for a process killed from outside.
+  if (!/unexpectedly|died|signal|exit code|Crashed|ended outside/i.test(diag)) throw new Error('diagnostic: ' + diag);
   await pg.waitForSelector('.toast.error', { timeout: 5000 });
   await pg.waitForTimeout(700);
   const texts = await pg.locator('.toast.error').allInnerTexts();
@@ -147,7 +275,7 @@ else await step('CHROMIUM_MISSING 503 on launch shows the Download Chromium bann
   await pg.goto(NOCHROME); await pg.waitForSelector('tbody td.col-name >> text=NoChrome');
   if (await pg.locator('.notice.warn >> text=Download Chromium').count()) throw new Error('banner shown before any launch');
   const resp = pg.waitForResponse(x => /\/api\/profiles\/[^/]+\/launch$/.test(x.url()));
-  await pg.click('tbody tr:has(td.col-name:has-text("NoChrome")) .col-actions button:has-text("Launch")');
+  await pg.click('[aria-label="Launch NoChrome"]');
   const lr = await resp; const body = await lr.json();
   if (lr.status() !== 503 || (body.code || body.error) !== 'CHROMIUM_MISSING') throw new Error(`expected 503 CHROMIUM_MISSING, got ${lr.status()} ${JSON.stringify(body)}`);
   await pg.waitForSelector('.notice.warn button:has-text("Download Chromium")', { timeout: 5000 });

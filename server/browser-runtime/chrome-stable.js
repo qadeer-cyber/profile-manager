@@ -82,17 +82,25 @@ export function stableProxyNetworkArgs(host, authenticated) {
   return ['--disable-quic', '--dns-prefetch-disable', '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE ' + name];
 }
 
-export async function verifyStableBrowserLocation(context, expected, { verifyCoordinates = true } = {}) {
+export async function verifyStableBrowserLocation(context, expected, { verifyCoordinates = true, retryDelayMs = 1500 } = {}) {
   let page;
   let permissionsGranted = false;
   let stage = 'proxy exit IP';
   try {
     page = await context.newPage();
-    const response = await page.goto('https://api64.ipify.org/?format=json', { timeout: 15000 });
     const { publicIp } = await import('../proxy-location.js');
-    if (!response?.ok() || new URL(response.url()).origin !== 'https://api64.ipify.org' || publicIp((await response.json())?.ip) !== expected.ip) {
-      throw new Error('Exit IP mismatch');
+    // One retry for a transient network failure or a non-OK reply, as the server-side probe does.
+    // A reply naming a different exit IP is not retried.
+    let observed = null;
+    for (let attempt = 0; attempt < 2 && observed == null; attempt++) {
+      if (attempt) await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+      let response;
+      try { response = await page.goto('https://api64.ipify.org/?format=json', { timeout: 15000 }); }
+      catch { continue; }
+      if (!response?.ok() || new URL(response.url()).origin !== 'https://api64.ipify.org') continue;
+      observed = publicIp((await response.json().catch(() => null))?.ip) ?? '';
     }
+    if (observed !== expected.ip) throw new Error('Exit IP mismatch');
     stage = 'page timezone';
     const instant = new Date();
     const year = instant.getUTCFullYear();

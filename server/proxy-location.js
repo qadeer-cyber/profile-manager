@@ -91,7 +91,24 @@ function requestJson(url, agent, headers) {
   });
 }
 
-const exitEndpoint = 'https://api64.ipify.org?format=json';
+// Exit-IP services, tried in order when one does not answer (all return JSON with an "ip" field). ipify first: the
+// browsers' own exit checks use it too, so the IPs normally come from the same service.
+export const EXIT_ENDPOINTS = Object.freeze(['https://api64.ipify.org?format=json', 'https://api.ipify.org?format=json', 'https://ifconfig.co/json']);
+async function observeExitIp(request, agent) {
+  let lastError;
+  for (const endpoint of EXIT_ENDPOINTS) {
+    try {
+      const ip = publicIp((await request(endpoint, agent))?.ip);
+      if (ip) return ip;
+    } catch (error) {
+      lastError = error;
+      // A refused proxy login is not a service outage: do not hide it behind another service.
+      if (/auth|407/i.test(String(error?.code || '') + ' ' + String(error?.message || ''))) throw error;
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
 const cityServices = Object.freeze({
   geoip: { origin: 'https://geoip.maxmind.com', label: 'MaxMind GeoIP City' },
   geolite: { origin: 'https://geolite.info', label: 'MaxMind GeoLite City' },
@@ -115,7 +132,7 @@ export async function probeProxyExit(proxy, { request = requestJson } = {}) {
   const agent = proxyAgent(proxy);
   const started = performance.now();
   try {
-    const ip = publicIp((await request(exitEndpoint, agent))?.ip);
+    const ip = await observeExitIp(request, agent);
     if (!ip) throw fail('The assigned proxy did not return a valid public exit IP.');
     return { ip, latencyMs: Math.round(performance.now() - started) };
   } finally { agent.destroy(); }
@@ -127,7 +144,7 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
   let agent;
   try {
     agent = proxyAgent(proxy);
-    const observe = async () => publicIp((await request(exitEndpoint, agent))?.ip);
+    const observe = async () => observeExitIp(request, agent);
     const ip = await observe();
     if (!ip) throw fail('The assigned proxy did not return a valid public exit IP.');
     const { account, license: key } = (credentials ? credentials() : {
@@ -157,4 +174,17 @@ export async function resolveProxyLocation(proxy, { read, save, request = reques
       'PROXY_EXIT_ROTATED', 'PROXY_EXIT_SERVICE_UNAVAILABLE'].includes(error.code)) throw classified;
     throw fail('Proxy location could not be verified. Check proxy connectivity and the location provider in Settings → Proxy location.');
   } finally { agent?.destroy(); }
+}
+
+// Launch-time resolution: one bounded retry for a transient network failure (connection reset,
+// timeout, 5xx from the exit service), the same rule the running-profile watchdog uses. A single
+// reset between the proxy and the exit-IP service must not fail the launch. Anything else
+// (authentication, rotation, bad data) fails at once. The exit is still verified on the retry.
+export async function resolveProxyLocationWithRetry(proxy, options = {}, { retryDelayMs = 1500, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
+  try { return await resolveProxyLocation(proxy, options); }
+  catch (error) {
+    if (!isTransientProxyProbeError(error)) throw error;
+    await sleep(retryDelayMs);
+    return resolveProxyLocation(proxy, options);
+  }
 }

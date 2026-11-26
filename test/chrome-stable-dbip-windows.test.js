@@ -69,6 +69,7 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'azwah-dbip-live-'));
   process.env.PM_DATA_DIR = directory;
   fs.cpSync('build/geoip-dbip', path.join(directory, 'geoip-dbip'), { recursive: true });
+  fs.cpSync('build/geoip-dbip-asn', path.join(directory, 'geoip-dbip-asn'), { recursive: true });
   process.env.PM_API_TOKEN = randomUUID();
   const username = randomUUID();
   const password = randomUUID();
@@ -107,7 +108,8 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
     }
     profile = await api('/profiles', {
       name: 'Automatic DB-IP acceptance',
-      advancedSettings: { runtime: 'stable-chrome' },
+      // Proxy-following timezone and in-browser exit verification are Controlled features.
+      advancedSettings: { runtime: 'stable-chrome', proxyLaunch: 'controlled' },
       proxy: { type: protocol, host: '127.0.0.1', port: proxy.port, username, password },
     }, 201);
     const route = '/profiles/' + profile.id;
@@ -120,6 +122,26 @@ test('signed Chrome verifies an authenticated ' + protocol + ' public-egress pro
       const context = engine.liveContext(profile.id);
       const page = context.pages()[0] || await context.newPage();
       assert.equal(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone), result.timezone);
+      if (launch === 0) {
+        // Per-category verification for the proxy-following timezone and geolocation.
+        const hw = await fetch(server.url + '/api/v1' + route + '/hardware', { headers: { Authorization: 'Bearer ' + process.env.PM_API_TOKEN }, signal: AbortSignal.timeout(55_000) }).then(r => r.json());
+        const rows = Object.fromEntries(hw.consistency.byCategory.map(row => [row.id, row]));
+        for (const id of ['timezone', 'geolocationAccess', 'geolocationData']) console.log(`# proxy-following ${id}: ${rows[id].status} ${rows[id].findings.map(f => `${f.id}=${f.status}`).join(' ')}`);
+        assert.equal(hw.browser.availability, 'observed', `observation ${hw.browser.reason}`);
+        assert.equal(hw.browser.timezone, result.timezone);
+        assert.ok(['pass', 'partial'].includes(rows.timezone.status), `timezone follows the proxy: ${JSON.stringify(rows.timezone.findings)}`);
+        for (const id of ['geolocationAccess', 'geolocationData']) {
+          if (rows[id].status !== 'pass') continue;
+          const g = hw.browser.geolocation;
+          assert.ok(g && Math.abs(g.latitude - result.latitude) < 1 && Math.abs(g.longitude - result.longitude) < 1, `${id} pass needs browser coordinates near the proxy location, got ${JSON.stringify(g)}`);
+        }
+        assert.equal(JSON.stringify(hw).includes(password), false, 'no proxy password in the verification report');
+        // The shipped DB-IP ASN Lite database names the network of the real exit IP (the runner's).
+        const { lookupDbipNetwork } = await import('../server/dbip-location.js');
+        const network = await lookupDbipNetwork(result.ip);
+        console.log(`# exit network: AS${network.asn} ${network.organization} type=${network.type}`);
+        assert.ok(Number.isInteger(network.asn) && network.asn > 0, 'exit network ASN');
+      }
       await engine.stop(profile.id);
     }
     assert.ok(authenticated >= 3, 'Proxy must receive authenticated outbound traffic');

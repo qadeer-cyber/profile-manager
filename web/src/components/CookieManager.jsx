@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from './Toasts.jsx';
 import { Confirm } from './Dialog.jsx';
+import { looksLikeNetscape, parseNetscapeCookies, toNetscapeCookies } from '../../../server/cookie-formats.js';
 
 export function CookieManager({ profileId, browserEngine = 'chromium' }) {
   const toast = useToast();
@@ -34,14 +35,34 @@ export function CookieManager({ profileId, browserEngine = 'chromium' }) {
       URL.revokeObjectURL(url);
     } catch (e) { toast(e.message, 'error'); }
   };
+  const downloadNetscape = async () => {
+    try {
+      const body = await api(`/api/profiles/${profileId}/cookies`);
+      const { text, exported, skipped } = toNetscapeCookies(body.cookies);
+      const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+      const link = document.createElement('a');
+      link.href = url; link.download = 'cookies.txt'; link.click();
+      URL.revokeObjectURL(url);
+      toast(`Exported ${exported} cookies${skipped ? `; ${skipped} skipped because their value could not be read` : ''}`, skipped ? 'info' : 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
   const onImport = async event => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     try {
       const text = await file.text();
-      const parsed = JSON.parse(text);
-      const cookies = Array.isArray(parsed) ? parsed : parsed.cookies;
+      let cookies;
+      if (looksLikeNetscape(text)) {
+        // All or nothing: a malformed line refuses the whole file. Only line numbers are reported.
+        const parsed = parseNetscapeCookies(text);
+        if (parsed.errors.length) throw new Error(`cookies.txt not imported: ${parsed.errors.slice(0, 3).map(e => `line ${e.line}: ${e.reason}`).join('; ')}${parsed.errors.length > 3 ? ` (+${parsed.errors.length - 3} more)` : ''}`);
+        if (!parsed.cookies.length) throw new Error('cookies.txt contains no cookies');
+        cookies = parsed.cookies;
+      } else {
+        const parsed = JSON.parse(text);
+        cookies = Array.isArray(parsed) ? parsed : parsed.cookies;
+      }
       const result = await api(`/api/profiles/${profileId}/cookies/import`, { method: 'POST', body: { version: 1, cookies } });
       toast(`Imported ${result.imported} cookies`, 'success');
       setSelected(new Set());
@@ -85,7 +106,8 @@ export function CookieManager({ profileId, browserEngine = 'chromium' }) {
     <div className="row">
       <button onClick={load}>Refresh</button>
       <button onClick={download} disabled={!cookies}>Export JSON</button>
-      {!readOnly && <label className="file-btn">Import JSON<input type="file" accept="application/json,.json" onChange={onImport} /></label>}
+      <button onClick={downloadNetscape} disabled={!cookies}>Export cookies.txt</button>
+      {!readOnly && <label className="file-btn">Import JSON or cookies.txt<input type="file" aria-label="Import cookies" accept="application/json,.json,text/plain,.txt" onChange={onImport} /></label>}
       {!readOnly && <button className="ghost-danger" disabled={!selected.size} onClick={() => setConfirm('selected')}>Clear selected</button>}
       {!readOnly && <button className="ghost-danger" disabled={!cookies?.length} onClick={() => setConfirm('all')}>Clear all</button>}
     </div>

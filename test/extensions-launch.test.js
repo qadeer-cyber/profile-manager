@@ -41,9 +41,9 @@ test('enabled extensions are loaded together and disabled or foreign ones are no
   assignExtension(bravo, notes.id, false);
   assignExtension(bravo, ads.id, true);
   const start = calls.length;
-  await assert.rejects(launch({ id: alpha }, { automation: false }), /intentional launch boundary/);
-  await assert.rejects(launch({ id: bravo }, { automation: false }), /intentional launch boundary/);
-  await assert.rejects(launch({ id: clean }, { automation: false }), /intentional launch boundary/);
+  await assert.rejects(launch({ id: alpha }, { automation: false, headless: true }), /intentional launch boundary/);
+  await assert.rejects(launch({ id: bravo }, { automation: false, headless: true }), /intentional launch boundary/);
+  await assert.rejects(launch({ id: clean }, { automation: false, headless: true }), /intentional launch boundary/);
   const alphaOpts = calls[start].opts;
   const bravoOpts = calls[start + 1].opts;
   const cleanOpts = calls[start + 2].opts;
@@ -68,4 +68,18 @@ test('a missing extension directory blocks launch', async () => {
   await assert.rejects(launch({ id }, { automation: false }), e => e.status === 500 && e.code === 'EXTENSION_MISSING');
   assert.equal(calls.length, n);
   assert.deepEqual(extensionLaunchPlan(randomUUID()).args, []);
+});
+
+// On Windows with signed Chrome Stable installed, a headed launch uses Chrome Stable, which cannot
+// load unpacked extensions. The app must refuse clearly instead of launching without them.
+test('headed Chrome Stable launch with unpacked extensions is refused on Windows', async t => {
+  if (process.platform !== 'win32') { t.skip('Chrome Stable runtime is Windows-only'); return; }
+  const { resolveWindowsChromeStable } = await import('../server/browser-runtime/chrome-stable.js');
+  try { await resolveWindowsChromeStable(); } catch (error) { t.skip(`Chrome Stable not available: ${error.code || error.message}`); return; }
+  const tools = unpacked('Tools', ['storage']);
+  const id = profile();
+  assignExtension(id, tools.id, true);
+  const before = calls.length;
+  await assert.rejects(launch({ id }, { automation: false }), error => error.code === 'CHROME_STABLE_UNPACKED_EXTENSION' && error.status === 409);
+  assert.equal(calls.length, before, 'no browser was launched without the assigned extensions');
 });

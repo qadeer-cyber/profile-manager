@@ -1,0 +1,142 @@
+/* Compact profile workspace: toolbar, single-line rows, row menu and footer in one card. */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* Slim page heading so the table starts higher on 768px-tall screens. */
+.app.shell .profile-heading{padding:8px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.app.shell .profile-heading h1{font-size:20px}
+.app.shell .profile-heading p{margin:2px 0 0;font-size:12.5px;color:var(--text-2)}
+.app.shell .profile-heading .profile-metrics div{padding:4px 10px;min-width:72px}
+
+.profile-card{container-type:inline-size;container-name:profiles;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow);overflow:hidden}
+
+/* ---------- toolbar ---------- */
+.app.shell .profile-card .profile-toolbar{display:flex;flex-wrap:nowrap;align-items:center;gap:8px;margin:0;padding:10px 12px;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;background:var(--surface)}
+.profile-toolbar .split-btn{display:inline-flex;flex:none}
+.app.shell .profile-toolbar .split-btn>.primary{border-radius:var(--r) 0 0 var(--r);padding:7px 14px;display:inline-flex;align-items:center;gap:6px;height:34px}
+.app.shell .profile-toolbar .split-caret{border-radius:0 var(--r) var(--r) 0;border-left:1px solid #ffffff55;padding:0 8px;height:34px;display:inline-flex;align-items:center}
+.app.shell .profile-toolbar .quick-btn{flex:none;display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 12px;background:var(--surface-2);font-weight:600}
+.tool-group{display:flex;align-items:center;gap:2px;flex:none;padding:2px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r)}
+.app.shell .profile-toolbar .tool,.app.shell .profile-card .tool{width:32px;height:32px;padding:0;display:inline-grid;place-items:center;border-color:transparent;background:transparent;color:var(--text-2);flex:none}
+.profile-card .tool:hover:not(:disabled){background:var(--hover);color:var(--text)}
+.profile-card .tool.danger:hover:not(:disabled){color:var(--bad);background:var(--bad-soft)}
+.profile-card .tool:disabled{opacity:.38}
+.profile-toolbar .search{flex:1 1 220px;max-width:none;min-width:160px}
+.profile-toolbar .search input{height:34px;padding-right:38px}
+.app.shell .profile-toolbar .filter-toggle{position:absolute;right:3px;width:28px;height:28px;padding:0;display:grid;place-items:center}
+.profile-toolbar .filter-toggle.on{color:var(--accent-text);background:var(--accent-soft)}
+
+.app.shell .profile-card .filters{margin:0;padding:8px 12px;border:0;border-bottom:1px solid var(--border);border-radius:0;box-shadow:none;background:var(--surface-2);flex-wrap:wrap}
+.profile-card .filters select,.profile-card .filters input{height:32px}
+.profile-card .filters .filters-spacer{flex:1}
+.profile-card .column-picker{margin:0;border:0;border-bottom:1px solid var(--border);border-radius:0;background:var(--surface-2)}
+.profile-card>.notice{margin:8px 12px}
+.profile-card .bulkbar{margin:0;border-radius:0;border-width:0 0 1px;padding:6px 12px;flex-wrap:nowrap;overflow-x:auto}
+.profile-card .bulkbar button{white-space:nowrap}
+.profile-card .import-results{margin:8px 12px}
+
+/* ---------- table ---------- */
+.app.shell .profile-card .table-wrap{border:0;border-radius:0;box-shadow:none;overflow-x:auto}
+.app.shell table.grid.profiles{table-layout:fixed;width:100%;min-width:0}
+.app.shell .profiles :is(th,td){padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal}
+.app.shell .profiles thead th{height:40px;font-size:12.5px;font-weight:600;color:var(--text-2);background:var(--surface-2)}
+.app.shell .profiles tbody tr{height:48px}
+.app.shell.compact .profiles tbody tr,.app.compact .profiles tbody tr{height:40px}
+.app.shell .profiles tbody td{font-size:13px}
+
+/* Column widths. Name takes whatever is left; notes takes a share. */
+.profiles th.cb{width:38px;padding-right:0}
+.profiles th.fav{width:32px;padding:0}
+.profiles th.col-run{width:44px;padding:0 4px}
+.profiles th.col-status{width:92px}
+.profiles th.col-engine{width:124px}
+.profiles th.col-storage{width:82px}
+.profiles th.col-folder{width:112px}
+.profiles th.col-proxy{width:150px}
+.profiles th.col-notes{width:13%}
+.profiles th.col-tags{width:132px}
+.profiles th.col-lastused{width:108px}
+.profiles th.col-actions{width:78px;text-align:right;padding-right:10px}
+.profiles th.col-name{min-width:160px}
+
+.profiles td.fav{padding:0;text-align:center}
+.profiles td.fav .star{width:28px;height:28px;padding:0;display:inline-grid;place-items:center;color:var(--text-3)}
+.profiles td.fav .star-on{color:#f5a524;font-size:16px;line-height:1}
+.profiles td.col-run{padding:0 4px}
+.app.shell .profiles td:is(.col-run,.cb,.fav,.actions){text-overflow:clip}
+.profiles :is(td,th).cb input[type=checkbox]{margin:0;vertical-align:middle}
+.profiles td.cb{text-overflow:clip}
+.profiles .run-btn{width:30px;height:30px;padding:0;display:inline-grid;place-items:center;border:0;border-radius:7px;background:var(--accent-soft);color:var(--accent)}
+.profiles .run-btn .i{fill:currentColor}
+.profiles .run-btn:hover:not(:disabled){background:var(--accent);color:#fff}
+.profiles .run-btn.stop{background:var(--bad-soft);color:var(--bad)}
+.profiles .run-btn.stop:hover:not(:disabled){background:var(--bad);color:#fff}
+
+.profiles .name-line{display:flex;align-items:center;gap:6px;min-width:0}
+.profiles .name-line .name{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.profiles .row-badge{flex:none;display:inline-flex;align-items:center;gap:3px;height:18px;padding:0 6px;border-radius:9px;font-size:11px;font-weight:600;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2)}
+.profiles .name-line .name{flex:0 1 auto}
+.profiles .row-badge.cdp .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11px}
+.profiles .row-error{flex:1 1 0;min-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--bad)}
+.profiles .row-error .i{vertical-align:-2px;margin-right:4px}
+.profiles .engine-line{display:flex;align-items:center;min-width:0}
+.profiles .engine-line .engine-name{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.profiles .col-engine .qual{flex:none;margin-left:5px;font-size:10.5px;font-weight:600;color:var(--warn);text-transform:uppercase;letter-spacing:.03em}
+.profiles .col-storage{color:var(--text-2)}
+.profiles .col-storage .i{vertical-align:-2px;margin-right:5px;color:var(--accent)}
+.profiles .col-folder .link{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+.profiles .proxy-cell{display:inline-flex;align-items:center;gap:5px;max-width:100%;min-width:0}
+.profiles .proxy-cell .mono-sm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px}
+.profiles .proxy-cell .i{flex:none;color:var(--text-3)}
+.profiles .exit-dot{flex:none;width:7px;height:7px;border-radius:50%;background:var(--text-3)}
+.profiles .exit-dot:is(.browser-full,.browser-timezone,.browser-exit){background:var(--ok)}
+.profiles .exit-dot.probe{background:var(--warn)}
+.profiles .col-notes{color:var(--text-2)}
+.profiles .tag-line{display:flex;gap:4px;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 18px),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 18px),transparent)}
+.profiles .tag-line .tag{flex:none;margin:0;line-height:18px}
+.profiles td.actions{text-align:right;padding-right:6px}
+.profiles td.actions>*{margin-left:0}
+.profiles td.actions .icon-btn{width:30px;height:30px;padding:0;display:inline-grid;place-items:center;vertical-align:middle}
+.profiles td.actions .row-edit{opacity:0;transition:opacity .12s}
+.profiles tr:is(:hover,:focus-within,.selected) .row-edit{opacity:1}
+@media (hover:none){.profiles td.actions .row-edit{opacity:1}}
+.profiles th.col-actions .icon-btn{width:30px;height:30px;padding:0;display:inline-grid;place-items:center;color:var(--text-2)}
+.profiles td.empty{white-space:normal;height:auto}
+
+/* ---------- footer ---------- */
+.profile-card .pager{margin:0;padding:8px 12px;border-top:1px solid var(--border);gap:10px;font-size:13px}
+.profile-card .pager .pager-info{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:var(--r);background:var(--accent-soft);color:var(--accent-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.profile-card .pager .pager-spacer{flex:1}
+.profile-card .pager select{height:30px}
+.profile-card .pager .icon-btn{width:30px;height:30px;padding:0;display:inline-grid;place-items:center}
+
+/* ---------- row menu (portal) ---------- */
+.row-menu{position:fixed;z-index:1000;min-width:232px;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-lg, 0 12px 32px #0002)}
+.row-menu [role=menuitem]{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;border-radius:6px;background:transparent;text-align:left;font-size:13px;color:var(--text);white-space:nowrap}
+.row-menu [role=menuitem]:hover:not(:disabled),.row-menu [role=menuitem]:focus-visible{background:var(--hover);outline:none}
+.row-menu [role=menuitem] .i{color:var(--text-2)}
+.row-menu [role=menuitem].danger,.row-menu [role=menuitem].danger .i{color:var(--bad)}
+.row-menu [role=menuitem].danger:hover:not(:disabled){background:var(--bad-soft)}
+.row-menu .row-menu-sep{height:1px;margin:4px 6px;background:var(--border)}
+.row-menu .row-menu-gap{width:15px}
+
+/* ---------- details dialog ---------- */
+.details-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 24px}
+.details-grid h4{margin:4px 0 6px;font-size:13px}
+.details-grid .pre{white-space:pre-wrap;color:inherit;font:inherit;background:none;padding:0}
+@media (max-width:760px){.details-grid{grid-template-columns:1fr}}
+
+/* ---------- responsive column priority (card width, not viewport) ---------- */
+@container profiles (max-width:1280px){.profiles :is(th,td).col-storage{display:none}}
+@container profiles (max-width:1180px){
+  .profiles :is(th,td).col-lastused{display:none}
+  .profiles th.col-engine{width:112px}.profiles th.col-folder{width:104px}.profiles th.col-proxy{width:140px}.profiles th.col-tags{width:120px}.profiles th.col-status{width:86px}
+}
+@container profiles (max-width:1000px){.profiles :is(th,td).col-notes{display:none}}
+@container profiles (max-width:860px){.profiles :is(th,td):is(.col-engine,.col-folder){display:none}}
+@container profiles (max-width:700px){.profiles :is(th,td):is(.col-tags,.col-status){display:none}}
+@container profiles (max-width:560px){.profiles :is(th,td).col-proxy{display:none}}
+@container profiles (max-width:620px){
+  .profile-card .pager{flex-wrap:wrap}
+  .profile-card .pager .pager-spacer{display:none}
+  .tool-group{flex-wrap:wrap}
+}

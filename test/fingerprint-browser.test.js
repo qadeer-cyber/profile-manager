@@ -195,8 +195,8 @@ test('Chromium applies real fingerprint restrictions and keeps profile storage i
       await editor.getByRole('button', { name: 'New profile' }).click();
       await editor.getByLabel('Name', { exact: true }).fill('UI fingerprint');
       await editor.getByRole('tab', { name: 'Fingerprint' }).click();
-      await editor.getByLabel('WebGL', { exact: true }).selectOption('restricted');
-      await editor.getByLabel('Local fonts', { exact: true }).selectOption('restricted');
+      await editor.getByRole('radiogroup', { name: 'WebGL', exact: true }).getByRole('radio', { name: /^Restricted/ }).click();
+      await editor.getByRole('radiogroup', { name: 'Local fonts', exact: true }).getByRole('radio', { name: /^Restricted/ }).click();
       await editor.getByRole('button', { name: 'Create profile', exact: true }).click();
       await editor.getByRole('cell', { name: 'UI fingerprint', exact: true }).waitFor();
       await editor.reload();

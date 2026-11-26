@@ -33,6 +33,13 @@ if ($exe.VersionInfo.ProductName -ne 'Azwah Browser') { throw "Unexpected produc
 foreach ($name in @('icudtl.dat', 'resources.pak')) {
     if (!(Test-Path -LiteralPath (Join-Path $out $name) -PathType Leaf)) { throw "Missing runtime file: $name" }
 }
+# Chromium's Windows sandbox starts renderers with restricted and AppContainer tokens, which must be able to read
+# the browser's folder (sandbox_win.cc: "Sandbox cannot access executable ... Access is denied"). Program Files grants
+# this by default; a build or temp folder does not. Grant read/execute to ALL APPLICATION PACKAGES (S-1-15-2-1) and
+# ALL RESTRICTED APPLICATION PACKAGES (S-1-15-2-2). This keeps the sandbox on; it does not disable anything.
+& "$env:SystemRoot/System32/icacls.exe" $out /grant '*S-1-15-2-1:(OI)(CI)(RX)' '*S-1-15-2-2:(OI)(CI)(RX)' /T /C /Q | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Could not grant sandbox read access to $out (icacls exit $LASTEXITCODE)." }
+Write-Output "SANDBOX_ACL granted on $out"
 $smoke = Join-Path $Workspace ('smoke-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $smoke | Out-Null
 $stdout = Join-Path $smoke 'stdout.txt'
@@ -49,7 +56,24 @@ $process = Start-Process @launch
 try {
     if (!$process.WaitForExit(45000)) { throw 'The native browser smoke test timed out.' }
     if ($process.ExitCode -ne 0 -or !(Select-String -LiteralPath $stdout -SimpleMatch '<title>AzwahNativeSmoke</title>' -Quiet)) {
-        Get-Content -LiteralPath $stderr -Tail 30
+        Write-Output "SMOKE_FAILED exit=$($process.ExitCode)"
+        Write-Output '--- stderr (first 80 lines) ---'; Get-Content -LiteralPath $stderr -TotalCount 80
+        Write-Output '--- stderr (last 40 lines) ---'; Get-Content -LiteralPath $stderr -Tail 40
+        Write-Output '--- stdout (first 20 lines) ---'; Get-Content -LiteralPath $stdout -TotalCount 20
+        # Diagnosis only: these variants never turn a failure into a pass.
+        $variants = [ordered]@{ 'headless-new' = @('--headless=new'); 'no-gpu' = @('--headless', '--disable-gpu');
+            'no-sandbox-diagnostic' = @('--headless', '--no-sandbox'); 'single-process-diagnostic' = @('--headless', '--single-process') }
+        foreach ($name in $variants.Keys) {
+            $dir = Join-Path $smoke $name; New-Item -ItemType Directory -Path $dir | Out-Null
+            $args2 = @($variants[$name]) + @('--no-first-run', ('"--user-data-dir=' + (Join-Path $dir 'profile') + '"'), '--enable-logging=stderr', '--v=0',
+                '--dump-dom', 'data:text/html,%3Ctitle%3EAzwahNativeSmoke%3C/title%3E')
+            $p2 = Start-Process -FilePath $exe.FullName -ArgumentList $args2 -PassThru -RedirectStandardOutput (Join-Path $dir 'out.txt') -RedirectStandardError (Join-Path $dir 'err.txt')
+            $ok = $p2.WaitForExit(45000)
+            if (!$ok) { & "$env:SystemRoot/System32/taskkill.exe" /PID $p2.Id /T /F | Out-Null }
+            $dom = Select-String -LiteralPath (Join-Path $dir 'out.txt') -SimpleMatch '<title>AzwahNativeSmoke</title>' -Quiet
+            Write-Output "SMOKE_VARIANT name=$name exited=$ok exit=$(if ($ok) { $p2.ExitCode }) dom=$dom"
+            Get-Content -LiteralPath (Join-Path $dir 'err.txt') -TotalCount 25 | Where-Object { $_ -match 'FATAL|ERROR|Check failed|NOTREACHED' } | Select-Object -First 8
+        }
         throw 'Native Chromium failed the headless DOM smoke test.'
     }
 } finally {

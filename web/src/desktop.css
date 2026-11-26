@@ -1,15 +1,15 @@
 /* AZWAH desktop surfaces */
 .app.shell {
-  --r: 10px; --r-lg: 17px;
-  --bg: #edf2f7; --surface: #fff; --surface-2: #f4f7fb; --hover: #eaf0f8;
-  --border: #dce5ef; --border-strong: #c4d1e0;
-  --text: #152338; --text-2: #475a73; --text-3: #586b84;
-  --accent: #315bc7; --accent-hover: #244ba9; --accent-soft: #e4edff; --accent-text: #21449e;
+  --r: 7px; --r-lg: 12px;
+  --bg: #f5f7fb; --surface: #fff; --surface-2: #f4f7fb; --hover: #eaf0f8;
+  --border: #e6e9f0; --border-strong: #c4d1e0;
+  --text: #182235; --text-2: #475a73; --text-3: #586b84;
+  --accent: #0958f6; --accent-hover: #0849cb; --accent-soft: #e4edff; --accent-text: #21449e;
   --glass: #f7faffed; --highlight: #ffffffb0; --glow: #cce4ff;
   --shadow: 0 6px 22px #1c365b0e, inset 0 1px var(--highlight);
   --shadow-lg: 0 22px 68px #192f5240;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  background: radial-gradient(ellipse at 70% 0%, var(--glow), transparent 54%), var(--bg);
+  background: var(--bg);
 }
 [data-theme=dark] .app.shell {
   --bg: #0c1421; --surface: #162235; --surface-2: #111c2e; --hover: #213149;
@@ -28,8 +28,8 @@
     backdrop-filter: blur(14px);
   }
 }
-.app.shell .topbar { height: 62px; padding: 0 20px; gap: 16px; }
-.app.shell .brand { min-width: 194px; font-size: 15px; letter-spacing: .13em; gap: 10px; }
+.app.shell .topbar { height: 54px; padding: 0 16px; gap: 12px; }
+.app.shell .brand { min-width: max-content; font-size: 15px; letter-spacing: .13em; gap: 10px; }
 .app.shell .logo { width: 32px; height: 32px; border-radius: 10px; background: var(--accent-soft); display: grid; place-items: center; }
 .command-search { display: flex; align-items: center; gap: 8px; width: min(35vw, 390px); min-width: 0; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); padding: 0 10px; }
 .command-search input { min-width: 0; width: 100%; background: transparent; border: 0; box-shadow: none; }
@@ -38,7 +38,7 @@
 .top-create { margin-left: auto; white-space: nowrap; }
 .app.shell .top-create + .top-meta { margin-left: 0; }
 .edition-pill { border-radius: 999px; padding: 5px 10px; white-space: nowrap; }
-.app.shell .side { width: 224px; padding: 10px 12px; box-shadow: inset -1px 0 var(--highlight); }
+.app.shell .side { width: 188px; padding: 8px 10px; box-shadow: inset -1px 0 var(--highlight); }
 .side-primary { display: grid; gap: 3px; }
 .app.shell .side .nav { min-height: 34px; padding: 6px 9px; border-radius: 9px; gap: 9px; text-align: left; }
 .app.shell .side .nav .i { width: 16px; height: 16px; flex: none; }
@@ -68,9 +68,7 @@
 .app.shell .grid th { background: var(--surface-2); color: var(--text-2); font-weight: 700; }
 .app.shell .grid th, .app.shell .grid td { padding: 9px 10px; }
 .app.shell.compact .grid th, .app.shell.compact .grid td { padding: 5px 8px; }
-.app.shell table.grid.profiles { min-width: 1040px; }
 .app.shell .pill { border-radius: 999px; }
-.app.shell .proxy-evidence { color: var(--text-2); margin-top: 5px; line-height: 1.5; max-width: 38ch; overflow-wrap: anywhere; }
 .app.shell .drawer:not(.editor-sheet), .app.shell .modal { border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
 .app.shell :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .app.shell .command-search input:focus-visible { outline: none; }
@@ -117,30 +115,6 @@
 .app.shell :is(input:not([type=checkbox],[type=radio],[type=file]),select,textarea) { border-radius: var(--r); }
 .app.shell .profile-heading { background: linear-gradient(110deg,var(--surface),var(--accent-soft)); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 16px 20px; box-shadow: var(--shadow); }
 
-/* Keep profile controls reachable inside the desktop content area. */
-.app.shell table.grid.profiles { min-width: 0; width: 100%; }
-.app.shell .profiles :is(td,th) { overflow-wrap: anywhere; }
-.app.shell .profiles .col-name .name { white-space: normal; }
-.app.shell .profiles .col-actions { white-space: normal; }
-.app.shell .profiles .col-actions button { margin: 2px; }
-.app.shell .profiles .profile-error { line-height: 1.45; max-width: 38ch; overflow-wrap: anywhere; }
-@media (max-width: 1450px) {
-  .app.shell .profiles .col-actions { min-width: 96px; }
-  .app.shell .profiles .col-proxy .mono-sm { white-space: normal; }
-  .app.shell .profiles .col-name { min-width: 120px; }
-}
-
-@media (max-width: 1450px) {
-  .app.shell table.grid.profiles { table-layout: fixed; }
-  .app.shell .profiles th.cb { width: 29px; }
-  .app.shell .profiles th.fav { width: 68px; }
-  .app.shell .profiles th.col-name { width: 23%; }
-  .app.shell .profiles th.col-status { width: 91px; }
-  .app.shell .profiles th.col-actions { width: 134px; }
-  .app.shell .profiles :is(td,th) { padding-inline: 5px; }
-  .app.shell .profiles .col-lastused { white-space: normal; }
-}
-
 .app.shell .side { overflow-x: hidden; }
 .app.shell .side > *, .app.shell .side .nav, .app.shell .folder-tools input { min-width: 0; }
 .app.shell .side .nav { box-sizing: border-box; white-space: normal; }
@@ -148,3 +122,13 @@
 .app.shell .side .folder-name { white-space: nowrap; }
 .app.shell .side-primary .nav { padding-block: 5px; }
 .app.shell .side .nav { flex-shrink: 0; }
+
+.top-destinations { display:flex; align-items:center; gap:3px; min-width:0; }
+.top-destinations button, .top-updates { border-color:transparent; background:transparent; white-space:nowrap; }
+.top-destinations button[aria-current="page"] { color:var(--accent-text); background:var(--accent-soft); }
+.top-updates { display:inline-flex; align-items:center; gap:7px; margin-left:auto; }
+.update-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); }
+.overview-warnings { padding-left:20px; color:var(--text-2); overflow-wrap:anywhere; }
+.update-notes { white-space:pre-wrap; overflow-wrap:anywhere; }
+.update-checksum { overflow-wrap:anywhere; }
+@media (max-width: 1050px) { .top-destinations { display:none; } }

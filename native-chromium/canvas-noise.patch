@@ -1,0 +1,212 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 16c56bb3308b5059b64d60e742c44f40f8fd9233..57a212f65edda5323126be0250c19ca960bbbe53 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3910,6 +3910,8 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       sandbox::policy::switches::kDisableLandlockSandbox,
+       sandbox::policy::switches::kDisableSeccompFilterSandbox,
+       sandbox::policy::switches::kNoSandbox,
++      // AZWAH: opt-in canvas readback protection seed (per browser session).
++      "azwah-canvas-seed",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+       switches::kDisableDevShmUsage,
+ #endif
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 4b1d02f04a0d84de3be485a6e06d248152c6b99c..2db377cbd8172ec4760e09ae54299b3b16b2eaa8 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -34,6 +34,10 @@
+ #include <utility>
+ 
+ #include "base/auto_reset.h"
++#include "base/command_line.h"
++#include "base/compiler_specific.h"
++#include "base/containers/span.h"
++#include "base/hash/sha1.h"
+ #include "base/feature_list.h"
+ #include "base/functional/callback_helpers.h"
+ #include "base/location.h"
+@@ -129,6 +133,11 @@
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_to_video_frame_copier.h"
+ #include "third_party/blink/renderer/platform/graphics/static_bitmap_image_transform.h"
++#include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
++#include "third_party/blink/renderer/platform/weborigin/security_origin.h"
++#include "third_party/skia/include/core/SkBitmap.h"
++#include "third_party/skia/include/core/SkImage.h"
++#include "third_party/skia/include/core/SkPixmap.h"
+ #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_video_frame_pool.h"
+ #include "third_party/blink/renderer/platform/heap/thread_state.h"
+ #include "third_party/blink/renderer/platform/image-encoders/image_encoder_utils.h"
+@@ -1445,6 +1454,11 @@ String HTMLCanvasElement::ToDataURLInternal(
+       ImageEncoderUtils::ToEncodingMimeType(mime_type);
+ 
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(source_buffer);
++  if (image_bitmap && source_buffer == kBackBuffer) {
++    image_bitmap = AzwahApplyCanvasNoise(
++        std::move(image_bitmap),
++        AzwahCanvasNoiseSeed(GetTopExecutionContext()));
++  }
+   if (image_bitmap) {
+     std::unique_ptr<ImageDataBuffer> data_buffer =
+         ImageDataBuffer::Create(image_bitmap);
+@@ -1549,6 +1563,11 @@ void HTMLCanvasElement::toBlob(V8BlobCallback* callback,
+ 
+   CanvasAsyncBlobCreator* async_creator = nullptr;
+   scoped_refptr<StaticBitmapImage> image_bitmap = Snapshot(kBackBuffer);
++  if (image_bitmap) {
++    image_bitmap = AzwahApplyCanvasNoise(
++        std::move(image_bitmap),
++        AzwahCanvasNoiseSeed(GetTopExecutionContext()));
++  }
+   if (image_bitmap) {
+     auto* options = ImageEncodeOptions::Create();
+     options->setType(ImageEncoderUtils::MimeTypeName(encoding_mime_type));
+@@ -2303,4 +2322,107 @@ void HTMLCanvasElement::EnsureAccessibilityManager() {
+   }
+ }
+ 
++namespace {
++
++uint64_t AzwahMix(uint64_t value) {
++  value += 0x9e3779b97f4a7c15ull;
++  value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ull;
++  value = (value ^ (value >> 27)) * 0x94d049bb133111ebull;
++  return value ^ (value >> 31);
++}
++
++}  // namespace
++
++// static
++uint64_t HTMLCanvasElement::AzwahCanvasNoiseSeed(
++    const ExecutionContext* context) {
++  const std::string secret =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "azwah-canvas-seed");
++  if (secret.empty() || !context) {
++    return 0;
++  }
++  String site;
++  if (const auto* window = DynamicTo<LocalDOMWindow>(context)) {
++    site = window->GetStorageKey().GetTopLevelSite().Serialize();
++  } else if (const SecurityOrigin* origin = context->GetSecurityOrigin()) {
++    site = origin->RegistrableDomain();
++    if (site.IsNull() || !site.length()) {
++      site = origin->ToString();
++    }
++  }
++  const std::string material = secret + "\n" + site.Utf8();
++  const base::SHA1Digest digest = base::SHA1Hash(base::as_byte_span(material));
++  uint64_t seed = 0;
++  for (size_t i = 0; i < 8; ++i) {
++    seed = (seed << 8) | digest[i];
++  }
++  return seed | 1;
++}
++
++// static
++void HTMLCanvasElement::AzwahApplyCanvasNoise(const SkPixmap& pixmap,
++                                              uint64_t seed,
++                                              int origin_x,
++                                              int origin_y) {
++  const SkColorType type = pixmap.colorType();
++  if (!seed || !pixmap.writable_addr() ||
++      (type != kRGBA_8888_SkColorType && type != kBGRA_8888_SkColorType)) {
++    return;
++  }
++  const bool premultiplied = pixmap.alphaType() == kPremul_SkAlphaType;
++  const size_t row_bytes = pixmap.rowBytes();
++  // SAFETY: writable_addr() points to computeByteSize() bytes owned by the
++  // pixmap's buffer for its whole lifetime.
++  base::span<uint8_t> bytes = UNSAFE_BUFFERS(
++      base::span(static_cast<uint8_t*>(pixmap.writable_addr()),
++                 pixmap.computeByteSize()));
++  for (int y = 0; y < pixmap.height(); ++y) {
++    for (int x = 0; x < pixmap.width(); ++x) {
++      const size_t offset = static_cast<size_t>(y) * row_bytes +
++                            static_cast<size_t>(x) * 4u;
++      if (bytes[offset + 3] == 0) {
++        continue;
++      }
++      const uint64_t position =
++          (static_cast<uint64_t>(static_cast<uint32_t>(origin_x + x)) << 32) |
++          static_cast<uint32_t>(origin_y + y);
++      const uint64_t hash = AzwahMix(seed ^ AzwahMix(position));
++      if ((hash & 31u) != 0) {
++        continue;
++      }
++      const size_t channel = offset + static_cast<size_t>((hash >> 8) % 3u);
++      const uint8_t changed = bytes[channel] ^ 1u;
++      if (!premultiplied || changed <= bytes[offset + 3]) {
++        bytes[channel] = changed;
++      }
++    }
++  }
++}
++
++// static
++scoped_refptr<StaticBitmapImage> HTMLCanvasElement::AzwahApplyCanvasNoise(
++    scoped_refptr<StaticBitmapImage> image,
++    uint64_t seed) {
++  if (!seed || !image) {
++    return image;
++  }
++  auto paint_image = image->PaintImageForCurrentFrame();
++  const gfx::Size size = image->Size();
++  const SkImageInfo info =
++      SkImageInfo::Make(size.width(), size.height(), kN32_SkColorType,
++                        kPremul_SkAlphaType,
++                        paint_image.GetSkImageInfo().refColorSpace());
++  SkBitmap bitmap;
++  if (!bitmap.tryAllocPixels(info) ||
++      !paint_image.readPixels(info, bitmap.getPixels(), bitmap.rowBytes(), 0,
++                              0)) {
++    return image;
++  }
++  AzwahApplyCanvasNoise(bitmap.pixmap(), seed, 0, 0);
++  bitmap.setImmutable();
++  return UnacceleratedStaticBitmapImage::Create(
++      SkImages::RasterFromBitmap(bitmap));
++}
++
+ }  // namespace blink
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.h b/third_party/blink/renderer/core/html/canvas/html_canvas_element.h
+index a1e2fd81eb05b641ee7c18bd492599c082e6f739..e25d0ea355ab72af79dea86a2b00d69f2c8392a6 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.h
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.h
+@@ -304,6 +304,19 @@ class CORE_EXPORT HTMLCanvasElement final
+   static void RegisterRenderingContextFactory(
+       std::unique_ptr<CanvasRenderingContextFactory>);
+ 
++  // AZWAH opt-in canvas readback protection (original AZWAH code). The seed
++  // comes from --azwah-canvas-seed and the context's top-level site; it is 0
++  // (no change) when the switch is absent. Readbacks get a sparse, seeded
++  // low-bit change; on-screen rendering is never changed.
++  static uint64_t AzwahCanvasNoiseSeed(const ExecutionContext* context);
++  static void AzwahApplyCanvasNoise(const SkPixmap& pixmap,
++                                    uint64_t seed,
++                                    int origin_x,
++                                    int origin_y);
++  static scoped_refptr<StaticBitmapImage> AzwahApplyCanvasNoise(
++      scoped_refptr<StaticBitmapImage> image,
++      uint64_t seed);
++
+   bool StyleChangeNeedsDidDraw(const ComputedStyle* old_style,
+                                const ComputedStyle& new_style);
+   void StyleDidChange(const ComputedStyle* old_style,
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index d4d74d397a2b4d67264abc5d8b4238cfcab699af..a4b23c2c2cabbc32dccdaf288fed4e1c294ea874 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -1477,6 +1477,11 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+       SkIRect bounds =
+           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
+       DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
++    } else {
++      HTMLCanvasElement::AzwahApplyCanvasNoise(
++          image_data_pixmap,
++          HTMLCanvasElement::AzwahCanvasNoiseSeed(GetTopExecutionContext()),
++          sx, sy);
+     }
+   }
+ 

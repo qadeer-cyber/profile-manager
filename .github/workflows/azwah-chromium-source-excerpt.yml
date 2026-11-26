@@ -1,0 +1,51 @@
+name: AZWAH Chromium source excerpt
+# Read-only: fetches named upstream Chromium files at the pinned revision so patches can be written against the
+# exact source. Starts only on a push whose message carries its tag, or a manual dispatch.
+on:
+  push:
+    branches: [feature/azwah-ultimate-2]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  excerpt:
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' ||
+          contains(github.event.head_commit.message, '[chromium-source-excerpt]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fetch files at the pinned revision
+        run: |
+          set -euo pipefail
+          rev=$(node -p "require('./native-chromium/upstream.json').revision")
+          mkdir -p excerpt
+          while read -r f; do
+            [ -z "$f" ] && continue
+            out="excerpt/$f"; mkdir -p "$(dirname "$out")"
+            if curl -fsS --retry 5 --retry-all-errors "https://chromium.googlesource.com/chromium/src/+/$rev/$f?format=TEXT" -o "$out.b64"; then
+              base64 -d "$out.b64" > "$out"; rm "$out.b64"
+              echo "$(sha256sum "$out" | cut -c1-16) $(wc -l < "$out") $f"
+            else
+              rm -f "$out.b64"; echo "MISSING $f" | tee -a excerpt/MISSING.txt
+            fi
+          done < native-chromium/source-excerpt.txt
+      - name: Print the files (artifact storage may be unreachable for the reader)
+        if: always()
+        run: |
+          cd excerpt
+          find . -type f ! -name MISSING.txt | sort | while read -r f; do
+            echo "=====FILE ${f#./}"
+            cat "$f"
+            echo
+            echo "=====END ${f#./}"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: chromium-source-excerpt
+          path: excerpt
+          retention-days: 7
