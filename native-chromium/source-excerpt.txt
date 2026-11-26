@@ -1,7 +1,9 @@
-third_party/blink/renderer/core/dom/element.cc
-third_party/blink/renderer/core/dom/range.cc
-third_party/blink/renderer/core/geometry/dom_rect.cc
-third_party/blink/renderer/core/geometry/dom_rect_list.cc
-third_party/blink/renderer/core/frame/navigator_ua.cc
-third_party/blink/renderer/core/frame/navigator_ua_data.cc
-components/embedder_support/user_agent_utils.cc
+third_party/blink/renderer/modules/mediastream/media_devices.cc
+third_party/blink/renderer/modules/speech/speech_synthesis.cc
+third_party/blink/renderer/modules/battery/battery_manager.cc
+third_party/blink/renderer/modules/battery/navigator_battery.cc
+third_party/blink/renderer/core/frame/navigator_do_not_track.cc
+third_party/blink/renderer/core/page/plugin_data.cc
+third_party/blink/renderer/modules/plugins/navigator_plugins.cc
+third_party/blink/renderer/modules/webgl/webgl_rendering_context_base.cc
+third_party/blink/renderer/modules/webgl/webgl_shader_precision_format.cc
