@@ -140,3 +140,23 @@ test('rects-webgl-ua patch: known files, ClientRects scaled, WebGL readback uses
   assert.match(launcher, /if \(canvasProtection && rectsUa\) args\.push\(`--azwah-rects-seed=/);
   assert.match(launcher, /!isPackaged\(\) && process\.env\.AZWAH_NATIVE_TEST_EXTRA_ARGS/, 'test-only switches never in a packaged app');
 });
+
+test('voices-battery patch: known files, additions only; voices and window size from the identity', async () => {
+  const p = fs.readFileSync(new URL('../native-chromium/voices-battery.patch', import.meta.url), 'utf8');
+  const files = [...p.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/modules/battery/battery_manager.cc',
+    'third_party/blink/renderer/modules/speech/speech_synthesis.cc',
+  ]);
+  assert.deepEqual(p.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---')), []);
+  const { nativeIdentityFor, nativeIdentityArgs, windowSizeFor, WINDOWS_VOICES } = await import('../server/browser-runtime/native-identity.js');
+  const id = nativeIdentityFor('voices-profile');
+  assert.ok(id.voices.length >= 1 && id.voices.every(v => WINDOWS_VOICES.includes(v)));
+  const [w, h] = windowSizeFor('1920x1080').split(',').map(Number);
+  assert.ok(w < 1920 && h < 1040);
+  const args = nativeIdentityArgs(id, { screen: true, voicesBattery: true });
+  assert.ok(args.includes('--azwah-battery-desktop'));
+  assert.ok(args.some(a => a.startsWith('--window-size=')));
+  assert.match(launcher, /--accept-lang=/, 'language follows the profile or the proxy country');
+});

@@ -12,6 +12,7 @@ import test from 'node:test';
 const AUDIO_SCREEN = process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1';
 const GPU_FONTS = process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1';
 const RECTS_UA = process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1';
+const VOICES_BATTERY = process.env.AZWAH_NATIVE_CHROMIUM_VOICES_BATTERY === '1';
 const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c width=220 height=60></canvas><script>
 (async () => {
   const c = document.getElementById('c'); const g = c.getContext('2d');
@@ -42,13 +43,18 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
   try { const gc = document.createElement('canvas'); gc.width = 32; gc.height = 32; const gl = gc.getContext('webgl', { preserveDrawingBuffer: true });
     if (gl) { gl.clearColor(0.2, 0.5, 0.7, 1); gl.clear(gl.COLOR_BUFFER_BIT); const px = new Uint8Array(32 * 32 * 4);
       gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, px); webglPixels = await digest(Array.from(px).join(',')); } } catch {}
+  const voices = await new Promise(resolve => { const v = speechSynthesis.getVoices(); if (v.length) return resolve(v);
+    speechSynthesis.onvoiceschanged = () => resolve(speechSynthesis.getVoices()); setTimeout(() => resolve(speechSynthesis.getVoices()), 3000); });
+  const voiceNames = voices.map(v => v.name.toLowerCase()).sort();
+  let battery = null; try { const b = await navigator.getBattery(); battery = { charging: b.charging, level: b.level, dischargingTime: String(b.dischargingTime) }; } catch {}
+  const windowFits = window.outerWidth <= screen.width && window.outerHeight <= screen.height;
   let hints = null;
   try { if (navigator.userAgentData) { const h = await navigator.userAgentData.getHighEntropyValues(['platformVersion']);
     hints = { platformVersion: h.platformVersion, brands: navigator.userAgentData.brands.map(b => b.brand).sort() }; } } catch {}
   let gpuVendor = null; try { if (navigator.gpu) { const ad = await navigator.gpu.requestAdapter(); gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
   const q = new URLSearchParams(location.search);
   await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
-    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints }) });
+    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints, voiceNames, battery, windowFits }) });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -159,6 +165,14 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       assert.ok(run1.a1.hints, 'client hints measured');
       assert.equal(run1.a1.hints.platformVersion, expected.platformVersion, 'client-hint Windows version follows the profile');
       assert.ok(run1.a1.hints.brands.includes('Google Chrome'), 'Google Chrome brand reported');
+    }
+    if (VOICES_BATTERY) {
+      console.log(`# voices: real=${JSON.stringify(base.a1.voiceNames)} profile=${JSON.stringify(run1.a1.voiceNames)} battery=${JSON.stringify(run1.a1.battery)} windowFits=${run1.a1.windowFits}`);
+      for (const name of run1.a1.voiceNames) assert.ok(expected.voices.includes(name), `${name} is in the profile voice list`);
+      const realInList = base.a1.voiceNames.filter(n => expected.voices.includes(n));
+      assert.deepEqual(run1.a1.voiceNames, realInList, 'exactly the installed voices that are in the profile list');
+      assert.deepEqual(run1.a1.battery, { charging: true, level: 1, dischargingTime: 'Infinity' }, 'desktop battery');
+      assert.equal(run1.a1.windowFits, true, 'the window fits inside the reported screen');
     }
     if (AUDIO_SCREEN) {
       assert.ok(base.a1.audio && run1.a1.audio, 'audio fingerprint measured');

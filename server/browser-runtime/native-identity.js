@@ -19,6 +19,9 @@ const CORES = Object.freeze([4, 6, 8, 8, 12, 16]);
 // Common Windows desktop and laptop screens.
 const SCREENS = Object.freeze(['1920x1080', '1920x1080', '1366x768', '1536x864', '2560x1440', '1600x900', '1440x900']);
 const MEMORY = Object.freeze([4, 8, 8]);
+// Windows speech voices (lower case, as the browser compares them). Each profile offers its own non-empty subset.
+export const WINDOWS_VOICES = Object.freeze(['microsoft david - english (united states)', 'microsoft zira - english (united states)',
+  'microsoft mark - english (united states)']);
 // Client-hint Windows platform versions (10.0.0 is Windows 10; 13.0.0 and later are Windows 11 releases).
 const PLATFORM_VERSIONS = Object.freeze(['10.0.0', '15.0.0', '19.0.0']);
 // Fonts of a standard Windows 10/11 installation, plus common optional fonts (Office and others) of which each profile
@@ -43,11 +46,20 @@ export function nativeIdentityFor(profileId) {
   const optional = WINDOWS_OPTIONAL_FONTS.filter((_, i) => digest[4 + (i % 24)] & (1 << (i % 8)));
   return { hardwareConcurrency: CORES[digest[1] % CORES.length], deviceMemory: MEMORY[digest[2] % MEMORY.length], webglVendor, webglRenderer,
     screen: SCREENS[digest[3] % SCREENS.length], webgpuVendor: GPU_FAMILY[family][0], webgpuArchitecture: GPU_FAMILY[family][1],
-    fonts: [...WINDOWS_BASE_FONTS, ...optional], platformVersion: PLATFORM_VERSIONS[digest[28] % PLATFORM_VERSIONS.length] };
+    fonts: [...WINDOWS_BASE_FONTS, ...optional], platformVersion: PLATFORM_VERSIONS[digest[28] % PLATFORM_VERSIONS.length],
+    voices: WINDOWS_VOICES.filter((_, i) => i === 0 || (digest[29] >> i) & 1) };
 }
 
-export function nativeIdentityArgs(identity, { screen = false, gpuFonts = false, clientHints = false } = {}) {
+// The window fits inside the reported screen and its taskbar-free area, like a maximised-but-not-fullscreen window.
+export function windowSizeFor(screen) {
+  const [w, h] = String(screen).split('x').map(Number);
+  return `${Math.round(w * 0.92)},${Math.round((h - 40) * 0.92)}`;
+}
+
+export function nativeIdentityArgs(identity, { screen = false, gpuFonts = false, clientHints = false, voicesBattery = false } = {}) {
   return [
+    ...(screen && identity.screen ? [`--window-size=${windowSizeFor(identity.screen)}`] : []),
+    ...(voicesBattery ? [`--azwah-voice-allowlist=${identity.voices.join('|')}`, '--azwah-battery-desktop'] : []),
     ...(clientHints ? [`--azwah-ua-platform-version=${identity.platformVersion}`, '--azwah-ua-chrome-brand'] : []),
     ...(gpuFonts ? [`--azwah-font-allowlist=${identity.fonts.join(',')}`, `--azwah-webgpu-vendor=${identity.webgpuVendor}`,
       `--azwah-webgpu-architecture=${identity.webgpuArchitecture}`] : []),

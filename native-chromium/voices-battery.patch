@@ -1,0 +1,114 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 0baf8177a7066b683415859019cb362530f922e5..595bdc912e85a15da03c5c86fe0688382a7f013a 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3924,6 +3924,9 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       "azwah-font-allowlist",
+       // AZWAH: ClientRects protection seed.
+       "azwah-rects-seed",
++      // AZWAH: speech voices and battery.
++      "azwah-battery-desktop",
++      "azwah-voice-allowlist",
+       "azwah-webgpu-architecture",
+       "azwah-webgpu-vendor",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+diff --git a/third_party/blink/renderer/modules/battery/battery_manager.cc b/third_party/blink/renderer/modules/battery/battery_manager.cc
+index 51cdc75ceee61457adf719c20188838d51bb4da5..b7ae6de7c30e632ed76ca42e94f64bc1807f429c 100644
+--- a/third_party/blink/renderer/modules/battery/battery_manager.cc
++++ b/third_party/blink/renderer/modules/battery/battery_manager.cc
+@@ -4,6 +4,10 @@
+ 
+ #include "third_party/blink/renderer/modules/battery/battery_manager.h"
+ 
++#include <limits>
++
++#include "base/command_line.h"
++
+ #include "third_party/blink/public/mojom/frame/lifecycle.mojom-blink.h"
+ #include "third_party/blink/renderer/core/dom/dom_exception.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+@@ -79,19 +83,42 @@ ScriptPromise<BatteryManager> BatteryManager::StartRequest(
+   return battery_property_->Promise(script_state->World());
+ }
+ 
++namespace {
++
++// AZWAH: --azwah-battery-desktop reports a desktop PC on mains power (what
++// Chrome reports when there is no battery), hiding a laptop's battery state.
++bool AzwahBatteryDesktop() {
++  return base::CommandLine::ForCurrentProcess()->HasSwitch(
++      "azwah-battery-desktop");
++}
++
++}  // namespace
++
+ bool BatteryManager::charging() {
++  if (AzwahBatteryDesktop()) {
++    return true;
++  }
+   return battery_status_.Charging();
+ }
+ 
+ double BatteryManager::chargingTime() {
++  if (AzwahBatteryDesktop()) {
++    return 0;
++  }
+   return battery_status_.charging_time().InSecondsF();
+ }
+ 
+ double BatteryManager::dischargingTime() {
++  if (AzwahBatteryDesktop()) {
++    return std::numeric_limits<double>::infinity();
++  }
+   return battery_status_.discharging_time().InSecondsF();
+ }
+ 
+ double BatteryManager::level() {
++  if (AzwahBatteryDesktop()) {
++    return 1.0;
++  }
+   return battery_status_.Level();
+ }
+ 
+diff --git a/third_party/blink/renderer/modules/speech/speech_synthesis.cc b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+index 891a81543becddf37803a657860a8480fa20b894..b5b34255d144886fccccefc9394f759360987d7f 100644
+--- a/third_party/blink/renderer/modules/speech/speech_synthesis.cc
++++ b/third_party/blink/renderer/modules/speech/speech_synthesis.cc
+@@ -25,8 +25,13 @@
+ 
+ #include "third_party/blink/renderer/modules/speech/speech_synthesis.h"
+ 
++#include <set>
++#include <string>
+ #include <tuple>
+ 
++#include "base/command_line.h"
++#include "base/strings/string_split.h"
++#include "base/strings/string_util.h"
+ #include "build/build_config.h"
+ #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
+ #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
+@@ -85,7 +90,23 @@ SpeechSynthesis::SpeechSynthesis(LocalDOMWindow& window)
+ void SpeechSynthesis::OnSetVoiceList(
+     Vector<mojom::blink::SpeechSynthesisVoicePtr> mojom_voices) {
+   voice_list_.clear();
++  // AZWAH: per-profile voice list from --azwah-voice-allowlist (lower-case
++  // names, separated by '|'); voices outside it are not offered to pages.
++  const std::string azwah_voices =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "azwah-voice-allowlist");
++  std::set<std::string> azwah_allowed;
++  for (const std::string& name :
++       base::SplitString(azwah_voices, "|", base::TRIM_WHITESPACE,
++                         base::SPLIT_WANT_NONEMPTY)) {
++    azwah_allowed.insert(name);
++  }
+   for (auto& mojom_voice : mojom_voices) {
++    if (!azwah_allowed.empty() &&
++        !azwah_allowed.contains(
++            base::ToLowerASCII(mojom_voice->name.Utf8()))) {
++      continue;
++    }
+     voice_list_.push_back(
+         MakeGarbageCollected<SpeechSynthesisVoice>(std::move(mojom_voice)));
+   }
