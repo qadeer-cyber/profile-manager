@@ -72,6 +72,19 @@ function developmentBinary() {
     mediaWebrtc: process.env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC === '1' };
 }
 
+// Which opt-in protections the installed AZWAH Chromium build contains (from its manifest). All false when no build
+// is installed. Presets enable only these, because the launcher refuses a profile that asks for a missing one.
+export function azwahNativeFeatures() {
+  try {
+    const b = developmentBinary();
+    return { canvas: Boolean(b.canvas), identity: Boolean(b.identity), audioScreen: Boolean(b.audioScreen), gpuFonts: Boolean(b.gpuFonts), rectsUa: Boolean(b.rectsUa), mediaWebrtc: Boolean(b.mediaWebrtc) };
+  } catch {
+    // Tests only (PM_TEST_AZWAH_NATIVE_AVAILABLE, never honoured when packaged): features named by environment flags.
+    const test = azwahNativeTestAvailable() ? n => process.env[`AZWAH_NATIVE_CHROMIUM_${n}`] === '1' : () => false;
+    return { canvas: test('CANVAS'), identity: test('IDENTITY'), audioScreen: test('AUDIO_SCREEN'), gpuFonts: test('GPU_FONTS'), rectsUa: test('RECTS_UA'), mediaWebrtc: test('MEDIA_WEBRTC') };
+  }
+}
+
 // True when this installation carries a provenance-checked AZWAH Chromium (packaged Windows build only).
 // Cheap: reads the manifest and checks file sizes; the full SHA-256 check still runs at every launch.
 export function azwahNativeAvailable() {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { validateBrowserSettings } from '../../../server/browser-settings.js';
 import { DEFAULT_ADVANCED_SETTINGS, validateAdvancedSettings } from '../../../server/advanced-settings.js';
 import { validateWebRtcSettings, WEBRTC_CHOICES } from '../../../server/webrtc-policy.js';
@@ -14,6 +14,7 @@ import { DeviceIdentityFields, ProxyLaunchFields, FingerprintFields, IdentityFie
 import { UnavailableOptions, CategoryNotes, FixedCategory, ModeSegment } from './FingerprintCatalog.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
+import { PROTECTION_FLAGS, PRESET_TEXT, presetOf, presetSettings } from '../../../server/protection-presets.js';
 
 export const emptyForm = { name: '', tags: '', folder: '', notes: '', workspaceId: '', automationEnabled: false, browserEngine: 'chromium', browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
 
@@ -38,6 +39,21 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const policy = f.webrtcSettings || emptyForm.webrtcSettings;
   const advanced = f.advancedSettings || emptyForm.advancedSettings;
   const setAdvanced = next => setF({ ...f, advancedSettings: next });
+  // Which protections the installed AZWAH Chromium contains (null until known or when it cannot be read).
+  const [protection, setProtection] = useState(null);
+  const protectionTouched = useRef(false);
+  const isNewProfile = !initial.id;
+  useEffect(() => { api('/api/protection-features').then(setProtection).catch(() => setProtection(null)); }, []);
+  // A new profile that will run on AZWAH Chromium starts on the Standard preset, unless the user already chose.
+  useEffect(() => {
+    if (!isNewProfile || !protection?.available || protectionTouched.current) return;
+    setF(cur => ({ ...cur, advancedSettings: { ...cur.advancedSettings, experimental: { ...(cur.advancedSettings?.experimental || {}), ...presetSettings('standard', protection.features) } } }));
+  }, [isNewProfile, protection]);
+  const features = protection?.features || null;
+  const choosePreset = preset => {
+    protectionTouched.current = true;
+    setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), ...presetSettings(preset, features), webglReadback: 'off' } });
+  };
   const assignments = f.extensionAssignments || [];
   const setRegional = (key, value) => setF({ ...f, browserSettings: { ...regional, [key]: value } });
   const setAssignment = (extensionId, next) => {
@@ -109,7 +125,9 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       const webrtcSettings = validateWebRtcSettings(policy);
       // WebGL readback controls are not offered (owner Decision 3). Canvas protection is offered only for AZWAH Chromium
       // (owner approval 2026-11-24, opt-in); every other runtime saves it off.
-      const nativeRuntime = f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native';
+      // A new "Default" profile becomes an AZWAH Chromium profile on the server when one is installed, so it keeps its protections.
+      const willBeNative = isNewProfile && advanced.runtime === 'compatibility' && !f.automationEnabled && Boolean(protection?.available);
+      const nativeRuntime = f.browserEngine !== 'firefox' && (advanced.runtime === 'azwah-native' || willBeNative);
       const canvasReadback = nativeRuntime && advanced.experimental?.canvasReadback === 'prototype' ? 'prototype' : 'off';
       const hardwareIdentity = nativeRuntime && advanced.experimental?.hardwareIdentity === 'prototype' ? 'prototype' : 'off';
       const audioReadback = nativeRuntime && advanced.experimental?.audioReadback === 'prototype' ? 'prototype' : 'off';
@@ -173,16 +191,29 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <p className="muted hint">
             AZWAH's own Chromium build, included with the installer. Manual browsing only (no automation). It keeps its own browser storage, separate from Chrome Stable, and follows the assigned proxy, its timezone and location automatically.
           </p>}
+          {f.browserEngine !== 'firefox' && (advanced.runtime === 'azwah-native' || (isNewProfile && advanced.runtime === 'compatibility' && protection?.available && !f.automationEnabled)) && <fieldset className="protection-preset">
+            <legend>Protection</legend>
+            <div className="seg fp-seg" role="radiogroup" aria-label="Protection preset">
+              {['off', 'standard'].map(name => <button type="button" key={name} role="radio" aria-checked={presetOf(advanced.experimental, features) === name}
+                className={presetOf(advanced.experimental, features) === name ? 'sel' : ''} disabled={presetOf(advanced.experimental, features) === 'unavailable'}
+                onClick={() => choosePreset(name)}>{name === 'off' ? 'Off' : 'Standard'}</button>)}
+              <button type="button" role="radio" aria-checked={presetOf(advanced.experimental, features) === 'custom'} className={presetOf(advanced.experimental, features) === 'custom' ? 'sel' : ''} disabled tabIndex={-1}>Custom</button>
+            </div>
+            <p className="muted hint" role="status">{PRESET_TEXT[presetOf(advanced.experimental, features)]}{features && PROTECTION_FLAGS.some(f2 => !features[f2.feature]) && ' Some protections are not included in the installed browser build and are left off.'}</p>
+          </fieldset>}
           {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <>
             <label className="check toggle"><input type="checkbox" role="switch" aria-label="Canvas protection"
+              disabled={features ? !features.canvas : false}
               checked={advanced.experimental?.canvasReadback === 'prototype'}
               onChange={e => setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), canvasReadback: e.target.checked ? 'prototype' : 'off', webglReadback: 'off' } })} /> Canvas protection (experimental)</label>
             <p className="muted hint">Canvas and WebGL readbacks get slightly changed pixels (the same within one site for this browser session, different between sites, profiles and launches), and element sizes (ClientRects) are scaled by a tiny per-launch amount. What you see on screen is not changed.</p>
             <label className="check toggle"><input type="checkbox" role="switch" aria-label="Hardware and graphics identity"
+              disabled={features ? !features.identity : false}
               checked={advanced.experimental?.hardwareIdentity === 'prototype'}
               onChange={e => setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), hardwareIdentity: e.target.checked ? 'prototype' : 'off', webglReadback: 'off' } })} /> Hardware and graphics identity (experimental)</label>
             <p className="muted hint">This profile reports its own CPU core count, device memory, graphics card name, screen size, installed fonts and Windows version in client hints, with the Google Chrome brand list (a realistic Windows desktop, the same on every launch). The real graphics card still draws the pages, so advanced sites can compare drawing results with the reported name. Needs an AZWAH Chromium build with this feature.</p>
             <label className="check toggle"><input type="checkbox" role="switch" aria-label="Audio protection"
+              disabled={features ? !features.audioScreen : false}
               checked={advanced.experimental?.audioReadback === 'prototype'}
               onChange={e => setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), audioReadback: e.target.checked ? 'prototype' : 'off', webglReadback: 'off' } })} /> Audio protection (experimental)</label>
             <p className="muted hint">Sites that read back generated audio get a tiny per-session change (inaudible), so the audio fingerprint differs between profiles and launches.</p>

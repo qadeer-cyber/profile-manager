@@ -41,7 +41,8 @@ import { geoIpCredentials, clearGeoIpCredentials, geoIpStatus, saveGeoIpCredenti
 import { privacyEngineReport } from './privacy-engine-report.js';
 import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
-import { azwahNativeAvailable } from './browser-runtime/azwah-native.js';
+import { azwahNativeAvailable, azwahNativeFeatures } from './browser-runtime/azwah-native.js';
+import { presetSettings } from './protection-presets.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { buildEngineStockReport } from './engine-stock-report.js';
 import { readWindowState } from './window-state.js';
@@ -360,6 +361,11 @@ function validate(b, prev) {
   // Automation profiles stay on the previous default: AZWAH Chromium launches are manual-only.
   if (!prev && browserEngine === 'chromium' && !automationEnabled && advancedSettings.runtime === 'compatibility' && azwahNativeAvailable()) {
     advancedSettings.runtime = 'azwah-native';
+    // New AZWAH Chromium profiles start with the Standard protection preset (the protections this build contains),
+    // unless the request chose its own. The profile editor and API can turn it off.
+    if (!(b.advancedSettings && typeof b.advancedSettings === 'object' && 'experimental' in b.advancedSettings)) {
+      advancedSettings.experimental = { ...advancedSettings.experimental, ...presetSettings('standard', azwahNativeFeatures()) };
+    }
   }
   let workspaceId = prev?.workspaceId ?? null;
   if ('workspaceId' in b) workspaceId = b.workspaceId == null || b.workspaceId === '' ? null : String(b.workspaceId);
@@ -739,6 +745,8 @@ function batchHandlers(allowOverride) {
 }
 const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
+  // Which protections the installed AZWAH Chromium contains, for the editor's presets.
+  router.get('/protection-features', wrap((req, res) => res.json({ available: azwahNativeAvailable(), features: azwahNativeFeatures() })));
   router.get('/chromium-identity', wrap(async (req, res) => {
     // The Chrome Stable edition runs the Chrome installed on this computer, not a bundled Chromium.
     if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {
