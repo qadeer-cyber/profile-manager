@@ -14,7 +14,7 @@ import { DeviceIdentityFields, ProxyLaunchFields, FingerprintFields, IdentityFie
 import { UnavailableOptions, CategoryNotes, FixedCategory, ModeSegment } from './FingerprintCatalog.jsx';
 import { CookieManager } from './CookieManager.jsx';
 import { HardwarePanel } from './HardwarePanel.jsx';
-import { PROTECTION_FLAGS, PRESET_TEXT, presetOf, presetSettings } from '../../../server/protection-presets.js';
+import { PROTECTION_FLAGS, PRESET_TEXT, presetOf, presetSettings, strictAvailability } from '../../../server/protection-presets.js';
 
 export const emptyForm = { name: '', tags: '', folder: '', notes: '', workspaceId: '', automationEnabled: false, browserEngine: 'chromium', browserSettings: { locale: '', timezoneId: '', languages: [] }, webrtcSettings: { mode: 'browser_default' }, advancedSettings: structuredClone(DEFAULT_ADVANCED_SETTINGS), extensionAssignments: [], proxyMode: 'none', proxyId: '', proxy: { type: 'http', host: '', port: '', username: '', password: '' } };
 
@@ -131,7 +131,9 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       const canvasReadback = nativeRuntime && advanced.experimental?.canvasReadback === 'prototype' ? 'prototype' : 'off';
       const hardwareIdentity = nativeRuntime && advanced.experimental?.hardwareIdentity === 'prototype' ? 'prototype' : 'off';
       const audioReadback = nativeRuntime && advanced.experimental?.audioReadback === 'prototype' ? 'prototype' : 'off';
-      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off', hardwareIdentity, audioReadback } });
+      const strict = nativeRuntime && advanced.experimental?.strict === 'on' ? 'on' : 'off';
+      if (strict === 'on' && f.proxyMode === 'none') { setTab('proxy'); setFormError('Strict protection needs a proxy. Pick one on the Proxy tab or choose Standard.'); return toast('Strict protection needs a proxy', 'error'); }
+      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off', hardwareIdentity, audioReadback, strict } });
       next = { ...f, browserSettings, webrtcSettings, advancedSettings };
     } catch (e) {
       const nextTab = e.code === 'INVALID_ADVANCED_SETTINGS' && e.tab === 'preferences' ? 'extra' : (e.code === 'INVALID_WEBRTC_SETTINGS' || e.code === 'INVALID_BROWSER_SETTINGS' || e.code === 'INVALID_ADVANCED_SETTINGS') ? 'fingerprint' : 'general';
@@ -194,9 +196,13 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
           {f.browserEngine !== 'firefox' && (advanced.runtime === 'azwah-native' || (isNewProfile && advanced.runtime === 'compatibility' && protection?.available && !f.automationEnabled)) && <fieldset className="protection-preset">
             <legend>Protection</legend>
             <div className="seg fp-seg" role="radiogroup" aria-label="Protection preset">
-              {['off', 'standard'].map(name => <button type="button" key={name} role="radio" aria-checked={presetOf(advanced.experimental, features) === name}
-                className={presetOf(advanced.experimental, features) === name ? 'sel' : ''} disabled={presetOf(advanced.experimental, features) === 'unavailable'}
-                onClick={() => choosePreset(name)}>{name === 'off' ? 'Off' : 'Standard'}</button>)}
+              {['off', 'standard', 'strict'].map(name => {
+                const strictBlocked = name === 'strict' && features && !strictAvailability(features).available;
+                return <button type="button" key={name} role="radio" aria-checked={presetOf(advanced.experimental, features) === name}
+                  className={presetOf(advanced.experimental, features) === name ? 'sel' : ''} disabled={presetOf(advanced.experimental, features) === 'unavailable' || strictBlocked}
+                  title={strictBlocked ? `Not in this browser build: ${strictAvailability(features).missing.join(', ')}` : undefined}
+                  onClick={() => choosePreset(name)}>{name === 'off' ? 'Off' : name === 'standard' ? 'Standard' : 'Strict'}</button>;
+              })}
               <button type="button" role="radio" aria-checked={presetOf(advanced.experimental, features) === 'custom'} className={presetOf(advanced.experimental, features) === 'custom' ? 'sel' : ''} disabled tabIndex={-1}>Custom</button>
             </div>
             <p className="muted hint" role="status">{PRESET_TEXT[presetOf(advanced.experimental, features)]}{features && PROTECTION_FLAGS.some(f2 => !features[f2.feature]) && ' Some protections are not included in the installed browser build and are left off.'}</p>

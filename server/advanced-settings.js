@@ -62,7 +62,7 @@ function integerIn(value, min, max, tab, label) {
 function validateExperimental(value) {
   const base = { canvasReadback: 'off', webglReadback: 'off' };
   if (value == null) return base;
-  const input = section(value, ['canvasReadback', 'webglReadback', 'hardwareIdentity', 'audioReadback'], 'fingerprint');
+  const input = section(value, ['canvasReadback', 'webglReadback', 'hardwareIdentity', 'audioReadback', 'strict'], 'fingerprint');
   const canvasReadback = input.canvasReadback ?? base.canvasReadback;
   const webglReadback = input.webglReadback ?? base.webglReadback;
   if (canvasReadback !== 'off' && canvasReadback !== 'prototype') invalid('experimental.canvasReadback must be off or prototype', 'fingerprint');
@@ -72,7 +72,10 @@ function validateExperimental(value) {
   if (hardwareIdentity !== 'off' && hardwareIdentity !== 'prototype') invalid('experimental.hardwareIdentity must be off or prototype', 'fingerprint');
   const audioReadback = input.audioReadback ?? 'off';
   if (audioReadback !== 'off' && audioReadback !== 'prototype') invalid('experimental.audioReadback must be off or prototype', 'fingerprint');
-  return { canvasReadback, webglReadback, ...(hardwareIdentity === 'prototype' && { hardwareIdentity }), ...(audioReadback === 'prototype' && { audioReadback }) };
+  // Strict preset (AZWAH Chromium): launch only when every protection is present and a proxy is assigned (stored only when on).
+  const strict = input.strict ?? 'off';
+  if (strict !== 'off' && strict !== 'on') invalid('experimental.strict must be off or on', 'fingerprint');
+  return { canvasReadback, webglReadback, ...(hardwareIdentity === 'prototype' && { hardwareIdentity }), ...(audioReadback === 'prototype' && { audioReadback }), ...(strict === 'on' && { strict }) };
 }
 function validateUserAgent(value) {
   const input = section(value, ['mode'], 'identity');

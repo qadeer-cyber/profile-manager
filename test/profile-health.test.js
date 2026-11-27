@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildHealth, configChecks, healthBadge, HEALTH_GROUPS } from '../web/src/lib/profileHealth.js';
 import { FINGERPRINT_CATEGORIES } from '../server/fingerprint-catalog.js';
+import { presetSettings } from '../server/protection-presets.js';
 
 const proxied = { proxy: { id: 'p1' }, browserSettings: {}, lastProxyLocation: { ip: '203.0.113.9', timezone: 'America/New_York' } };
 const row = (id, status, summaries = []) => ({ id, label: id, status, findings: summaries.map(s => ({ status: status === 'warning' ? 'warning' : 'pass', summary: s })) });
@@ -53,4 +54,16 @@ test('a direct connection and an unchecked proxy are never reported as matching'
   const none = buildHealth({ profile: { proxy: null }, running: true, byCategory: null });
   assert.equal(none.verdict, 'partial', 'a running profile with no live data is never reported as ok');
   assert.equal(none.headline, 'Nothing measured yet');
+});
+
+test('a Strict profile shows its launch rules: unmeasured until the build is known, then ok or one mismatch per broken rule', () => {
+  const FULL = { canvas: true, identity: true, audioScreen: true, gpuFonts: true, rectsUa: true, mediaWebrtc: true };
+  const strict = extra => ({ ...proxied, proxyId: 'p1', advancedSettings: { runtime: 'azwah-native', experimental: presetSettings('strict', FULL) }, ...extra });
+  const rows = (profile, features) => buildHealth({ profile, running: false, features }).groups.flatMap(g => g.rows).filter(r => r.id.startsWith('strict'));
+  assert.equal(rows(strict(), null)[0].state, 'unmeasured');
+  assert.deepEqual(rows(strict(), FULL).map(r => r.state), ['ok']);
+  const broken = rows(strict(), { ...FULL, mediaWebrtc: false });
+  assert.deepEqual(broken.map(r => r.state), ['mismatch']); assert.match(broken[0].summary, /media devices and WebRTC address/);
+  assert.equal(buildHealth({ profile: strict(), running: false, features: { ...FULL, rectsUa: false } }).verdict, 'attention');
+  assert.deepEqual(rows({ ...proxied, advancedSettings: { experimental: presetSettings('standard', FULL) } }, FULL), [], 'no Strict rows for other presets');
 });

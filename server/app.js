@@ -42,7 +42,7 @@ import { privacyEngineReport } from './privacy-engine-report.js';
 import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { azwahNativeAvailable, azwahNativeFeatures } from './browser-runtime/azwah-native.js';
-import { presetSettings } from './protection-presets.js';
+import { presetSettings, strictAvailability } from './protection-presets.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { buildEngineStockReport } from './engine-stock-report.js';
 import { readWindowState } from './window-state.js';
@@ -366,7 +366,8 @@ function validate(b, prev) {
     // New AZWAH Chromium profiles start with the Standard protection preset (the protections this build contains),
     // unless the request chose its own. The profile editor and API can turn it off.
     if (!(b.advancedSettings && typeof b.advancedSettings === 'object' && 'experimental' in b.advancedSettings)) {
-      advancedSettings.experimental = { ...advancedSettings.experimental, ...presetSettings('standard', azwahNativeFeatures()) };
+      const { strict: _off, ...standard } = presetSettings('standard', azwahNativeFeatures());
+      advancedSettings.experimental = { ...advancedSettings.experimental, ...standard };
     }
   }
   let workspaceId = prev?.workspaceId ?? null;
@@ -679,6 +680,7 @@ function bulkCreateWithProxies(body, onItem) {
       } else {
         const request = { name, tags, folder, proxy };
         if (body.protection === 'off') request.advancedSettings = { experimental: presetSettings('off') };
+        if (body.protection === 'strict') request.advancedSettings = { runtime: 'azwah-native', experimental: presetSettings('strict', azwahNativeFeatures()) };
         id = insert(validate(request));
       }
       return report({ index, ok: true, profile: publicP(get(id)) });
@@ -734,6 +736,10 @@ function bulkPlan(body) {
     return { action, total: items.length };
   }
   if (action === 'createWithProxies') {
+    if (body.protection === 'strict') {
+      const build = strictAvailability(azwahNativeFeatures());
+      if (!build.available) throw Object.assign(err(400, `Strict protection is not available: this browser build lacks ${build.missing.join(', ')}.`), { code: 'STRICT_BUILD_INCOMPLETE' });
+    }
     return { action, total: cleanProxyLines(body.proxyLines).length };
   }
   if (action === 'fromTemplate') {

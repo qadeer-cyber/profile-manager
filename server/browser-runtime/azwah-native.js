@@ -12,6 +12,7 @@ import { isAlive, killTree } from '../proc.js';
 import { isPackaged, azwahNativeTestAvailable } from '../testflags.js';
 import { nativeIdentityArgs, nativeIdentityFor } from './native-identity.js';
 import { chromiumPolicyArgs } from '../webrtc-policy.js';
+import { strictPreconditions } from '../protection-presets.js';
 import { applyWebRtcPreference } from '../webrtc-settings.js';
 
 export const RECEIPT_NOT_READY = new Set(['ENOENT', 'EBUSY', 'EPERM', 'EACCES']);
@@ -138,9 +139,19 @@ function proxyRelay(proxy) {
   });
 }
 
+// Throws (409) listing every broken Strict rule; does nothing for a profile that does not use Strict.
+export function assertStrictLaunchAllowed(profile, features) {
+  const failures = strictPreconditions({ profile, features });
+  if (failures.length) {
+    throw Object.assign(error(`Strict protection did not allow this launch. ${failures.map(f => f.message).join(' ')}`, failures[0].code), { strictFailures: failures });
+  }
+}
+
 export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
   const { exe, hash, dllHash, canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
+  // Strict protection fails closed: nothing is launched unless every rule holds (see server/protection-presets.js).
+  assertStrictLaunchAllowed(profile, { canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc });
   const canvasProtection = profile.advancedSettings?.experimental?.canvasReadback === 'prototype';
   if (canvasProtection && !canvas) {
     throw error('This AZWAH Chromium build does not include canvas protection. Turn it off for this profile or update AZWAH.', 'AZWAH_NATIVE_CANVAS_UNSUPPORTED');

@@ -1,3 +1,5 @@
+import { strictPreconditions } from '../../../server/protection-presets.js';
+
 // Profile Health: one summary of what a website would see for a profile and where the layers disagree.
 // Pure functions (no React) so node --test covers them. Nothing here invents a value: a row is "ok" only when a
 // live browser observation matched the saved setting, and everything else says why it was not measured.
@@ -14,9 +16,10 @@ export const HEALTH_GROUPS = Object.freeze([
 const STATE = Object.freeze({ pass: 'ok', warning: 'mismatch', partial: 'partial', unavailable: 'unmeasured', 'real-only': 'real' });
 export const STATE_LABEL = Object.freeze({ ok: 'Matches', mismatch: 'Mismatch', partial: 'Partly measured', unmeasured: 'Not measured', real: 'Real value' });
 
-// Checks that need no running browser: the saved settings compared with the stored proxy-exit evidence.
-export function configChecks(profile) {
-  const rows = [];
+// Checks that need no running browser: the saved settings compared with the stored proxy-exit evidence, and the Strict
+// launch rules (when the profile uses Strict and the build's features are known).
+export function configChecks(profile, features = null) {
+  const rows = strictChecks(profile, features);
   const loc = profile?.lastProxyLocation || null;
   if (!profile?.proxy) {
     rows.push({ id: 'proxy', label: 'Proxy', group: 'network', state: 'real',
@@ -50,8 +53,8 @@ function rowFromCategory(row, running) {
 }
 
 // byCategory: consistency.byCategory from GET /api/profiles/:id/hardware (null before the first read).
-export function buildHealth({ profile, running = false, byCategory = null } = {}) {
-  const cfg = configChecks(profile);
+export function buildHealth({ profile, running = false, byCategory = null, features = null } = {}) {
+  const cfg = configChecks(profile, features);
   const live = new Map((byCategory || []).map(r => [r.id, rowFromCategory(r, running)]));
   const groups = HEALTH_GROUPS.map(g => ({
     id: g.id, label: g.label,
@@ -73,4 +76,12 @@ export function buildHealth({ profile, running = false, byCategory = null } = {}
 export function healthBadge(profile) {
   const bad = configChecks(profile).filter(r => r.state === 'mismatch');
   return bad.length ? { state: 'mismatch', title: bad.map(r => r.summary).join(' ') } : null;
+}
+
+function strictChecks(profile, features) {
+  if (profile?.advancedSettings?.experimental?.strict !== 'on') return [];
+  if (!features) return [{ id: 'strict', label: 'Strict protection', group: 'network', state: 'unmeasured', summary: 'Checking whether this profile may launch under Strict…' }];
+  const failures = strictPreconditions({ profile, features });
+  if (!failures.length) return [{ id: 'strict', label: 'Strict protection', group: 'network', state: 'ok', summary: 'All Strict launch rules hold: proxy assigned, build complete, proxy not failed.' }];
+  return failures.map(f => ({ id: 'strict_' + f.code.toLowerCase(), label: 'Strict protection', group: 'network', state: 'mismatch', summary: f.message }));
 }

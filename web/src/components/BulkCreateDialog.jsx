@@ -4,6 +4,7 @@ import { Dialog } from './Dialog.jsx';
 import { useToast } from './Toasts.jsx';
 import { planBulkCreate, remainingLines, BULK_PROXY_LINES_MAX } from '../lib/bulkCreate.js';
 import { plural } from '../lib.js';
+import { strictAvailability } from '../../../server/protection-presets.js';
 import '../bulk-create.css';
 
 // Create many profiles at once: paste proxies (one per line), each line becomes one profile with its own proxy.
@@ -18,8 +19,10 @@ export function BulkCreateDialog({ folders = [], onClose, onDone }) {
   const [templateId, setTemplateId] = useState('');
   const [protection, setProtection] = useState('standard');
   const [templates, setTemplates] = useState([]);
+  const [features, setFeatures] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  useEffect(() => { api('/api/protection-features').then(r => setFeatures(r?.features || null)).catch(() => setFeatures(null)); }, []);
   useEffect(() => { api('/api/templates').then(t => setTemplates(Array.isArray(t) ? t : [])).catch(() => setTemplates([])); }, []);
   const plan = useMemo(() => planBulkCreate({ text, defaultType, pattern, startAt }), [text, defaultType, pattern, startAt]);
 
@@ -81,7 +84,8 @@ export function BulkCreateDialog({ folders = [], onClose, onDone }) {
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
         {templateId ? <p className="muted small">The template’s own settings are used, including its protection.</p>
           : <label>Protection<select value={protection} onChange={e => setProtection(e.target.value)}>
-            <option value="standard">Standard (default)</option><option value="off">Off</option></select></label>}
+            <option value="standard">Standard (default)</option><option value="off">Off</option>
+            {features && strictAvailability(features).available && <option value="strict">Strict (refuses to open without every protection)</option>}</select></label>}
       </div>
     </div>
     {message && <div className="notice warn" role="alert">{message}</div>}

@@ -8,6 +8,7 @@ import '../health.css';
 export function ProfileHealth({ profile }) {
   const [byCategory, setByCategory] = useState(null);
   const [error, setError] = useState('');
+  const [features, setFeatures] = useState(null);
   const [busy, setBusy] = useState(false);
   const load = useCallback(() => {
     setBusy(true); setError('');
@@ -17,7 +18,8 @@ export function ProfileHealth({ profile }) {
       .finally(() => setBusy(false));
   }, [profile.id]);
   useEffect(() => { load(); }, [load, profile.running]);
-  const health = buildHealth({ profile, running: Boolean(profile.running), byCategory });
+  useEffect(() => { api('/api/protection-features').then(r => setFeatures(r?.features || null)).catch(() => setFeatures(null)); }, []);
+  const health = buildHealth({ profile, running: Boolean(profile.running), byCategory, features });
   return <section className="health" aria-label="Profile health" data-verdict={health.verdict}>
     <div className="health-head">
       <div><h4>Profile health</h4>
