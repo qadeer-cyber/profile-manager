@@ -10,3 +10,7 @@
 li[data-state="blocked"] .gs-body strong{color:var(--text-2)}
 .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .empty-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}
+.attention-banner{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:0 0 12px}
+.attention-banner ul{list-style:none;margin:0;padding:0;display:grid;gap:8px;flex:1;min-width:0}
+.attention-banner li{display:flex;justify-content:space-between;align-items:center;gap:12px}
+@media (max-width:760px){.attention-banner,.attention-banner li{flex-direction:column;align-items:stretch}}

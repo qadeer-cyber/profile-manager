@@ -1746,6 +1746,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       // For the first-run guide: how many proxies exist and how many profiles have been launched at least once.
       proxyCount: db.prepare('SELECT COUNT(*) n FROM proxies').get().n,
       launchedCount: all.filter(r => r.last_launched_at).length,
+      // Interrupted data operations (restores, purges) and backup transfers that wait for a decision. A count only; the
+      // details need the desktop or API token and live in Diagnostics.
+      recoveryPendingCount: (() => { let n = 0; try { n += recoveryDiagnostics().length; } catch { /* unreadable journal: counted by Diagnostics */ } try { n += interruptedBackupTransfers().length; } catch { /* no transfers directory */ } return n; })(),
       trashCount,
       running: engine.runningIds(),
       // Stopped profiles whose last run ended in an error (for the fleet bar).

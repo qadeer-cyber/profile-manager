@@ -20,6 +20,7 @@ import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 import { shortcutAllowed } from './lib/shortcuts.js';
 import { fleetModel } from './lib/fleet.js';
+import { AttentionBanner } from './components/AttentionBanner.jsx';
 
 const SHOW_ADMIN = import.meta.env.VITE_AZWAH_ADMIN === '1';
 
@@ -192,6 +193,7 @@ export function App() {
           ? <div className="notice warn" role="status">Google Chrome isn't installed on this PC, so profiles can't launch. AZWAH opens profiles in your installed Chrome; it does not include a browser. Install Chrome, then reopen AZWAH. <a className="primary btn-link" href={browserInfo.downloadUrl} target="_blank" rel="noreferrer">Get Google Chrome</a></div>
           : <div className="notice warn">Chromium isn't installed yet, so profiles can't launch. <button className="primary" onClick={() => setPage('diagnostics')}>Download Chromium</button></div>)}
         {page === 'dashboard' && <DashboardPage onOpenProfiles={() => showProfiles('__all')} />}
+        {page === 'profiles' && <AttentionBanner meta={meta} onAction={a => a === 'show-errors' ? showProfiles('__all', 'error') : setPage('diagnostics')} />}
         {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={showProfiles} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} scope={scope} browser={browserInfo} goto={setPage} />}
         {page === 'trash' && <TrashPage />}
         {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}

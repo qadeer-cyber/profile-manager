@@ -57,8 +57,10 @@ The 24 rows above describe **stock Chromium and Chrome Stable**. AZWAH Chromium 
 | Client hints (platform version, brand) | `rects-webgl-ua.patch` | Windows CI verified | 12.0.0 to 15.0.0, Google Chrome brand |
 | Timezone, geolocation from proxy | `windows-source.patch` | Windows CI verified | Proxy exit timezone with authenticated HTTP and SOCKS5 |
 | WebGPU adapter info | `gpu-fonts.patch` | Implemented, not observed | No adapter on the CI runner |
-| Media device counts | `media-webrtc.patch` | Written, not compiled, no CI result | Probe added to `test/azwah-fingerprint-windows-live.test.js` |
-| WebRTC public address (srflx, SDP) | `media-webrtc.patch` | Written, not compiled, no CI result | Rewrites what the page sees; non-proxied UDP stays disabled |
-| Worker, iframe and service-worker coverage | — | Not tested | |
+| Media device counts | `media-webrtc.patch` | First compile failed (unsafe-buffer-usage), fixed, rebuild pending | Probe in `test/azwah-fingerprint-windows-live.test.js`, not run |
+| WebRTC public address (srflx, SDP) | `media-webrtc.patch` | Compiled in the failed run's build, no behavior result | Rewrites what the page sees; non-proxied UDP stays disabled |
+| Dedicated, shared and service workers | `workers.patch` | Written, not compiled | Probe `test/azwah-worker-windows-live.test.js`, not run. Fixes the worker canvas seed and `OffscreenCanvas.convertToBlob` |
+| Persistent per-profile fingerprint | `native-identity.js`, launcher | Implemented, unit tested | Seeds fixed per profile and generation; live persistence probe not run |
+| Iframes (cross-origin) | — | Not tested | |
 | Port-scan masking, speech voices, battery | — | Not implemented | |
 | Real Windows 10/11 client, real GPU | — | Not tested | |
