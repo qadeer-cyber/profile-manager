@@ -40,3 +40,25 @@ Legend — **Status:** FULL = implemented control + browser test; PART = partial
 **Stock Chromium gap (CUSTOM):** Multilogin default **Masked/Noise** on WebRTC IP, timezone, languages, screen, fonts, media, navigator HW, WebGL/WebGPU metadata, canvas, audio, port scan — see `GET /api/privacy-engine`.
 
 **Score:** Use `LOCAL_PRODUCT_PARITY_SCORECARD.md` for whole-product %; fingerprint **control** parity vs Multilogin defaults is lower by design (honest stock browser).
+
+## AZWAH Chromium (patched build, opt-in per profile) — status 2026-11-27
+
+The 24 rows above describe **stock Chromium and Chrome Stable**. AZWAH Chromium is AZWAH's own build (`native-chromium/*.patch`, default browser for new profiles). Its protections are opt-in per profile and are listed here with the evidence in `docs/native-engine-worklog.md`. CI runners are Windows Server without a GPU, so graphics and font rows are proven only as far as noted.
+
+| Signal | Patch | State | Evidence and limit |
+|---|---|---|---|
+| Canvas noise | `canvas-noise.patch` | Windows CI verified | Stable within a site, different between sites, sessions and the unprotected value (run 45456333924 and later) |
+| AudioContext noise | `audio-screen.patch` | Windows CI verified | Differs from the unprotected value and per launch; stability within a site is not asserted |
+| Screen size | `audio-screen.patch` | Windows CI verified | Follows the profile identity |
+| CPU cores, device memory | `identity.patch` | Windows CI verified | Follows the profile identity |
+| WebGL vendor/renderer, readback | `identity.patch`, `rects-webgl-ua.patch` | Windows CI verified on SwiftShader only | Run 45723355337; real GPUs not tested |
+| Fonts | `gpu-fonts.patch` | Windows CI verified | Three installed fonts outside the profile list hidden (run 45714781031); no real-client test |
+| ClientRects | `rects-webgl-ua.patch` | Windows CI verified | getBoundingClientRect and getClientRects both scaled and equal |
+| Client hints (platform version, brand) | `rects-webgl-ua.patch` | Windows CI verified | 12.0.0 to 15.0.0, Google Chrome brand |
+| Timezone, geolocation from proxy | `windows-source.patch` | Windows CI verified | Proxy exit timezone with authenticated HTTP and SOCKS5 |
+| WebGPU adapter info | `gpu-fonts.patch` | Implemented, not observed | No adapter on the CI runner |
+| Media device counts | `media-webrtc.patch` | Written, not compiled, no CI result | Probe added to `test/azwah-fingerprint-windows-live.test.js` |
+| WebRTC public address (srflx, SDP) | `media-webrtc.patch` | Written, not compiled, no CI result | Rewrites what the page sees; non-proxied UDP stays disabled |
+| Worker, iframe and service-worker coverage | — | Not tested | |
+| Port-scan masking, speech voices, battery | — | Not implemented | |
+| Real Windows 10/11 client, real GPU | — | Not tested | |

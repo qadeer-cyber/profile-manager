@@ -4,29 +4,29 @@ Generated from `server/parity-scorecard.js`. Live values: `GET /api/parity-score
 
 **Formula:** `localProductParityPercent = sum(credits) / count × 100` where `VERIFIED=1`, `PARTIAL=0.5`, `UNSUPPORTED|BLOCKED|MISSING=0`.
 
-This measures **this local desktop app** (M1–M16), not Multilogin cloud/SaaS. Masked/noise fingerprint controls count as `UNSUPPORTED` on stock Chromium.
+This measures **this local desktop app**, not Multilogin cloud/SaaS. Masked/noise controls count as `UNSUPPORTED` on stock Chromium and Chrome Stable; the AZWAH Chromium row is `PARTIAL` because most of them are proven in Windows CI but WebGPU, media/WebRTC, workers and a real Windows client are not.
 
 | Area | Status | Evidence |
 |------|--------|----------|
-| Profile management | VERIFIED | M7 browser + SQLite |
-| Proxy + encrypted creds | VERIFIED | proxy-library e2e |
-| Browser config | VERIFIED | M3/M6 tests |
-| Fingerprint controls (stock) | PARTIAL | Matrix rows requiring custom Chromium |
-| Fingerprint diagnostics | VERIFIED | fingerprint-browser, gaps |
-| Cookies/storage | VERIFIED | M7 isolation |
-| Extensions | VERIFIED | M4 |
-| Backup/restore | VERIFIED | backup tests |
-| Bulk ops | VERIFIED | bulk-jobs |
-| Automation API | VERIFIED | api e2e |
-| Performance/monitoring | VERIFIED | M12/M13 |
-| Windows stability smoke | PARTIAL | GHA windows-2022 PASS; Latitude HD620 not run |
-| Desktop UI | VERIFIED | Dashboard + Advanced Monitoring |
-| WebRTC + ICE | VERIFIED | webrtc-observe, gaps browser |
-| Geolocation modes | VERIFIED | gaps browser |
-| Chromium backup/rollback | VERIFIED | chromium-lifecycle |
-| Crash/orphan recovery | VERIFIED | m17 tests + windows-2022 native CI |
-| Multilogin mask parity | UNSUPPORTED | Custom engine — see privacy-engine report |
+| Profile management | VERIFIED | test/m7-browser.test.js, SQLite profiles CRUD |
+| Proxy library + SOCKS auth relay | VERIFIED | test/proxy-library.e2e.js, encrypted creds |
+| Browser regional + advanced settings | VERIFIED | test/m3, test/m6 launch tests |
+| Fingerprint privacy controls (stock) | PARTIAL | FINGERPRINT_PARITY_MATRIX.md — stock-Chromium rows; masked rows are in the AZWAH Chromium table of that file |
+| Fingerprint diagnostics + consistency | VERIFIED | test/fingerprint-browser.test.js, test/fingerprint-gaps-browser.test.js |
+| Cookies + local storage | VERIFIED | test/m7-browser.test.js isolation |
+| Extensions per profile | VERIFIED | test/m4 extensions launch |
+| Backup/restore + encryption | VERIFIED | test/backup*.test.js |
+| Bulk ops + jobs | VERIFIED | test/bulk-jobs.test.js |
+| Automation API /api/v1 | VERIFIED | test/api.e2e.js |
+| Launch metrics + queue + resources | VERIFIED | test/m12, test/m13 benchmark |
+| Windows process monitoring + smoke runner | PARTIAL | GHA windows-2022 m17-windows-validation run 40879417553; Latitude HD620 BLOCKED |
+| Premium desktop UI + Advanced Monitoring | VERIFIED | web build; MonitoringPage separate from Dashboard |
+| WebRTC policy + ICE diagnostics | VERIFIED | test/webrtc-observe.test.js, fingerprint-gaps-browser |
+| Geolocation Allow/Ask/Deny | VERIFIED | test/fingerprint-gaps-browser.test.js |
+| Chromium install backup/rollback | VERIFIED | test/chromium-lifecycle.test.js |
+| Crash/orphan recovery + locks | VERIFIED | test/m17-crash-recovery.test.js, m17-windows-native-ci; GHA windows-2022 PASS |
+| Multilogin-style masked fingerprints (AZWAH Chromium) | PARTIAL | AZWAH Chromium, Windows CI (runs 45723355337, 45714781031): canvas, audio, screen, CPU/memory, WebGL name and readback, fonts, ClientRects, client hints observed changed. NOT verified: WebGPU, real-GPU WebGL, workers, media device counts and WebRTC address (media-webrtc.patch uncompiled), real Windows 10/11 client |
 
 **Observation-only diagnostics do not earn VERIFIED** when Multilogin documents a user-facing control (e.g. canvas noise).
 
-**Current local product parity:** **88.9%** (16/18 credits; formula unchanged).
+**Current local product parity:** **91.7%** (16.5/18 credits; formula unchanged; was 88.9% before the AZWAH Chromium row moved from UNSUPPORTED to PARTIAL).

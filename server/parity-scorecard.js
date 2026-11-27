@@ -3,7 +3,7 @@ export const SCORECARD = Object.freeze([
   { id: 'profiles', area: 'Profile management', status: 'VERIFIED', evidence: 'test/m7-browser.test.js, SQLite profiles CRUD' },
   { id: 'proxy', area: 'Proxy library + SOCKS auth relay', status: 'VERIFIED', evidence: 'test/proxy-library.e2e.js, encrypted creds' },
   { id: 'browser_config', area: 'Browser regional + advanced settings', status: 'VERIFIED', evidence: 'test/m3, test/m6 launch tests' },
-  { id: 'fingerprint_controls', area: 'Fingerprint privacy controls (stock)', status: 'PARTIAL', evidence: 'FINGERPRINT_PARITY_MATRIX.md — mask/noise rows custom Chromium' },
+  { id: 'fingerprint_controls', area: 'Fingerprint privacy controls (stock)', status: 'PARTIAL', evidence: 'FINGERPRINT_PARITY_MATRIX.md — stock-Chromium rows; masked rows are in the AZWAH Chromium table of that file' },
   { id: 'fingerprint_diagnostics', area: 'Fingerprint diagnostics + consistency', status: 'VERIFIED', evidence: 'test/fingerprint-browser.test.js, test/fingerprint-gaps-browser.test.js' },
   { id: 'cookies', area: 'Cookies + local storage', status: 'VERIFIED', evidence: 'test/m7-browser.test.js isolation' },
   { id: 'extensions', area: 'Extensions per profile', status: 'VERIFIED', evidence: 'test/m4 extensions launch' },
@@ -17,7 +17,7 @@ export const SCORECARD = Object.freeze([
   { id: 'geolocation_modes', area: 'Geolocation Allow/Ask/Deny', status: 'VERIFIED', evidence: 'test/fingerprint-gaps-browser.test.js' },
   { id: 'chromium_lifecycle', area: 'Chromium install backup/rollback', status: 'VERIFIED', evidence: 'test/chromium-lifecycle.test.js' },
   { id: 'crash_recovery', area: 'Crash/orphan recovery + locks', status: 'VERIFIED', evidence: 'test/m17-crash-recovery.test.js, m17-windows-native-ci; GHA windows-2022 PASS' },
-  { id: 'multilogin_mask_parity', area: 'Multilogin-style masked fingerprints', status: 'UNSUPPORTED', evidence: 'Requires custom Chromium — privacy-engine-report.js' },
+  { id: 'multilogin_mask_parity', area: 'Multilogin-style masked fingerprints (AZWAH Chromium)', status: 'PARTIAL', evidence: 'AZWAH Chromium, Windows CI (runs 45723355337, 45714781031): canvas, audio, screen, CPU/memory, WebGL name and readback, fonts, ClientRects, client hints observed changed. NOT verified: WebGPU, real-GPU WebGL, workers, media device counts and WebRTC address (media-webrtc.patch uncompiled), real Windows 10/11 client' },
 ]);
 
 const WEIGHT = Object.freeze({
@@ -39,6 +39,6 @@ export function computeParityCoverage(items = SCORECARD) {
     earnedCredits: earned,
     localProductParityPercent: percent,
     rows,
-    multiloginControlParityNote: 'Multilogin masked/noise fingerprint controls are UNSUPPORTED on stock Chromium; local-product score excludes SaaS/cloud features by design.',
+    multiloginControlParityNote: 'Masked/noise fingerprint controls are UNSUPPORTED on stock Chromium and Chrome Stable. In AZWAH Chromium (opt-in per profile) most are proven in Windows CI on a GPU-less runner; the row stays PARTIAL until WebGPU, media/WebRTC, worker coverage and a real Windows client are verified. The score excludes SaaS/cloud features by design.',
   };
 }
