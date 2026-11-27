@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
+import dgram from 'node:dgram';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +13,11 @@ import test from 'node:test';
 const AUDIO_SCREEN = process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1';
 const GPU_FONTS = process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1';
 const RECTS_UA = process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1';
+const MEDIA_WEBRTC = process.env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC === '1';
+// A documentation-range address that a local STUN server reports as this machine's "public" address, and the proxy exit
+// address AZWAH is told to show instead (both are not routable; nothing leaves this machine).
+const STUN_MAPPED_IP = '198.51.100.7';
+const MASKED_IP = '203.0.113.9';
 const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c width=220 height=60></canvas><script>
 (async () => {
   const c = document.getElementById('c'); const g = c.getContext('2d');
@@ -47,8 +53,21 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
     hints = { platformVersion: h.platformVersion, brands: navigator.userAgentData.brands.map(b => b.brand).sort() }; } } catch {}
   let gpuVendor = null; try { if (navigator.gpu) { const ad = await navigator.gpu.requestAdapter(); gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
   const q = new URLSearchParams(location.search);
+  let media = null;
+  try { const list = await navigator.mediaDevices.enumerateDevices(); media = { counts: [list.filter(d => d.kind === 'audioinput').length,
+    list.filter(d => d.kind === 'videoinput').length, list.filter(d => d.kind === 'audiooutput').length], ids: list.map(d => d.kind + ':' + d.deviceId + ':' + d.groupId) }; } catch {}
+  let ice = null;
+  if (q.get('stun')) {
+    try {
+      const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:' + q.get('stun') }] });
+      const found = []; pc.createDataChannel('x');
+      const done = new Promise(res => { pc.onicecandidate = e => { if (e.candidate) found.push(e.candidate.candidate); else res(); }; setTimeout(res, 4000); });
+      await pc.setLocalDescription(await pc.createOffer()); await done;
+      ice = { candidates: found, sdpSrflx: pc.localDescription.sdp.split(/\r?\n/).filter(l => l.includes(' typ srflx')) }; pc.close();
+    } catch (e) { ice = { error: String(e) }; }
+  }
   await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
-    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints }) });
+    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints, media, ice }) });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -71,6 +90,22 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const port = server.address().port;
+  // Local STUN server: answers every Binding request with STUN_MAPPED_IP as this machine's public address.
+  const stun = dgram.createSocket('udp4');
+  let stunRequests = 0;
+  stun.on('message', (msg, rinfo) => {
+    if (msg.length < 20 || msg.readUInt16BE(0) !== 0x0001) return;
+    stunRequests++;
+    const reply = Buffer.alloc(32);
+    reply.writeUInt16BE(0x0101, 0); reply.writeUInt16BE(12, 2); msg.copy(reply, 4, 4, 20);
+    reply.writeUInt16BE(0x0020, 20); reply.writeUInt16BE(8, 22); reply[25] = 0x01;
+    reply.writeUInt16BE(rinfo.port ^ 0x2112, 26);
+    const ip = STUN_MAPPED_IP.split('.').map(Number); const cookie = [0x21, 0x12, 0xa4, 0x42];
+    ip.forEach((b, i) => { reply[28 + i] = b ^ cookie[i]; });
+    stun.send(reply, rinfo.port, rinfo.address);
+  });
+  await new Promise(r => stun.bind(0, '127.0.0.1', r));
+  const stunPort = stun.address().port;
   const { startServer } = await import('../server/app.js');
   const { db } = await import('../server/db.js');
   const engine = await import('../server/browsers.js');
@@ -84,11 +119,15 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
     return d;
   };
   // One session visits site A, reloads A, then site B (http://localhost).
-  const visit = async (profileId) => {
+  const baseExtraArgs = process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS || '';
+  const visit = async (profileId, { maskedIp = false } = {}) => {
+    // The WebRTC address switch is passed to this launch only (test extra arguments are read at every launch).
+    process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS = (baseExtraArgs + (maskedIp ? ` --azwah-webrtc-public-ip=${MASKED_IP}` : '')).trim();
     reports.length = 0;
-    const b = `http://localhost:${port}/b?step=b&report=${port}`;
-    const a2 = `http://127.0.0.1:${port}/a?step=a2&report=${port}&next=${encodeURIComponent(b)}`;
-    const a1 = `http://127.0.0.1:${port}/a?step=a1&report=${port}&next=${encodeURIComponent(a2)}`;
+    const stun = `&stun=127.0.0.1:${stunPort}`;
+    const b = `http://localhost:${port}/b?step=b&report=${port}${stun}`;
+    const a2 = `http://127.0.0.1:${port}/a?step=a2&report=${port}${stun}&next=${encodeURIComponent(b)}`;
+    const a1 = `http://127.0.0.1:${port}/a?step=a1&report=${port}${stun}&next=${encodeURIComponent(a2)}`;
     await api('POST', `/profiles/${profileId}/launch`, { url: a1 }, 200);
     const deadline = Date.now() + 90_000;
     while (reports.length < 3 && Date.now() < deadline) await new Promise(r => { waiting = r; setTimeout(r, 1000); });
@@ -105,14 +144,14 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
     console.log('# protection off ' + JSON.stringify(base));
     assert.equal(base.a1.dataUrl, base.b.dataUrl, 'without protection the canvas is identical on both sites (control)');
 
-    const run1 = await visit(on);
+    const run1 = await visit(on, { maskedIp: true });
     console.log('# protection on ' + JSON.stringify(run1));
     assert.equal(run1.a1.dataUrl, run1.a2.dataUrl, 'stable within a site in one session');
     assert.equal(run1.a1.pixels, run1.a2.pixels);
     assert.notEqual(run1.a1.dataUrl, run1.b.dataUrl, 'different between sites');
     assert.notEqual(run1.a1.pixels, run1.b.pixels);
     assert.notEqual(run1.a1.dataUrl, base.a1.dataUrl, 'differs from the unprotected value');
-    const run2 = await visit(on);
+    const run2 = await visit(on, { maskedIp: true });
     assert.notEqual(run2.a1.dataUrl, run1.a1.dataUrl, 'a new launch gives a new value');
 
     const expected = nativeIdentityFor(on);
@@ -166,10 +205,36 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       assert.notEqual(run1.a1.audio, base.a1.audio, 'audio value differs from the unprotected value');
       assert.notEqual(run2.a1.audio, run1.a1.audio, 'a new launch gives a new audio value');
     }
+    if (MEDIA_WEBRTC) {
+      // Media devices: the profile reports its own counts, whatever this machine has (control shows the real counts).
+      const wantCounts = expected.mediaDevices.split(',').map(Number);
+      console.log(`# media devices: real counts=${JSON.stringify(base.a1.media?.counts)} profile counts=${JSON.stringify(run1.a1.media?.counts)} expected=${JSON.stringify(wantCounts)}`);
+      assert.ok(run1.a1.media, 'enumerateDevices measured');
+      assert.deepEqual(run1.a1.media.counts, wantCounts, 'media device counts follow the profile');
+      assert.deepEqual(run1.a1.media.ids, run1.a2.media.ids, 'device identifiers are stable within an origin');
+      assert.deepEqual(run1.a1.media.ids, run2.a1.media.ids, 'device identifiers are stable across launches of the profile');
+      if (run1.a1.media.ids.length) {
+        assert.notDeepEqual(run1.a1.media.ids, run1.b.media.ids, 'device identifiers differ between origins');
+        for (const entry of run1.a1.media.ids) assert.match(entry.split(':')[1], /^([0-9a-f]{64}|default|communications)?$/, 'identifier looks like a real one');
+      }
+      // WebRTC: with the exit address switch, server-reflexive candidates show it; the control shows the STUN-reported one.
+      console.log(`# webrtc: stun requests=${stunRequests} control=${JSON.stringify(base.a1.ice)} masked=${JSON.stringify(run1.a1.ice)}`);
+      const srflx = r => (r.ice?.candidates || []).filter(c => c.includes(' typ srflx'));
+      if (srflx(base.a1).length) {
+        assert.ok(srflx(base.a1).every(c => c.includes(` ${STUN_MAPPED_IP} `)), 'control: srflx shows the address STUN reported');
+        assert.ok(srflx(run1.a1).length, 'masked profile still gathers a server-reflexive candidate');
+        assert.ok(srflx(run1.a1).every(c => c.includes(` ${MASKED_IP} `) && !c.includes(STUN_MAPPED_IP)), 'srflx candidate shows the exit address');
+        assert.ok(run1.a1.ice.sdpSrflx.length && run1.a1.ice.sdpSrflx.every(l => l.includes(` ${MASKED_IP} `) && !l.includes(STUN_MAPPED_IP)), 'localDescription SDP is masked too');
+      } else {
+        console.log('# webrtc: NOT OBSERVABLE - no server-reflexive candidate gathered from the local STUN server on this runner');
+      }
+    }
     console.log(`# AZWAH_FINGERPRINT_LIVE pass identity=${JSON.stringify(expected)} realRenderer=${JSON.stringify(base.a1.renderer)} realCores=${base.a1.cores}`);
   } finally {
     for (const id of engine.runningIds()) await engine.stop(id).catch(() => {});
     await app.close();
+    process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS = baseExtraArgs;
+    stun.close();
     server.close();
     db.close();
     fs.rmSync(directory, { force: true, recursive: true, maxRetries: 8, retryDelay: 500 });
