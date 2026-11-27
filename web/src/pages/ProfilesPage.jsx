@@ -20,6 +20,7 @@ import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { rowStatus, plural, runAll } from '../lib.js';
 import { assignableLibraryProxies, switchProfileProxy } from '../lib/proxySwitch.js';
 import { SCOPE_STATUS, SCOPE_LABEL } from '../lib/fleet.js';
+import { runProxyTests, batchSummary } from '../lib/proxyBatch.js';
 
 const COLUMN_DEFS = [['status', 'Status'], ['name', 'Profile name'], ['engine', 'Engine'], ['storage', 'Storage'], ['folder', 'Folder'], ['proxy', 'Proxy'], ['notes', 'Notes'], ['tags', 'Tags'], ['lastused', 'Last used']];
 const DEFAULT_COLUMNS = Object.fromEntries(COLUMN_DEFS.map(([key]) => [key, true]));
@@ -223,16 +224,26 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     if (!ids.length) return toast('The selected profiles have no proxy to test', 'info');
     setBulkBusy(true);
     try {
-      const r = await api('/api/proxies/test-batch', { method: 'POST', body: { ids: ids.slice(0, 50) } });
-      const bad = (r.results || []).filter(x => !x.ok || x.status === 'failed').length;
-      toast(bad ? `${bad} of ${plural(r.tested, 'proxy')} failed the test` : `${plural(r.tested, 'proxy')} passed the test`, bad ? 'error' : 'success');
+      const r = await runProxyTests(ids, id => api(`/api/proxies/${id}/test`, { method: 'POST' }), { concurrency: 5 });
+      toast(batchSummary(r), r.failed.length ? 'error' : 'success');
     } catch (e) { toast(e.message, 'error'); }
     setBulkBusy(false); load(); reloadMeta();
+  };
+  // Every distinct proxy assigned to any profile (the table shows one page, so ask the server for all of them).
+  const testAllAssigned = async () => {
+    try {
+      const all = await api('/api/profile-table?pageSize=100&status=&proxy=assigned');
+      const pages = Math.max(1, Math.ceil((all.total || 0) / 100));
+      let items = all.items || [];
+      for (let page = 2; page <= pages; page++) items = items.concat((await api(`/api/profile-table?pageSize=100&proxy=assigned&page=${page}`)).items || []);
+      await testProxies(items);
+    } catch (e) { toast(e.message, 'error'); }
   };
   const lowPriorityActions = [
     { key: 'restart', label: 'Restart selected', ariaLabel: 'Restart selected', icon: 'refresh', disabled: !one?.running || bulkBusy, onSelect: restartOne },
     { key: 'proxy', label: 'Proxy for selected', ariaLabel: 'Proxy for selected', icon: 'proxies', disabled: !selected.length || bulkBusy, onSelect: () => setDialog({ kind: 'bulk-proxy' }) },
     { key: 'test-proxies', label: 'Test proxies of selected', ariaLabel: 'Test proxies of selected', icon: 'proxies', disabled: !selected.some(x => x.proxyId) || bulkBusy, onSelect: () => testProxies(selected) },
+    { key: 'test-all-proxies', label: 'Test proxies of all profiles', ariaLabel: 'Test proxies of all profiles', icon: 'proxies', disabled: bulkBusy || !(meta.proxyCount > 0), title: 'Tests each distinct proxy assigned to any profile', onSelect: () => testAllAssigned() },
     { key: 'export', label: 'Export selected', ariaLabel: 'Export selected', icon: 'download', disabled: !one || one.running, onSelect: () => setDialog({ kind: 'portable', data: one }) },
     { key: 'dup', label: 'Duplicate selected', ariaLabel: 'Duplicate selected', icon: 'copy', disabled: !one || busy[one?.id], onSelect: () => clone(one) },
     { key: 'clone', label: 'Clone selected settings', ariaLabel: 'Clone selected settings', icon: 'templates', disabled: !selected.length || bulkBusy, onSelect: () => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) }) },

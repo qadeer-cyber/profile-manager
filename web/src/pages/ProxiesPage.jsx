@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { Dialog, Confirm } from '../components/Dialog.jsx';
@@ -8,6 +8,7 @@ import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { useSelection } from '../hooks/useSelection.js';
 import { ProviderPanel } from '../components/ProviderPanel.jsx';
 import { runAll, plural } from '../lib.js';
+import { runProxyTests, batchSummary } from '../lib/proxyBatch.js';
 import { PageError } from '../components/PageStatus.jsx';
 
 // Proxy library manager (docs/proxy-api.md). Falls back to a read-only summary of
@@ -17,6 +18,8 @@ export function ProxiesPage() {
   const [q, setQ] = useState(''), [status, setStatus] = useState(''), [tag, setTag] = useState('');
   const lib = useProxyLibrary({ q, status, tag });
   const [dialog, setDialog] = useState(null), [testing, setTesting] = useState({});
+  const [batch, setBatch] = useState(null);
+  const stopBatch = useRef(false);
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [groups, setGroups] = useState([]);
@@ -41,9 +44,14 @@ export function ProxiesPage() {
           toast(`${ip} · ${[city, region, country].filter(Boolean).join(', ')} · ${timezone} · ~${radiusKm} km`, 'success');
         } else toast(`Proxy reachable · ${result.ip}.${result.network?.asn ? ` AS${result.network.asn} ${result.network.organization || ''}${result.network.type === 'hosting' ? ' (hosting or cloud network; sites often challenge these IPs)' : ''}.` : ''} ${result.locationError || ''}`, result.network?.type === 'hosting' ? 'warning' : 'success');
       } else {
-        const batch = await api('/api/proxies/test-batch', { method: 'POST', body: { ids: ids.slice(0, 50) } });
-        const failed = (batch.results || []).filter(r => !r.ok || r.status === 'failed');
-        toast(`Tested ${batch.tested} prox${batch.tested === 1 ? 'y' : 'ies'} · ${batch.ok} ok${failed.length ? ` · ${failed.length} failed` : ''}`, failed.length ? 'error' : 'success');
+        // One request per proxy, a few at a time, with live progress. Each result is stored by the server as it arrives.
+        stopBatch.current = false;
+        setBatch({ total: ids.length, done: 0, ok: 0, failed: 0, running: true });
+        const result = await runProxyTests(ids, id => api(`/api/proxies/${id}/test`, { method: 'POST' }).finally(() => setTesting(t => ({ ...t, [id]: false }))), {
+          concurrency: 5, shouldStop: () => stopBatch.current, onProgress: p => { setBatch(b => ({ ...b, ...p, running: true })); },
+        });
+        setBatch({ ...result, failed: result.failed.length, failedItems: result.failed, running: false });
+        toast(batchSummary(result), result.failed.length ? 'error' : 'success');
       }
     } catch (e) { toast(e.message, 'error'); }
     setTesting(t => ({ ...t, ...Object.fromEntries(ids.map(i => [i, false])) }));
@@ -56,7 +64,8 @@ export function ProxiesPage() {
   const selected = lib.list.filter(p => S.sel.has(p.id));
   return <>
     <header className="page-head"><div><h1>Proxies</h1><div className="muted">{plural(lib.list.length, 'proxy')} in library{summary ? <> · {summary.templates} template{summary.templates === 1 ? '' : 's'} · {summary.testedOk} ok / {summary.testedFailed} failed · {summary.providerAccounts} provider account{summary.providerAccounts === 1 ? '' : 's'}</> : null}</div></div>
-      <div className="row"><button onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import</button>
+      <div className="row"><button disabled={!lib.list.length || batch?.running} onClick={() => test(lib.list.filter(p => !p.tags.includes('template')).map(p => p.id))} title="Test every proxy shown below (templates are skipped)"><Icon name="bolt" /> Test all{lib.list.length ? ` (${lib.list.filter(p => !p.tags.includes('template')).length})` : ''}</button>
+        <button onClick={() => setDialog({ kind: 'import' })}><Icon name="upload" /> Import</button>
         <button onClick={() => setDialog({ kind: 'edit', data: null, template: true })}>New template</button>
         <button className="primary" onClick={() => setDialog({ kind: 'edit', data: null })}><Icon name="plus" /> Add proxy</button></div></header>
     {summary && <div className="proxy-summary">
@@ -67,6 +76,14 @@ export function ProxiesPage() {
     </div>}
     {analytics && <p className="muted small">{analytics.note} Local checks (7d): {analytics.checksLast7Days}{analytics.avgOkLatencyMs != null ? ` · avg ok latency ${analytics.avgOkLatencyMs} ms` : ''} · {analytics.profilesDirect} direct / {analytics.profilesAssigned} proxied profiles.</p>}
     {!!groups.length && <div className="chips">{groups.slice(0, 12).map(g => <button key={g.tag} type="button" className="tag" onClick={() => setTag(g.tag === '_untagged' ? '' : g.tag)}>{g.tag === '_untagged' ? 'Untagged' : g.tag} ({g.count})</button>)}</div>}
+    {batch && <section className="notice batch-progress" role="status" aria-live="polite" aria-label="Proxy test progress">
+      <div className="batch-line"><strong>{batch.running ? `Testing ${batch.done} of ${batch.total}…` : batchSummary({ ...batch, failed: batch.failedItems || [] })}</strong>
+        {batch.running && <button type="button" onClick={() => { stopBatch.current = true; }}>Cancel</button>}
+        {!batch.running && batch.failed > 0 && <button type="button" onClick={() => { setStatus('failed'); }}>Show failing</button>}
+        {!batch.running && <button type="button" className="ghost" onClick={() => setBatch(null)}>Dismiss</button>}</div>
+      <progress max={batch.total} value={batch.done} aria-hidden="true" />
+      {!batch.running && batch.failedItems?.length > 0 && <p className="muted small">{batch.failedItems.slice(0, 3).map(f => proxyErrorLabel(f.error)).join(' · ')}{batch.failedItems.length > 3 ? ` · and ${batch.failedItems.length - 3} more` : ''}</p>}
+    </section>}
     <div className="toolbar">
       <div className="search"><Icon name="search" /><input type="search" placeholder="Search name, host, username, tags…" value={q} onChange={e => setQ(e.target.value)} /></div>
       <select value={status} onChange={e => setStatus(e.target.value)} aria-label="Status filter"><option value="">Any status</option><option value="ok">Working</option><option value="failed">Failing</option><option value="untested">Untested</option></select>

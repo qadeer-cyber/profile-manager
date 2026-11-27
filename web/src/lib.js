@@ -37,4 +37,5 @@ export const refreshesNow = e => typeof e?.type === 'string' && e.type.startsWit
 // Dedupe key for a toast. A server event key (type, profile id, timestamp) makes each real
 // failure distinct, so only a re-delivery of the same event is collapsed.
 export const toastKey = (kind, msg, key) => key ? `${kind}\u0000ev\u0000${key}` : `${kind}\u0000${msg}`;
-export const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+// Consonant + y becomes -ies (proxy, proxies); everything else adds -s.
+export const plural = (n, w) => `${n} ${n === 1 ? w : /[^aeiou]y$/i.test(w) ? w.slice(0, -1) + 'ies' : w + 's'}`;

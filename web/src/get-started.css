@@ -14,3 +14,4 @@ li[data-state="blocked"] .gs-body strong{color:var(--text-2)}
 .attention-banner ul{list-style:none;margin:0;padding:0;display:grid;gap:8px;flex:1;min-width:0}
 .attention-banner li{display:flex;justify-content:space-between;align-items:center;gap:12px}
 @media (max-width:760px){.attention-banner,.attention-banner li{flex-direction:column;align-items:stretch}}
+.batch-progress{margin:0 0 12px}.batch-line{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.batch-line strong{margin-right:auto}.batch-progress progress{width:100%;height:6px;margin-top:6px}
