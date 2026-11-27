@@ -1,6 +1,7 @@
 import React from 'react';
 import { Dialog } from './Dialog.jsx';
 import { ProfileHealth } from './ProfileHealth.jsx';
+import { DeviceCard } from './DeviceCard.jsx';
 import { crashSummary } from '../lib.js';
 import { engineLabel, proxyLabel, proxyEvidenceFields, nativeVerification, tabRestoreBadge } from '../lib/profileRow.js';
 
@@ -12,6 +13,7 @@ export function ProfileDetailsDialog({ profile: p, status, onClose, onEdit }) {
   const Row = ({ k, children }) => <div className="overview-row"><span>{k}</span><strong>{children}</strong></div>;
   return <Dialog wide title={`Details · ${p.name}`} onClose={onClose} footer={<><button onClick={onClose}>Close</button><button className="primary" onClick={onEdit}>Edit profile</button></>}>
     <ProfileHealth profile={p} />
+    <DeviceCard device={p.device} />
     <section className="details-grid">
       <div>
         <h4>Profile</h4>

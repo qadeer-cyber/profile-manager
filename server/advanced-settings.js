@@ -196,7 +196,7 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
   const base = previous && typeof previous === 'object' ? previous : DEFAULT_ADVANCED_SETTINGS;
   if (value == null || typeof value !== 'object' || Array.isArray(value)) invalid('advancedSettings must be an object');
   if (!keysOf(value).length) return finishAdvanced(base);
-  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity', 'macLabel', 'macLabelMode', 'proxyLaunch'].includes(key))) invalid('Unknown advancedSettings field');
+  if (keysOf(value).some(key => !['runtime', 'userAgent', 'geolocation', 'screen', 'preferences', 'fingerprint', 'experimental', 'deviceIdentity', 'macLabel', 'macLabelMode', 'proxyLaunch', 'deviceName'].includes(key))) invalid('Unknown advancedSettings field');
   const out = clone(base);
   if ('runtime' in value) out.runtime = value.runtime;
   if ('userAgent' in value) out.userAgent = validateUserAgent(value.userAgent);
@@ -222,6 +222,12 @@ export function validateAdvancedSettings(value, previous = DEFAULT_ADVANCED_SETT
       if (out.macLabelMode === 'manual') validateMacLabel('');
       delete out.macLabel;
     } else out.macLabel = validateMacLabel(value.macLabel);
+  }
+  // Owner's own name for the device this profile stands for (stored only when set).
+  if ('deviceName' in value) {
+    const name = value.deviceName == null ? '' : value.deviceName;
+    if (typeof name !== 'string' || /[\u0000-\u001f\u007f]/.test(name) || name.trim().length > 60) invalid('deviceName must be text of at most 60 characters', 'identity');
+    if (name.trim()) out.deviceName = name.trim(); else delete out.deviceName;
   }
   return finishAdvanced(out);
 }

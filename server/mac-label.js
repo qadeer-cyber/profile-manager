@@ -23,3 +23,16 @@ export function validateMacLabel(value) {
   }
   return hex.match(/../g).join(':');
 }
+
+// A MAC typed in any common form (02:AB:.., 02-AB-.., 02ab.cdef.0123, 02abcdef0123) or just a fragment of it.
+// Returns the hex digits and whether it is a complete address. Throws a 400 for less than four digits.
+export function normalizeMacQuery(text) {
+  const raw = String(text ?? '');
+  const hex = raw.toLowerCase().replace(/[^0-9a-f]/g, '');
+  if (/[^0-9a-f:.\-\s]/i.test(raw) || hex.length < 4 || hex.length > 12) {
+    const error = new Error('Enter at least 4 and at most 12 hex digits of the MAC address, for example 02:AB:CD:EF:01:23 or AB:CD.');
+    error.status = 400; error.code = 'INVALID_MAC_QUERY';
+    throw error;
+  }
+  return { hex, full: hex.length === 12 };
+}

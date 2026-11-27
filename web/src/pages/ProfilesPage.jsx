@@ -13,6 +13,7 @@ import { RowActionsMenu } from '../components/RowActionsMenu.jsx';
 import { ProfileDetailsDialog } from '../components/ProfileDetailsDialog.jsx';
 import { BulkCreateDialog } from '../components/BulkCreateDialog.jsx';
 import { GetStarted } from '../components/GetStarted.jsx';
+import { MacLookupDialog } from '../components/MacLookupDialog.jsx';
 import { onboardingSteps, guideVisible, readDismissed, writeDismissed } from '../lib/onboarding.js';
 import { useSelection } from '../hooks/useSelection.js';
 import { useElementWidth } from '../hooks/useElementWidth.js';
@@ -282,6 +283,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
           { key: 'sync', label: 'Synchronize selected…', ariaLabel: 'Synchronize selected', icon: 'bolt', separatorBefore: narrow,
             disabled: selected.filter(p => p.running).length < 2, title: 'Select at least two running profiles', onSelect: () => setDialog({ kind: 'sync' }) },
           { key: 'import', label: 'Import profiles', icon: 'upload', onSelect: () => setDialog({ kind: 'import' }) },
+          { key: 'mac-lookup', label: 'Find profile by MAC address…', icon: 'search', onSelect: () => setDialog({ kind: 'mac-lookup' }) },
           { key: 'refresh', label: 'Refresh list', icon: 'refresh', onSelect: () => { load(); reloadMeta(); } },
           { key: 'filters', label: showFilters ? 'Hide filters' : 'Show filters', icon: 'filter', onSelect: () => setFiltersOpen(v => !v) },
         ]} />
@@ -365,6 +367,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     {dialog?.kind === 'proxy-switch' && <ProfileProxySwitch profile={dialog.data} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'automation' && <ProfileAutomationDialog profile={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'sync' && <SyncDialog profiles={selected.filter(p => p.running)} onClose={() => setDialog(null)} onStarted={() => { loadSync(); toast('Synchronization started', 'success'); }} />}
+    {dialog?.kind === 'mac-lookup' && <MacLookupDialog onClose={() => setDialog(null)} onOpen={async id => { try { setDialog({ kind: 'details', data: await api(`/api/profiles/${id}`) }); } catch (e) { toast(e.message, 'error'); } }} />}
     {dialog?.kind === 'bulk-create' && <BulkCreateDialog folders={meta.folders} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}

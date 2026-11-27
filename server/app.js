@@ -43,6 +43,8 @@ import { advancedPrivacyScorecards } from './privacy-acceptance.js';
 import { buildGoogleCompatReport } from './google-compat-report.js';
 import { azwahNativeAvailable, azwahNativeFeatures } from './browser-runtime/azwah-native.js';
 import { presetSettings, strictAvailability } from './protection-presets.js';
+import { deviceSummaryFor } from './device-summary.js';
+import { normalizeMacQuery } from './mac-label.js';
 import { browserEngineArchitectureReport, browserUpdateManagerReport, browserEngineCapabilityMatrix, buildProfileConfigModel } from './browser-runtime/index.js';
 import { buildEngineStockReport } from './engine-stock-report.js';
 import { readWindowState } from './window-state.js';
@@ -287,6 +289,8 @@ const publicP = p => {
     } catch { /* profile dir not created yet */ }
   }
   out.tabRestore = tabRestore;
+  // Which device this profile stands for (own name, what it reports as, MAC label, short code).
+  out.device = deviceSummaryFor(p);
   const mode = proxy_id && p.browserEngine !== 'firefox' && (['azwah-native', 'custom-native-chromium', 'stable-chrome'].includes(p.advancedSettings?.runtime) ||
     (process.env.AZWAH_STABLE_CHROME_EDITION === '1' && p.advancedSettings?.runtime !== 'privacy')) &&
     p.advancedSettings?.proxyLaunch !== 'manual'
@@ -799,6 +803,15 @@ const startingWebDriver = new Set();
 function mountProfileOps(router, { allowOverride = false, managedSessions = allowOverride } = {}) {
   // Which protections the installed AZWAH Chromium contains, for the editor's presets.
   router.get('/protection-features', wrap((req, res) => res.json({ available: azwahNativeAvailable(), features: azwahNativeFeatures() })));
+  // "Whose MAC is this?": find profiles by a full MAC or a fragment of one (4 to 12 hex digits, any separators).
+  router.get('/mac-lookup', wrap((req, res) => {
+    const query = normalizeMacQuery(req.query.mac);
+    const matches = list({ folder: '__all' }).map(p => ({ p, hex: String(p.macLabel || '').replace(/:/g, '').toLowerCase() }))
+      .filter(({ hex }) => (query.full ? hex === query.hex : hex.includes(query.hex)))
+      .slice(0, 20)
+      .map(({ p }) => ({ id: p.id, name: p.name, folder: p.folder, running: engine.isRunning(p.id), mac: p.macLabel, exact: String(p.macLabel).replace(/:/g, '').toLowerCase() === query.hex, device: deviceSummaryFor(p) }));
+    res.json({ query: query.hex, full: query.full, matches, note: 'The MAC is a label saved with each profile. It identifies the profile here, not a network adapter.' });
+  }));
   router.get('/chromium-identity', wrap(async (req, res) => {
     // The Chrome Stable edition runs the Chrome installed on this computer, not a bundled Chromium.
     if (process.env.AZWAH_STABLE_CHROME_EDITION === '1') {

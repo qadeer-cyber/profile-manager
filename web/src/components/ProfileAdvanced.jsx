@@ -55,7 +55,7 @@ export function ProxyLaunchFields({ settings, onChange, isNew = false }) {
     : 'Timezone and location follow the proxy and the exit IP is checked inside the browser. The automation connection is visible to sites (navigator.webdriver is true).'} />;
 }
 
-export function DeviceIdentityFields({ settings, onChange, derivedMac = null }) {
+export function DeviceIdentityFields({ settings, onChange, derivedMac = null, device = null }) {
   const [info, setInfo] = useState(null);
   const [error, setError] = useState('');
   useEffect(() => { api('/api/device-identity').then(setInfo).catch(e => setError(e.message)); }, []);
@@ -79,6 +79,8 @@ export function DeviceIdentityFields({ settings, onChange, derivedMac = null }) 
       <summary>Device identity: {blocked.length} unavailable preset{blocked.length === 1 ? '' : 's'}</summary>
       <ul className="muted small">{blocked.map(p => <li key={p.id}><strong>{p.label}</strong>: {p.reason}</li>)}</ul>
     </details>}
+    <label>Device name (optional)<input aria-label="Device name" maxLength={60} value={settings.deviceName || ''} onChange={e => onChange({ ...settings, deviceName: e.target.value })} placeholder="For example: Ali’s Dell laptop" />
+      <span className="muted hint">Your own name for the device this profile stands for. It is shown next to the MAC address so you can tell profiles apart.{device ? ` This profile currently reports as: ${device.reportsAs}.` : ''}</span></label>
     <MacAddressField settings={settings} onChange={onChange} derivedMac={derivedMac} />
   </div>;
 }

@@ -33,7 +33,9 @@ export function queryProfiles(rows, query = {}) {
   let items = rows;
   if (browserEngine) items = items.filter(profile => (profile.browserEngine || 'chromium') === browserEngine);
   if (favorite) items = items.filter(profile => profile.favorite);
-  if (q) items = items.filter(profile => `${profile.name} ${profile.notes} ${profile.tags.join(' ')} ${profile.folder}`.toLowerCase().includes(q));
+  // The search box also finds a profile by MAC (with or without separators) and by its device name.
+  const macQ = q.replace(/[:.\-\s]/g, '');
+  if (q) items = items.filter(profile => `${profile.name} ${profile.notes} ${profile.tags.join(' ')} ${profile.folder} ${profile.advancedSettings?.deviceName || ''} ${profile.macLabel || ''}`.toLowerCase().includes(q) || (macQ.length >= 4 && /^[0-9a-f]+$/.test(macQ) && String(profile.macLabel || '').replace(/:/g, '').toLowerCase().includes(macQ)));
   if (tag) items = items.filter(profile => profile.tags.includes(tag));
   if (folder !== undefined && folder !== '__all' && folder !== '') items = items.filter(profile => profile.folder === folder);
   if (folder === '') items = items.filter(profile => profile.folder === '');
