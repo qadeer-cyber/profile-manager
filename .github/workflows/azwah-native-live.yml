@@ -81,6 +81,8 @@ jobs:
         shell: pwsh
         env:
           AZWAH_NATIVE_CYCLES: ${{ inputs.cycles || '30' }}
+          # Chromium's own log, so an early browser exit can be explained (test only; never passed by the app itself).
+          AZWAH_NATIVE_TEST_EXTRA_ARGS: '--enable-logging --v=0 --log-file=${{ runner.temp }}\\azwah-chrome.log'
         run: |
           node --test --test-force-exit test/azwah-native-windows-live.test.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -88,6 +90,14 @@ jobs:
           $env:AZWAH_NATIVE_CYCLES = '10'
           node --test --test-force-exit test/azwah-native-windows-live.test.js
           exit $LASTEXITCODE
+      - name: Browser log and crash evidence (only when the step above failed)
+        if: failure()
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP 'azwah-chrome.log'
+          if (Test-Path $log) { Write-Output "CHROME_LOG bytes=$((Get-Item $log).Length)"; Get-Content $log -Tail 120 } else { Write-Output 'CHROME_LOG none written' }
+          Get-ChildItem -Recurse -Filter '*.dmp' -ErrorAction SilentlyContinue -Path $env:RUNNER_TEMP, $env:LOCALAPPDATA | Select-Object -First 5 FullName, Length | Format-Table | Out-String | Write-Output
+          Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'Application Error'; StartTime = (Get-Date).AddMinutes(-15) } -MaxEvents 5 -ErrorAction SilentlyContinue | ForEach-Object { $_.Message.Substring(0, [Math]::Min(400, $_.Message.Length)) } | Write-Output
       - name: Canvas protection and hardware/graphics identity observed in the browser
         if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
         shell: pwsh
