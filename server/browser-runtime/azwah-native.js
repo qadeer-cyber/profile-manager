@@ -10,7 +10,7 @@ import { geoIpCredentials } from '../geoip-settings.js';
 import { resolveProxyLocationWithRetry } from '../proxy-location.js';
 import { isAlive, killTree } from '../proc.js';
 import { isPackaged, azwahNativeTestAvailable } from '../testflags.js';
-import { nativeIdentityArgs, nativeIdentityFor } from './native-identity.js';
+import { nativeIdentityArgs, nativeIdentityFor, noiseSeedsFor } from './native-identity.js';
 import { chromiumPolicyArgs } from '../webrtc-policy.js';
 import { strictPreconditions } from '../protection-presets.js';
 import { applyWebRtcPreference } from '../webrtc-settings.js';
@@ -215,14 +215,16 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     const args = [`--user-data-dir=${nativeDir}`, '--no-first-run', '--no-default-browser-check'];
     // Opt-in canvas readback protection: a new secret per launch, so values are stable within a site for this
     // session and differ between sites, profiles and launches (docs/privacy-threat-model.md).
-    if (canvasProtection) args.push(`--azwah-canvas-seed=${randomUUID().replace(/-/g, '')}`);
+    // Seeds are persistent per profile (and fingerprint generation): the same fingerprint on every launch, a new one only on request.
+    const seeds = noiseSeedsFor(profile.id, profile.advancedSettings?.experimental?.seedEpoch || 0);
+    if (canvasProtection) args.push(`--azwah-canvas-seed=${seeds.canvas}`);
     // ClientRects protection travels with canvas protection (new value each launch) when the build has it.
-    if (canvasProtection && rectsUa) args.push(`--azwah-rects-seed=${randomUUID().replace(/-/g, '')}`);
+    if (canvasProtection && rectsUa) args.push(`--azwah-rects-seed=${seeds.rects}`);
     // The screen size is part of the hardware identity once the build supports it.
-    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id), { screen: audioScreen, gpuFonts, clientHints: rectsUa, media: mediaWebrtc, mediaSeed: createHash('sha256').update('azwah-media\n' + profile.id).digest('hex') }));
+    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id, profile.advancedSettings?.experimental?.seedEpoch || 0), { screen: audioScreen, gpuFonts, clientHints: rectsUa, media: mediaWebrtc, mediaSeed: seeds.media }));
     // WebRTC server-reflexive candidates show the verified proxy exit address instead of this computer's address.
     if (proxy && mediaWebrtc && location?.ip) args.push(`--azwah-webrtc-public-ip=${location.ip}`);
-    if (audioProtection) args.push(`--azwah-audio-seed=${randomUUID().replace(/-/g, '')}`);
+    if (audioProtection) args.push(`--azwah-audio-seed=${seeds.audio}`);
     // WebRTC must not open UDP outside the proxy (it would reveal the real IP). Proxy profiles always get
     // disable_non_proxied_udp, like Chrome Stable proxy profiles; others keep their own WebRTC setting.
     const webrtcArgs = proxy ? chromiumPolicyArgs({ mode: 'disable_non_proxied_udp' }) : chromiumPolicyArgs(profile.webrtcSettings || {});

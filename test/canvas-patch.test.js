@@ -33,7 +33,8 @@ test('the canvas patch is original code, keeps the sandbox, and changes only rea
 test('AZWAH passes a fresh secret only when the profile opts in, and refuses a build without the patch', () => {
   assert.match(launcher, /canvasReadback === 'prototype'/);
   assert.match(launcher, /AZWAH_NATIVE_CANVAS_UNSUPPORTED/);
-  assert.match(launcher, /if \(canvasProtection\) args\.push\(`--azwah-canvas-seed=\$\{randomUUID\(\)/);
+  assert.match(launcher, /if \(canvasProtection\) args\.push\(`--azwah-canvas-seed=\$\{seeds\.canvas\}`\);/);
+  assert.doesNotMatch(launcher, /seed=\$\{randomUUID/, 'no per-launch random seed is passed any more');
   assert.match(launcher, /canvasPatchSha256/);
 });
 
@@ -182,4 +183,29 @@ test('workers patch: two files, worker site string equals the window schemeful s
   assert.match(added, /origin->Protocol\(\) \+ "\:\/\/" \+ host/);
   assert.match(added, /HTMLCanvasElement::AzwahApplyCanvasNoise\(\s*\+?\s*std::move\(image_bitmap\),/);
   assert.match(added, /html_canvas_element\.h/);
+});
+
+test('persistent fingerprint: seeds and identity are fixed per profile and generation, and differ across profiles and generations', async () => {
+  const { nativeIdentityFor, noiseSeedsFor } = await import('../server/browser-runtime/native-identity.js');
+  const a0 = noiseSeedsFor('profile-a');
+  assert.deepEqual(noiseSeedsFor('profile-a'), a0, 'same profile, same seeds on every launch');
+  assert.deepEqual(noiseSeedsFor('profile-a', 0), a0);
+  for (const value of Object.values(a0)) assert.match(value, /^[0-9a-f]{32}$/);
+  assert.equal(new Set(Object.values(a0)).size, 4, 'each surface has its own seed');
+  assert.notDeepEqual(noiseSeedsFor('profile-b'), a0, 'profiles differ');
+  const a1 = noiseSeedsFor('profile-a', 1);
+  assert.notDeepEqual(a1, a0, 'a new generation gives new seeds');
+  assert.deepEqual(noiseSeedsFor('profile-a', 1), a1, 'and they are just as stable');
+  assert.deepEqual(noiseSeedsFor('profile-a', -3), a0, 'an invalid generation is generation 0');
+  // Identity: generation 0 is exactly what profiles already had; later generations differ for most profiles.
+  assert.deepEqual(nativeIdentityFor('profile-a'), nativeIdentityFor('profile-a', 0));
+  const changed = Array.from({ length: 40 }, (_, i) => JSON.stringify(nativeIdentityFor('p' + i)) !== JSON.stringify(nativeIdentityFor('p' + i, 1))).filter(Boolean).length;
+  assert.ok(changed >= 35, `a new generation changes the identity for nearly every profile (${changed}/40)`);
+});
+
+test('fingerprint generation is validated and stored only when above zero', async () => {
+  const { validateAdvancedSettings } = await import('../server/advanced-settings.js');
+  assert.equal(validateAdvancedSettings({ experimental: { seedEpoch: 3 } }).experimental.seedEpoch, 3);
+  assert.equal('seedEpoch' in validateAdvancedSettings({ experimental: { seedEpoch: 0 } }).experimental, false);
+  for (const bad of [-1, 1.5, 'x', 2_000_000]) assert.throws(() => validateAdvancedSettings({ experimental: { seedEpoch: bad } }), /seedEpoch/);
 });

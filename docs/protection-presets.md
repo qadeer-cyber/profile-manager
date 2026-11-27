@@ -43,6 +43,6 @@ Where Strict shows up:
 
 ## Open design questions
 
-1. **Per-launch versus per-profile noise.** Canvas, audio and ClientRects seeds are new on every launch, so a returning visitor's fingerprint changes each time. A persistent per-profile seed would look more like a real browser. It changes what "stable" means and needs its own probe; it is not part of Strict.
+1. ~~**Per-launch versus per-profile noise.**~~ Decided 2026-11-27: noise seeds (canvas, audio, ClientRects, media identifiers) are now persistent per profile, derived from the profile id and a "fingerprint generation" (`experimental.seedEpoch`, default 0). A returning visitor sees the same fingerprint on every launch; values still differ between sites and profiles. "Generate a new fingerprint" in the editor bumps the generation (a different, equally stable fingerprint from the next launch; the identity also changes). Generation 0 keeps the identity existing profiles already had. Covered by unit tests; the live probe now asserts persistence and a changed value after a generation bump, but has not run in Windows CI yet.
 2. **A live proxy check at launch for Strict.** Refuse when a fresh probe fails, not only when the last stored test did. It adds seconds to every launch.
 3. **Strict as a default for proxy profiles** once the full feature set is proven on Windows 10/11 hardware.

@@ -133,7 +133,8 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
       const audioReadback = nativeRuntime && advanced.experimental?.audioReadback === 'prototype' ? 'prototype' : 'off';
       const strict = nativeRuntime && advanced.experimental?.strict === 'on' ? 'on' : 'off';
       if (strict === 'on' && f.proxyMode === 'none') { setTab('proxy'); setFormError('Strict protection needs a proxy. Pick one on the Proxy tab or choose Standard.'); return toast('Strict protection needs a proxy', 'error'); }
-      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off', hardwareIdentity, audioReadback, strict } });
+      const seedEpoch = nativeRuntime ? Math.max(0, Math.min(1_000_000, Number(advanced.experimental?.seedEpoch) || 0)) : 0;
+      const advancedSettings = validateAdvancedSettings({ ...advanced, experimental: { canvasReadback, webglReadback: 'off', hardwareIdentity, audioReadback, strict, seedEpoch } });
       next = { ...f, browserSettings, webrtcSettings, advancedSettings };
     } catch (e) {
       const nextTab = e.code === 'INVALID_ADVANCED_SETTINGS' && e.tab === 'preferences' ? 'extra' : (e.code === 'INVALID_WEBRTC_SETTINGS' || e.code === 'INVALID_BROWSER_SETTINGS' || e.code === 'INVALID_ADVANCED_SETTINGS') ? 'fingerprint' : 'general';
@@ -205,6 +206,11 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
               })}
               <button type="button" role="radio" aria-checked={presetOf(advanced.experimental, features) === 'custom'} className={presetOf(advanced.experimental, features) === 'custom' ? 'sel' : ''} disabled tabIndex={-1}>Custom</button>
             </div>
+            {presetOf(advanced.experimental, features) !== 'off' && presetOf(advanced.experimental, features) !== 'unavailable' && <div className="fp-generation">
+              <span>Fingerprint: stable for this profile{Number(advanced.experimental?.seedEpoch) > 0 ? ` (generation ${Number(advanced.experimental.seedEpoch) + 1})` : ''}.</span>
+              <button type="button" onClick={() => { protectionTouched.current = true; setAdvanced({ ...advanced, experimental: { ...(advanced.experimental || {}), seedEpoch: (Number(advanced.experimental?.seedEpoch) || 0) + 1 } }); }}
+                title="Gives this profile a different, equally stable fingerprint from its next launch. Sites that saw the old one will see a different browser.">Generate a new fingerprint</button>
+            </div>}
             <p className="muted hint" role="status">{PRESET_TEXT[presetOf(advanced.experimental, features)]}{features && PROTECTION_FLAGS.some(f2 => !features[f2.feature]) && ' Some protections are not included in the installed browser build and are left off.'}</p>
           </fieldset>}
           {f.browserEngine !== 'firefox' && advanced.runtime === 'azwah-native' && <>

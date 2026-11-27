@@ -17,3 +17,4 @@
 @media (max-width:760px){.health-row{grid-template-columns:minmax(0,1fr) auto}.health-note{grid-column:1 / -1;white-space:normal}}
 .protection-preset{border:0;margin:12px 0;padding:0}.protection-preset legend{padding:0;font-weight:650;font-size:13px;margin-bottom:6px}.protection-preset .seg{margin-bottom:6px}
 .protection-preset .hint{margin-top:8px;display:block}
+.fp-generation{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;color:var(--text-2);margin:2px 0 4px}

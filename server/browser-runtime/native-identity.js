@@ -38,8 +38,20 @@ export const WINDOWS_OPTIONAL_FONTS = Object.freeze(['agency fb', 'algerian', 'b
 const MEDIA_COUNTS = Object.freeze(['1,1,1', '1,1,2', '2,1,1', '1,0,1', '2,1,2', '1,1,3'].map(String));
 const GPU_FAMILY = { NVIDIA: ['nvidia', 'turing'], Intel: ['intel', 'gen-12lp'], AMD: ['amd', 'gcn-5'] };
 
-export function nativeIdentityFor(profileId) {
-  const digest = createHash('sha256').update('azwah-native-identity\n' + String(profileId)).digest();
+// `epoch` is the profile's "fingerprint generation" (0 until the user asks for a new one). Generation 0 keeps the values
+// profiles already have; a higher generation gives the profile a different, equally stable fingerprint.
+const generation = epoch => (Number.isInteger(epoch) && epoch > 0 ? '\n' + epoch : '');
+
+// Persistent per-profile noise seeds for canvas, ClientRects and audio. They are fixed for a profile (and generation), so a
+// returning visitor sees the same fingerprint on every launch, as a real browser would; the browser still combines each
+// seed with the site, so values differ between sites. Derived, never stored.
+export function noiseSeedsFor(profileId, epoch = 0) {
+  const seed = name => createHash('sha256').update(`azwah-noise-${name}\n${profileId}${generation(epoch)}`).digest('hex').slice(0, 32);
+  return { canvas: seed('canvas'), rects: seed('rects'), audio: seed('audio'), media: seed('media') };
+}
+
+export function nativeIdentityFor(profileId, epoch = 0) {
+  const digest = createHash('sha256').update('azwah-native-identity\n' + String(profileId) + generation(epoch)).digest();
   const [webglVendor, webglRenderer] = WINDOWS_GPUS[digest[0] % WINDOWS_GPUS.length];
   const family = /\((NVIDIA|Intel|AMD)\)/.exec(webglVendor)[1];
   const optional = WINDOWS_OPTIONAL_FONTS.filter((_, i) => digest[4 + (i % 24)] & (1 << (i % 8)));

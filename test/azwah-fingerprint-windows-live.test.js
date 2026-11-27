@@ -152,8 +152,16 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
     assert.notEqual(run1.a1.pixels, run1.b.pixels);
     assert.notEqual(run1.a1.dataUrl, base.a1.dataUrl, 'differs from the unprotected value');
     const run2 = await visit(on, { maskedIp: true });
-    assert.notEqual(run2.a1.dataUrl, run1.a1.dataUrl, 'a new launch gives a new value');
+    assert.equal(run2.a1.dataUrl, run1.a1.dataUrl, 'a new launch keeps the same value: the fingerprint is persistent per profile');
+    assert.equal(run2.b.dataUrl, run1.b.dataUrl, 'and the per-site difference persists too');
 
+    // A new fingerprint generation gives a different, equally stable fingerprint.
+    await api('PUT', `/profiles/${on}`, { advancedSettings: { experimental: { canvasReadback: 'prototype', hardwareIdentity: 'prototype', ...(AUDIO_SCREEN && { audioReadback: 'prototype' }), seedEpoch: 1 } } }, 200);
+    const run3 = await visit(on, { maskedIp: true });
+    assert.notEqual(run3.a1.dataUrl, run1.a1.dataUrl, 'a new generation changes the canvas value');
+    const run4 = await visit(on, { maskedIp: true });
+    assert.equal(run4.a1.dataUrl, run3.a1.dataUrl, 'and the new generation is stable across launches');
+    await api('PUT', `/profiles/${on}`, { advancedSettings: { experimental: { canvasReadback: 'prototype', hardwareIdentity: 'prototype', ...(AUDIO_SCREEN && { audioReadback: 'prototype' }), seedEpoch: 0 } } }, 200);
     const expected = nativeIdentityFor(on);
     for (const r of [run1.a1, run1.b, run2.a1]) {
       assert.equal(r.cores, expected.hardwareConcurrency);
@@ -189,7 +197,7 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       assert.notEqual(parts(run1.a1.rects)[4], parts(base.a1.rects)[4], 'getClientRects width changed');
       assert.equal(parts(run1.a1.rects)[2], parts(run1.a1.rects)[4], 'both APIs report the same width');
       assert.equal(run1.a1.rects, run1.a2.rects, 'ClientRects are stable within a session');
-      assert.notEqual(run2.a1.rects, run1.a1.rects, 'a new launch gives new ClientRects');
+      assert.equal(run2.a1.rects, run1.a1.rects, 'a new launch keeps the same ClientRects (persistent per profile)');
       if (base.a1.webglPixels) {
         assert.equal(base.a1.webglPixels, base.b.webglPixels, 'WebGL readback identical without protection (control)');
         assert.notEqual(run1.a1.webglPixels, run1.b.webglPixels, 'WebGL readback differs between sites');
@@ -203,7 +211,7 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       assert.ok(base.a1.audio && run1.a1.audio, 'audio fingerprint measured');
       assert.equal(base.a1.audio, base.b.audio, 'without protection the audio value is the same (control)');
       assert.notEqual(run1.a1.audio, base.a1.audio, 'audio value differs from the unprotected value');
-      assert.notEqual(run2.a1.audio, run1.a1.audio, 'a new launch gives a new audio value');
+      assert.equal(run2.a1.audio, run1.a1.audio, 'a new launch keeps the same audio value (persistent per profile)');
     }
     if (MEDIA_WEBRTC) {
       // Media devices: the profile reports its own counts, whatever this machine has (control shows the real counts).
