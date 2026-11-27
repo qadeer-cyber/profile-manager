@@ -1,0 +1,12 @@
+.get-started{margin:0 0 14px;padding:14px 16px;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.gs-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.gs-head h2{margin:0;font-size:15px}.gs-head p{margin:2px 0 0}
+.gs-steps{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:10px}
+.gs-steps li{display:grid;grid-template-columns:22px minmax(0,1fr);gap:10px;align-items:start}
+.gs-mark{width:20px;height:20px;border-radius:50%;border:2px solid var(--border);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;margin-top:1px}
+.gs-mark.done{background:var(--ok);border-color:var(--ok)}.gs-mark.todo{border-color:var(--accent)}.gs-mark.blocked,.gs-mark.unknown{border-style:dashed}
+.gs-body p{margin:2px 0 0}
+.gs-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+li[data-state="blocked"] .gs-body strong{color:var(--text-2)}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.empty-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px}

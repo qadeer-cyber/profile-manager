@@ -12,6 +12,8 @@ import { ProfileRow } from '../components/ProfileRow.jsx';
 import { RowActionsMenu } from '../components/RowActionsMenu.jsx';
 import { ProfileDetailsDialog } from '../components/ProfileDetailsDialog.jsx';
 import { BulkCreateDialog } from '../components/BulkCreateDialog.jsx';
+import { GetStarted } from '../components/GetStarted.jsx';
+import { onboardingSteps, guideVisible, readDismissed, writeDismissed } from '../lib/onboarding.js';
 import { useSelection } from '../hooks/useSelection.js';
 import { useElementWidth } from '../hooks/useElementWidth.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
@@ -27,8 +29,10 @@ function loadTablePrefs() {
   try { return JSON.parse(localStorage.getItem('pm.profileTable') || '{}'); } catch { return {}; }
 }
 
-export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFilter = '', onWorkspaceFilterChange, scope = 'all' }) {
+export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFilter = '', onWorkspaceFilterChange, scope = 'all', browser = null, goto = () => {} }) {
   const toast = useToast();
+  const [guideDismissed, setGuideDismissed] = useState(readDismissed);
+  const [guideForced, setGuideForced] = useState(false);
   const [list, setList] = useState([]), [loaded, setLoaded] = useState(false), [loadError, setLoadError] = useState('');
   const [q, setQ] = useState(''), [tag, setTag] = useState(''), [status, setStatus] = useState(''), [proxy, setProxy] = useState(''), [browserEngine, setBrowserEngine] = useState(''), [workspaceId, setWorkspaceId] = useState('');
   const [sort, setSort] = useState({ k: 'updated_at', dir: -1 });
@@ -211,6 +215,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   // Below this card width the less-used selection actions move into the toolbar's overflow menu
   // (same accessible names) so the toolbar stays on one line instead of clipping the search field.
   const narrow = cardWidth < 960;
+  const guideShown = guideVisible(onboardingSteps({ browser, meta }), { dismissed: guideDismissed, forced: guideForced });
   const restartOne = () => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); });
   // Tests the assigned proxies (each distinct proxy once) and stores the result, so the fleet view shows which failed.
   const testProxies = async list => {
@@ -234,6 +239,9 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   ];
   return <>
     {dialog?.kind === 'portable' && <PortableExportDialog profile={dialog.data} busy={!!busy[dialog.data.id]} onClose={() => setDialog(null)} onExport={options => exportPortable(dialog.data, options)} />}
+    {guideShown && <GetStarted browser={browser} meta={meta}
+      onDismiss={() => { writeDismissed(true); setGuideDismissed(true); setGuideForced(false); }}
+      onAction={action => action === 'create' ? newProfile() : action === 'quick' ? quickProfile() : action === 'bulk' ? setDialog({ kind: 'bulk-create' }) : goto(action === 'proxies' ? 'proxies' : 'diagnostics')} />}
     <section ref={cardRef} className="profile-card" aria-label="Profiles table">
     <div className="toolbar profile-toolbar" role="toolbar" aria-label="Profile actions">
       <div className="split-btn">
@@ -312,7 +320,13 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <th className="col-actions"><button type="button" className="icon-btn" aria-label="Columns" title="Choose columns" aria-expanded={columnsOpen} onClick={() => setColumnsOpen(v => !v)}><Icon name="columns" size={17} /></button></th></tr></thead><tbody>
       {rows.map(p => <ProfileRow key={p.id} p={p} st={rowStatus(p, busy[p.id])} columns={columns} selected={S.sel.has(p.id)} busy={!!busy[p.id]} onToggle={() => S.toggle(p.id)} on={rowHandlers(p)} />)}
       {!loaded && !rows.length && <tr><td colSpan={shown.length + 4} className="empty" aria-busy="true">Loading profiles…</td></tr>}
-      {loaded && !rows.length && <tr><td colSpan={shown.length + 4} className="empty">{total || q || tag || status || proxy ? 'No profiles match these filters.' : <>No profiles yet. <button className="link" onClick={() => setDialog({ kind: 'edit', data: emptyForm })}>Create your first profile</button></>}</td></tr>}
+      {loaded && !rows.length && <tr><td colSpan={shown.length + 4} className="empty">{total || q || tag || status || proxy ? 'No profiles match these filters.' : <>No profiles yet.
+          {!guideShown && <div className="empty-actions">
+            <button className="primary" onClick={newProfile}>Create your first profile</button>
+            <button onClick={quickProfile}>Quick profile</button>
+            <button onClick={() => setDialog({ kind: 'bulk-create' })}>Bulk create from proxy list</button>
+            {!guideShown && <button className="link" onClick={() => { writeDismissed(false); setGuideDismissed(false); setGuideForced(true); }}>Show the setup guide</button>}
+          </div>}</>}</td></tr>}
     </tbody></table></div>
     <div className="pager">
       <span className="pager-info" title="Current scope"><Icon name="info" size={15} /> {SCOPE_LABEL[scope] || (folder === '__all' ? 'All profiles' : folder || 'No folder')} · {plural(total, 'profile')} · {meta.running.length} running</span>

@@ -1726,7 +1726,7 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.use('/profiles/:id', (req, res, next) => { try { if (!['GET', 'HEAD'].includes(req.method)) assertProfileOperationAvailable(req.params.id); next(); } catch (e) { next(e); } });
   ui.get('/profiles', (req, res) => res.json(list(req.query).map(publicP)));
   ui.get('/meta', (req, res) => {
-    const all = db.prepare('SELECT id, tags, folder, favorite, workspace_id, last_error FROM profiles WHERE deleted_at IS NULL').all()
+    const all = db.prepare('SELECT id, tags, folder, favorite, workspace_id, last_error, last_launched_at FROM profiles WHERE deleted_at IS NULL').all()
       .filter(canAccessFolderProfile);
     const folderCounts = Object.create(null);
     for (const row of all) folderCounts[row.folder] = (folderCounts[row.folder] || 0) + 1;
@@ -1737,6 +1737,9 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       favoriteCount: all.filter(r => r.favorite).length,
       folderCounts,
       profileCount: all.length,
+      // For the first-run guide: how many proxies exist and how many profiles have been launched at least once.
+      proxyCount: db.prepare('SELECT COUNT(*) n FROM proxies').get().n,
+      launchedCount: all.filter(r => r.last_launched_at).length,
       trashCount,
       running: engine.runningIds(),
       // Stopped profiles whose last run ended in an error (for the fleet bar).
@@ -1915,7 +1918,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
   ui.get('/diagnostics', (req, res) => res.json(diagnostics()));
   ui.get('/diagnostics/lifecycle-report', (req, res) => res.json(engine.lifecycleReport()));
   ui.get('/browser', wrap(async (req, res) => {
-    const status = browserStatus();
+    // azwahNative: this installation carries AZWAH's own Chromium, so a missing Chrome is not a blocker.
+    const status = { ...browserStatus(), azwahNative: azwahNativeAvailable() };
     if (process.env.AZWAH_STABLE_CHROME_EDITION !== '1') return res.json(status);
     const chrome = await resolveWindowsChromeStable().catch(() => null);
     return res.json({ ...status, installed: !!chrome, path: chrome?.path ?? null, custom: false,
