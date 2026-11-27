@@ -5,6 +5,8 @@ import { useToast } from '../components/Toasts.jsx';
 import { Confirm, Dialog } from '../components/Dialog.jsx';
 import { Icon } from '../components/Icon.jsx';
 import { plural } from '../lib.js';
+import { EmptyState } from '../components/EmptyState.jsx';
+import { emptyState } from '../lib/emptyStates.js';
 
 export function ExtensionsPage() {
   const toast = useToast();
@@ -38,14 +40,14 @@ export function ExtensionsPage() {
           <button className="icon-btn danger" aria-label={'Remove ' + ext.name} title="Remove" onClick={() => remove(ext, false)}><Icon name="trash" /></button>
         </td>
       </tr>)}
-      {loaded && !list.length && <tr><td colSpan="5" className="empty">No extensions yet. Import a folder that contains a manifest.json.</td></tr>}
+      {loaded && !list.length && <tr><td colSpan="5" className="empty"><EmptyState {...emptyState('extensions')} onAction={() => setDialog({ kind: 'import' })} /></td></tr>}
     </tbody></table></div>
     {dialog?.kind === 'import' && <ImportDialog onClose={() => setDialog(null)} onDone={() => { setDialog(null); load(); }} />}
     <section className="panel"><h2>Firefox / Gecko library</h2>
       <p className="muted small">{gecko.report?.signingPolicy || 'Mozilla signed extensions only; no signing bypass.'}</p>
       <div className="table-wrap"><table className="grid"><thead><tr><th>Name</th><th>Gecko ID</th><th>Version</th><th>Profiles</th><th></th></tr></thead><tbody>
         {gecko.items.map(ext => <tr key={ext.id}><td className="name">{ext.name}</td><td className="mono-sm">{ext.geckoExtensionId || '—'}</td><td>{ext.version}</td><td>{ext.assignedProfiles || 0}</td><td><button onClick={() => setDialog({ kind: 'manageGecko', data: ext })}>Manage in profile</button></td></tr>)}
-        {geckoLoaded && !gecko.items.length && <tr><td colSpan="4" className="empty">No Firefox extensions yet. Import an unpacked folder or signed .xpi.</td></tr>}
+        {geckoLoaded && !gecko.items.length && <tr><td colSpan="4" className="empty"><EmptyState {...emptyState('gecko')} onAction={() => setDialog({ kind: 'importGecko' })} /></td></tr>}
         {!geckoLoaded && <tr><td colSpan="4" className="empty">Loading Gecko extensions…</td></tr>}
       </tbody></table></div></section>
     {dialog?.kind === 'manageGecko' && <ManageGeckoDialog extension={dialog.data} onClose={() => setDialog(null)} />}

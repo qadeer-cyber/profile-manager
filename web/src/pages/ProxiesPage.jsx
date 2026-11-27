@@ -9,6 +9,8 @@ import { useSelection } from '../hooks/useSelection.js';
 import { ProviderPanel } from '../components/ProviderPanel.jsx';
 import { runAll, plural } from '../lib.js';
 import { runProxyTests, batchSummary } from '../lib/proxyBatch.js';
+import { EmptyState } from '../components/EmptyState.jsx';
+import { emptyState } from '../lib/emptyStates.js';
 import { PageError } from '../components/PageStatus.jsx';
 
 // Proxy library manager (docs/proxy-api.md). Falls back to a read-only summary of
@@ -123,7 +125,8 @@ export function ProxiesPage() {
           <button className="icon-btn" aria-label={'Edit ' + p.name} title="Edit" onClick={() => setDialog({ kind: 'edit', data: p })}><Icon name="edit" /></button>
           <button className="icon-btn danger" aria-label={'Delete ' + p.name} title="Delete" onClick={() => remove(p, false)}><Icon name="trash" /></button></td>
       </tr>; })}
-      {lib.available && !lib.list.length && <tr><td colSpan="9" className="empty">{q || status || tag ? 'No proxies match these filters.' : 'No proxies yet. Add one or import a list.'}</td></tr>}
+      {lib.available && !lib.list.length && <tr><td colSpan="9" className="empty"><EmptyState {...emptyState('proxies', { filtered: Boolean(q || status || tag) })}
+        onAction={a => a === 'clear-filters' ? (setQ(''), setStatus(''), setTag('')) : a === 'add' ? setDialog({ kind: 'edit', data: null }) : setDialog({ kind: 'import' })} /></td></tr>}
     </tbody></table></div>
     <ProviderPanel onChanged={lib.reload} />
     {dialog?.kind === 'history' && <LatencyHistory proxy={dialog.data} onClose={() => setDialog(null)} />}

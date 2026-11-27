@@ -196,7 +196,7 @@ export function App() {
         {page === 'profiles' && <AttentionBanner meta={meta} onAction={a => a === 'show-errors' ? showProfiles('__all', 'error') : setPage('diagnostics')} />}
         {page === 'profiles' && <ProfilesPage meta={meta} reloadMeta={reloadMeta} folder={folder} setFolder={showProfiles} workspaceFilter={workspaceFilter} onWorkspaceFilterChange={setWorkspaceFilter} scope={scope} browser={browserInfo} goto={setPage} />}
         {page === 'trash' && <TrashPage />}
-        {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} />}
+        {page === 'templates' && <TemplatesPage reloadMeta={reloadMeta} profileCount={meta.profileCount ?? 0} />}
         {page === 'workspaces' && <WorkspacesPage onOpenProfiles={openWorkspaceProfiles} />}
         {page === 'cookie-robot' && <CookieRobotPage />}
         {page === 'proxies' && <ProxiesPage />}

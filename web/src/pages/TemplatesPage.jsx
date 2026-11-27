@@ -3,8 +3,10 @@ import { api } from '../api.js';
 import { useToast } from '../components/Toasts.jsx';
 import { Confirm, Dialog } from '../components/Dialog.jsx';
 import { plural } from '../lib.js';
+import { EmptyState } from '../components/EmptyState.jsx';
+import { emptyState } from '../lib/emptyStates.js';
 
-export function TemplatesPage({ reloadMeta }) {
+export function TemplatesPage({ reloadMeta, profileCount = 0 }) {
   const toast = useToast();
   const [items, setItems] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -33,7 +35,7 @@ export function TemplatesPage({ reloadMeta }) {
           <button onClick={() => setBulkOpen(t)}>Bulk create…</button>
           <button className="ghost-danger" onClick={() => setRemove(t)}>Delete</button>
         </td></tr>)}
-      {loaded && !items.length && <tr><td colSpan="3" className="empty">No templates yet. Save a template from a profile on the Profiles page or create one here.</td></tr>}
+      {loaded && !items.length && <tr><td colSpan="3" className="empty"><EmptyState {...emptyState('templates', { hasProfiles: profileCount > 0 })} onAction={() => setCreateOpen(true)} /></td></tr>}
     </tbody></table></div>
     {createOpen && <CreateTemplateDialog onClose={() => setCreateOpen(false)} onDone={() => { setCreateOpen(false); load(); }} toast={toast} />}
     {bulkOpen && <BulkFromTemplateDialog template={bulkOpen} onClose={() => setBulkOpen(null)} onDone={() => { setBulkOpen(null); reloadMeta?.(); }} toast={toast} />}
