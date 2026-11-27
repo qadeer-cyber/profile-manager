@@ -249,7 +249,12 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     while (true) {
       checkCancelled();
       if (spawnFailed || child.exitCode !== null || child.signalCode !== null || !child.pid || Date.now() >= deadline) {
-        throw error('Native Azwah exited or did not verify browser startup.', 'PROXY_BROWSER_IDENTITY_FAILED');
+        // Say which of the two it was: the browser process ended early (exit code or signal), or it ran but never wrote
+        // the verified-startup receipt before the deadline. The message text is unchanged for callers that match it.
+        const startupEnded = spawnFailed || child.exitCode !== null || child.signalCode !== null || !child.pid;
+        throw Object.assign(error('Native Azwah exited or did not verify browser startup.', 'PROXY_BROWSER_IDENTITY_FAILED'), {
+          extra: { startup: startupEnded ? 'browser_exited' : 'receipt_timeout', exitCode: child.exitCode, signal: child.signalCode, spawnFailed, waitedMs: 25000 - Math.max(0, deadline - Date.now()) },
+        });
       }
       try {
         if (fs.readFileSync(receipt, 'utf8') === expected) break;
