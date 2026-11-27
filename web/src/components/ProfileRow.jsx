@@ -2,6 +2,7 @@ import React from 'react';
 import { Icon } from './Icon.jsx';
 import { RowActionsMenu } from './RowActionsMenu.jsx';
 import { crashSummary } from '../lib.js';
+import { healthBadge } from '../lib/profileHealth.js';
 import { engineLabel, compactDate, cdpLabel, proxyLabel, proxyEvidenceSummary, proxyVerificationLevel, tabRestoreBadge } from '../lib/profileRow.js';
 
 // One single-line profile row. Every cell is nowrap + ellipsis; long content lives in tooltips and
@@ -9,6 +10,7 @@ import { engineLabel, compactDate, cdpLabel, proxyLabel, proxyEvidenceSummary, p
 export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
   const show = key => columns[key] !== false;
   const engine = engineLabel(p);
+  const health = healthBadge(p);
   const proxy = proxyLabel(p.proxy);
   const tabs = tabRestoreBadge(p.tabRestore, p.running);
   const cdp = cdpLabel(p.cdp);
@@ -42,6 +44,7 @@ export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
       <span className="name" title={p.name}>{p.name}</span>
       {p.isQuick && <span className="row-badge" title="Quick profile">quick</span>}
       {st.showError && <span className="err-text row-error" title={errorTitle}><Icon name="info" size={12} />{crashSummary(p.last_error)}</span>}
+      {health && <span className="row-badge health-warn" data-badge="health" title={health.title} aria-label={'Profile check: ' + health.title}>Check</span>}
       {p.automationEnabled && !p.running && <span className="row-badge" data-badge="automation" title="Automation enabled" aria-label="Automation enabled">Auto</span>}
       {cdp && <span className="row-badge cdp" title={`Automation endpoint: ${cdp.endpoint}`}>CDP <span className="mono">{cdp.text}</span></span>}
       {tabs && <span className="row-badge" title={tabs.title}>{tabs.text}</span>}

@@ -140,3 +140,4 @@
   .profile-card .pager .pager-spacer{display:none}
   .tool-group{flex-wrap:wrap}
 }
+.profiles .row-badge.health-warn{background:var(--warn-soft);border-color:var(--warn);color:var(--warn)}

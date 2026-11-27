@@ -1,0 +1,17 @@
+.health{margin:0 0 16px;border-bottom:1px solid var(--border);padding-bottom:12px}
+.health-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.health-head h4{margin:0 0 2px;font-size:13px}
+.health-headline{margin:0;font-size:12px;font-weight:650}
+.health-headline.attention{color:var(--warn)}.health-headline.ok{color:var(--ok)}.health-headline.idle,.health-headline.partial{color:var(--text-2)}
+.health-group{margin-top:10px}
+.health-group h5{margin:0 0 4px;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--text-2)}
+.health-row{display:grid;grid-template-columns:200px 108px minmax(0,1fr);gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px}
+.health-label{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.health-note{color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.health-row[data-state="mismatch"] .health-note{color:var(--text);white-space:normal}
+.pill.health-ok{background:var(--ok-soft);color:var(--ok)}
+.pill.health-mismatch{background:var(--warn-soft);color:var(--warn);font-weight:650}
+.pill.health-partial{background:var(--accent-soft);color:var(--accent-text)}
+.pill.health-unmeasured,.pill.health-real{background:var(--surface-2);color:var(--text-2)}
+.health-foot{margin:10px 0 0}
+@media (max-width:760px){.health-row{grid-template-columns:minmax(0,1fr) auto}.health-note{grid-column:1 / -1;white-space:normal}}
