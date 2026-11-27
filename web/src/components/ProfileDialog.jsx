@@ -42,12 +42,16 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   // Which protections the installed AZWAH Chromium contains (null until known or when it cannot be read).
   const [protection, setProtection] = useState(null);
   const protectionTouched = useRef(false);
+  // The preset applied automatically to a new profile is part of its starting point, so an untouched form is not "changed".
+  const [autoPreset, setAutoPreset] = useState(null);
   const isNewProfile = !initial.id;
   useEffect(() => { api('/api/protection-features').then(setProtection).catch(() => setProtection(null)); }, []);
   // A new profile that will run on AZWAH Chromium starts on the Standard preset, unless the user already chose.
   useEffect(() => {
     if (!isNewProfile || !protection?.available || protectionTouched.current) return;
-    setF(cur => ({ ...cur, advancedSettings: { ...cur.advancedSettings, experimental: { ...(cur.advancedSettings?.experimental || {}), ...presetSettings('standard', protection.features) } } }));
+    const preset = presetSettings('standard', protection.features);
+    setAutoPreset(preset);
+    setF(cur => ({ ...cur, advancedSettings: { ...cur.advancedSettings, experimental: { ...(cur.advancedSettings?.experimental || {}), ...preset } } }));
   }, [isNewProfile, protection]);
   const features = protection?.features || null;
   const choosePreset = preset => {
@@ -75,7 +79,10 @@ export function ProfileDialog({ initial, folders = [], onSave, onClose }) {
   const lib = useProxyLibrary();
   const toast = useToast();
   const set = (k, v) => setF({ ...f, [k]: v });
-  const baseline = useMemo(() => JSON.stringify({ form: initial, languageText: (initial.browserSettings?.languages || []).join(', ') }), [initial]);
+  const baseline = useMemo(() => {
+    const start = autoPreset ? { ...initial, advancedSettings: { ...initial.advancedSettings, experimental: { ...(initial.advancedSettings?.experimental || {}), ...autoPreset } } } : initial;
+    return JSON.stringify({ form: start, languageText: (initial.browserSettings?.languages || []).join(', ') });
+  }, [initial, autoPreset]);
   const dirty = JSON.stringify({ form: f, languageText }) !== baseline;
   const requestClose = () => { if (dirty) setConfirmClose(true); else onClose(); };
   const runTest = async () => {

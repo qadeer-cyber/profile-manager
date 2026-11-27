@@ -7,9 +7,9 @@
   --paper:#f3f5f7;--ink:#1a2233;--cobalt:#2b4acb;--live:#0f8f86;--brick:#c2412d;--steel:#8a94a6;
   --bg:var(--paper);--surface:#fff;--surface-2:#f7f8fa;--hover:#eef1f5;
   --border:#e2e6ec;--border-strong:#c9d0da;
-  --text:var(--ink);--text-2:#4d5869;--text-3:#6b7587;
+  --text:var(--ink);--text-2:#4d5869;--text-3:#5f697a;
   --accent:var(--cobalt);--accent-hover:#213baa;--accent-soft:#e8ecfa;--accent-text:#2a44b8;
-  --ok:var(--live);--ok-soft:#ddf3f1;--warn:#9a5b00;--warn-soft:#fff3dc;--bad:var(--brick);--bad-soft:#fbe9e5;
+  --ok:#0b6e67;--ok-soft:#ddf3f1;--warn:#9a5b00;--warn-soft:#fff3dc;--bad:#b23a28;--bad-soft:#fbe9e5;
   --rail:#1a2233;--rail-2:#222c40;--rail-text:#b7c0d0;--rail-strong:#fff;--rail-line:#2c374d;
   --shadow:0 1px 0 #1a22330a,0 1px 3px #1a22330d;--shadow-lg:0 24px 64px #1a223333;
   --glass:var(--surface);--highlight:transparent;--glow:transparent;
@@ -47,7 +47,7 @@ body,.app.shell{font-family:var(--font);font-size:14px;line-height:1.45;font-fea
 
 /* ---------- navigation rail ---------- */
 .app.shell .side{width:200px;background:var(--rail);border-right:0;box-shadow:none;backdrop-filter:none;padding:10px 10px 12px;color:var(--rail-text)}
-.app.shell .side-section{color:var(--rail-text);opacity:.7;text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;margin:16px 10px 6px}
+.app.shell .side-section{color:var(--rail-text);opacity:.85;text-transform:none;letter-spacing:0;font-size:12px;font-weight:600;margin:16px 10px 6px}
 .app.shell .side .nav{color:var(--rail-text);border-radius:8px;min-height:34px;font-weight:550}
 .app.shell .side .nav .i{color:inherit;opacity:.85}
 .app.shell .side .nav:hover{background:var(--rail-2);color:var(--rail-strong)}
@@ -104,7 +104,7 @@ button.fleet-key:focus-visible{outline:2px solid var(--accent);outline-offset:2p
 /* The one moment of motion: a running browser shows a live edge and a breathing status dot. */
 .app.shell .profiles tbody tr.is-running>td:first-child{box-shadow:inset 3px 0 var(--live)}
 .app.shell .profiles tbody tr.is-running .name{color:var(--text)}
-.app.shell .status.running{color:var(--live);background:var(--ok-soft)}
+.app.shell .status.running{color:var(--ok);background:var(--ok-soft)}
 .app.shell .status.running>i{background:var(--live);animation:fd-breathe 2.4s ease-in-out infinite}
 @keyframes fd-breathe{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--live) 45%,transparent)}50%{box-shadow:0 0 0 4px transparent}}
 @media (prefers-reduced-motion: reduce){.app.shell .status.running>i{animation:none}.fleet-bar span{transition:none}}
@@ -116,3 +116,4 @@ button.fleet-key:focus-visible{outline:2px solid var(--accent);outline-offset:2p
 .network-note{color:var(--text-2)}.network-note.warn{color:var(--warn)}
 .proxy-offer{justify-content:space-between}.proxy-offer-actions{display:inline-flex;gap:8px;flex:none}
 .fleet-key.proxy strong{color:var(--warn)}
+.app.shell .notice .muted,.app.shell .notice .small{color:var(--text-2)}
