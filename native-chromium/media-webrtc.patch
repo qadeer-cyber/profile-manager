@@ -14,14 +14,16 @@ index 0baf8177a7066b683415859019cb362530f922e5..f4dd6557837604c62d377d23e9aff823
        switches::kDisableDevShmUsage,
  #endif
 diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce283c678ec 100644
+index 55281de4893b7de7c8067fa0f6f9195508336d7d..81f231fcd4db846e6939b5f865861d898ab294ec 100644
 --- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
 +++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
-@@ -5,12 +5,18 @@
+@@ -5,12 +5,20 @@
  #include "third_party/blink/renderer/modules/mediastream/media_devices.h"
  
  #include <algorithm>
++#include <array>
 +#include <string>
++#include <string_view>
  #include <utility>
 +#include <vector>
  
@@ -36,7 +38,7 @@ index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce2
  #include "base/strings/stringprintf.h"
  #include "base/uuid.h"
  #include "build/build_config.h"
-@@ -62,6 +68,7 @@
+@@ -62,6 +70,7 @@
  #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
  #include "third_party/blink/renderer/platform/bindings/exception_state.h"
  #include "third_party/blink/renderer/platform/bindings/script_state.h"
@@ -44,7 +46,7 @@ index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce2
  #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
  #include "third_party/blink/renderer/platform/mediastream/webrtc_uma_histograms.h"
  #include "third_party/blink/renderer/platform/region_capture_crop_id.h"
-@@ -1409,6 +1416,90 @@ void MediaDevices::StopObserving() {
+@@ -1409,6 +1418,91 @@ void MediaDevices::StopObserving() {
    receiver_.reset();
  }
  
@@ -67,7 +69,7 @@ index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce2
 +                     base::as_byte_span(input), digest)) {
 +    return String();
 +  }
-+  static const char kHex[] = "0123456789abcdef";
++  static constexpr std::string_view kHex = "0123456789abcdef";
 +  StringBuilder id;
 +  for (uint8_t byte : digest) {
 +    id.Append(kHex[byte >> 4]);
@@ -89,12 +91,13 @@ index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce2
 +  const std::string seed =
 +      command_line->GetSwitchValueASCII("azwah-media-seed");
 +  // Chrome lists microphones, then cameras, then speakers.
-+  const mojom::blink::MediaDeviceType kinds[3] = {
++  // std::array, not C arrays: Chromium builds with -Werror=unsafe-buffer-usage.
++  const std::array<mojom::blink::MediaDeviceType, 3> kinds = {
 +      mojom::blink::MediaDeviceType::kMediaAudioInput,
 +      mojom::blink::MediaDeviceType::kMediaVideoInput,
 +      mojom::blink::MediaDeviceType::kMediaAudioOutput};
-+  const char* const labels[3] = {"Microphone", "Camera", "Speakers"};
-+  unsigned wanted[3];
++  const std::array<std::string_view, 3> labels = {"Microphone", "Camera", "Speakers"};
++  std::array<unsigned, 3> wanted = {0, 0, 0};
 +  for (int k = 0; k < 3; ++k) {
 +    if (!base::StringToUint(counts[k], &wanted[k]) || wanted[k] > 4) {
 +      return;
@@ -117,7 +120,7 @@ index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce2
 +    for (unsigned i = have; i < wanted[k]; ++i) {
 +      const String id = AzwahMediaDeviceId(seed, origin, k, i, "id");
 +      const String group = AzwahMediaDeviceId(seed, origin, k, i, "group");
-+      const String label = has_labels ? String(labels[k]) : String();
++      const String label = has_labels ? String::FromUtf8(base::as_byte_span(labels[k])) : String();
 +      if (kinds[k] == mojom::blink::MediaDeviceType::kMediaAudioOutput) {
 +        masked.push_back(MakeGarbageCollected<MediaDeviceInfo>(
 +            id, label, group, kinds[k]));
@@ -135,7 +138,7 @@ index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce2
  void MediaDevices::DevicesEnumerated(
      ScriptPromiseResolverWithTracker<EnumerateDevicesResult,
                                       IDLSequence<MediaDeviceInfo>>*
-@@ -1495,6 +1586,9 @@ void MediaDevices::DevicesEnumerated(
+@@ -1495,6 +1589,9 @@ void MediaDevices::DevicesEnumerated(
      }
    }
  
