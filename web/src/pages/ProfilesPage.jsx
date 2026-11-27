@@ -11,6 +11,7 @@ import { Icon } from '../components/Icon.jsx';
 import { ProfileRow } from '../components/ProfileRow.jsx';
 import { RowActionsMenu } from '../components/RowActionsMenu.jsx';
 import { ProfileDetailsDialog } from '../components/ProfileDetailsDialog.jsx';
+import { BulkCreateDialog } from '../components/BulkCreateDialog.jsx';
 import { useSelection } from '../hooks/useSelection.js';
 import { useElementWidth } from '../hooks/useElementWidth.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
@@ -225,6 +226,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
         <RowActionsMenu label="More ways to create" icon="down" buttonClassName="primary split-caret" items={[
           { key: 'new', label: 'New profile', icon: 'plus', onSelect: newProfile },
           { key: 'quick', label: 'Quick profile', icon: 'bolt', onSelect: quickProfile },
+          { key: 'bulk-create', label: 'Bulk create from proxy list…', icon: 'plus', onSelect: () => setDialog({ kind: 'bulk-create' }) },
           { key: 'import', label: 'Import profiles (CSV / JSON)', icon: 'upload', onSelect: () => setDialog({ kind: 'import' }) },
         ]} />
       </div>
@@ -323,6 +325,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     {dialog?.kind === 'proxy-switch' && <ProfileProxySwitch profile={dialog.data} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'automation' && <ProfileAutomationDialog profile={dialog.data} onClose={() => setDialog(null)} />}
     {dialog?.kind === 'sync' && <SyncDialog profiles={selected.filter(p => p.running)} onClose={() => setDialog(null)} onStarted={() => { loadSync(); toast('Synchronization started', 'success'); }} />}
+    {dialog?.kind === 'bulk-create' && <BulkCreateDialog folders={meta.folders} onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'import' && <ImportProfiles onClose={() => setDialog(null)} onDone={() => { load(); reloadMeta(); }} />}
     {dialog?.kind === 'template' && <SaveTemplateDialog profile={dialog.data} onClose={() => setDialog(null)} toast={toast} />}
   </>;

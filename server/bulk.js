@@ -90,3 +90,19 @@ export function profilesFromCsv(text) {
     return profile;
   });
 }
+
+// Bulk create from a pasted proxy list: one profile per line. Shared by the server action and the dialog preview, so the
+// names and duplicate rules the user sees are the ones that are applied.
+export const BULK_PROXY_LINES_MAX = 100;
+export function formatBulkName(pattern, n) {
+  const text = String(pattern ?? '').trim().slice(0, 80) || 'Profile';
+  return (text.includes('{n}') ? text.replaceAll('{n}', String(n)) : `${text} ${n}`).slice(0, 200);
+}
+// Two lines are the same proxy when type, host, port and username match (the password does not make it a different exit).
+export const proxyDuplicateKey = p => [p.type, String(p.host).toLowerCase(), Number(p.port), p.username || ''].join('|');
+export function cleanProxyLines(lines) {
+  if (!Array.isArray(lines) || lines.some(line => typeof line !== 'string')) throw fail('proxyLines must be an array of strings');
+  const kept = lines.map(line => line.trim()).filter(Boolean);
+  if (!kept.length || kept.length > BULK_PROXY_LINES_MAX) throw fail(`proxyLines must contain 1 to ${BULK_PROXY_LINES_MAX} non-empty lines`);
+  return kept;
+}

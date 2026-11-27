@@ -93,7 +93,7 @@ import {
 import { automationDriversReport, installAutomationDrivers } from './automation-drivers.js';
 import { readSavedTabs } from './tab-restore.js';
 import { createBackup, createEncryptedBackup, createProfileBackup, inspectBackup, restoreBackup } from './backup.js';
-import { boundedConcurrency, mapPool, profilesFromCsv } from './bulk.js';
+import { boundedConcurrency, mapPool, profilesFromCsv, cleanProxyLines, formatBulkName, proxyDuplicateKey } from './bulk.js';
 import { dashboardStats } from './dashboard.js';
 import { createView, deleteView, listViews, queryProfiles, updateView } from './profile-table.js';
 import { createProfileFolder, deleteProfileFolder, listProfileFolders, moveProfileFolder } from './profile-folders.js';
@@ -645,6 +645,46 @@ function bulkFromTemplate(body, onItem) {
     }
   });
 }
+// One new profile per proxy line, each with its own proxy (found or created in the proxy library). Lines that do not
+// parse, repeat an earlier proxy, or fail validation are reported by line number and create nothing; the rest are created.
+// Errors never echo the line, because it can contain a password.
+function bulkCreateWithProxies(body, onItem) {
+  const lines = cleanProxyLines(body.proxyLines);
+  const defaultType = ['http', 'https', 'socks5'].includes(body.defaultType) ? body.defaultType : 'http';
+  const startAt = body.startAt == null ? 1 : Number(body.startAt);
+  if (!Number.isInteger(startAt) || startAt < 1 || startAt > 99999) throw err(400, 'startAt must be an integer from 1 to 99999');
+  const tags = Array.isArray(body.tags) ? body.tags : typeof body.tags === 'string' ? body.tags.split(',') : [];
+  const folder = String(body.folder ?? '').trim();
+  const seen = new Set();
+  return lines.map((line, index) => {
+    const report = result => { if (onItem) onItem(result); return result; };
+    try {
+      let parsed;
+      try { parsed = parseProxyLine(line, defaultType); }
+      catch (error) { throw Object.assign(err(400, `Line ${index + 1}: ${error.message}`), { code: 'INVALID_PROXY_LINE' }); }
+      const key = proxyDuplicateKey(parsed);
+      if (seen.has(key)) throw Object.assign(err(409, `Line ${index + 1}: same proxy as an earlier line`), { code: 'DUPLICATE_PROXY_LINE' });
+      seen.add(key);
+      const name = formatBulkName(body.namePattern, startAt + index);
+      const proxy = { type: parsed.type, host: parsed.host, port: Number(parsed.port), username: parsed.username, password: parsed.password };
+      let id;
+      if (body.templateId) {
+        id = applyTemplate(body.templateId, {
+          name,
+          insertFn: v => insert(validate(withoutMacLabel({ ...v, tags: [...new Set([...(v.tags || []), ...tags])], ...(folder ? { folder } : {}), proxyId: resolveInlineProxy(proxy) }))),
+          getTemplateSnapshot: row => JSON.parse(row.snapshot_json),
+        });
+      } else {
+        const request = { name, tags, folder, proxy };
+        if (body.protection === 'off') request.advancedSettings = { experimental: presetSettings('off') };
+        id = insert(validate(request));
+      }
+      return report({ index, ok: true, profile: publicP(get(id)) });
+    } catch (error) {
+      return report({ index, ok: false, ...errorBody(error) });
+    }
+  });
+}
 function bulkImport(body, onItem) {
   const items = body.format === 'csv' ? profilesFromCsv(body.csv) : body.format === 'json' || Array.isArray(body.profiles) ? body.profiles : null;
   if (!Array.isArray(items)) throw err(400, 'format must be csv or json');
@@ -691,13 +731,16 @@ function bulkPlan(body) {
     if (!Array.isArray(items) || !items.length || items.length > 100) throw err(400, 'profiles must contain 1 to 100 items');
     return { action, total: items.length };
   }
+  if (action === 'createWithProxies') {
+    return { action, total: cleanProxyLines(body.proxyLines).length };
+  }
   if (action === 'fromTemplate') {
     const count = Number(body.count);
     if (!body.templateId || typeof body.templateId !== 'string') throw err(400, 'templateId is required');
     if (!Number.isInteger(count) || count < 1 || count > 50) throw err(400, 'count must be an integer from 1 to 50');
     return { action, total: count };
   }
-  throw err(400, 'action must be launch, stop, assign, import, delete, clone, or fromTemplate');
+  throw err(400, 'action must be launch, stop, assign, import, delete, clone, fromTemplate, or createWithProxies');
 }
 function startBulkJob(body, allowOverride) {
   const plan = bulkPlan(body);
@@ -711,6 +754,7 @@ function startBulkJob(body, allowOverride) {
       : plan.action === 'clone' ? bulkCloneSettings(body, onItem)
       : plan.action === 'import' ? bulkImport(body, onItem)
       : plan.action === 'fromTemplate' ? bulkFromTemplate(body, onItem)
+      : plan.action === 'createWithProxies' ? bulkCreateWithProxies(body, onItem)
       : bulkDelete(body, onItem);
   } catch (error) {
     finishJob(jobId, error.message || 'failed');
