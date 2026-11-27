@@ -68,7 +68,10 @@ const PAGE = `<!doctype html><title>azwah worker probe</title><script>${PROBE}
 })();
 </script>`;
 
-const KEYS = ['cores', 'memory', 'ua', 'uaPlatformVersion', 'brands', 'tz', 'languages', 'imageData', 'blob', 'fonts', 'renderer', 'vendor', 'readback', 'gpuVendor'];
+// Compared worker-to-page. Fonts are NOT here: in an unprotected profile, shared and service workers already report some
+// installed families (Arial, Arial Narrow) differently from the page (live run 46073393598, control profile), so fonts are
+// judged against the control of the same worker type below.
+const KEYS = ['cores', 'memory', 'ua', 'uaPlatformVersion', 'brands', 'tz', 'languages', 'imageData', 'blob', 'renderer', 'vendor', 'readback', 'gpuVendor'];
 
 test('values in dedicated, shared and service workers match the page, and canvas export is protected in workers', { timeout: 600_000 }, async () => {
   assert.equal(process.platform, 'win32');
@@ -128,6 +131,20 @@ test('values in dedicated, shared and service workers match the page, and canvas
     }
     console.log('# worker leaks: ' + JSON.stringify(leaks));
     assert.deepEqual(leaks, [], 'a worker must report what the page reports');
+    // 2b. Fonts: what protection hides on the page must be hidden in every worker type, and what it keeps must stay, judged
+    // against the unprotected profile of the SAME worker type (so stock quirks of that worker type are not blamed on protection).
+    const fontsOf = r => JSON.parse(r.fonts);
+    const fontProblems = [];
+    for (const t of types) {
+      const control_t = fontsOf(control[t]), page = fontsOf(prot.main), prot_t = fontsOf(prot[t]);
+      for (const family of Object.keys(control_t)) {
+        if (!control_t[family]) continue;                        // not installed (or not measurable) in this worker type: no claim
+        if (!page[family] && prot_t[family]) fontProblems.push(`${t}: ${family} is hidden on the page but visible in the worker`);
+        if (page[family] && !prot_t[family]) fontProblems.push(`${t}: ${family} is available on the page but hidden in the worker`);
+      }
+    }
+    console.log('# worker font problems: ' + JSON.stringify(fontProblems));
+    assert.deepEqual(fontProblems, [], 'protection must treat fonts the same in workers as on the page');
     // 3. The identity itself applies in workers.
     for (const t of types) { assert.equal(prot[t].cores, expected.hardwareConcurrency, `${t} cores`); assert.equal(prot[t].memory ?? null, prot.main.memory ?? null, `${t} memory`); }
     // 4. Canvas protection reaches workers: getImageData and convertToBlob differ from the unprotected profile.
