@@ -37,7 +37,7 @@ async function azwahProbe() {
       gl.clearColor(0.2, 0.5, 0.7, 1); gl.clear(gl.COLOR_BUFFER_BIT); const px = new Uint8Array(32 * 32 * 4);
       gl.readPixels(0, 0, 32, 32, gl.RGBA, gl.UNSIGNED_BYTE, px); out.readback = await digest(Array.from(px).join(',')); }
   } catch {}
-  try { if (navigator.gpu) { const ad = await navigator.gpu.requestAdapter(); out.gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
+  try { if (navigator.gpu) { const ad = await Promise.race([navigator.gpu.requestAdapter(), new Promise(r => setTimeout(() => r(null), 5000))]); out.gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
   return out;
 }`;
 const WORKER_JS = PROBE + `
@@ -54,12 +54,16 @@ const PAGE = `<!doctype html><title>azwah worker probe</title><script>${PROBE}
 (async () => {
   const q = new URLSearchParams(location.search);
   const ask = (target, post) => new Promise(resolve => { const t = setTimeout(() => resolve({ error: 'timeout' }), 20000); const done = v => { clearTimeout(t); resolve(v); }; post(done); });
-  const result = { site: location.hostname, main: await azwahProbe() };
+  const result = { site: location.hostname };
+  // If anything below never settles, report what exists after 70 s instead of staying silent.
+  const watchdog = setTimeout(() => { result.watchdog = true; fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify(result) }); }, 70000);
+  result.main = await azwahProbe();
   try { const w = new Worker('/w.js'); result.dedicated = await ask(w, done => { w.onmessage = e => done(e.data); w.onerror = e => done({ error: String(e.message) }); w.postMessage(1); }); w.terminate(); } catch (e) { result.dedicated = { error: String(e) }; }
   try { const w = new SharedWorker('/w.js'); result.shared = await ask(w, done => { w.port.onmessage = e => done(e.data); w.onerror = e => done({ error: String(e.message) }); w.port.start(); w.port.postMessage(1); }); } catch (e) { result.shared = { error: String(e) }; }
   try { const reg = await navigator.serviceWorker.register('/w.js', { scope: '/' }); await navigator.serviceWorker.ready;
     const sw = reg.active || reg.waiting || reg.installing;
     result.service = await ask(sw, done => { const ch = new MessageChannel(); ch.port1.onmessage = e => done(e.data); sw.postMessage(1, [ch.port2]); }); await reg.unregister(); } catch (e) { result.service = { error: String(e) }; }
+  clearTimeout(watchdog);
   await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify(result) });
 })();
 </script>`;
@@ -100,6 +104,7 @@ test('values in dedicated, shared and service workers match the page, and canvas
     while (!report && Date.now() < deadline) await new Promise(r => setTimeout(r, 1000));
     await api('POST', `/profiles/${profileId}/stop`, null, 200);
     assert.ok(report, 'the probe page reported');
+    assert.ok(!report.watchdog, 'the probe page hit its 70 s watchdog; partial result: ' + JSON.stringify(report));
     return report;
   };
   try {

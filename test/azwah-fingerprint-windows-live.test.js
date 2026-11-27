@@ -51,23 +51,28 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
   let hints = null;
   try { if (navigator.userAgentData) { const h = await navigator.userAgentData.getHighEntropyValues(['platformVersion']);
     hints = { platformVersion: h.platformVersion, brands: navigator.userAgentData.brands.map(b => b.brand).sort() }; } } catch {}
-  let gpuVendor = null; try { if (navigator.gpu) { const ad = await navigator.gpu.requestAdapter(); gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
+  // Every call that can wait on a device or the network is time-bounded, and a watchdog always reports what exists, so a hang
+  // shows up as data (a timeout marker) instead of a probe page that never answers (run 46022378939 got zero reports).
+  const within = (p, ms, fallback) => Promise.race([p, new Promise(r => setTimeout(() => r(fallback), ms))]);
   const q = new URLSearchParams(location.search);
+  const reportTo = body => fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify(body) });
+  const watchdog = setTimeout(() => { reportTo({ site: location.hostname, step: q.get('step'), watchdog: true }).finally(() => { const n = q.get('next'); if (n) location.href = n; }); }, 45000);
+  let gpuVendor = null; try { if (navigator.gpu) { const ad = await within(navigator.gpu.requestAdapter(), 5000, null); gpuVendor = ad ? (ad.info?.vendor ?? null) : null; } } catch {}
   let media = null;
-  try { const list = await navigator.mediaDevices.enumerateDevices(); media = { counts: [list.filter(d => d.kind === 'audioinput').length,
-    list.filter(d => d.kind === 'videoinput').length, list.filter(d => d.kind === 'audiooutput').length], ids: list.map(d => d.kind + ':' + d.deviceId + ':' + d.groupId) }; } catch {}
+  try { media = await within(navigator.mediaDevices.enumerateDevices().then(list => ({ counts: [list.filter(d => d.kind === 'audioinput').length,
+    list.filter(d => d.kind === 'videoinput').length, list.filter(d => d.kind === 'audiooutput').length], ids: list.map(d => d.kind + ':' + d.deviceId + ':' + d.groupId) })), 3500, { timeout: true }); } catch (e) { media = { error: String(e) }; }
   let ice = null;
   if (q.get('stun')) {
     try {
       const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:' + q.get('stun') }] });
       const found = []; pc.createDataChannel('x');
       const done = new Promise(res => { pc.onicecandidate = e => { if (e.candidate) found.push(e.candidate.candidate); else res(); }; setTimeout(res, 4000); });
-      await pc.setLocalDescription(await pc.createOffer()); await done;
-      ice = { candidates: found, sdpSrflx: pc.localDescription.sdp.split(/\r?\n/).filter(l => l.includes(' typ srflx')) }; pc.close();
+      const finished = await within((async () => { await pc.setLocalDescription(await pc.createOffer()); await done; return true; })(), 7000, false);
+      ice = finished ? { candidates: found, sdpSrflx: pc.localDescription.sdp.split(/\r?\n/).filter(l => l.includes(' typ srflx')) } : { timeout: true, candidates: found }; pc.close();
     } catch (e) { ice = { error: String(e) }; }
   }
-  await fetch('http://127.0.0.1:' + q.get('report') + '/report', { method: 'POST', mode: 'no-cors', body: JSON.stringify({
-    site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints, media, ice }) });
+  clearTimeout(watchdog);
+  await reportTo({ site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints, media, ice });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -133,6 +138,7 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
     while (reports.length < 3 && Date.now() < deadline) await new Promise(r => { waiting = r; setTimeout(r, 1000); });
     await api('POST', `/profiles/${profileId}/stop`, null, 200);
     assert.equal(reports.length, 3, 'three probe reports: ' + JSON.stringify(reports));
+    assert.ok(!reports.some(r => r.watchdog), 'a probe page hit its 45 s watchdog (something in the page never settled): ' + JSON.stringify(reports.map(r => ({ step: r.step, watchdog: r.watchdog }))));
     return Object.fromEntries(reports.map(r => [r.step, r]));
   };
   try {
@@ -218,6 +224,7 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       const wantCounts = expected.mediaDevices.split(',').map(Number);
       console.log(`# media devices: real counts=${JSON.stringify(base.a1.media?.counts)} profile counts=${JSON.stringify(run1.a1.media?.counts)} expected=${JSON.stringify(wantCounts)}`);
       assert.ok(run1.a1.media, 'enumerateDevices measured');
+      assert.ok(!run1.a1.media.timeout, 'enumerateDevices did not settle within 3.5 s in the protected profile');
       assert.deepEqual(run1.a1.media.counts, wantCounts, 'media device counts follow the profile');
       assert.deepEqual(run1.a1.media.ids, run1.a2.media.ids, 'device identifiers are stable within an origin');
       assert.deepEqual(run1.a1.media.ids, run2.a1.media.ids, 'device identifiers are stable across launches of the profile');
