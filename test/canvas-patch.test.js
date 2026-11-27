@@ -169,3 +169,17 @@ test('native identity: media counts are stable per profile, valid, and passed wi
   assert.match(launcher, /mediaWebrtcPatchSha256/);
   assert.match(launcher, /--azwah-webrtc-public-ip=\$\{location\.ip\}/);
 });
+
+test('workers patch: two files, worker site string equals the window schemeful site, convertToBlob is protected', () => {
+  const w = fs.readFileSync(new URL('../native-chromium/workers.patch', import.meta.url), 'utf8');
+  assert.doesNotMatch(w, /\r/);
+  const files = [...w.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'third_party/blink/renderer/core/html/canvas/html_canvas_element.cc',
+    'third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc',
+  ]);
+  const added = w.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++')).join('\n');
+  assert.match(added, /origin->Protocol\(\) \+ "\:\/\/" \+ host/);
+  assert.match(added, /HTMLCanvasElement::AzwahApplyCanvasNoise\(\s*\+?\s*std::move\(image_bitmap\),/);
+  assert.match(added, /html_canvas_element\.h/);
+});

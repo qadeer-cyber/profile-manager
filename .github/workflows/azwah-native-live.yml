@@ -68,6 +68,7 @@ jobs:
           if ($m.gpuFontsPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_GPU_FONTS=1' | Add-Content $env:GITHUB_ENV }
           if ($m.rectsUaPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_RECTS_UA=1' | Add-Content $env:GITHUB_ENV }
           if ($m.mediaWebrtcPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.workersPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_WORKERS=1' | Add-Content $env:GITHUB_ENV }
       - name: Install dependencies and proxy-location data
         shell: pwsh
         run: |
@@ -95,4 +96,12 @@ jobs:
           AZWAH_NATIVE_TEST_EXTRA_ARGS: '--use-angle=swiftshader --enable-unsafe-swiftshader'
         run: |
           node --test --test-force-exit test/azwah-fingerprint-windows-live.test.js
+          exit $LASTEXITCODE
+      - name: Worker coverage (dedicated, shared and service workers against the page)
+        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
+        shell: pwsh
+        env:
+          AZWAH_NATIVE_TEST_EXTRA_ARGS: '--use-angle=swiftshader --enable-unsafe-swiftshader'
+        run: |
+          node --test --test-force-exit test/azwah-worker-windows-live.test.js
           exit $LASTEXITCODE

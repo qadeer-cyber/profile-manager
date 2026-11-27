@@ -1,0 +1,46 @@
+diff --git a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+index 2db377cbd8172ec4760e09ae54299b3b16b2eaa8..b650e9efbdfd510988c38715bbb30115d75507bc 100644
+--- a/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
++++ b/third_party/blink/renderer/core/html/canvas/html_canvas_element.cc
+@@ -2346,10 +2346,13 @@ uint64_t HTMLCanvasElement::AzwahCanvasNoiseSeed(
+   if (const auto* window = DynamicTo<LocalDOMWindow>(context)) {
+     site = window->GetStorageKey().GetTopLevelSite().Serialize();
+   } else if (const SecurityOrigin* origin = context->GetSecurityOrigin()) {
+-    site = origin->RegistrableDomain();
+-    if (site.IsNull() || !site.length()) {
+-      site = origin->ToString();
++    // Same text as LocalDOMWindow's schemeful top-level site (scheme and registrable domain, or host, without a port),
++    // so a worker and its page draw the same seeded change.
++    String host = origin->RegistrableDomain();
++    if (host.IsNull() || !host.length()) {
++      host = origin->Host();
+     }
++    site = origin->Protocol() + "://" + host;
+   }
+   const std::string material = secret + "\n" + site.Utf8();
+   const base::SHA1Digest digest = base::SHA1Hash(base::as_byte_span(material));
+diff --git a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+index c312b115c9aede38d396dec29ff419d29b459542..c7338fea574e06cb581a3323415071e9f9065059 100644
+--- a/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
++++ b/third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.cc
+@@ -29,6 +29,7 @@
+ #include "third_party/blink/renderer/core/event_type_names.h"
+ #include "third_party/blink/renderer/core/execution_context/agent.h"
+ #include "third_party/blink/renderer/core/execution_context/execution_context.h"
++#include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
+ #include "third_party/blink/renderer/core/fileapi/blob.h"
+ #include "third_party/blink/renderer/core/frame/local_dom_window.h"
+ #include "third_party/blink/renderer/core/frame/local_frame.h"
+@@ -569,6 +570,12 @@ ScriptPromise<Blob> OffscreenCanvas::convertToBlob(
+ 
+   base::TimeTicks start_time = base::TimeTicks::Now();
+   scoped_refptr<StaticBitmapImage> image_bitmap = context_->GetImage();
++  if (image_bitmap) {
++    // AZWAH: the same seeded readback change as HTMLCanvasElement::toBlob (no change when the switch is absent).
++    image_bitmap = HTMLCanvasElement::AzwahApplyCanvasNoise(
++        std::move(image_bitmap),
++        HTMLCanvasElement::AzwahCanvasNoiseSeed(GetTopExecutionContext()));
++  }
+   if (image_bitmap) {
+     auto* resolver = MakeGarbageCollected<ScriptPromiseResolver<Blob>>(
+         script_state, exception_state.GetContext());
