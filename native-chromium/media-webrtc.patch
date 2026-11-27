@@ -1,0 +1,300 @@
+diff --git a/content/browser/renderer_host/render_process_host_impl.cc b/content/browser/renderer_host/render_process_host_impl.cc
+index 0baf8177a7066b683415859019cb362530f922e5..f4dd6557837604c62d377d23e9aff82316353cb5 100644
+--- a/content/browser/renderer_host/render_process_host_impl.cc
++++ b/content/browser/renderer_host/render_process_host_impl.cc
+@@ -3926,6 +3926,10 @@ void RenderProcessHostImpl::PropagateBrowserCommandLineToRenderer(
+       "azwah-rects-seed",
+       "azwah-webgpu-architecture",
+       "azwah-webgpu-vendor",
++      // AZWAH: media device counts and WebRTC public address.
++      "azwah-media-devices",
++      "azwah-media-seed",
++      "azwah-webrtc-public-ip",
+ #if BUILDFLAG(IS_LINUX) && !BUILDFLAG(IS_CHROMEOS)
+       switches::kDisableDevShmUsage,
+ #endif
+diff --git a/third_party/blink/renderer/modules/mediastream/media_devices.cc b/third_party/blink/renderer/modules/mediastream/media_devices.cc
+index 55281de4893b7de7c8067fa0f6f9195508336d7d..66e8f51158343777146ee2b10f385ce283c678ec 100644
+--- a/third_party/blink/renderer/modules/mediastream/media_devices.cc
++++ b/third_party/blink/renderer/modules/mediastream/media_devices.cc
+@@ -5,12 +5,18 @@
+ #include "third_party/blink/renderer/modules/mediastream/media_devices.h"
+ 
+ #include <algorithm>
++#include <string>
+ #include <utility>
++#include <vector>
+ 
++#include "base/command_line.h"
++#include "base/containers/span.h"
+ #include "base/feature_list.h"
+ #include "base/metrics/histogram_functions.h"
+ #include "base/notreached.h"
+ #include "base/strings/strcat.h"
++#include "base/strings/string_number_conversions.h"
++#include "base/strings/string_split.h"
+ #include "base/strings/stringprintf.h"
+ #include "base/uuid.h"
+ #include "build/build_config.h"
+@@ -62,6 +68,7 @@
+ #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
+ #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+ #include "third_party/blink/renderer/platform/bindings/script_state.h"
++#include "third_party/blink/renderer/platform/crypto.h"
+ #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+ #include "third_party/blink/renderer/platform/mediastream/webrtc_uma_histograms.h"
+ #include "third_party/blink/renderer/platform/region_capture_crop_id.h"
+@@ -1409,6 +1416,90 @@ void MediaDevices::StopObserving() {
+   receiver_.reset();
+ }
+ 
++namespace {
++
++// AZWAH: per-profile media device counts. --azwah-media-devices=<microphones>,<cameras>,<speakers> (each 0 to 4) makes
++// enumerateDevices() report that many devices of each kind, so a profile's counts need not equal this computer's. Extra
++// real devices are hidden. Missing devices are listed with stable per-origin identifiers and no label; they cannot be
++// opened, which is how an unplugged device behaves. A malformed switch leaves the real list untouched.
++String AzwahMediaDeviceId(const std::string& seed,
++                          const String& origin,
++                          int kind,
++                          unsigned index,
++                          const char* purpose) {
++  std::string input = seed + "|" + origin.Utf8() + "|" +
++                      std::to_string(kind) + "|" + std::to_string(index) +
++                      "|" + purpose;
++  DigestValue digest;
++  if (!ComputeDigest(HashAlgorithm::kSha256,
++                     base::as_byte_span(input), digest)) {
++    return String();
++  }
++  static const char kHex[] = "0123456789abcdef";
++  StringBuilder id;
++  for (uint8_t byte : digest) {
++    id.Append(kHex[byte >> 4]);
++    id.Append(kHex[byte & 15]);
++  }
++  return id.ToString();
++}
++
++void AzwahMaskMediaDevices(MediaDeviceInfoVector& devices,
++                           const String& origin) {
++  const base::CommandLine* command_line =
++      base::CommandLine::ForCurrentProcess();
++  const std::vector<std::string> counts = base::SplitString(
++      command_line->GetSwitchValueASCII("azwah-media-devices"), ",",
++      base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
++  if (counts.size() != 3) {
++    return;
++  }
++  const std::string seed =
++      command_line->GetSwitchValueASCII("azwah-media-seed");
++  // Chrome lists microphones, then cameras, then speakers.
++  const mojom::blink::MediaDeviceType kinds[3] = {
++      mojom::blink::MediaDeviceType::kMediaAudioInput,
++      mojom::blink::MediaDeviceType::kMediaVideoInput,
++      mojom::blink::MediaDeviceType::kMediaAudioOutput};
++  const char* const labels[3] = {"Microphone", "Camera", "Speakers"};
++  unsigned wanted[3];
++  for (int k = 0; k < 3; ++k) {
++    if (!base::StringToUint(counts[k], &wanted[k]) || wanted[k] > 4) {
++      return;
++    }
++  }
++  MediaDeviceInfoVector masked;
++  for (int k = 0; k < 3; ++k) {
++    unsigned have = 0;
++    bool has_labels = false;
++    for (const auto& device : devices) {
++      if (device->DeviceType() != kinds[k]) {
++        continue;
++      }
++      has_labels = has_labels || !device->label().empty();
++      if (have < wanted[k]) {
++        masked.push_back(device);
++      }
++      ++have;
++    }
++    for (unsigned i = have; i < wanted[k]; ++i) {
++      const String id = AzwahMediaDeviceId(seed, origin, k, i, "id");
++      const String group = AzwahMediaDeviceId(seed, origin, k, i, "group");
++      const String label = has_labels ? String(labels[k]) : String();
++      if (kinds[k] == mojom::blink::MediaDeviceType::kMediaAudioOutput) {
++        masked.push_back(MakeGarbageCollected<MediaDeviceInfo>(
++            id, label, group, kinds[k]));
++      } else {
++        masked.push_back(MakeGarbageCollected<InputDeviceInfo>(
++            id, label, group, kinds[k]));
++      }
++    }
++  }
++  devices = std::move(masked);
++}
++
++}  // namespace
++
+ void MediaDevices::DevicesEnumerated(
+     ScriptPromiseResolverWithTracker<EnumerateDevicesResult,
+                                      IDLSequence<MediaDeviceInfo>>*
+@@ -1495,6 +1586,9 @@ void MediaDevices::DevicesEnumerated(
+     }
+   }
+ 
++  AzwahMaskMediaDevices(
++      media_devices,
++      ExecutionContext::From(script_state)->GetSecurityOrigin()->ToString());
+   ReportCompletedEnumerateDevices(result_contains_nonempty_input_device_ids);
+   result_tracker->Resolve(media_devices);
+   tracer->End();
+diff --git a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.cc b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.cc
+index f35722a9ab582bb41b3d3231099b8c882e5993c6..5e34534de39909db1f0f296a67bc46f86229dddd 100644
+--- a/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.cc
++++ b/third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.cc
+@@ -18,6 +18,7 @@
+ 
+ #include "base/check.h"
+ #include "base/check_op.h"
++#include "base/command_line.h"
+ #include "base/containers/span.h"
+ #include "base/feature_list.h"
+ #include "base/functional/callback_forward.h"
+@@ -29,6 +30,7 @@
+ #include "base/metrics/histogram_macros.h"
+ #include "base/notreached.h"
+ #include "base/numerics/safe_conversions.h"
++#include "base/strings/string_split.h"
+ #include "base/synchronization/waitable_event.h"
+ #include "base/task/sequenced_task_runner.h"
+ #include "base/task/single_thread_task_runner.h"
+@@ -119,6 +121,78 @@ namespace {
+ // so treat as append-only.
+ enum class RtcpMux { kDisabled, kEnabled, kNoMedia, kMax };
+ 
++// AZWAH: public address shown in this profile's server-reflexive ICE candidates. --azwah-webrtc-public-ip is the
++// verified exit address of the profile's proxy (IPv4 or IPv6), set by AZWAH only after it observed that exit. Without
++// the switch candidates are untouched. Only "typ srflx" candidates are rewritten, and only when the address family
++// matches: the connection address becomes the proxy exit and the related address becomes unspecified, so a page sees the
++// same public address as every other request of the profile. Host and relay candidates are not altered. This changes
++// what script and the SDP report, not which addresses the network stack uses; AZWAH keeps non-proxied UDP disabled.
++std::string AzwahMaskCandidateLine(const std::string& line,
++                                   const std::string& public_ip) {
++  if (line.find(" typ srflx") == std::string::npos ||
++      (line.rfind("a=candidate:", 0) != 0 &&
++       line.rfind("candidate:", 0) != 0)) {
++    return line;
++  }
++  std::vector<std::string> tokens = base::SplitString(
++      line, " ", base::KEEP_WHITESPACE, base::SPLIT_WANT_ALL);
++  if (tokens.size() < 8) {
++    return line;
++  }
++  const bool public_is_v6 = public_ip.find(':') != std::string::npos;
++  if ((tokens[4].find(':') != std::string::npos) != public_is_v6) {
++    return line;
++  }
++  tokens[4] = public_ip;
++  for (size_t i = 8; i + 1 < tokens.size(); ++i) {
++    if (tokens[i] != "raddr") {
++      continue;
++    }
++    tokens[i + 1] = public_is_v6 ? "::" : "0.0.0.0";
++    if (i + 3 < tokens.size() && tokens[i + 2] == "rport") {
++      tokens[i + 3] = "0";
++    }
++  }
++  std::string masked;
++  for (size_t i = 0; i < tokens.size(); ++i) {
++    if (i) {
++      masked += ' ';
++    }
++    masked += tokens[i];
++  }
++  return masked;
++}
++
++std::string AzwahMaskLocalSdp(const std::string& sdp) {
++  const std::string public_ip =
++      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
++          "azwah-webrtc-public-ip");
++  if (public_ip.empty() || sdp.find(" typ srflx") == std::string::npos) {
++    return sdp;
++  }
++  std::string result;
++  size_t start = 0;
++  while (start <= sdp.size()) {
++    size_t end = sdp.find('\n', start);
++    const bool last = end == std::string::npos;
++    std::string line = sdp.substr(start, last ? std::string::npos : end - start);
++    const bool has_cr = !line.empty() && line.back() == '\r';
++    if (has_cr) {
++      line.pop_back();
++    }
++    result += AzwahMaskCandidateLine(line, public_ip);
++    if (has_cr) {
++      result += '\r';
++    }
++    if (last) {
++      break;
++    }
++    result += '\n';
++    start = end + 1;
++  }
++  return result;
++}
++
+ RTCSessionDescriptionPlatform* CreateWebKitSessionDescription(
+     const std::string& sdp,
+     const std::string& type) {
+@@ -126,6 +200,22 @@ RTCSessionDescriptionPlatform* CreateWebKitSessionDescription(
+       String::FromUtf8(type), String::FromUtf8(sdp));
+ }
+ 
++// AZWAH: local descriptions (offers, answers and the local side of the current state) pass through the candidate mask.
++RTCSessionDescriptionPlatform* CreateLocalWebKitSessionDescription(
++    const webrtc::SessionDescriptionInterface* native_desc) {
++  if (!native_desc) {
++    LOG(ERROR) << "Native session description is null.";
++    return nullptr;
++  }
++  std::string sdp;
++  if (!native_desc->ToString(&sdp)) {
++    LOG(ERROR) << "Failed to get SDP string of native session description.";
++    return nullptr;
++  }
++  return CreateWebKitSessionDescription(AzwahMaskLocalSdp(sdp),
++                                        native_desc->type());
++}
++
+ RTCSessionDescriptionPlatform* CreateWebKitSessionDescription(
+     const webrtc::SessionDescriptionInterface* native_desc) {
+   if (!native_desc) {
+@@ -209,7 +299,7 @@ class CreateSessionDescriptionRequest
+     }
+ 
+     webkit_request_->RequestSucceeded(
+-        CreateWebKitSessionDescription(desc.get()));
++        CreateLocalWebKitSessionDescription(desc.get()));
+     webkit_request_ = nullptr;
+   }
+   void OnFailure(webrtc::RTCError error) override {
+@@ -570,7 +660,7 @@ class RTCPeerConnectionHandler::Observer
+ 
+   void OnIceCandidate(const IceCandidate* candidate) override {
+     DCHECK(native_peer_connection_);
+-    std::string sdp = candidate->ToString();
++    std::string sdp = AzwahMaskLocalSdp(candidate->ToString());
+     DCHECK(!sdp.empty());
+     // The generated candidate may have been added to the pending or current
+     // local description, take a snapshot and surface them to the main thread.
+@@ -1829,10 +1919,10 @@ void RTCPeerConnectionHandler::OnSessionDescriptionsUpdated(
+   }
+   client_on_stack->DidChangeSessionDescriptions(
+       pending_local_description
+-          ? CreateWebKitSessionDescription(pending_local_description.get())
++          ? CreateLocalWebKitSessionDescription(pending_local_description.get())
+           : nullptr,
+       current_local_description
+-          ? CreateWebKitSessionDescription(current_local_description.get())
++          ? CreateLocalWebKitSessionDescription(current_local_description.get())
+           : nullptr,
+       pending_remote_description
+           ? CreateWebKitSessionDescription(pending_remote_description.get())

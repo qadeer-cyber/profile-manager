@@ -64,6 +64,7 @@ $identityPatchFile = Join-Path $sourceRoot 'identity.patch'
 $audioScreenPatchFile = Join-Path $sourceRoot 'audio-screen.patch'
 $gpuFontsPatchFile = Join-Path $sourceRoot 'gpu-fonts.patch'
 $rectsUaPatchFile = Join-Path $sourceRoot 'rects-webgl-ua.patch'
+$mediaWebrtcPatchFile = Join-Path $sourceRoot 'media-webrtc.patch'
 if ($AzwahSource) {
     $upstream = Get-Content -LiteralPath (Join-Path $sourceRoot 'upstream.json') -Raw | ConvertFrom-Json
     if ($ChromiumCommit -ne $upstream.revision) {
@@ -233,7 +234,7 @@ try {
         }
         if ($AzwahSource -and $CanvasPatch) {
             # Fingerprint patches, in order (each is written against the source with the previous ones applied).
-            foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile, $rectsUaPatchFile)) {
+            foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile, $rectsUaPatchFile, $mediaWebrtcPatchFile)) {
                 $name = Split-Path -Leaf $fp
                 & $git apply --reverse --check -- $fp 2>$null
                 if ($LASTEXITCODE -eq 0) {
@@ -273,7 +274,7 @@ try {
             if ($CanvasPatch) {
                 $now = [DateTime]::UtcNow
                 $touched = 0
-                foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile, $rectsUaPatchFile)) {
+                foreach ($fp in @($canvasPatchFile, $identityPatchFile, $audioScreenPatchFile, $gpuFontsPatchFile, $rectsUaPatchFile, $mediaWebrtcPatchFile)) {
                     foreach ($match in [regex]::Matches((Get-Content -Raw -LiteralPath $fp), '(?m)^diff --git a/(\S+) b/')) {
                         $path = Join-Path $root ($match.Groups[1].Value.Replace('/', [IO.Path]::DirectorySeparatorChar))
                         if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "Patched file missing: $path" }
@@ -417,6 +418,7 @@ symbol_level = 0
             canvasPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $canvasPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             identityPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $identityPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             rectsUaPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $rectsUaPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+            mediaWebrtcPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $mediaWebrtcPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             gpuFontsPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $gpuFontsPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             audioScreenPatchSha256 = if ($AzwahSource -and $CanvasPatch) { (Get-FileHash -LiteralPath $audioScreenPatchFile -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
             sourcePatchSha256 = if ($AzwahSource) { (Get-FileHash -LiteralPath $sourcePatch -Algorithm SHA256).Hash.ToLowerInvariant() }

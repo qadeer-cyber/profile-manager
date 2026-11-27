@@ -34,6 +34,8 @@ export const WINDOWS_BASE_FONTS = Object.freeze(['arial', 'arial black', 'bahnsc
 export const WINDOWS_OPTIONAL_FONTS = Object.freeze(['agency fb', 'algerian', 'book antiqua', 'bookman old style', 'bodoni mt',
   'broadway', 'calibri light', 'castellar', 'century', 'century gothic', 'garamond', 'gill sans mt', 'harrington',
   'lucida bright', 'lucida handwriting', 'monotype corsiva', 'onyx', 'papyrus', 'perpetua', 'rockwell', 'stencil', 'tw cen mt']);
+// Typical desktop and laptop counts of microphones, cameras and speakers/headphones.
+const MEDIA_COUNTS = Object.freeze(['1,1,1', '1,1,2', '2,1,1', '1,0,1', '2,1,2', '1,1,3'].map(String));
 const GPU_FAMILY = { NVIDIA: ['nvidia', 'turing'], Intel: ['intel', 'gen-12lp'], AMD: ['amd', 'gcn-5'] };
 
 export function nativeIdentityFor(profileId) {
@@ -43,11 +45,14 @@ export function nativeIdentityFor(profileId) {
   const optional = WINDOWS_OPTIONAL_FONTS.filter((_, i) => digest[4 + (i % 24)] & (1 << (i % 8)));
   return { hardwareConcurrency: CORES[digest[1] % CORES.length], deviceMemory: MEMORY[digest[2] % MEMORY.length], webglVendor, webglRenderer,
     screen: SCREENS[digest[3] % SCREENS.length], webgpuVendor: GPU_FAMILY[family][0], webgpuArchitecture: GPU_FAMILY[family][1],
-    fonts: [...WINDOWS_BASE_FONTS, ...optional], platformVersion: PLATFORM_VERSIONS[digest[28] % PLATFORM_VERSIONS.length] };
+    fonts: [...WINDOWS_BASE_FONTS, ...optional], platformVersion: PLATFORM_VERSIONS[digest[28] % PLATFORM_VERSIONS.length],
+    mediaDevices: MEDIA_COUNTS[digest[29] % MEDIA_COUNTS.length] };
 }
 
-export function nativeIdentityArgs(identity, { screen = false, gpuFonts = false, clientHints = false } = {}) {
+export function nativeIdentityArgs(identity, { screen = false, gpuFonts = false, clientHints = false, media = false, mediaSeed = '' } = {}) {
   return [
+    // Media device counts (microphones,cameras,speakers) and the seed of the identifiers of devices that are listed but absent.
+    ...(media ? [`--azwah-media-devices=${identity.mediaDevices}`, `--azwah-media-seed=${mediaSeed}`] : []),
     ...(clientHints ? [`--azwah-ua-platform-version=${identity.platformVersion}`, '--azwah-ua-chrome-brand'] : []),
     ...(gpuFonts ? [`--azwah-font-allowlist=${identity.fonts.join(',')}`, `--azwah-webgpu-vendor=${identity.webgpuVendor}`,
       `--azwah-webgpu-architecture=${identity.webgpuArchitecture}`] : []),

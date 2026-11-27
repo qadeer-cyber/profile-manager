@@ -67,6 +67,7 @@ jobs:
           if ($m.audioScreenPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN=1' | Add-Content $env:GITHUB_ENV }
           if ($m.gpuFontsPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_GPU_FONTS=1' | Add-Content $env:GITHUB_ENV }
           if ($m.rectsUaPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_RECTS_UA=1' | Add-Content $env:GITHUB_ENV }
+          if ($m.mediaWebrtcPatchSha256) { 'AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC=1' | Add-Content $env:GITHUB_ENV }
       - name: Install dependencies and proxy-location data
         shell: pwsh
         run: |

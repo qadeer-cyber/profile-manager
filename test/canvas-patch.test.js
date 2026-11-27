@@ -140,3 +140,32 @@ test('rects-webgl-ua patch: known files, ClientRects scaled, WebGL readback uses
   assert.match(launcher, /if \(canvasProtection && rectsUa\) args\.push\(`--azwah-rects-seed=/);
   assert.match(launcher, /!isPackaged\(\) && process\.env\.AZWAH_NATIVE_TEST_EXTRA_ARGS/, 'test-only switches never in a packaged app');
 });
+
+test('media/WebRTC patch: three known files, only four upstream lines replaced, switches reach renderers', async () => {
+  const media = fs.readFileSync(new URL('../native-chromium/media-webrtc.patch', import.meta.url), 'utf8');
+  assert.doesNotMatch(media, /\r/);
+  const files = [...media.matchAll(/^diff --git a\/(\S+) b\/\1\nindex [0-9a-f]{40}\.\.[0-9a-f]{40} 100644$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/modules/mediastream/media_devices.cc',
+    'third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.cc',
+  ]);
+  const removed = media.split('\n').filter(l => l.startsWith('-') && !l.startsWith('---'));
+  assert.equal(removed.length, 4, 'only the four local-description and candidate call sites are replaced');
+  for (const s of ['azwah-media-devices', 'azwah-media-seed', 'azwah-webrtc-public-ip']) assert.ok(media.includes(`+      "${s}",`), s);
+  const added = media.split('\n').filter(l => l.startsWith('+') && !l.startsWith('+++')).join('\n');
+  assert.doesNotMatch(added, /no-sandbox|NoSandbox|\bbrave\b/i);
+  assert.match(added, /typ srflx/);
+});
+
+test('native identity: media counts are stable per profile, valid, and passed with the seed only when the build has the patch', async () => {
+  const { nativeIdentityFor, nativeIdentityArgs } = await import('../server/browser-runtime/native-identity.js');
+  const a = nativeIdentityFor('profile-a');
+  assert.deepEqual(nativeIdentityFor('profile-a'), a);
+  assert.match(a.mediaDevices, /^[0-4],[0-4],[0-4]$/);
+  assert.ok(!nativeIdentityArgs(a).some(x => x.startsWith('--azwah-media')));
+  const args = nativeIdentityArgs(a, { media: true, mediaSeed: 'ab12' });
+  assert.ok(args.includes(`--azwah-media-devices=${a.mediaDevices}`) && args.includes('--azwah-media-seed=ab12'));
+  assert.match(launcher, /mediaWebrtcPatchSha256/);
+  assert.match(launcher, /--azwah-webrtc-public-ip=\$\{location\.ip\}/);
+});
