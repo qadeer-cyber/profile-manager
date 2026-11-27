@@ -19,22 +19,21 @@ import { Icon } from './components/Icon.jsx';
 import { useTheme } from './hooks/useTheme.js';
 import { crashSummary, refreshesNow } from './lib.js';
 import { shortcutAllowed } from './lib/shortcuts.js';
+import { fleetModel } from './lib/fleet.js';
 
 const SHOW_ADMIN = import.meta.env.VITE_AZWAH_ADMIN === '1';
 
 // The profiles header: one bar split by state, so how much of the fleet is live reads at a glance.
-function FleetBar({ total, running, errors, onShow }) {
-  const idle = Math.max(0, total - running - errors);
-  const pct = n => (total ? (n / total) * 100 : 0) + '%';
+function FleetBar({ total, running, errors, proxyFailed, onShow }) {
+  const model = fleetModel({ total, running, errors, proxyFailed });
   return <div className="fleet" aria-label="Profile summary">
     <div className="fleet-bar" aria-hidden="true">
-      <span className="fleet-run" style={{ width: pct(running) }} />
-      <span className="fleet-err" style={{ width: pct(errors) }} />
+      {model.segments.map(seg => <span key={seg.key} className={'fleet-' + seg.key} style={{ width: seg.pct + '%' }} />)}
     </div>
     <div className="fleet-legend">
-      <button type="button" className="fleet-key run" onClick={() => onShow('running')}><strong>{running}</strong> running</button>
-      <span className="fleet-key idle"><strong>{idle}</strong> idle</span>
-      {errors > 0 && <span className="fleet-key err"><strong>{errors}</strong> stopped with an error</span>}
+      {model.keys.map(k => k.scope
+        ? <button type="button" key={k.key} className={'fleet-key ' + k.key} onClick={() => onShow(k.scope)}><strong>{k.count}</strong> {k.label}</button>
+        : <span key={k.key} className={'fleet-key ' + k.key}><strong>{k.count}</strong> {k.label}</span>)}
       <span className="fleet-key total"><strong>{total}</strong> {total === 1 ? 'profile' : 'profiles'}</span>
     </div>
   </div>;
@@ -177,7 +176,7 @@ export function App() {
       <main className="content" data-shot={page}>
         {page === 'profiles' && <div className="profile-heading">
           <div><h1>Profiles</h1><p>Manage isolated browser sessions and their network settings.</p></div>
-          <FleetBar total={meta.profileCount ?? 0} running={meta.running.length} errors={meta.errorCount ?? 0}
+          <FleetBar total={meta.profileCount ?? 0} running={meta.running.length} errors={meta.errorCount ?? 0} proxyFailed={meta.proxyFailedCount ?? 0}
             onShow={nextScope => showProfiles('__all', nextScope)} />
         </div>}
         {update?.status === 'available' && update.latest.version !== remindedVersion && <div className="notice" role="status">

@@ -3,6 +3,7 @@ import { Icon } from './Icon.jsx';
 import { RowActionsMenu } from './RowActionsMenu.jsx';
 import { crashSummary } from '../lib.js';
 import { healthBadge } from '../lib/profileHealth.js';
+import { proxyTestState } from '../lib/fleet.js';
 import { engineLabel, compactDate, cdpLabel, proxyLabel, proxyEvidenceSummary, proxyVerificationLevel, tabRestoreBadge } from '../lib/profileRow.js';
 
 // One single-line profile row. Every cell is nowrap + ellipsis; long content lives in tooltips and
@@ -11,6 +12,7 @@ export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
   const show = key => columns[key] !== false;
   const engine = engineLabel(p);
   const health = healthBadge(p);
+  const proxyTest = proxyTestState(p);
   const proxy = proxyLabel(p.proxy);
   const tabs = tabRestoreBadge(p.tabRestore, p.running);
   const cdp = cdpLabel(p.cdp);
@@ -23,6 +25,7 @@ export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
     { key: 'edit', label: 'Edit profile', ariaLabel: `Edit profile ${p.name}`, icon: 'edit', onSelect: on.edit },
     { key: 'automation', label: 'Automation (CDP / WebDriver)', ariaLabel: `Automation ${p.name}`, icon: 'bolt', hidden: !p.automationEnabled, onSelect: on.automation },
     { key: 'proxy', label: 'Proxy connection', ariaLabel: `Proxy ${p.name}`, icon: 'proxies', separatorBefore: true, onSelect: on.proxy },
+    { key: 'test-proxy', label: 'Test proxy', ariaLabel: `Test proxy for ${p.name}`, icon: 'proxies', hidden: !p.proxy, disabled: busy, onSelect: on.testProxy },
     { key: 'storage', label: 'Storage', ariaLabel: `Storage ${p.name}`, icon: 'storage', onSelect: on.storage },
     { key: 'export', label: 'Export portable backup (.pmp)', ariaLabel: `Export ${p.name}`, icon: 'download', disabled: busy || p.running, title: p.running ? 'Stop the profile before exporting' : undefined, onSelect: on.export },
     { key: 'clone', label: 'Clone', ariaLabel: `Clone ${p.name}`, icon: 'copy', disabled: busy, onSelect: on.clone },
@@ -44,6 +47,7 @@ export function ProfileRow({ p, st, columns, selected, busy, onToggle, on }) {
       <span className="name" title={p.name}>{p.name}</span>
       {p.isQuick && <span className="row-badge" title="Quick profile">quick</span>}
       {st.showError && <span className="err-text row-error" title={errorTitle}><Icon name="info" size={12} />{crashSummary(p.last_error)}</span>}
+      {proxyTest.state === 'failed' && <span className="row-badge health-warn" data-badge="proxy-failed" title={`The last test of this profile's proxy failed${proxyTest.ageMinutes != null ? ` ${proxyTest.ageMinutes < 1 ? 'just now' : proxyTest.ageMinutes < 60 ? proxyTest.ageMinutes + ' min ago' : Math.round(proxyTest.ageMinutes / 60) + ' h ago'}` : ''}${proxyTest.error ? ': ' + proxyTest.error : ''}. Test it again or assign another proxy.`} aria-label="Proxy failed its last test">Proxy failed</span>}
       {health && <span className="row-badge health-warn" data-badge="health" title={health.title} aria-label={'Profile check: ' + health.title}>Check</span>}
       {p.automationEnabled && !p.running && <span className="row-badge" data-badge="automation" title="Automation enabled" aria-label="Automation enabled">Auto</span>}
       {cdp && <span className="row-badge cdp" title={`Automation endpoint: ${cdp.endpoint}`}>CDP <span className="mono">{cdp.text}</span></span>}

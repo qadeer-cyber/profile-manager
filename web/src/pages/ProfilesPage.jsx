@@ -17,6 +17,7 @@ import { useElementWidth } from '../hooks/useElementWidth.js';
 import { useProxyLibrary } from '../hooks/useProxyLibrary.js';
 import { rowStatus, plural, runAll } from '../lib.js';
 import { assignableLibraryProxies, switchProfileProxy } from '../lib/proxySwitch.js';
+import { SCOPE_STATUS, SCOPE_LABEL } from '../lib/fleet.js';
 
 const COLUMN_DEFS = [['status', 'Status'], ['name', 'Profile name'], ['engine', 'Engine'], ['storage', 'Storage'], ['folder', 'Folder'], ['proxy', 'Proxy'], ['notes', 'Notes'], ['tags', 'Tags'], ['lastused', 'Last used']];
 const DEFAULT_COLUMNS = Object.fromEntries(COLUMN_DEFS.map(([key]) => [key, true]));
@@ -45,7 +46,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   useEffect(() => { if (workspaceFilter !== workspaceId) setWorkspaceId(workspaceFilter || ''); }, [workspaceFilter]);
   useEffect(() => { setPage(1); }, [scope, folder, workspaceId]);
   useEffect(() => { localStorage.setItem('pm.profileTable', JSON.stringify({ columns, pageSize })); }, [columns, pageSize]);
-  const effectiveStatus = scope === 'running' ? 'running' : status;
+  const effectiveStatus = SCOPE_STATUS[scope] || status;
   const serverSort = sort.k === 'lastused' ? 'last_launched_at' : sort.k;
   const load = useCallback(async () => {
     const mine = ++loadGen.current;
@@ -197,6 +198,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
     edit: () => setDialog({ kind: 'edit', data: toForm(p) }),
     automation: () => setDialog({ kind: 'automation', data: p }),
     proxy: () => setDialog({ kind: 'proxy-switch', data: p }),
+    testProxy: () => testProxies([p]),
     storage: () => setDialog({ kind: 'storage', data: p }),
     export: () => setDialog({ kind: 'portable', data: p }),
     clone: () => clone(p),
@@ -210,9 +212,22 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
   // (same accessible names) so the toolbar stays on one line instead of clipping the search field.
   const narrow = cardWidth < 960;
   const restartOne = () => act(one.id, `Restarted ${one.name}`, async () => { await api(`/api/profiles/${one.id}/stop`, { method: 'POST' }); await api(`/api/profiles/${one.id}/launch`, { method: 'POST' }); });
+  // Tests the assigned proxies (each distinct proxy once) and stores the result, so the fleet view shows which failed.
+  const testProxies = async list => {
+    const ids = [...new Set(list.map(x => x.proxyId).filter(Boolean))];
+    if (!ids.length) return toast('The selected profiles have no proxy to test', 'info');
+    setBulkBusy(true);
+    try {
+      const r = await api('/api/proxies/test-batch', { method: 'POST', body: { ids: ids.slice(0, 50) } });
+      const bad = (r.results || []).filter(x => !x.ok || x.status === 'failed').length;
+      toast(bad ? `${bad} of ${plural(r.tested, 'proxy')} failed the test` : `${plural(r.tested, 'proxy')} passed the test`, bad ? 'error' : 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    setBulkBusy(false); load(); reloadMeta();
+  };
   const lowPriorityActions = [
     { key: 'restart', label: 'Restart selected', ariaLabel: 'Restart selected', icon: 'refresh', disabled: !one?.running || bulkBusy, onSelect: restartOne },
     { key: 'proxy', label: 'Proxy for selected', ariaLabel: 'Proxy for selected', icon: 'proxies', disabled: !selected.length || bulkBusy, onSelect: () => setDialog({ kind: 'bulk-proxy' }) },
+    { key: 'test-proxies', label: 'Test proxies of selected', ariaLabel: 'Test proxies of selected', icon: 'proxies', disabled: !selected.some(x => x.proxyId) || bulkBusy, onSelect: () => testProxies(selected) },
     { key: 'export', label: 'Export selected', ariaLabel: 'Export selected', icon: 'download', disabled: !one || one.running, onSelect: () => setDialog({ kind: 'portable', data: one }) },
     { key: 'dup', label: 'Duplicate selected', ariaLabel: 'Duplicate selected', icon: 'copy', disabled: !one || busy[one?.id], onSelect: () => clone(one) },
     { key: 'clone', label: 'Clone selected settings', ariaLabel: 'Clone selected settings', icon: 'templates', disabled: !selected.length || bulkBusy, onSelect: () => serverBulk('Cloned settings for', { action: 'clone', ids: selected.map(p => p.id) }) },
@@ -258,7 +273,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       <button type="button" className="tool" aria-label="Refresh profiles" title="Refresh" onClick={() => { load(); reloadMeta(); }}><Icon name="refresh" size={16} /></button>
     </div>
     {showFilters && <div className="toolbar filters" role="group" aria-label="Filters">
-      <select value={effectiveStatus} disabled={scope === 'running'} onChange={e => { setStatus(e.target.value); setPage(1); }} aria-label="Status filter"><option value="">Any status</option><option value="running">Running</option><option value="stopped">Stopped</option><option value="error">Error</option></select>
+      <select value={effectiveStatus} disabled={Boolean(SCOPE_STATUS[scope])} onChange={e => { setStatus(e.target.value); setPage(1); }} aria-label="Status filter"><option value="">Any status</option><option value="running">Running</option><option value="stopped">Stopped</option><option value="error">Error</option><option value="proxy_failed">Proxy failed its last test</option></select>
       <select value={tag} onChange={e => { setTag(e.target.value); setPage(1); }} aria-label="Tag filter"><option value="">All tags</option>{meta.tags.map(t => <option key={t}>{t}</option>)}</select>
       <select value={proxy} onChange={e => { setProxy(e.target.value); setPage(1); }} aria-label="Proxy filter"><option value="">Any proxy</option><option value="none">Direct</option><option value="assigned">Assigned proxy</option></select>
       <select value={browserEngine} onChange={e => { setBrowserEngine(e.target.value); setPage(1); }} aria-label="Browser engine filter"><option value="">Any engine</option><option value="chromium">Chromium</option><option value="firefox">Firefox</option></select>
@@ -300,7 +315,7 @@ export function ProfilesPage({ meta, reloadMeta, folder, setFolder, workspaceFil
       {loaded && !rows.length && <tr><td colSpan={shown.length + 4} className="empty">{total || q || tag || status || proxy ? 'No profiles match these filters.' : <>No profiles yet. <button className="link" onClick={() => setDialog({ kind: 'edit', data: emptyForm })}>Create your first profile</button></>}</td></tr>}
     </tbody></table></div>
     <div className="pager">
-      <span className="pager-info" title="Current scope"><Icon name="info" size={15} /> {scope === 'running' ? 'Running' : scope === 'favorites' ? 'Favorites' : folder === '__all' ? 'All profiles' : folder || 'No folder'} · {plural(total, 'profile')} · {meta.running.length} running</span>
+      <span className="pager-info" title="Current scope"><Icon name="info" size={15} /> {SCOPE_LABEL[scope] || (folder === '__all' ? 'All profiles' : folder || 'No folder')} · {plural(total, 'profile')} · {meta.running.length} running</span>
       <span className="pager-spacer" />
       <span className="muted">Rows per page</span><select value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }} aria-label="Page size"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select>
       <span className="muted">{from}–{to} of {total}</span>

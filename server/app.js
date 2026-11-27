@@ -207,7 +207,9 @@ const row2p = r => {
   const lib = r.proxy_id ? db.prepare('SELECT * FROM proxies WHERE id=?').get(r.proxy_id) : null;
   let proxy = null, secretError = null;
   if (lib) {
-    proxy = { id: lib.id, revision: lib.updated_at, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '' };
+    proxy = { id: lib.id, revision: lib.updated_at, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '',
+      // Result of the last proxy test (cleared whenever the proxy endpoint is edited); the fleet view shows a failed one.
+      lastTest: { status: lib.last_test_status ?? null, error: lib.last_test_error ?? null, testedAt: lib.last_tested_at ?? null } };
     try { proxy.password = decrypt(lib.password); } catch (e) { secretError = e.message; }
   }
   delete r.proxy; // legacy inline column (cleared by migration v6)
@@ -1739,6 +1741,8 @@ export function createApp({ uiToken = process.env.PM_UI_TOKEN || null, staticDir
       running: engine.runningIds(),
       // Stopped profiles whose last run ended in an error (for the fleet bar).
       errorCount: all.filter(r => r.last_error && !engine.isRunning(r.id)).length,
+      // Profiles whose assigned proxy failed its last test (a stored test result, not a live probe).
+      proxyFailedCount: (() => { const ids = new Set(all.map(r => r.id)); return db.prepare("SELECT p.id FROM profiles p JOIN proxies x ON x.id = p.proxy_id WHERE p.deleted_at IS NULL AND x.last_test_status = 'failed'").all().filter(r => ids.has(r.id)).length; })(),
       features: {
         proxyLibrary: true,
         cookieRobotChromiumOnly: true,

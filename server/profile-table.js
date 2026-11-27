@@ -27,7 +27,7 @@ export function queryProfiles(rows, query = {}) {
   const pageSize = Math.min(100, Math.max(1, Number(query.pageSize || 50) || 50));
   const page = Math.max(1, Number(query.page || 1) || 1);
   if (!SORTS.has(sort)) throw fail(400, 'sort is not supported', 'INVALID_QUERY');
-  if (status && !['running', 'stopped', 'error'].includes(status)) throw fail(400, 'status filter is invalid', 'INVALID_QUERY');
+  if (status && !['running', 'stopped', 'error', 'proxy_failed'].includes(status)) throw fail(400, 'status filter is invalid', 'INVALID_QUERY');
   if (query.favorite !== undefined && ![true, false, 'true', 'false'].includes(query.favorite)) throw fail(400, 'favorite filter is invalid', 'INVALID_QUERY');
   if (browserEngine && !['chromium', 'firefox'].includes(browserEngine)) throw fail(400, 'browser engine filter is invalid', 'INVALID_QUERY');
   let items = rows;
@@ -40,6 +40,8 @@ export function queryProfiles(rows, query = {}) {
   if (status === 'running') items = items.filter(profile => profile.running);
   if (status === 'stopped') items = items.filter(profile => !profile.running && !profile.last_error);
   if (status === 'error') items = items.filter(profile => !profile.running && profile.last_error);
+  // The assigned proxy's last stored test failed (any run state): needs a new test or a different proxy.
+  if (status === 'proxy_failed') items = items.filter(profile => profile.proxy?.lastTest?.status === 'failed');
   if (proxy === 'none') items = items.filter(profile => !profile.proxyId && !profile.proxy_id);
   else if (proxy === 'assigned') items = items.filter(profile => profile.proxyId || profile.proxy_id);
   else if (proxy && proxy !== 'any') items = items.filter(profile => (profile.proxyId || profile.proxy_id) === proxy);
