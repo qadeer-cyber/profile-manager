@@ -68,7 +68,7 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
       const found = []; pc.createDataChannel('x');
       const done = new Promise(res => { pc.onicecandidate = e => { if (e.candidate) found.push(e.candidate.candidate); else res(); }; setTimeout(res, 4000); });
       const finished = await within((async () => { await pc.setLocalDescription(await pc.createOffer()); await done; return true; })(), 7000, false);
-      ice = finished ? { candidates: found, sdpSrflx: pc.localDescription.sdp.split(/\r?\n/).filter(l => l.includes(' typ srflx')) } : { timeout: true, candidates: found }; pc.close();
+      ice = finished ? { candidates: found, sdpSrflx: pc.localDescription.sdp.split(/\\r?\\n/).filter(l => l.includes(' typ srflx')) } : { timeout: true, candidates: found }; pc.close();
     } catch (e) { ice = { error: String(e) }; }
   }
   clearTimeout(watchdog);
