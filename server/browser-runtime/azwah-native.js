@@ -58,7 +58,8 @@ function developmentBinary() {
     const gpuFonts = /^[a-f0-9]{64}$/i.test(manifest.gpuFontsPatchSha256 || '');
     const rectsUa = /^[a-f0-9]{64}$/i.test(manifest.rectsUaPatchSha256 || '');
     const mediaWebrtc = /^[a-f0-9]{64}$/i.test(manifest.mediaWebrtcPatchSha256 || '');
-    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll'), canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc };
+    const batterySpeech = /^[a-f0-9]{64}$/i.test(manifest.batterySpeechPatchSha256 || '');
+    return { exe: path.join(directory, 'chrome.exe'), hash: fileHash('chrome.exe'), dllHash: fileHash('chrome.dll'), canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc, batterySpeech };
   }
   const exe = process.env.AZWAH_NATIVE_CHROMIUM_EXE;
   const hash = process.env.AZWAH_NATIVE_CHROMIUM_SHA256;
@@ -70,7 +71,8 @@ function developmentBinary() {
   return { exe, hash: hash.toLowerCase(), dllHash: dllHash.toLowerCase(), canvas: process.env.AZWAH_NATIVE_CHROMIUM_CANVAS === '1',
     identity: process.env.AZWAH_NATIVE_CHROMIUM_IDENTITY === '1', audioScreen: process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1',
     gpuFonts: process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1', rectsUa: process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1',
-    mediaWebrtc: process.env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC === '1' };
+    mediaWebrtc: process.env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC === '1',
+    batterySpeech: process.env.AZWAH_NATIVE_CHROMIUM_BATTERY_SPEECH === '1' };
 }
 
 // Which opt-in protections the installed AZWAH Chromium build contains (from its manifest). All false when no build
@@ -78,11 +80,11 @@ function developmentBinary() {
 export function azwahNativeFeatures() {
   try {
     const b = developmentBinary();
-    return { canvas: Boolean(b.canvas), identity: Boolean(b.identity), audioScreen: Boolean(b.audioScreen), gpuFonts: Boolean(b.gpuFonts), rectsUa: Boolean(b.rectsUa), mediaWebrtc: Boolean(b.mediaWebrtc) };
+    return { canvas: Boolean(b.canvas), identity: Boolean(b.identity), audioScreen: Boolean(b.audioScreen), gpuFonts: Boolean(b.gpuFonts), rectsUa: Boolean(b.rectsUa), mediaWebrtc: Boolean(b.mediaWebrtc), batterySpeech: Boolean(b.batterySpeech) };
   } catch {
     // Tests only (PM_TEST_AZWAH_NATIVE_AVAILABLE, never honoured when packaged): features named by environment flags.
     const test = azwahNativeTestAvailable() ? n => process.env[`AZWAH_NATIVE_CHROMIUM_${n}`] === '1' : () => false;
-    return { canvas: test('CANVAS'), identity: test('IDENTITY'), audioScreen: test('AUDIO_SCREEN'), gpuFonts: test('GPU_FONTS'), rectsUa: test('RECTS_UA'), mediaWebrtc: test('MEDIA_WEBRTC') };
+    return { canvas: test('CANVAS'), identity: test('IDENTITY'), audioScreen: test('AUDIO_SCREEN'), gpuFonts: test('GPU_FONTS'), rectsUa: test('RECTS_UA'), mediaWebrtc: test('MEDIA_WEBRTC'), batterySpeech: test('BATTERY_SPEECH') };
   }
 }
 
@@ -148,10 +150,10 @@ export function assertStrictLaunchAllowed(profile, features) {
 }
 
 export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRotation) {
-  const { exe, hash, dllHash, canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc } = developmentBinary();
+  const { exe, hash, dllHash, canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc, batterySpeech } = developmentBinary();
   if (opts.automation || opts.headless) throw error('Native Azwah interactive profiles cannot start in automation mode.');
   // Strict protection fails closed: nothing is launched unless every rule holds (see server/protection-presets.js).
-  assertStrictLaunchAllowed(profile, { canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc });
+  assertStrictLaunchAllowed(profile, { canvas, identity, audioScreen, gpuFonts, rectsUa, mediaWebrtc, batterySpeech });
   const canvasProtection = profile.advancedSettings?.experimental?.canvasReadback === 'prototype';
   if (canvasProtection && !canvas) {
     throw error('This AZWAH Chromium build does not include canvas protection. Turn it off for this profile or update AZWAH.', 'AZWAH_NATIVE_CANVAS_UNSUPPORTED');
@@ -221,7 +223,7 @@ export async function launchAzwahNative(profile, dir, opts, checkCancelled, onRo
     // ClientRects protection travels with canvas protection (new value each launch) when the build has it.
     if (canvasProtection && rectsUa) args.push(`--azwah-rects-seed=${seeds.rects}`);
     // The screen size is part of the hardware identity once the build supports it.
-    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id, profile.advancedSettings?.experimental?.seedEpoch || 0), { screen: audioScreen, gpuFonts, clientHints: rectsUa, media: mediaWebrtc, mediaSeed: seeds.media }));
+    if (hardwareIdentity) args.push(...nativeIdentityArgs(nativeIdentityFor(profile.id, profile.advancedSettings?.experimental?.seedEpoch || 0), { screen: audioScreen, gpuFonts, clientHints: rectsUa, media: mediaWebrtc, mediaSeed: seeds.media, batterySpeech }));
     // WebRTC server-reflexive candidates show the verified proxy exit address instead of this computer's address.
     if (proxy && mediaWebrtc && location?.ip) args.push(`--azwah-webrtc-public-ip=${location.ip}`);
     if (audioProtection) args.push(`--azwah-audio-seed=${seeds.audio}`);

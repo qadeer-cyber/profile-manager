@@ -14,6 +14,7 @@ const AUDIO_SCREEN = process.env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN === '1';
 const GPU_FONTS = process.env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS === '1';
 const RECTS_UA = process.env.AZWAH_NATIVE_CHROMIUM_RECTS_UA === '1';
 const MEDIA_WEBRTC = process.env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC === '1';
+const BATTERY_SPEECH = process.env.AZWAH_NATIVE_CHROMIUM_BATTERY_SPEECH === '1';
 // A documentation-range address that a local STUN server reports as this machine's "public" address, and the proxy exit
 // address AZWAH is told to show instead (both are not routable; nothing leaves this machine).
 const STUN_MAPPED_IP = '198.51.100.7';
@@ -61,6 +62,10 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
   let media = null;
   try { media = await within(navigator.mediaDevices.enumerateDevices().then(list => ({ counts: [list.filter(d => d.kind === 'audioinput').length,
     list.filter(d => d.kind === 'videoinput').length, list.filter(d => d.kind === 'audiooutput').length], ids: list.map(d => d.kind + ':' + d.deviceId + ':' + d.groupId) })), 3500, { timeout: true }); } catch (e) { media = { error: String(e) }; }
+  let battery = null;
+  try { const b = await within(navigator.getBattery(), 3000, null); battery = b ? { charging: b.charging, level: b.level, chargingTime: b.chargingTime, dischargingTime: String(b.dischargingTime) } : { timeout: true }; } catch (e) { battery = { error: String(e) }; }
+  let voices = null;
+  try { speechSynthesis.getVoices(); await within(new Promise(r => { if (speechSynthesis.getVoices().length) r(); else speechSynthesis.onvoiceschanged = () => r(); }), 2500, null); voices = speechSynthesis.getVoices().map(v => v.name); } catch (e) { voices = { error: String(e) }; }
   let ice = null;
   if (q.get('stun')) {
     try {
@@ -72,7 +77,7 @@ const PAGE = `<!doctype html><title>azwah fingerprint probe</title><canvas id=c 
     } catch (e) { ice = { error: String(e) }; }
   }
   clearTimeout(watchdog);
-  await reportTo({ site: location.hostname, step: q.get('step'), dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints, media, ice });
+  await reportTo({ site: location.hostname, step: q.get('step'), battery, voices, dataUrl, pixels, cores: navigator.hardwareConcurrency, memory: navigator.deviceMemory ?? null, renderer, vendor, audio, screen: screen.width + 'x' + screen.height, fonts, fontList, gpuVendor, rects, webglPixels, hints, media, ice });
   const next = q.get('next'); if (next) location.href = next;
 })();
 </script>`;
@@ -218,6 +223,16 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       assert.equal(base.a1.audio, base.b.audio, 'without protection the audio value is the same (control)');
       assert.notEqual(run1.a1.audio, base.a1.audio, 'audio value differs from the unprotected value');
       assert.equal(run2.a1.audio, run1.a1.audio, 'a new launch keeps the same audio value (persistent per profile)');
+    }
+    if (BATTERY_SPEECH) {
+      const b = run1.a1.battery;
+      console.log(`# battery: real=${JSON.stringify(base.a1.battery)} profile=${JSON.stringify(b)}; voices real=${JSON.stringify(base.a1.voices)} profile=${JSON.stringify(run1.a1.voices)}`);
+      assert.ok(b && !b.error && !b.timeout, 'getBattery settled');
+      assert.deepEqual(b, { charging: true, level: 1, chargingTime: 0, dischargingTime: 'Infinity' }, 'battery reads as a plugged-in desktop');
+      assert.deepEqual(run1.a1.voices, run2.a1.voices, 'voice list is stable across launches');
+      if (Array.isArray(base.a1.voices) && base.a1.voices.some(n => /Microsoft David|Microsoft Zira|Microsoft Mark|Google/i.test(n))) {
+        assert.ok(run1.a1.voices.every(n => /Microsoft David|Microsoft Zira|Microsoft Mark|Google/i.test(n)), 'only standard voices are listed');
+      }
     }
     if (MEDIA_WEBRTC) {
       // Media devices: the profile reports its own counts, whatever this machine has (control shows the real counts).

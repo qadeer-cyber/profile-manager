@@ -171,6 +171,25 @@ test('native identity: media counts are stable per profile, valid, and passed wi
   assert.match(launcher, /--azwah-webrtc-public-ip=\$\{location\.ip\}/);
 });
 
+test('battery-speech patch: three files, additions only, switch-gated, launcher passes the switches only with the build feature', async () => {
+  const b = fs.readFileSync(new URL('../native-chromium/battery-speech.patch', import.meta.url), 'utf8');
+  assert.doesNotMatch(b, /\r/);
+  const files = [...b.matchAll(/^diff --git a\/(\S+) b\/\1$/gm)].map(m => m[1]).sort();
+  assert.deepEqual(files, [
+    'content/browser/renderer_host/render_process_host_impl.cc',
+    'third_party/blink/renderer/modules/battery/battery_manager.cc',
+    'third_party/blink/renderer/modules/speech/speech_synthesis.cc']);
+  assert.match(b, /\+\s*"azwah-battery",/);
+  assert.match(b, /\+\s*"azwah-speech-voices",/);
+  assert.doesNotMatch(b, /^\+.*\[[a-z_]+\]/m, 'no raw array subscripts (unsafe-buffer-usage)');
+  const { nativeIdentityFor, nativeIdentityArgs } = await import('../server/browser-runtime/native-identity.js');
+  const id = nativeIdentityFor('profile-a');
+  assert.ok(!nativeIdentityArgs(id).some(x => x.startsWith('--azwah-battery')));
+  const args = nativeIdentityArgs(id, { batterySpeech: true });
+  assert.ok(args.includes('--azwah-battery=desktop') && args.some(x => x.startsWith('--azwah-speech-voices=Microsoft David,')));
+  assert.match(launcher, /batterySpeechPatchSha256/);
+});
+
 test('workers patch: two files, worker site string equals the window schemeful site, convertToBlob is protected', () => {
   const w = fs.readFileSync(new URL('../native-chromium/workers.patch', import.meta.url), 'utf8');
   assert.doesNotMatch(w, /\r/);

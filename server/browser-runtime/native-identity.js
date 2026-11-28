@@ -61,8 +61,14 @@ export function nativeIdentityFor(profileId, epoch = 0) {
     mediaDevices: MEDIA_COUNTS[digest[29] % MEDIA_COUNTS.length] };
 }
 
-export function nativeIdentityArgs(identity, { screen = false, gpuFonts = false, clientHints = false, media = false, mediaSeed = '' } = {}) {
+// Voices a standard Windows English (US) installation offers: the three Microsoft voices, and Google's network voices.
+// Voices are only ever hidden, never invented; a profile whose computer has none of these keeps its own list.
+export const STANDARD_SPEECH_VOICES = Object.freeze(['Microsoft David', 'Microsoft Zira', 'Microsoft Mark', 'Google']);
+
+export function nativeIdentityArgs(identity, { screen = false, gpuFonts = false, clientHints = false, media = false, mediaSeed = '', batterySpeech = false } = {}) {
   return [
+    // A plugged-in desktop (no battery information of this computer) and the standard speech voice list.
+    ...(batterySpeech ? ['--azwah-battery=desktop', `--azwah-speech-voices=${STANDARD_SPEECH_VOICES.join(',')}`] : []),
     // Media device counts (microphones,cameras,speakers) and the seed of the identifiers of devices that are listed but absent.
     ...(media ? [`--azwah-media-devices=${identity.mediaDevices}`, `--azwah-media-seed=${mediaSeed}`] : []),
     ...(clientHints ? [`--azwah-ua-platform-version=${identity.platformVersion}`, '--azwah-ua-chrome-brand'] : []),
