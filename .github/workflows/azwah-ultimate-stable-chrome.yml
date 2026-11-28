@@ -14,7 +14,7 @@ permissions:
   actions: read
 jobs:
   build:
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability' || github.ref == 'refs/heads/feature/azwah-ultimate-2'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release/azwah-windows' || github.ref == 'refs/heads/hardening/azwah-windows-reliability' || github.ref == 'refs/heads/feature/azwah-ultimate-2' || github.ref == 'refs/heads/claude/tender-ptolemy-qh7bh3'
     runs-on: windows-2022
     timeout-minutes: 110
     env:
@@ -147,6 +147,8 @@ jobs:
             $result = Get-Content -Raw $env:PM_SMOKE_RESULT | ConvertFrom-Json
             if ($process.ExitCode -ne 0 -or !$result.chromeStable -or !$result.stopped) { throw ($result | ConvertTo-Json) }
             if (!$result.azwahNative.defaulted -or !$result.azwahNative.running -or !$result.azwahNative.stopped) { throw ('AZWAH Chromium installed smoke failed: ' + ($result | ConvertTo-Json -Depth 4)) }
+            if (!$result.azwahNative.standard.running -or !$result.azwahNative.standard.stopped) { throw ('Standard protection installed smoke failed: ' + ($result | ConvertTo-Json -Depth 5)) }
+            Write-Output ('INSTALLED_PROTECTION_FEATURES ' + ($result.azwahNative.standard.features | ConvertTo-Json -Compress))
             $result | ConvertTo-Json
           } finally {
             if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }

@@ -395,7 +395,20 @@ async function runSmoke() {
       const running = (await call('GET', nativeEndpoint)).d?.running === true;
       const nativeStop = await call('POST', nativeEndpoint + '/stop');
       if (!running || nativeStop.s !== 200) throw new Error('AZWAH Chromium did not stay running or stop: ' + JSON.stringify({ running, nativeStop }));
-      azwahNative = { defaulted: true, pid: started.d.pid, running, stopped: true };
+      // A profile with the Standard protections (what the new-profile form applies by default) must launch on the installed
+      // build, with the protections this build carries, and stop.
+      const features = (await call('GET', '/api/protection-features')).d?.features || {};
+      const standard = await call('POST', '/api/profiles', { name: 'AZWAH Chromium Standard smoke', advancedSettings: { runtime: 'azwah-native',
+        experimental: { canvasReadback: 'prototype', hardwareIdentity: 'prototype', audioReadback: 'prototype' } } });
+      if (standard.s !== 201 || standard.d?.advancedSettings?.experimental?.hardwareIdentity !== 'prototype') throw new Error('Standard protection profile was not created: ' + JSON.stringify(standard));
+      const standardEndpoint = '/api/profiles/' + standard.d.id;
+      const standardStarted = await call('POST', standardEndpoint + '/launch', { headless: false });
+      if (standardStarted.s !== 200 || !standardStarted.d?.pid) throw new Error('Standard protection launch failed: ' + JSON.stringify(standardStarted));
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const standardRunning = (await call('GET', standardEndpoint)).d?.running === true;
+      const standardStop = await call('POST', standardEndpoint + '/stop');
+      if (!standardRunning || standardStop.s !== 200) throw new Error('Standard protection profile did not stay running or stop: ' + JSON.stringify({ standardRunning, standardStop }));
+      azwahNative = { defaulted: true, pid: started.d.pid, running, stopped: true, standard: { running: standardRunning, stopped: true, features } };
     }
     if (process.env.PM_SMOKE_VISUAL_DIR) await captureInstalledVisuals();
     fs.writeFileSync(process.env.PM_SMOKE_RESULT, JSON.stringify({ chromeStable: true, pid: launch.d.pid, stopped: true, azwahNative, userData, version: app.getVersion() }));
