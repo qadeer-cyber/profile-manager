@@ -130,9 +130,9 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
   };
   // One session visits site A, reloads A, then site B (http://localhost).
   const baseExtraArgs = process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS || '';
-  const visit = async (profileId, { maskedIp = false } = {}) => {
+  const visit = async (profileId, { maskedIp = false, extra = '' } = {}) => {
     // The WebRTC address switch is passed to this launch only (test extra arguments are read at every launch).
-    process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS = (baseExtraArgs + (maskedIp ? ` --azwah-webrtc-public-ip=${MASKED_IP}` : '')).trim();
+    process.env.AZWAH_NATIVE_TEST_EXTRA_ARGS = (baseExtraArgs + (maskedIp ? ` --azwah-webrtc-public-ip=${MASKED_IP}` : '') + (extra ? ` ${extra}` : '')).trim();
     reports.length = 0;
     const stun = `&stun=127.0.0.1:${stunPort}`;
     const b = `http://localhost:${port}/b?step=b&report=${port}${stun}`;
@@ -233,6 +233,15 @@ test('AZWAH Chromium canvas protection and hardware/graphics identity are observ
       if (Array.isArray(base.a1.voices) && base.a1.voices.some(n => /Microsoft David|Microsoft Zira|Microsoft Mark|Google/i.test(n))) {
         assert.ok(run1.a1.voices.every(n => /Microsoft David|Microsoft Zira|Microsoft Mark|Google/i.test(n)), 'only standard voices are listed');
       }
+      // The runner already looks like a plugged-in desktop with only standard voices, so the control equals the profile.
+      // To show the voice filter really runs, one launch narrows the list to a single installed voice (last switch wins).
+      const real = Array.isArray(base.a1.voices) ? base.a1.voices : [];
+      const pick = real.find(n => /Zira/i.test(n));
+      if (pick) {
+        const narrowed = await visit(on, { maskedIp: true, extra: '--azwah-speech-voices=Zira' });
+        console.log(`# voice filter proof: ${JSON.stringify(narrowed.a1.voices)}`);
+        assert.deepEqual(narrowed.a1.voices, [pick], 'the voice filter narrows the list to the requested voice');
+      } else console.log('# voice filter proof skipped: no Zira voice on this runner');
     }
     if (MEDIA_WEBRTC) {
       // Media devices: the profile reports its own counts, whatever this machine has (control shows the real counts).
