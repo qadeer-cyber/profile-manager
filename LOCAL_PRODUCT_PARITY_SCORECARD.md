@@ -4,7 +4,7 @@ Generated from `server/parity-scorecard.js`. Live values: `GET /api/parity-score
 
 **Formula:** `localProductParityPercent = sum(credits) / count × 100` where `VERIFIED=1`, `PARTIAL=0.5`, `UNSUPPORTED|BLOCKED|MISSING=0`.
 
-This measures **this local desktop app**, not Multilogin cloud/SaaS. Masked/noise controls count as `UNSUPPORTED` on stock Chromium and Chrome Stable; the AZWAH Chromium row is `PARTIAL` because most of them are proven in Windows CI but WebGPU, media/WebRTC, workers and a real Windows client are not.
+This measures **this local desktop app**, not Multilogin cloud/SaaS. Masked/noise controls count as `UNSUPPORTED` on stock Chromium and Chrome Stable; the AZWAH Chromium row is `PARTIAL` because most of them are proven in Windows CI but WebGPU, real GPUs, real devices and a real Windows client are not.
 
 | Area | Status | Evidence |
 |------|--------|----------|
@@ -25,8 +25,8 @@ This measures **this local desktop app**, not Multilogin cloud/SaaS. Masked/nois
 | Geolocation Allow/Ask/Deny | VERIFIED | test/fingerprint-gaps-browser.test.js |
 | Chromium install backup/rollback | VERIFIED | test/chromium-lifecycle.test.js |
 | Crash/orphan recovery + locks | VERIFIED | test/m17-crash-recovery.test.js, m17-windows-native-ci; GHA windows-2022 PASS |
-| Multilogin-style masked fingerprints (AZWAH Chromium) | PARTIAL | AZWAH Chromium, Windows CI (runs 45723355337, 45714781031): canvas, audio, screen, CPU/memory, WebGL name and readback, fonts, ClientRects, client hints observed changed. Persistent per-profile seeds are implemented and unit tested. NOT verified: WebGPU, real-GPU WebGL, workers (workers.patch uncompiled), media device counts and WebRTC address (media-webrtc.patch failed its first compile, rebuild pending), real Windows 10/11 client |
+| Multilogin-style masked fingerprints (AZWAH Chromium) | PARTIAL | AZWAH Chromium, Windows CI (live run 46075410661, build 45997594665): canvas, audio, screen, CPU/memory, WebGL name and readback, fonts, ClientRects, client hints, media device counts, WebRTC address, persistent per-profile fingerprint and dedicated/shared/service worker coverage all observed in the browser. NOT verified: WebGPU, real-GPU WebGL, real devices and a real proxy exit, cross-origin iframes, real Windows 10/11 client |
 
 **Observation-only diagnostics do not earn VERIFIED** when Multilogin documents a user-facing control (e.g. canvas noise).
 
-**Current local product parity:** **91.7%** (16.5/18 credits; formula unchanged; was 88.9% before the AZWAH Chromium row moved from UNSUPPORTED to PARTIAL).
+**Current local product parity:** **91.7%** (16.5/18 credits; formula unchanged; the AZWAH Chromium row stays PARTIAL until WebGPU, real hardware and a real client are verified).

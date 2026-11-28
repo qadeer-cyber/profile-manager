@@ -17,7 +17,7 @@ export const SCORECARD = Object.freeze([
   { id: 'geolocation_modes', area: 'Geolocation Allow/Ask/Deny', status: 'VERIFIED', evidence: 'test/fingerprint-gaps-browser.test.js' },
   { id: 'chromium_lifecycle', area: 'Chromium install backup/rollback', status: 'VERIFIED', evidence: 'test/chromium-lifecycle.test.js' },
   { id: 'crash_recovery', area: 'Crash/orphan recovery + locks', status: 'VERIFIED', evidence: 'test/m17-crash-recovery.test.js, m17-windows-native-ci; GHA windows-2022 PASS' },
-  { id: 'multilogin_mask_parity', area: 'Multilogin-style masked fingerprints (AZWAH Chromium)', status: 'PARTIAL', evidence: 'AZWAH Chromium, Windows CI (runs 45723355337, 45714781031): canvas, audio, screen, CPU/memory, WebGL name and readback, fonts, ClientRects, client hints observed changed. Persistent per-profile seeds are implemented and unit tested. NOT verified: WebGPU, real-GPU WebGL, workers (workers.patch uncompiled), media device counts and WebRTC address (media-webrtc.patch failed its first compile, rebuild pending), real Windows 10/11 client' },
+  { id: 'multilogin_mask_parity', area: 'Multilogin-style masked fingerprints (AZWAH Chromium)', status: 'PARTIAL', evidence: 'AZWAH Chromium, Windows CI (live run 46075410661, build 45997594665): canvas, audio, screen, CPU/memory, WebGL name and readback, fonts, ClientRects, client hints, media device counts, WebRTC address, persistent per-profile fingerprint and dedicated/shared/service worker coverage all observed in the browser. NOT verified: WebGPU, real-GPU WebGL, real devices and a real proxy exit, cross-origin iframes, real Windows 10/11 client' },
 ]);
 
 const WEIGHT = Object.freeze({

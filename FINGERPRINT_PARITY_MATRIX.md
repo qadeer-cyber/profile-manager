@@ -57,10 +57,10 @@ The 24 rows above describe **stock Chromium and Chrome Stable**. AZWAH Chromium 
 | Client hints (platform version, brand) | `rects-webgl-ua.patch` | Windows CI verified | 12.0.0 to 15.0.0, Google Chrome brand |
 | Timezone, geolocation from proxy | `windows-source.patch` | Windows CI verified | Proxy exit timezone with authenticated HTTP and SOCKS5 |
 | WebGPU adapter info | `gpu-fonts.patch` | Implemented, not observed | No adapter on the CI runner |
-| Media device counts | `media-webrtc.patch` | First compile failed (unsafe-buffer-usage), fixed, rebuild pending | Probe in `test/azwah-fingerprint-windows-live.test.js`, not run |
-| WebRTC public address (srflx, SDP) | `media-webrtc.patch` | Compiled in the failed run's build, no behavior result | Rewrites what the page sees; non-proxied UDP stays disabled |
-| Dedicated, shared and service workers | `workers.patch` | Written, not compiled | Probe `test/azwah-worker-windows-live.test.js`, not run. Fixes the worker canvas seed and `OffscreenCanvas.convertToBlob` |
-| Persistent per-profile fingerprint | `native-identity.js`, launcher | Implemented, unit tested | Seeds fixed per profile and generation; live persistence probe not run |
+| Media device counts | `media-webrtc.patch` | Windows CI verified | Live run 46075410661: real counts [0,0,0], profile [1,1,2] as configured; identifiers stable per origin and launch. Real devices not tested |
+| WebRTC public address (srflx, SDP) | `media-webrtc.patch` | Windows CI verified (loopback STUN) | Live run 46075410661: candidates and SDP show the exit address instead of the STUN-reported one. Rewrites what the page sees; non-proxied UDP stays disabled. Real proxy exit and public STUN not tested |
+| Dedicated, shared and service workers | `workers.patch` | Windows CI verified | Live run 46075410661: identity, UA and hints, timezone, languages, canvas getImageData/convertToBlob and WebGL readback equal the page in all three; fonts judged per worker type against the control (stock shared/service workers already differ from the page). WebGPU in workers not observable |
+| Persistent per-profile fingerprint | `native-identity.js`, launcher | Windows CI verified | Live run 46075410661: stable across launches, different between sites, new generation gives a new stable value. Not tested on real hardware |
 | Iframes (cross-origin) | — | Not tested | |
 | Port-scan masking, speech voices, battery | — | Not implemented | |
 | Real Windows 10/11 client, real GPU | — | Not tested | |
