@@ -14,6 +14,10 @@ on:
         description: 'Stop/restart cycles'
         required: false
         default: '30'
+      stress_iterations:
+        description: 'If above 0: only run this many cold launch iterations (alternating HTTP and SOCKS5) with Chromium logs, instead of the qualification steps'
+        required: false
+        default: '0'
 permissions:
   contents: read
   actions: read
@@ -28,6 +32,7 @@ jobs:
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
       # Chain run whose archive a tag-triggered run tests (manual dispatch can name another).
       NATIVE_RUN: '45719091368'
+      STRESS: ${{ inputs.stress_iterations || '0' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,7 +82,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/fetch-dbip-lite.mjs
           exit $LASTEXITCODE
+      - name: Cold launch stress (only when stress_iterations is above 0)
+        if: env.STRESS != '0'
+        shell: pwsh
+        run: ./scripts/native-launch-stress.ps1 -Iterations ([int]$env:STRESS)
+      - name: Keep the Chromium logs of the stress iterations
+        if: env.STRESS != '0' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: azwah-launch-stress-logs
+          path: ${{ runner.temp }}/stress-*
+          retention-days: 3
+          if-no-files-found: ignore
       - name: Proxy, timezone, isolation and stop/restart cycles
+        if: env.STRESS == '0'
         shell: pwsh
         env:
           AZWAH_NATIVE_CYCLES: ${{ inputs.cycles || '30' }}
@@ -91,7 +109,7 @@ jobs:
           node --test --test-force-exit test/azwah-native-windows-live.test.js
           exit $LASTEXITCODE
       - name: Canvas protection and hardware/graphics identity observed in the browser
-        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
+        if: env.STRESS == '0' && (env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1')
         shell: pwsh
         env:
           # The runner has no GPU: software WebGL (test only; never passed by the app itself).
@@ -100,7 +118,7 @@ jobs:
           node --test --test-force-exit test/azwah-fingerprint-windows-live.test.js
           exit $LASTEXITCODE
       - name: Worker coverage (dedicated, shared and service workers against the page)
-        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1'
+        if: env.STRESS == '0' && (env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1')
         shell: pwsh
         env:
           AZWAH_NATIVE_TEST_EXTRA_ARGS: '--use-angle=swiftshader --enable-unsafe-swiftshader --enable-logging --v=0 --log-file=${{ runner.temp }}\\azwah-chrome-workers.log'
@@ -108,7 +126,7 @@ jobs:
           node --test --test-force-exit test/azwah-worker-windows-live.test.js
           exit $LASTEXITCODE
       - name: Strict protection launch rules (needs a build with every protection)
-        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1' && env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN == '1' && env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS == '1' && env.AZWAH_NATIVE_CHROMIUM_RECTS_UA == '1' && env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC == '1'
+        if: env.STRESS == '0' && (env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1' && env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN == '1' && env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS == '1' && env.AZWAH_NATIVE_CHROMIUM_RECTS_UA == '1' && env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC == '1')
         shell: pwsh
         run: |
           node --test --test-force-exit test/azwah-strict-windows-live.test.js
