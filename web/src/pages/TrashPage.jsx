@@ -23,18 +23,20 @@ export function TrashPage() {
     </tbody></table></div>
     {purge && !purge.step && <Confirm title="Permanently delete" danger confirmLabel="Delete forever"
       message={`Type the profile name “${purge.name}” in the next dialog to confirm.`}
-      onConfirm={() => setPurge({ ...purge, step: 2 })} onClose={() => setPurge(null)} />}
+      onConfirm={() => setPurge(current => ({ ...current, step: 2 }))} onClose={() => setPurge(current => (current?.step ? current : null))} />}
     {purge?.step === 2 && <PurgeDialog profile={purge} onClose={() => setPurge(null)} onDone={() => { setPurge(null); load(); }} toast={toast} />}
   </>;
 }
 
 function PurgeDialog({ profile, onClose, onDone, toast }) {
   const [name, setName] = useState('');
+  const [failure, setFailure] = useState('');
   return <Dialog title="Confirm permanent delete" onClose={onClose} footer={<><button onClick={onClose}>Cancel</button><button className="danger" disabled={name !== profile.name} onClick={async () => {
     try { await api(`/api/trash/${profile.id}?confirmName=${encodeURIComponent(name)}`, { method: 'DELETE' }); toast('Permanently deleted', 'success'); onDone(); }
-    catch (e) { toast(e.message, 'error'); }
+    catch (e) { setFailure(e.message); toast(e.message, 'error'); }
   }}>Delete forever</button></>}>
     <p>This removes all browser data for <strong>{profile.name}</strong>.</p>
     <label>Type the profile name to confirm<input value={name} onChange={e => setName(e.target.value)} autoFocus /></label>
+    {failure && <div className="notice warn" role="alert">{failure}</div>}
   </Dialog>;
 }
