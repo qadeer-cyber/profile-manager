@@ -189,10 +189,13 @@ export function deleteExtension(id, force = false) {
   db.prepare('DELETE FROM extensions WHERE id=?').run(id);
 }
 
+// Prepared once: the profile list builds every profile, and preparing this per row dominated the request (about 40% at 3000 profiles).
+let profileExtensionsStatement = null;
 export function profileExtensions(profileId) {
-  return db.prepare(`SELECT e.*, pe.enabled FROM extensions e
+  profileExtensionsStatement ||= db.prepare(`SELECT e.*, pe.enabled FROM extensions e
     JOIN profile_extensions pe ON pe.extension_id = e.id
-    WHERE pe.profile_id = ? ORDER BY e.name, e.id`).all(profileId)
+    WHERE pe.profile_id = ? ORDER BY e.name, e.id`);
+  return profileExtensionsStatement.all(profileId)
     .map(row => {
       const { enabled, ...rest } = publicExtension(row);
       return { ...rest, enabled: !!row.enabled };

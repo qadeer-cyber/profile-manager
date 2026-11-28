@@ -204,9 +204,11 @@ export function reencryptSecrets() {
   return n;
 }
 
+let proxyByIdStatement = null;
 const row2p = r => {
   if (!r) return r;
-  const lib = r.proxy_id ? db.prepare('SELECT * FROM proxies WHERE id=?').get(r.proxy_id) : null;
+  proxyByIdStatement ||= db.prepare('SELECT * FROM proxies WHERE id=?');
+  const lib = r.proxy_id ? proxyByIdStatement.get(r.proxy_id) : null;
   let proxy = null, secretError = null;
   if (lib) {
     proxy = { id: lib.id, revision: lib.updated_at, name: lib.name, type: lib.type, host: lib.host, port: lib.port, username: lib.username, password: '',
@@ -240,18 +242,23 @@ const row2p = r => {
     macLabel: advancedSettings.macLabel || deriveMacLabel(r.id), macLabelMode: advancedSettings.macLabel ? advancedSettings.macLabelMode || 'manual' : 'derived', extensions, tags: JSON.parse(r.tags), proxy, automationEnabled: !!r.automation_enabled, running: engine.isRunning(r.id), ...(secretError && { secretError }), ...(chromeLaunchMode && { chromeLaunchMode }) };
 };
 // Each profile's MAC label must be its own: refuse one that another profile already shows.
-function macLabelsInUse(selfId) {
-  const used = new Set();
-  for (const row of db.prepare('SELECT id, advanced_settings FROM profiles').all()) {
+// A profile with no saved label shows one derived from its id, so both kinds are checked. The saved labels are found with a
+// text match in SQL (then confirmed on the parsed value), so creating a profile does not parse every profile's settings.
+let savedLabelHitsStatement = null, unsavedLabelRowsStatement = null;
+function macLabelTaken(label, selfId) {
+  savedLabelHitsStatement ||= db.prepare('SELECT id, advanced_settings FROM profiles WHERE advanced_settings LIKE ?');
+  unsavedLabelRowsStatement ||= db.prepare(`SELECT id FROM profiles WHERE advanced_settings IS NULL OR advanced_settings NOT LIKE '%"macLabel":"_%'`);
+  for (const row of savedLabelHitsStatement.all(`%"macLabel":"${String(label).replace(/[%_\\]/g, '')}"%`)) {
     if (row.id === selfId) continue;
-    let saved = null;
-    try { saved = JSON.parse(row.advanced_settings || '{}').macLabel || null; } catch {}
-    used.add(saved || deriveMacLabel(row.id));
+    try { if (JSON.parse(row.advanced_settings || '{}').macLabel === label) return true; } catch {}
   }
-  return used;
+  for (const row of unsavedLabelRowsStatement.all()) {
+    if (row.id !== selfId && deriveMacLabel(row.id) === label) return true;
+  }
+  return false;
 }
 function assertMacLabelFree(label, selfId) {
-  if (macLabelsInUse(selfId).has(label)) throw Object.assign(err(409, 'Another profile already uses this MAC label.'), { code: 'MAC_LABEL_IN_USE' });
+  if (macLabelTaken(label, selfId)) throw Object.assign(err(409, 'Another profile already uses this MAC label.'), { code: 'MAC_LABEL_IN_USE' });
 }
 // A profile made from a template gets its own MAC, never the template's.
 function withoutMacLabel(v) {
@@ -260,8 +267,7 @@ function withoutMacLabel(v) {
   return { ...v, advancedSettings };
 }
 function freeRandomMacLabel() {
-  const used = macLabelsInUse(null);
-  for (;;) { const label = randomMacLabel(); if (!used.has(label)) return label; }
+  for (;;) { const label = randomMacLabel(); if (!macLabelTaken(label, null)) return label; }
 }
 const publicP = p => {
   if (!p) return p;
