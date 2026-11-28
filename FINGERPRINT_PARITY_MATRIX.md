@@ -62,5 +62,7 @@ The 24 rows above describe **stock Chromium and Chrome Stable**. AZWAH Chromium 
 | Dedicated, shared and service workers | `workers.patch` | Windows CI verified | Live run 46075410661: identity, UA and hints, timezone, languages, canvas getImageData/convertToBlob and WebGL readback equal the page in all three; fonts judged per worker type against the control (stock shared/service workers already differ from the page). WebGPU in workers not observable |
 | Persistent per-profile fingerprint | `native-identity.js`, launcher | Windows CI verified | Live run 46075410661: stable across launches, different between sites, new generation gives a new stable value. Not tested on real hardware |
 | Iframes (cross-origin) | — | Not tested | |
-| Port-scan masking, speech voices, battery | — | Not implemented | |
+| Speech voices | `battery-speech.patch` (`--azwah-speech-voices`) | Windows CI verified (run 46131373872): the list narrows to the requested voice; the standard list is applied with the profile's hardware identity. Only hides installed voices, never invents | Runner has only the three Microsoft voices, so the effect of the default list on a machine with many language packs is untested |
+| Battery | `battery-speech.patch` (`--azwah-battery=desktop`) | Builds and launches (run 46129544457); reads as plugged in, level 1 | NOT verified to change anything: the CI runner already reports exactly that. Needs a real laptop |
+| Port-scan masking | — | Not implemented on purpose | Local Network Access already blocks public pages from reaching loopback; unverifiable in CI |
 | Real Windows 10/11 client, real GPU | — | Not tested | |
