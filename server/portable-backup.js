@@ -1,4 +1,5 @@
 import { hashFileSync } from './file-integrity.js';
+import { deriveMacLabel } from './mac-label.js';
 // Portable v2: explicit dependencies inside a mandatory authenticated encrypted envelope.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -178,6 +179,24 @@ function insertRow(table, record) {
   const keys = Object.keys(record).filter(k => columns.has(k));
   db.prepare(`INSERT INTO ${table} (${keys.join(',')}) VALUES (${keys.map(k => '@' + k).join(',')})`).run(Object.fromEntries(keys.map(k => [k, record[k]])));
 }
+// MAC labels are unique per computer. A restored copy next to its original (new id), or a moved profile whose label
+// another local profile already uses, gets a label derived from its new id; a label nobody else uses is kept.
+function advancedWithFreeMacLabel(json, id, forceNew) {
+  let settings = {};
+  try { settings = JSON.parse(json || '{}') || {}; } catch { return json; }
+  const label = settings.macLabel;
+  if (!forceNew && label) {
+    const taken = db.prepare('SELECT id, advanced_settings FROM profiles').all().some(r => {
+      if (r.id === id) return false;
+      let saved = null;
+      try { saved = JSON.parse(r.advanced_settings || '{}').macLabel || null; } catch {}
+      return (saved || deriveMacLabel(r.id)) === label;
+    });
+    if (!taken) return json;
+  }
+  if (!forceNew && !label) return json;
+  return JSON.stringify({ ...settings, macLabel: deriveMacLabel(id), macLabelMode: 'random' });
+}
 function planPortableRestore(files, meta, { encrypted, collision, running = [], onlyIds, workspaceId: targetWorkspace } = {}, context = {}) {
   const { row, deps } = validatePortableV2(files, meta, { encrypted });
   if (onlyIds && (onlyIds.size !== 1 || !onlyIds.has(row.id))) throw fail('Selected profile does not match this archive', 'INVALID_RESTORE');
@@ -215,7 +234,7 @@ function planPortableRestore(files, meta, { encrypted, collision, running = [], 
       if (deps.proxy.trafficPolicy) saveTrafficPolicy(proxyId, deps.proxy.trafficPolicy);
     }
     for (const e of newExtensions) insertRow('extensions', { ...e, id: mapping.extensions[e.id], storage_dir: `${e.browser_engine === 'firefox' ? 'gecko-extensions' : 'extensions'}/${mapping.extensions[e.id]}`, created_at: now, updated_at: now });
-    const record = { ...row, id, workspace_id: workspaceId, proxy_id: proxyId, proxy: null, deleted_at: null, purge_error: null, updated_at: now, last_launched_at: null, last_error: null };
+    const record = { ...row, id, advanced_settings: advancedWithFreeMacLabel(row.advanced_settings, id, Boolean(existing && collision === 'rename')), workspace_id: workspaceId, proxy_id: proxyId, proxy: null, deleted_at: null, purge_error: null, updated_at: now, last_launched_at: null, last_error: null };
     if (existing && collision === 'replace') {
       db.prepare('DELETE FROM profile_extensions WHERE profile_id=?').run(id);
       const columns = db.prepare('PRAGMA table_info(profiles)').all().map(c => c.name).filter(k => k !== 'id' && Object.hasOwn(record, k));
