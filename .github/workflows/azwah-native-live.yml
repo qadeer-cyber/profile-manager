@@ -107,6 +107,12 @@ jobs:
         run: |
           node --test --test-force-exit test/azwah-worker-windows-live.test.js
           exit $LASTEXITCODE
+      - name: Strict protection launch rules (needs a build with every protection)
+        if: env.AZWAH_NATIVE_CHROMIUM_CANVAS == '1' && env.AZWAH_NATIVE_CHROMIUM_IDENTITY == '1' && env.AZWAH_NATIVE_CHROMIUM_AUDIO_SCREEN == '1' && env.AZWAH_NATIVE_CHROMIUM_GPU_FONTS == '1' && env.AZWAH_NATIVE_CHROMIUM_RECTS_UA == '1' && env.AZWAH_NATIVE_CHROMIUM_MEDIA_WEBRTC == '1'
+        shell: pwsh
+        run: |
+          node --test --test-force-exit test/azwah-strict-windows-live.test.js
+          exit $LASTEXITCODE
       - name: Browser log and crash evidence (only when a launch or probe step failed)
         if: failure()
         shell: pwsh
